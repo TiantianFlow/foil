@@ -1,3 +1,5 @@
+"""Verification for resume precedence (CAP-017–CAP-019, CAP-030, CAP-032)."""
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st

@@ -1,4 +1,4 @@
-"""Structured status snapshots and polling."""
+"""Structured status snapshots and polling (CAP-012–CAP-016, CAP-030)."""
 
 from __future__ import annotations
 
@@ -90,7 +90,7 @@ class StatusSnapshot:
         unknown = set(payload) - expected
         missing = expected - set(payload)
         if unknown:
-            raise StatusError(f"unknown status fields: {sorted(unknown)}")
+            raise StatusError("status record has unknown fields")
         if missing:
             raise StatusError(f"missing status fields: {sorted(missing)}")
         version = payload["schema_version"]
@@ -99,7 +99,7 @@ class StatusSnapshot:
         try:
             state = SeatState(payload["state"])
         except (TypeError, ValueError) as exc:
-            raise StatusError(f"unknown state: {payload['state']!r}") from exc
+            raise StatusError("state is not a supported value") from exc
         return cls(
             fleet_id=payload["fleet_id"],
             seat_id=payload["seat_id"],

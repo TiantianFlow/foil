@@ -1,3 +1,5 @@
+"""Verification for tmux naming (CAP-017, CAP-019, CAP-032)."""
+
 import hashlib
 import re
 

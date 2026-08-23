@@ -34,6 +34,7 @@ def test_capstan_help_lists_poll_status() -> None:
     result = run_capstan("--help")
 
     assert result.returncode == 0
+    assert "Capstan · 运筹" in result.stdout
     assert "poll-status" in result.stdout
     assert "CAPSTAN_STATE_DIR" not in result.stdout
 
@@ -89,6 +90,32 @@ def test_poll_status_rejects_invalid_state_with_stderr(tmp_path: Path) -> None:
     assert result.stdout == ""
     assert result.stderr.strip()
     assert "state" in result.stderr.lower()
+
+
+def test_poll_status_diagnostics_do_not_reflect_unknown_input(tmp_path: Path) -> None:
+    state_canary = "state-canary-" + "x" * 4096
+    field_canary = "field-canary-" + "y" * 4096
+    reader = PollStatusReader(tmp_path)
+    path = reader.write_fixture(make_status())
+    payload = json.loads(path.read_text())
+    payload["state"] = state_canary
+    path.write_text(json.dumps(payload))
+
+    invalid_state = run_capstan("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
+
+    assert invalid_state.returncode != 0
+    assert state_canary not in invalid_state.stderr
+    assert len(invalid_state.stderr) < 200
+
+    payload = make_status().to_dict()
+    payload[field_canary] = True
+    path.write_text(json.dumps(payload))
+
+    invalid_field = run_capstan("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
+
+    assert invalid_field.returncode != 0
+    assert field_canary not in invalid_field.stderr
+    assert len(invalid_field.stderr) < 200
 
 
 def test_poll_status_ignores_terminal_log_files(tmp_path: Path) -> None:

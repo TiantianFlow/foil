@@ -1,4 +1,4 @@
-"""Deterministic, shell-safe tmux display names."""
+"""Deterministic, shell-safe tmux display names (CAP-017, CAP-019)."""
 
 from __future__ import annotations
 

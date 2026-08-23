@@ -14,7 +14,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="capstan",
         description=(
-            "Headless coordination for complementary CLI-agent fleets. "
+            "Capstan · 运筹: headless coordination for complementary CLI-agent fleets. "
             "Management commands read and write structured state on disk."
         ),
     )

@@ -1,3 +1,5 @@
+"""Verification for structured status reading (CAP-012–CAP-016, CAP-030, CAP-032)."""
+
 import json
 from pathlib import Path
 

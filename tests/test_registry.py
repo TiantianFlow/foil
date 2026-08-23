@@ -1,3 +1,5 @@
+"""Verification for durable registry behavior (CAP-013, CAP-015–CAP-016, CAP-034)."""
+
 import json
 import stat
 from pathlib import Path

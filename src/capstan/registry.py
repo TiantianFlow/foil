@@ -1,4 +1,4 @@
-"""Durable per-seat continuity registry."""
+"""Durable per-seat continuity registry (CAP-013, CAP-015–CAP-016, CAP-030, CAP-034)."""
 
 from __future__ import annotations
 
@@ -70,6 +70,8 @@ def _validate_timestamp(value: str) -> None:
 
 
 def _assert_no_secret(value: Any, *, path: str = "record") -> None:
+    """Reject common secret-shaped data as heuristic defense-in-depth, not a credential boundary."""
+
     if isinstance(value, Mapping):
         for key, child in value.items():
             if not isinstance(key, str):

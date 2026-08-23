@@ -1,4 +1,4 @@
-"""Pure seat relaunch precedence."""
+"""Pure seat relaunch precedence (CAP-017–CAP-019, CAP-030)."""
 
 from __future__ import annotations
 
