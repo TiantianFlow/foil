@@ -45,3 +45,17 @@ def test_generated_names_are_bounded_and_shell_safe(display_name: str, stable_id
 def test_empty_stable_id_is_rejected(factory) -> None:
     with pytest.raises(ValueError, match="stable_id"):
         factory("display", "")
+
+
+@pytest.mark.parametrize("factory", [tmux_session_name, tmux_window_name])
+@pytest.mark.parametrize("bad_id", [None, 123, ["id"], {"id": 1}])
+def test_non_string_stable_id_is_rejected(factory, bad_id) -> None:
+    with pytest.raises(ValueError, match="stable_id"):
+        factory("display", bad_id)
+
+
+@pytest.mark.parametrize("factory", [tmux_session_name, tmux_window_name])
+@pytest.mark.parametrize("bad_name", [None, 123, ["name"], {"name": 1}])
+def test_non_string_display_name_is_rejected(factory, bad_name) -> None:
+    with pytest.raises(ValueError, match="display_name"):
+        factory(bad_name, "stable-1")

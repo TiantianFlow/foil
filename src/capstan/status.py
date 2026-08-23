@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import stat
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -51,16 +52,16 @@ class StatusSnapshot:
             _validate_id(self.fleet_id, "fleet_id")
             _validate_id(self.seat_id, "seat_id")
             _validate_timestamp(self.updated_at)
+            if not isinstance(self.evidence, dict):
+                raise StatusError("evidence must be an object")
+            if not isinstance(self.extensions, dict):
+                raise StatusError("extensions must be an object")
             _assert_no_secret(self.evidence, path="evidence")
             _assert_no_secret(self.extensions, path="extensions")
         except ValueError as exc:
             raise StatusError(str(exc)) from exc
         if not isinstance(self.state, SeatState):
             raise StatusError("state must be a SeatState")
-        if not isinstance(self.evidence, dict):
-            raise StatusError("evidence must be an object")
-        if not isinstance(self.extensions, dict):
-            raise StatusError("extensions must be an object")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -74,7 +75,9 @@ class StatusSnapshot:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> StatusSnapshot:
+    def from_dict(cls, payload: Any) -> StatusSnapshot:
+        if not isinstance(payload, dict):
+            raise StatusError("status record must be an object")
         expected = {
             "schema_version",
             "fleet_id",
@@ -91,7 +94,7 @@ class StatusSnapshot:
         if missing:
             raise StatusError(f"missing status fields: {sorted(missing)}")
         version = payload["schema_version"]
-        if version != SCHEMA_VERSION:
+        if type(version) is not int or version != SCHEMA_VERSION:
             raise UnsupportedStatusSchemaVersion(f"unsupported status schema version: {version}")
         try:
             state = SeatState(payload["state"])
@@ -135,8 +138,14 @@ class PollStatusReader:
 
     def read_fleet(self, fleet_id: str) -> list[StatusSnapshot]:
         status_dir = self.status_dir(fleet_id)
-        if not status_dir.exists():
+        try:
+            dir_stat = status_dir.lstat()
+        except FileNotFoundError:
             return []
+        if stat.S_ISLNK(dir_stat.st_mode):
+            raise StatusError(f"refusing symlinked status directory: {status_dir}")
+        if not stat.S_ISDIR(dir_stat.st_mode):
+            raise StatusError(f"status directory is not a directory: {status_dir}")
         snapshots: list[StatusSnapshot] = []
         for path in sorted(status_dir.glob("*.json"), key=lambda item: item.name):
             payload = _read_json_file(path, error_type=StatusError)

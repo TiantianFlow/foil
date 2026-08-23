@@ -19,16 +19,26 @@ SCHEMA_VERSION = 1
 MAX_RECORD_BYTES = 1024 * 1024
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _SECRET_KEY_PARTS = (
+    "access_token",
+    "api_key",
+    "apikey",
+    "auth_token",
     "authorization",
     "cookie",
     "credential",
     "password",
     "private_key",
+    "private-key",
+    "privatekey",
     "secret",
 )
 _SECRET_VALUE_PREFIXES = (
     "bearer ",
+    "gho_",
     "ghp_",
+    "ghr_",
+    "ghs_",
+    "ghu_",
     "github_pat_",
     "sk-",
     "xox",
@@ -62,6 +72,8 @@ def _validate_timestamp(value: str) -> None:
 def _assert_no_secret(value: Any, *, path: str = "record") -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
+            if not isinstance(key, str):
+                raise RegistryError(f"key at {path} must be a string")
             key_text = str(key)
             key_lower = key_text.lower()
             if any(part in key_lower for part in _SECRET_KEY_PARTS):
@@ -104,12 +116,14 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> Path:
         suffix=".tmp",
     )
     temporary = Path(temporary_name)
+    fd_closed = False
     try:
         os.fchmod(descriptor, 0o600)
         encoded = (
             json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
         ).encode("utf-8")
         with os.fdopen(descriptor, "wb", closefd=True) as handle:
+            fd_closed = True
             handle.write(encoded)
             handle.flush()
             os.fsync(handle.fileno())
@@ -121,8 +135,9 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> Path:
         finally:
             os.close(directory_descriptor)
     except Exception:
-        with suppress(OSError):
-            os.close(descriptor)
+        if not fd_closed:
+            with suppress(OSError):
+                os.close(descriptor)
         temporary.unlink(missing_ok=True)
         raise
     return path
@@ -143,6 +158,8 @@ def _read_json_file(path: Path, *, error_type: type[ValueError]) -> dict[str, An
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags)
+    except FileNotFoundError:
+        raise
     except OSError as exc:
         raise error_type(f"cannot safely open record: {path}") from exc
     try:
@@ -179,8 +196,14 @@ class TmuxTarget:
     window_id: str | None
 
     def __post_init__(self) -> None:
-        if not self.session_name or not self.window_name:
-            raise RegistryError("tmux session_name and window_name are required")
+        if not isinstance(self.session_name, str) or not self.session_name:
+            raise RegistryError("tmux session_name must be a non-empty string")
+        if not isinstance(self.window_name, str) or not self.window_name:
+            raise RegistryError("tmux window_name must be a non-empty string")
+        if self.session_id is not None and not isinstance(self.session_id, str):
+            raise RegistryError("tmux session_id must be a string or null")
+        if self.window_id is not None and not isinstance(self.window_id, str):
+            raise RegistryError("tmux window_id must be a string or null")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -225,15 +248,23 @@ class SeatRecord:
         _validate_id(self.seat_id, "seat_id")
         _validate_id(self.usage_pool_id, "usage_pool_id")
         _validate_id(self.incarnation_id, "incarnation_id")
-        if not self.agent_kind:
-            raise RegistryError("agent_kind is required")
+        if not isinstance(self.agent_kind, str) or not self.agent_kind:
+            raise RegistryError("agent_kind must be a non-empty string")
+        if not isinstance(self.working_directory, str) or not self.working_directory:
+            raise RegistryError("working_directory must be a non-empty string")
         if not Path(self.working_directory).is_absolute():
             raise RegistryError("working_directory must be absolute")
+        if not isinstance(self.worktree_path, str) or not self.worktree_path:
+            raise RegistryError("worktree_path must be a non-empty string")
         if not Path(self.worktree_path).is_absolute():
             raise RegistryError("worktree_path must be absolute")
-        if not self.git_branch:
-            raise RegistryError("git_branch is required")
+        if not isinstance(self.git_branch, str) or not self.git_branch:
+            raise RegistryError("git_branch must be a non-empty string")
+        if not isinstance(self.tmux, TmuxTarget):
+            raise RegistryError("tmux must be a TmuxTarget")
         if self.native_session_id is not None:
+            if not isinstance(self.native_session_id, str):
+                raise RegistryError("native_session_id must be a string or null")
             if not self.native_session_id or len(self.native_session_id) > 512:
                 raise RegistryError("native_session_id has invalid length")
             _assert_no_secret(self.native_session_id, path="native_session_id")
@@ -260,7 +291,9 @@ class SeatRecord:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> SeatRecord:
+    def from_dict(cls, payload: Any) -> SeatRecord:
+        if not isinstance(payload, dict):
+            raise RegistryError("seat record must be an object")
         expected = {
             "schema_version",
             "fleet_id",
@@ -283,7 +316,7 @@ class SeatRecord:
         if missing:
             raise RegistryError(f"missing fields: {sorted(missing)}")
         version = payload["schema_version"]
-        if version != SCHEMA_VERSION:
+        if type(version) is not int or version != SCHEMA_VERSION:
             raise UnsupportedSchemaVersion(f"unsupported registry schema version: {version}")
         values = {key: payload[key] for key in expected - {"schema_version", "tmux"}}
         values["tmux"] = TmuxTarget.from_dict(payload["tmux"])
@@ -307,6 +340,8 @@ class RegistryStore:
         )
 
     def _seat_lock_path(self, fleet_id: str, seat_id: str) -> Path:
+        _validate_id(fleet_id, "fleet_id")
+        _validate_id(seat_id, "seat_id")
         return (
             self.state_root
             / f"v{SCHEMA_VERSION}"
@@ -340,8 +375,14 @@ class RegistryStore:
     def list_seats(self, fleet_id: str) -> list[SeatRecord]:
         _validate_id(fleet_id, "fleet_id")
         seat_dir = self.state_root / f"v{SCHEMA_VERSION}" / "fleets" / fleet_id / "seats"
-        if not seat_dir.exists():
+        try:
+            dir_stat = seat_dir.lstat()
+        except FileNotFoundError:
             return []
+        if stat.S_ISLNK(dir_stat.st_mode):
+            raise RegistryError(f"refusing symlinked seat directory: {seat_dir}")
+        if not stat.S_ISDIR(dir_stat.st_mode):
+            raise RegistryError(f"seat directory is not a directory: {seat_dir}")
         return [
             self.read_seat(fleet_id, path.stem)
             for path in sorted(seat_dir.glob("*.json"), key=lambda item: item.name)

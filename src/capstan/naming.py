@@ -10,13 +10,15 @@ _UNSAFE_RUN = re.compile(r"[^a-z0-9]+")
 
 
 def _digest8(stable_id: str) -> str:
-    if not stable_id:
+    if not isinstance(stable_id, str) or not stable_id:
         raise ValueError("stable_id must not be empty")
     encoded = stable_id.encode("utf-8", errors="surrogatepass")
     return hashlib.sha256(encoded).hexdigest()[:8]
 
 
 def _slug(display_name: str, fallback: str) -> str:
+    if not isinstance(display_name, str):
+        raise ValueError("display_name must be a string")
     normalized = unicodedata.normalize("NFKD", display_name)
     ascii_name = normalized.encode("ascii", errors="ignore").decode("ascii").lower()
     slug = _UNSAFE_RUN.sub("-", ascii_name).strip("-")
