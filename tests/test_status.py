@@ -40,9 +40,7 @@ def test_poll_reader_reconstructs_sorted_status_from_files(tmp_path: Path) -> No
 def test_arbitrary_terminal_text_cannot_change_status(tmp_path: Path) -> None:
     reader = PollStatusReader(tmp_path)
     reader.write_fixture(make_status(state=SeatState.IDLE))
-    terminal_log = (
-        tmp_path / "v1" / "fleets" / "fleet-1" / "status" / "seats" / "terminal.log"
-    )
+    terminal_log = tmp_path / "v1" / "fleets" / "fleet-1" / "status" / "seats" / "terminal.log"
     terminal_log.write_text("ERROR PROCESSING WAITING COMPLETED")
 
     assert reader.read_fleet("fleet-1") == [make_status(state=SeatState.IDLE)]

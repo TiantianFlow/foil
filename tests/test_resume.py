@@ -96,9 +96,7 @@ from capstan.resume import (
         ),
     ],
 )
-def test_resume_precedence(
-    evidence: ResumeEvidence, action: ResumeAction, reason: str
-) -> None:
+def test_resume_precedence(evidence: ResumeEvidence, action: ResumeAction, reason: str) -> None:
     decision = resolve_resume(evidence)
 
     assert decision.action is action

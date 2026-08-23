@@ -7,7 +7,6 @@ from hypothesis import strategies as st
 
 from capstan.naming import tmux_session_name, tmux_window_name
 
-
 SAFE_NAME = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 

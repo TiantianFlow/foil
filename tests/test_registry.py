@@ -94,9 +94,7 @@ def test_unsafe_registry_ids_are_rejected(tmp_path: Path, unsafe_id: str) -> Non
         ("extensions", {"nested": {"cookie": "secret-canary"}}),
     ],
 )
-def test_secret_shaped_registry_values_are_rejected(
-    tmp_path: Path, field: str, value
-) -> None:
+def test_secret_shaped_registry_values_are_rejected(tmp_path: Path, field: str, value) -> None:
     store = RegistryStore(tmp_path)
 
     with pytest.raises(RegistryError, match="secret"):
