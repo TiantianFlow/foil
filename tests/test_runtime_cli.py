@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -12,18 +13,39 @@ from pathlib import Path
 
 import pytest
 
+from foil.registry import TmuxTarget
 from foil.runtime import RuntimeController, SeatRuntime
 from foil.runtime import RuntimeError as LifecycleError
 from foil.runtime_config import load_fleet_config
+from foil.tmux import ProbeResult, ProbeState
 
 
-def run_foil(*args: str) -> subprocess.CompletedProcess[str]:
+def run_foil(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "foil", *args],
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
+
+
+def with_adapter_path(executable: Path) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment["PATH"] = f"{executable.parent}{os.pathsep}{environment.get('PATH', '')}"
+    return environment
+
+
+def without_adapter_path(executable: Path) -> dict[str, str]:
+    environment = os.environ.copy()
+    parent = executable.parent.resolve()
+    parts = [
+        part
+        for part in environment.get("PATH", "").split(os.pathsep)
+        if part and Path(part).resolve() != parent
+    ]
+    environment["PATH"] = os.pathsep.join(parts)
+    return environment
 
 
 def git(*args: str, cwd: Path) -> str:
@@ -73,12 +95,18 @@ def make_fixture_executable(tmp_path: Path) -> Path:
     return executable
 
 
-def write_adapters(tmp_path: Path, executable: Path) -> Path:
+def write_adapters(
+    tmp_path: Path,
+    executable: Path,
+    *,
+    command_name: str | None = None,
+) -> Path:
     adapter_dir = tmp_path / "adapters"
     adapter_dir.mkdir()
+    command = command_name or str(executable)
     generated_launch = json.dumps(
         [
-            str(executable),
+            command,
             "launch",
             "--seat",
             "{seat_id}",
@@ -93,7 +121,7 @@ def write_adapters(tmp_path: Path, executable: Path) -> Path:
     generated_resume = generated_launch.replace('"launch"', '"resume"', 1)
     discovered_launch = json.dumps(
         [
-            str(executable),
+            command,
             "launch",
             "--seat",
             "{seat_id}",
@@ -106,7 +134,7 @@ def write_adapters(tmp_path: Path, executable: Path) -> Path:
     discovered_resume = generated_resume
     discovery_argv = json.dumps(
         [
-            str(executable),
+            command,
             "session",
             "list",
             "--format",
@@ -122,8 +150,8 @@ models = ["fixture/model"]
 skill = "skills/adapters/fixture/SKILL.md"
 
 [executable]
-candidates = [{json.dumps(str(executable))}]
-version_argv = [{json.dumps(str(executable))}, "--version"]
+candidates = [{json.dumps(command)}]
+version_argv = [{json.dumps(command)}, "--version"]
 """
     (adapter_dir / "generated.toml").write_text(
         (
@@ -448,3 +476,150 @@ def test_runtime_help_is_composable_and_documents_json_contract() -> None:
         assert "--config" in help_result.stdout
         assert "--state-dir" in help_result.stdout
         assert "--json" in help_result.stdout
+
+
+class FakeTmux:
+    def __init__(self) -> None:
+        self.dead = False
+        self.launches: list[TmuxTarget] = []
+
+    def launch(
+        self,
+        *,
+        fleet_id: str,
+        seat_id: str,
+        session_name: str,
+        window_name: str,
+        working_directory: Path,
+        runner_argv: list[str],
+    ) -> TmuxTarget:
+        del fleet_id, seat_id, working_directory, runner_argv
+        target = TmuxTarget(
+            session_name=session_name,
+            window_name=window_name,
+            session_id=f"${len(self.launches) + 1}",
+            window_id=f"@{len(self.launches) + 1}",
+        )
+        self.launches.append(target)
+        return target
+
+    def probe(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> ProbeResult:
+        del fleet_id, seat_id
+        if self.dead:
+            return ProbeResult(ProbeState.DEAD, False)
+        return ProbeResult(ProbeState.ALIVE, True, target)
+
+    def stop_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
+        del fleet_id, seat_id, target
+        if self.dead:
+            return False
+        self.dead = True
+        return True
+
+
+def _bare_name_controller(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[RuntimeController, FakeTmux, Path]:
+    executable = make_fixture_executable(tmp_path)
+    adapters = write_adapters(tmp_path, executable, command_name=executable.name)
+    project, branch = make_project(tmp_path)
+    config_path, _fleet_id = write_fleet(tmp_path, project, branch, adapters)
+    tmux = FakeTmux()
+    monkeypatch.setenv("PATH", f"{executable.parent}{os.pathsep}{os.environ.get('PATH', '')}")
+    controller = RuntimeController(load_fleet_config(config_path), tmp_path / "state", tmux=tmux)
+    return controller, tmux, executable
+
+
+def test_dead_tmux_status_and_native_resume_survive_transient_adapter_path_loss(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+
+    def capture_native(runtime: SeatRuntime, baseline: set[str], *, wait_seconds: float) -> str:
+        del baseline, wait_seconds
+        return f"native-{runtime.seat.seat_id}"
+
+    monkeypatch.setattr(controller, "_capture_delta", capture_native)
+    launched = controller.launch()
+    assert {seat["seat_id"] for seat in launched} == {"discovery-seat", "generated-seat"}
+    assert all(seat["registry"]["native_session_id"] for seat in launched)
+
+    tmux.dead = True
+    stripped = os.pathsep.join(
+        part
+        for part in os.environ.get("PATH", "").split(os.pathsep)
+        if part and Path(part).resolve() != executable.parent.resolve()
+    )
+    monkeypatch.setenv("PATH", stripped)
+    assert shutil.which(executable.name) is None
+
+    status = controller.status()
+    assert {seat["seat_id"]: seat["state"] for seat in status} == {
+        "discovery-seat": "exited",
+        "generated-seat": "exited",
+    }
+
+    resumed = controller.resume()
+    assert {seat["seat_id"] for seat in resumed} == {"discovery-seat", "generated-seat"}
+    assert all(seat["action"] == "resume_native" for seat in resumed)
+    assert all(seat["state"] == "working" for seat in resumed)
+    assert all(seat["registry"]["native_session_id"] for seat in resumed)
+    plans = list((tmp_path / "state").glob("v1/fleets/*/runner-plans/*.json"))
+    assert len(plans) == 2
+    for plan in plans:
+        argv = json.loads(plan.read_text(encoding="utf-8"))["argv"]
+        assert Path(argv[0]).resolve() == executable.resolve()
+        assert argv[1] == "resume"
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
+def test_cli_dead_tmux_status_and_native_resume_survive_transient_adapter_path_loss(
+    tmp_path: Path,
+) -> None:
+    executable = make_fixture_executable(tmp_path)
+    adapters = write_adapters(tmp_path, executable, command_name=executable.name)
+    project, branch = make_project(tmp_path)
+    config, _fleet_id = write_fleet(tmp_path, project, branch, adapters)
+    state = tmp_path / "state"
+    launch_env = with_adapter_path(executable)
+    lost_env = without_adapter_path(executable)
+    assert shutil.which(executable.name, path=lost_env["PATH"]) is None
+
+    try:
+        launched = run_foil(
+            "launch", "--config", str(config), "--state-dir", str(state), "--json", env=launch_env
+        )
+        assert launched.returncode == 0, launched.stderr
+        launch_payload = json.loads(launched.stdout)
+        session_names = {
+            seat["registry"]["tmux"]["session_name"] for seat in launch_payload["seats"]
+        }
+        assert len(session_names) == 1
+        subprocess.run(
+            ["tmux", "kill-session", "-t", session_names.pop()],
+            check=False,
+            capture_output=True,
+        )
+
+        status = run_foil(
+            "status", "--config", str(config), "--state-dir", str(state), "--json", env=lost_env
+        )
+        assert status.returncode == 0, status.stderr
+        status_payload = json.loads(status.stdout)
+        assert {seat["seat_id"] for seat in status_payload["seats"]} == {
+            "discovery-seat",
+            "generated-seat",
+        }
+        assert all(seat["state"] == "exited" for seat in status_payload["seats"])
+
+        resumed = run_foil(
+            "resume", "--config", str(config), "--state-dir", str(state), "--json", env=lost_env
+        )
+        assert resumed.returncode == 0, resumed.stderr
+        resume_payload = json.loads(resumed.stdout)
+        assert {seat["action"] for seat in resume_payload["seats"]} == {"resume_native"}
+        assert all(seat["state"] == "working" for seat in resume_payload["seats"])
+    finally:
+        run_foil("stop", "--config", str(config), "--state-dir", str(state), "--json", env=launch_env)
