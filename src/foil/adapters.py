@@ -205,7 +205,7 @@ def load_builtin_adapter(adapter_id: str) -> AdapterRecord:
     ):
         raise AdapterError("adapter ID is unsafe")
     resource = (
-        resources.files("capstan")
+        resources.files("foil")
         .joinpath("resources")
         .joinpath("adapters")
         .joinpath(f"{adapter_id}.toml")

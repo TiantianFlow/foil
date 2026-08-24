@@ -1,4 +1,4 @@
-"""Capstan CLI entry point (CAP-001, CAP-012–CAP-016, CAP-025–CAP-028)."""
+"""Foil CLI entry point (CAP-001, CAP-012–CAP-016, CAP-025–CAP-028)."""
 
 from __future__ import annotations
 
@@ -9,16 +9,16 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from capstan.adapters import AdapterError
-from capstan.delivery import MessageDeliveryService, TmuxWakeService
-from capstan.mailbox import Acknowledgement, MailboxError, MailboxMessage, MailboxStore
-from capstan.onboarding import InitializationError, initialize_project
-from capstan.registry import RegistryError, RegistryStore
-from capstan.runtime import RuntimeController
-from capstan.runtime import RuntimeError as LifecycleError
-from capstan.runtime_config import ConfigError, load_fleet_config
-from capstan.status import PollStatusReader, StatusError, UnsupportedStatusSchemaVersion
-from capstan.tmux import TmuxError
+from foil.adapters import AdapterError
+from foil.delivery import MessageDeliveryService, TmuxWakeService
+from foil.mailbox import Acknowledgement, MailboxError, MailboxMessage, MailboxStore
+from foil.onboarding import InitializationError, initialize_project
+from foil.registry import RegistryError, RegistryStore
+from foil.runtime import RuntimeController
+from foil.runtime import RuntimeError as LifecycleError
+from foil.runtime_config import ConfigError, load_fleet_config
+from foil.status import PollStatusReader, StatusError, UnsupportedStatusSchemaVersion
+from foil.tmux import TmuxError
 
 
 def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
@@ -55,9 +55,10 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="capstan",
+        prog="foil",
         description=(
-            "Capstan · 运筹: headless coordination for complementary CLI-agent fleets. "
+            "Foil · 运筹 — your agents' loyal opposition. Headless coordination for "
+            "complementary CLI-agent fleets. "
             "Management commands read and write structured state on disk."
         ),
     )
@@ -68,11 +69,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "init",
         help="Scaffold a default fleet in an empty project directory.",
         description=(
-            "Scaffold the complete role plan in .capstan/fleet.toml and a directly "
-            "consumable two-seat .capstan/runtime.toml in an empty directory, then "
+            "Scaffold the complete role plan in .foil/fleet.toml and a directly "
+            "consumable two-seat .foil/runtime.toml in an empty directory, then "
             "initialize versioned registry state. After init, create the expected local "
-            "Git identity with `git init -b capstan-demo`. State precedence is "
-            "CAPSTAN_STATE_DIR, the Git common directory, XDG_STATE_HOME, then the "
+            "Git identity with `git init -b foil-demo`. State precedence is "
+            "FOIL_STATE_DIR, the Git common directory, XDG_STATE_HOME, then the "
             "documented platform fallback (CAP-016, CAP-025)."
         ),
     )
@@ -99,7 +100,7 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         metavar="PATH",
         type=Path,
-        help="Root directory containing versioned Capstan runtime state.",
+        help="Root directory containing versioned Foil runtime state.",
     )
     poll_status.add_argument(
         "--fleet",

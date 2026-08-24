@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from capstan.registry import TmuxTarget
+from foil.registry import TmuxTarget
 
 _PROBE_FORMAT = (
     "#{session_id}\t#{window_id}\t"
-    "#{@capstan-fleet-id}\t#{@capstan-seat-id}"
+    "#{@foil-fleet-id}\t#{@foil-seat-id}"
 )
 
 
@@ -63,7 +63,7 @@ class TmuxController:
 
     def _session_fleet_marker(self, session_name: str) -> str | None:
         result = self._run(
-            ["show-options", "-qv", "-t", session_name, "@capstan-fleet-id"]
+            ["show-options", "-qv", "-t", session_name, "@foil-fleet-id"]
         )
         return result.stdout.strip() if result.returncode == 0 else None
 
@@ -77,7 +77,7 @@ class TmuxController:
         working_directory: Path,
         runner_argv: list[str],
     ) -> TmuxTarget:
-        """Create a detached verified window running a fixed Capstan runner argv."""
+        """Create a detached verified window running a fixed Foil runner argv."""
 
         target = f"{session_name}:{window_name}"
         created_session = False
@@ -116,11 +116,11 @@ class TmuxController:
             created_session = True
         try:
             self._required(
-                ["set-option", "-t", session_name, "@capstan-fleet-id", fleet_id],
+                ["set-option", "-t", session_name, "@foil-fleet-id", fleet_id],
                 "session marker update",
             )
             self._required(
-                ["set-option", "-w", "-t", target, "@capstan-seat-id", seat_id],
+                ["set-option", "-w", "-t", target, "@foil-seat-id", seat_id],
                 "window marker update",
             )
             output = self._required(

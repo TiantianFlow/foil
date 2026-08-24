@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from capstan.adapters import (
+from foil.adapters import (
     AdapterError,
     CaptureKind,
     expand_argv,
@@ -119,7 +119,7 @@ kind = "none"
 
 
 def test_core_runtime_has_no_known_provider_name_conditionals() -> None:
-    core = Path(__file__).parents[1] / "src" / "capstan"
+    core = Path(__file__).parents[1] / "src" / "foil"
     runtime_sources = [
         core / "adapters.py",
         core / "runtime.py",

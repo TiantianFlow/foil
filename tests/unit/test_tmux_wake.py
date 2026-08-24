@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import subprocess
 
-from capstan.delivery import TmuxWakeService, WakeState
-from capstan.registry import TmuxTarget
+from foil.delivery import TmuxWakeService, WakeState
+from foil.registry import TmuxTarget
 
 
 def target(**changes) -> TmuxTarget:
     values = {
-        "session_name": "capstan-example-12345678",
+        "session_name": "foil-example-12345678",
         "window_name": "builder-12345678",
         "session_id": "$1",
         "window_id": "@1",

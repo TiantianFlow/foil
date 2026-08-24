@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from capstan.registry import RegistryStore, SeatRecord, TmuxTarget
+from foil.registry import RegistryStore, SeatRecord, TmuxTarget
 
 
 def write_seat(state_dir: Path) -> None:
@@ -21,7 +21,7 @@ def write_seat(state_dir: Path) -> None:
             agent_kind="fixture-cli",
             native_session_id=None,
             tmux=TmuxTarget(
-                session_name="capstan-fixture-12345678",
+                session_name="foil-fixture-12345678",
                 window_name="seat-12345678",
                 session_id="$42",
                 window_id="@73",
@@ -45,7 +45,7 @@ import json
 import os
 import sys
 
-with open(os.environ["CAPSTAN_TMUX_LOG"], "a", encoding="utf-8") as handle:
+with open(os.environ["FOIL_TMUX_LOG"], "a", encoding="utf-8") as handle:
     handle.write(json.dumps(sys.argv[1:]) + "\\n")
 raise SystemExit(0)
 """
@@ -54,9 +54,9 @@ raise SystemExit(0)
     return executable, log
 
 
-def run_capstan(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def run_foil(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "capstan", *args],
+        [sys.executable, "-m", "foil", *args],
         capture_output=True,
         text=True,
         check=False,
@@ -71,9 +71,9 @@ def test_send_message_commits_mail_then_wakes_with_fixed_text(tmp_path: Path) ->
     hostile_body = "$(touch should-not-run); read the durable mailbox"
     env = os.environ.copy()
     env["PATH"] = f"{executable.parent}{os.pathsep}{env['PATH']}"
-    env["CAPSTAN_TMUX_LOG"] = str(log)
+    env["FOIL_TMUX_LOG"] = str(log)
 
-    result = run_capstan(
+    result = run_foil(
         "send-message",
         "--state-dir",
         str(state_dir),
@@ -112,7 +112,7 @@ def test_duplicate_send_is_detected_and_does_not_repeat_wake(tmp_path: Path) -> 
     executable, log = fake_tmux(tmp_path)
     env = os.environ.copy()
     env["PATH"] = f"{executable.parent}{os.pathsep}{env['PATH']}"
-    env["CAPSTAN_TMUX_LOG"] = str(log)
+    env["FOIL_TMUX_LOG"] = str(log)
     args = (
         "send-message",
         "--state-dir",
@@ -129,8 +129,8 @@ def test_duplicate_send_is_detected_and_does_not_repeat_wake(tmp_path: Path) -> 
         "Inspect queued work.",
     )
 
-    first = run_capstan(*args, env=env)
-    second = run_capstan(*args, env=env)
+    first = run_foil(*args, env=env)
+    second = run_foil(*args, env=env)
 
     assert first.returncode == second.returncode == 0
     assert json.loads(second.stdout)["duplicate"] is True
@@ -144,8 +144,8 @@ def test_ack_message_and_message_status_are_pollable(tmp_path: Path) -> None:
     executable, _ = fake_tmux(tmp_path)
     env = os.environ.copy()
     env["PATH"] = f"{executable.parent}{os.pathsep}{env['PATH']}"
-    env["CAPSTAN_TMUX_LOG"] = str(tmp_path / "tmux.jsonl")
-    send = run_capstan(
+    env["FOIL_TMUX_LOG"] = str(tmp_path / "tmux.jsonl")
+    send = run_foil(
         "send-message",
         "--state-dir",
         str(state_dir),
@@ -163,7 +163,7 @@ def test_ack_message_and_message_status_are_pollable(tmp_path: Path) -> None:
     )
     assert send.returncode == 0, send.stderr
 
-    queued = run_capstan(
+    queued = run_foil(
         "message-status",
         "--state-dir",
         str(state_dir),
@@ -174,7 +174,7 @@ def test_ack_message_and_message_status_are_pollable(tmp_path: Path) -> None:
         "--message",
         "message-1",
     )
-    ack = run_capstan(
+    ack = run_foil(
         "ack-message",
         "--state-dir",
         str(state_dir),
@@ -189,7 +189,7 @@ def test_ack_message_and_message_status_are_pollable(tmp_path: Path) -> None:
         "--ack-id",
         "ack-1",
     )
-    delivered = run_capstan(
+    delivered = run_foil(
         "message-status",
         "--state-dir",
         str(state_dir),
@@ -210,7 +210,7 @@ def test_ack_message_and_message_status_are_pollable(tmp_path: Path) -> None:
 
 
 def test_help_lists_narrow_composable_message_commands() -> None:
-    result = run_capstan("--help")
+    result = run_foil("--help")
 
     assert result.returncode == 0
     assert "send-message" in result.stdout

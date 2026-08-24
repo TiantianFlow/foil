@@ -20,7 +20,7 @@ display_name = "Implementer"
 usage_pool_id = "primary"
 working_directory = __PROJECT_ROOT_TOML__
 worktree_path = __PROJECT_ROOT_TOML__
-git_branch = "capstan-demo"
+git_branch = "foil-demo"
 
 [[seats]]
 id = "reviewer-challenger"
@@ -28,4 +28,4 @@ display_name = "Reviewer/challenger"
 usage_pool_id = "independent-review"
 working_directory = __PROJECT_ROOT_TOML__
 worktree_path = __PROJECT_ROOT_TOML__
-git_branch = "capstan-demo"
+git_branch = "foil-demo"

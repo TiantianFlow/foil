@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from capstan.adapters import (
+from foil.adapters import (
     AdapterError,
     AdapterRecord,
     CaptureKind,
@@ -24,18 +24,18 @@ from capstan.adapters import (
     load_adapter,
     load_builtin_adapter,
 )
-from capstan.naming import tmux_session_name, tmux_window_name
-from capstan.registry import (
+from foil.naming import tmux_session_name, tmux_window_name
+from foil.registry import (
     RegistryStore,
     SeatRecord,
     TmuxTarget,
     _assert_no_secret,
     _atomic_write_json,
 )
-from capstan.resume import ResumeAction, ResumeEvidence, TmuxProbeState, resolve_resume
-from capstan.runtime_config import FleetConfig, SeatConfig, UsagePoolConfig
-from capstan.status import PollStatusReader, SeatState, StatusSnapshot
-from capstan.tmux import ProbeResult, ProbeState, TmuxController
+from foil.resume import ResumeAction, ResumeEvidence, TmuxProbeState, resolve_resume
+from foil.runtime_config import FleetConfig, SeatConfig, UsagePoolConfig
+from foil.status import PollStatusReader, SeatState, StatusSnapshot
+from foil.tmux import ProbeResult, ProbeState, TmuxController
 
 
 class RuntimeError(ValueError):
@@ -415,7 +415,7 @@ class RuntimeController:
                 runtime.seat.seat_id,
             ),
             working_directory=runtime.seat.working_directory,
-            runner_argv=[sys.executable, "-m", "capstan.runner", str(plan)],
+            runner_argv=[sys.executable, "-m", "foil.runner", str(plan)],
         )
 
     def _status(

@@ -16,8 +16,8 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from capstan.registry import SCHEMA_VERSION, _atomic_write_json, _ensure_private_directory
-from capstan.runtime_config import ConfigError, load_fleet_config
+from foil.registry import SCHEMA_VERSION, _atomic_write_json, _ensure_private_directory
+from foil.runtime_config import ConfigError, load_fleet_config
 
 DEFAULT_ROLE_IDS = (
     "manager",
@@ -105,26 +105,26 @@ def resolve_state_root(
     current_platform = sys.platform if platform is None else platform
     home_directory = Path.home() if home is None else Path(home).expanduser()
 
-    if "CAPSTAN_STATE_DIR" in environment:
-        return _absolute_environment_path(environment["CAPSTAN_STATE_DIR"], "CAPSTAN_STATE_DIR")
+    if "FOIL_STATE_DIR" in environment:
+        return _absolute_environment_path(environment["FOIL_STATE_DIR"], "FOIL_STATE_DIR")
 
     git_common_directory = _git_common_directory(project)
     if git_common_directory is not None:
-        return git_common_directory / "capstan"
+        return git_common_directory / "foil"
 
     if "XDG_STATE_HOME" in environment:
         base = _absolute_environment_path(environment["XDG_STATE_HOME"], "XDG_STATE_HOME")
-        return (base / "capstan" / "projects" / _project_id(project)).resolve()
+        return (base / "foil" / "projects" / _project_id(project)).resolve()
     elif current_platform == "darwin":
-        base = home_directory / "Library" / "Application Support" / "Capstan" / "state"
+        base = home_directory / "Library" / "Application Support" / "Foil" / "state"
     else:
         base = home_directory / ".local" / "state"
-        base = base / "capstan"
+        base = base / "foil"
     return (base / "projects" / _project_id(project)).resolve()
 
 
 def _load_role_templates() -> dict[str, str]:
-    roles_root = resources.files("capstan.templates").joinpath("roles")
+    roles_root = resources.files("foil.templates").joinpath("roles")
     templates: dict[str, str] = {}
     for role_id in DEFAULT_ROLE_IDS:
         resource = roles_root.joinpath(f"{role_id}.toml")
@@ -178,7 +178,7 @@ def _validate_templates(fleet_text: str, role_templates: Mapping[str, str]) -> N
 
 
 def _write_scaffold(project_root: Path, fleet_id: str) -> tuple[Path, Path, str]:
-    template_root = resources.files("capstan.templates")
+    template_root = resources.files("foil.templates")
     fleet_resource = template_root.joinpath("fleet.toml")
     if not fleet_resource.is_file():
         raise InitializationError("packaged fleet template is missing")
@@ -197,7 +197,7 @@ def _write_scaffold(project_root: Path, fleet_id: str) -> tuple[Path, Path, str]
     role_templates = _load_role_templates()
     _validate_templates(fleet_text, role_templates)
 
-    scaffold = project_root / ".capstan"
+    scaffold = project_root / ".foil"
     scaffold.mkdir(mode=0o755)
     try:
         roles_directory = scaffold / "roles"

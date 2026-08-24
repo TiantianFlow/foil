@@ -8,7 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from capstan.registry import (
+from foil.registry import (
     SCHEMA_VERSION,
     _assert_no_secret,
     _atomic_write_json,

@@ -56,12 +56,12 @@ def run(path: Path) -> None:
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if len(arguments) != 1:
-        print("usage: python -m capstan.runner PLAN.json", file=sys.stderr)
+        print("usage: python -m foil.runner PLAN.json", file=sys.stderr)
         return 2
     try:
         run(Path(arguments[0]))
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        print(f"capstan runner failed: {exc}", file=sys.stderr)
+        print(f"foil runner failed: {exc}", file=sys.stderr)
         return 1
     return 0
 

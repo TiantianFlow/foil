@@ -8,7 +8,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from capstan.registry import (
+from foil.registry import (
     RegistryError,
     RegistryStore,
     SeatRecord,
@@ -25,7 +25,7 @@ def make_record(**changes) -> SeatRecord:
         "agent_kind": "fixture-cli",
         "native_session_id": "native-session-1",
         "tmux": TmuxTarget(
-            session_name="capstan-example-12345678",
+            session_name="foil-example-12345678",
             window_name="builder-12345678",
             session_id="$1",
             window_id="@1",

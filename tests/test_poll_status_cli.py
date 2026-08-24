@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from capstan.status import PollStatusReader, SeatState, StatusSnapshot
+from foil.status import PollStatusReader, SeatState, StatusSnapshot
 
 
 def make_status(seat_id: str = "seat-1", state: SeatState = SeatState.IDLE) -> StatusSnapshot:
@@ -21,26 +21,26 @@ def make_status(seat_id: str = "seat-1", state: SeatState = SeatState.IDLE) -> S
     )
 
 
-def run_capstan(*args: str) -> subprocess.CompletedProcess[str]:
+def run_foil(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "capstan", *args],
+        [sys.executable, "-m", "foil", *args],
         capture_output=True,
         text=True,
         check=False,
     )
 
 
-def test_capstan_help_lists_poll_status() -> None:
-    result = run_capstan("--help")
+def test_foil_help_lists_poll_status() -> None:
+    result = run_foil("--help")
 
     assert result.returncode == 0
-    assert "Capstan · 运筹" in result.stdout
+    assert "Foil · 运筹" in result.stdout
     assert "poll-status" in result.stdout
-    assert "CAPSTAN_STATE_DIR" not in result.stdout
+    assert "FOIL_STATE_DIR" not in result.stdout
 
 
 def test_poll_status_help_documents_required_flags() -> None:
-    result = run_capstan("poll-status", "--help")
+    result = run_foil("poll-status", "--help")
 
     assert result.returncode == 0
     lowered = result.stdout.lower()
@@ -55,7 +55,7 @@ def test_poll_status_emits_deterministic_json_for_valid_state(tmp_path: Path) ->
     reader.write_fixture(make_status("seat-b", SeatState.WORKING))
     reader.write_fixture(make_status("seat-a", SeatState.WAITING))
 
-    result = run_capstan("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
+    result = run_foil("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
 
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
@@ -71,7 +71,7 @@ def test_poll_status_emits_deterministic_json_for_valid_state(tmp_path: Path) ->
 
 
 def test_poll_status_empty_fleet_emits_empty_seats_array(tmp_path: Path) -> None:
-    result = run_capstan("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
+    result = run_foil("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {"fleet_id": "fleet-1", "seats": []}
@@ -84,7 +84,7 @@ def test_poll_status_rejects_invalid_state_with_stderr(tmp_path: Path) -> None:
     payload["state"] = "guessing"
     path.write_text(json.dumps(payload))
 
-    result = run_capstan("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
+    result = run_foil("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
 
     assert result.returncode != 0
     assert result.stdout == ""
@@ -101,7 +101,7 @@ def test_poll_status_diagnostics_do_not_reflect_unknown_input(tmp_path: Path) ->
     payload["state"] = state_canary
     path.write_text(json.dumps(payload))
 
-    invalid_state = run_capstan("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
+    invalid_state = run_foil("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
 
     assert invalid_state.returncode != 0
     assert state_canary not in invalid_state.stderr
@@ -111,7 +111,7 @@ def test_poll_status_diagnostics_do_not_reflect_unknown_input(tmp_path: Path) ->
     payload[field_canary] = True
     path.write_text(json.dumps(payload))
 
-    invalid_field = run_capstan("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
+    invalid_field = run_foil("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
 
     assert invalid_field.returncode != 0
     assert field_canary not in invalid_field.stderr
@@ -124,7 +124,7 @@ def test_poll_status_ignores_terminal_log_files(tmp_path: Path) -> None:
     terminal_log = tmp_path / "v1" / "fleets" / "fleet-1" / "status" / "seats" / "terminal.log"
     terminal_log.write_text("ERROR PROCESSING WAITING COMPLETED")
 
-    result = run_capstan("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
+    result = run_foil("poll-status", "--state-dir", str(tmp_path), "--fleet", "fleet-1")
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
@@ -132,8 +132,8 @@ def test_poll_status_ignores_terminal_log_files(tmp_path: Path) -> None:
 
 
 def test_poll_status_requires_state_dir_and_fleet() -> None:
-    missing_state_dir = run_capstan("poll-status", "--fleet", "fleet-1")
-    missing_fleet = run_capstan("poll-status", "--state-dir", "/tmp/unused")
+    missing_state_dir = run_foil("poll-status", "--fleet", "fleet-1")
+    missing_fleet = run_foil("poll-status", "--state-dir", "/tmp/unused")
 
     assert missing_state_dir.returncode != 0
     assert "state-dir" in missing_state_dir.stderr.lower()

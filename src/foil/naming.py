@@ -44,12 +44,12 @@ def _bounded_name(
 
 
 def tmux_session_name(display_name: str, stable_id: str) -> str:
-    """Return `capstan-<fleet-slug>-<identity-suffix>` within 80 characters."""
+    """Return `foil-<fleet-slug>-<identity-suffix>` within 80 characters."""
 
     return _bounded_name(
         display_name,
         stable_id,
-        prefix="capstan",
+        prefix="foil",
         fallback="fleet",
         max_length=80,
     )

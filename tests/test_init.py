@@ -10,13 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from capstan.onboarding import (
+from foil.onboarding import (
     DEFAULT_ROLE_IDS,
     InitializationError,
     initialize_project,
     resolve_state_root,
 )
-from capstan.registry import RegistryStore
+from foil.registry import RegistryStore
 
 
 def _init_git_repository(path: Path) -> None:
@@ -36,7 +36,7 @@ def test_state_root_explicit_override_precedes_git(tmp_path: Path) -> None:
 
     resolved = resolve_state_root(
         project,
-        environ={"CAPSTAN_STATE_DIR": str(override)},
+        environ={"FOIL_STATE_DIR": str(override)},
         platform="linux",
         home=tmp_path / "home",
     )
@@ -51,7 +51,7 @@ def test_state_root_uses_git_common_directory_for_git_project(tmp_path: Path) ->
 
     resolved = resolve_state_root(project, environ={}, platform="linux", home=tmp_path / "home")
 
-    assert resolved == (project / ".git" / "capstan").resolve()
+    assert resolved == (project / ".git" / "foil").resolve()
 
 
 def test_state_root_uses_xdg_state_home_outside_git(tmp_path: Path) -> None:
@@ -72,15 +72,15 @@ def test_state_root_uses_xdg_state_home_outside_git(tmp_path: Path) -> None:
         home=tmp_path / "home",
     )
 
-    assert first.parent == xdg_state.resolve() / "capstan" / "projects"
+    assert first.parent == xdg_state.resolve() / "foil" / "projects"
     assert first == second
 
 
 @pytest.mark.parametrize(
     ("platform", "relative_parent"),
     [
-        ("linux", Path(".local/state/capstan/projects")),
-        ("darwin", Path("Library/Application Support/Capstan/state/projects")),
+        ("linux", Path(".local/state/foil/projects")),
+        ("darwin", Path("Library/Application Support/Foil/state/projects")),
     ],
 )
 def test_state_root_platform_fallbacks_are_deterministic(
@@ -103,10 +103,10 @@ def test_state_root_rejects_empty_explicit_override(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
 
-    with pytest.raises(InitializationError, match="CAPSTAN_STATE_DIR"):
+    with pytest.raises(InitializationError, match="FOIL_STATE_DIR"):
         resolve_state_root(
             project,
-            environ={"CAPSTAN_STATE_DIR": ""},
+            environ={"FOIL_STATE_DIR": ""},
             platform="linux",
             home=tmp_path / "home",
         )
@@ -119,12 +119,12 @@ def test_initialize_project_scaffolds_valid_default_fleet_and_registry(tmp_path:
 
     result = initialize_project(
         project,
-        environ={"CAPSTAN_STATE_DIR": str(state_root)},
+        environ={"FOIL_STATE_DIR": str(state_root)},
         platform="linux",
         home=tmp_path / "home",
     )
 
-    assert result.config_path == project / ".capstan" / "fleet.toml"
+    assert result.config_path == project / ".foil" / "fleet.toml"
     config = tomllib.loads(result.config_path.read_text(encoding="utf-8"))
     assert config["schema_version"] == 1
     assert config["fleet_id"] == result.fleet_id
@@ -148,7 +148,7 @@ def test_initialize_project_scaffolds_valid_default_fleet_and_registry(tmp_path:
             assert challenged_id in specializations
             assert specializations[challenged_id] != seat["primary_specialization"]
 
-        role_path = project / ".capstan" / seat["context_source"]
+        role_path = project / ".foil" / seat["context_source"]
         role = tomllib.loads(role_path.read_text(encoding="utf-8"))
         assert role["schema_version"] == 1
         assert role["id"] == seat["id"]
@@ -183,13 +183,13 @@ def test_initialize_project_refuses_nonempty_directory_without_writes(tmp_path: 
     with pytest.raises(InitializationError, match="empty"):
         initialize_project(
             project,
-            environ={"CAPSTAN_STATE_DIR": str(state_root)},
+            environ={"FOIL_STATE_DIR": str(state_root)},
             platform="linux",
             home=tmp_path / "home",
         )
 
     assert existing.read_text(encoding="utf-8") == "keep"
-    assert not (project / ".capstan").exists()
+    assert not (project / ".foil").exists()
     assert not state_root.exists()
 
 
@@ -198,7 +198,7 @@ def test_initialize_project_refuses_to_overwrite_existing_scaffold(tmp_path: Pat
     project.mkdir()
     state_root = tmp_path / "state"
     options = {
-        "environ": {"CAPSTAN_STATE_DIR": str(state_root)},
+        "environ": {"FOIL_STATE_DIR": str(state_root)},
         "platform": "linux",
         "home": tmp_path / "home",
     }

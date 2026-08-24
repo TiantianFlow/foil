@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from capstan.mailbox import DeliveryState, MailboxMessage, MailboxStore
-from capstan.registry import RegistryStore, TmuxTarget
+from foil.mailbox import DeliveryState, MailboxMessage, MailboxStore
+from foil.registry import RegistryStore, TmuxTarget
 
 _SESSION_ID = re.compile(r"^\$[0-9]+$")
 _WINDOW_ID = re.compile(r"^@[0-9]+$")
@@ -35,7 +35,7 @@ class WakeResult:
 
 
 class TmuxWakeService:
-    WAKE_TEXT = "Capstan mail is queued. Poll your mailbox and acknowledge messages."
+    WAKE_TEXT = "Foil mail is queued. Poll your mailbox and acknowledge messages."
     MAX_WAKE_BYTES = 128
     TIMEOUT_SECONDS = 3.0
 

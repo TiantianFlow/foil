@@ -12,14 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from capstan.runtime import RuntimeController, SeatRuntime
-from capstan.runtime import RuntimeError as LifecycleError
-from capstan.runtime_config import load_fleet_config
+from foil.runtime import RuntimeController, SeatRuntime
+from foil.runtime import RuntimeError as LifecycleError
+from foil.runtime_config import load_fleet_config
 
 
-def run_capstan(*args: str) -> subprocess.CompletedProcess[str]:
+def run_foil(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-m", "capstan", *args],
+        [sys.executable, "-m", "foil", *args],
         capture_output=True,
         text=True,
         check=False,
@@ -301,7 +301,7 @@ def test_launch_status_stop_and_native_resume_two_fixture_pools(tmp_path: Path) 
     state = tmp_path / "state"
 
     try:
-        launched = run_capstan(
+        launched = run_foil(
             "launch", "--config", str(config), "--state-dir", str(state), "--json"
         )
         assert launched.returncode == 0, launched.stderr
@@ -311,7 +311,7 @@ def test_launch_status_stop_and_native_resume_two_fixture_pools(tmp_path: Path) 
             "generated-seat",
         ]
 
-        status = run_capstan(
+        status = run_foil(
             "status", "--config", str(config), "--state-dir", str(state), "--json"
         )
         assert status.returncode == 0, status.stderr
@@ -327,7 +327,7 @@ def test_launch_status_stop_and_native_resume_two_fixture_pools(tmp_path: Path) 
         }
         assert all(seat["state"] == "working" for seat in records.values())
 
-        revived = run_capstan(
+        revived = run_foil(
             "resume", "--config", str(config), "--state-dir", str(state), "--json"
         )
         assert revived.returncode == 0, revived.stderr
@@ -335,13 +335,13 @@ def test_launch_status_stop_and_native_resume_two_fixture_pools(tmp_path: Path) 
             "revive_tmux"
         }
 
-        stopped = run_capstan(
+        stopped = run_foil(
             "stop", "--config", str(config), "--state-dir", str(state), "--json"
         )
         assert stopped.returncode == 0, stopped.stderr
         assert all(seat["state"] == "exited" for seat in json.loads(stopped.stdout)["seats"])
 
-        resumed = run_capstan(
+        resumed = run_foil(
             "resume", "--config", str(config), "--state-dir", str(state), "--json"
         )
         assert resumed.returncode == 0, resumed.stderr
@@ -359,7 +359,7 @@ def test_launch_status_stop_and_native_resume_two_fixture_pools(tmp_path: Path) 
         }
         assert all("argv" not in event for event in events)
     finally:
-        run_capstan("stop", "--config", str(config), "--state-dir", str(state), "--json")
+        run_foil("stop", "--config", str(config), "--state-dir", str(state), "--json")
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
@@ -370,14 +370,14 @@ def test_launch_rejects_branch_mismatch_before_tmux_mutation(tmp_path: Path) -> 
     config, fleet_id = write_fleet(tmp_path, project, "wrong-branch", adapters)
     state = tmp_path / "state"
 
-    launched = run_capstan(
+    launched = run_foil(
         "launch", "--config", str(config), "--state-dir", str(state), "--json"
     )
 
     assert launched.returncode != 0
     assert "branch" in launched.stderr.lower()
     probe = subprocess.run(
-        ["tmux", "has-session", "-t", f"capstan-runtime-fixtures-{fleet_id[-8:]}"],
+        ["tmux", "has-session", "-t", f"foil-runtime-fixtures-{fleet_id[-8:]}"],
         capture_output=True,
         check=False,
     )
@@ -391,7 +391,7 @@ def test_stop_refuses_mismatched_tmux_user_option_marker(tmp_path: Path) -> None
     project, branch = make_project(tmp_path)
     config, fleet_id = write_fleet(tmp_path, project, branch, adapters)
     state = tmp_path / "state"
-    launched = run_capstan(
+    launched = run_foil(
         "launch", "--config", str(config), "--state-dir", str(state), "--json"
     )
     assert launched.returncode == 0, launched.stderr
@@ -414,12 +414,12 @@ def test_stop_refuses_mismatched_tmux_user_option_marker(tmp_path: Path) -> None
                 "-w",
                 "-t",
                 target,
-                "@capstan-seat-id",
+                "@foil-seat-id",
                 "wrong-seat",
             ],
             check=True,
         )
-        stopped = run_capstan(
+        stopped = run_foil(
             "stop", "--config", str(config), "--state-dir", str(state), "--json"
         )
         assert stopped.returncode != 0
@@ -436,14 +436,14 @@ def test_stop_refuses_mismatched_tmux_user_option_marker(tmp_path: Path) -> None
 
 
 def test_runtime_help_is_composable_and_documents_json_contract() -> None:
-    result = run_capstan("--help")
+    result = run_foil("--help")
 
     assert result.returncode == 0
     for command in ("launch", "status", "stop", "resume", "poll-status"):
         assert command in result.stdout
 
     for command in ("launch", "status", "stop", "resume"):
-        help_result = run_capstan(command, "--help")
+        help_result = run_foil(command, "--help")
         assert help_result.returncode == 0
         assert "--config" in help_result.stdout
         assert "--state-dir" in help_result.stdout

@@ -9,9 +9,9 @@ import sys
 import tomllib
 from pathlib import Path
 
-from capstan.onboarding import DEFAULT_ROLE_IDS
-from capstan.registry import RegistryStore
-from capstan.runtime_config import load_fleet_config
+from foil.onboarding import DEFAULT_ROLE_IDS
+from foil.registry import RegistryStore
+from foil.runtime_config import load_fleet_config
 
 
 def test_init_git_setup_produces_loadable_two_seat_runtime_config(tmp_path: Path) -> None:
@@ -19,10 +19,10 @@ def test_init_git_setup_produces_loadable_two_seat_runtime_config(tmp_path: Path
     project.mkdir()
     state_root = tmp_path / "state"
     environment = os.environ.copy()
-    environment["CAPSTAN_STATE_DIR"] = str(state_root)
+    environment["FOIL_STATE_DIR"] = str(state_root)
 
     initialized = subprocess.run(
-        [sys.executable, "-m", "capstan", "init"],
+        [sys.executable, "-m", "foil", "init"],
         cwd=project,
         env=environment,
         capture_output=True,
@@ -32,11 +32,11 @@ def test_init_git_setup_produces_loadable_two_seat_runtime_config(tmp_path: Path
 
     assert initialized.returncode == 0, initialized.stderr
     payload = json.loads(initialized.stdout)
-    plan_path = project / ".capstan" / "fleet.toml"
-    runtime_path = project / ".capstan" / "runtime.toml"
+    plan_path = project / ".foil" / "fleet.toml"
+    runtime_path = project / ".foil" / "runtime.toml"
     assert payload["config_path"] == str(plan_path)
     assert payload["runtime_config_path"] == str(runtime_path)
-    assert payload["git_branch"] == "capstan-demo"
+    assert payload["git_branch"] == "foil-demo"
 
     subprocess.run(
         ["git", "init", "--quiet", "-b", payload["git_branch"]],
@@ -68,4 +68,4 @@ def test_init_git_setup_produces_loadable_two_seat_runtime_config(tmp_path: Path
     ]
     assert all(seat.working_directory == project.resolve() for seat in runtime.seats)
     assert all(seat.worktree_path == project.resolve() for seat in runtime.seats)
-    assert all(seat.git_branch == "capstan-demo" for seat in runtime.seats)
+    assert all(seat.git_branch == "foil-demo" for seat in runtime.seats)

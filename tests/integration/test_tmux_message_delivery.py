@@ -13,14 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from capstan.registry import RegistryStore, SeatRecord, TmuxTarget
+from foil.registry import RegistryStore, SeatRecord, TmuxTarget
 
 TMUX = shutil.which("tmux")
 
 
 @pytest.mark.skipif(TMUX is None, reason="tmux is unavailable")
 def test_idle_tmux_seat_receives_bounded_mailbox_wake(tmp_path: Path) -> None:
-    session_name = f"capstan-mailtest-{uuid.uuid4().hex[:12]}"
+    session_name = f"foil-mailtest-{uuid.uuid4().hex[:12]}"
     window_name = "idle-seat"
     received = tmp_path / "received.txt"
     receiver = tmp_path / "receiver.py"
@@ -96,7 +96,7 @@ pathlib.Path(sys.argv[1]).write_text(line, encoding="utf-8")
             [
                 sys.executable,
                 "-m",
-                "capstan",
+                "foil",
                 "send-message",
                 "--state-dir",
                 str(state_dir),

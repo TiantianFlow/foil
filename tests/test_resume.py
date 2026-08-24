@@ -4,7 +4,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from capstan.resume import (
+from foil.resume import (
     ResumeAction,
     ResumeEvidence,
     TmuxProbeState,

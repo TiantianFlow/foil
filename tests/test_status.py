@@ -7,7 +7,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from capstan.status import (
+from foil.status import (
     PollStatusReader,
     SeatState,
     StatusError,

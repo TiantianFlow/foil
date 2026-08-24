@@ -12,7 +12,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
-from capstan.registry import (
+from foil.registry import (
     SCHEMA_VERSION,
     _assert_no_secret,
     _read_json_file,
