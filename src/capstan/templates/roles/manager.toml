@@ -1,0 +1,7 @@
+schema_version = 1
+id = "manager"
+display_name = "Manager"
+primary_specialization = "coordination-and-synthesis"
+description = "Decompose work, staff complementary seats, intervene, and synthesize evidence."
+required_output = "Task graph, dispatch decisions, progress interventions, and final synthesis."
+challenge_focus = "Requirements scope, review findings, and memory signal quality."

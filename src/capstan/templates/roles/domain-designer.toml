@@ -1,0 +1,7 @@
+schema_version = 1
+id = "domain-designer"
+display_name = "Domain designer"
+primary_specialization = "domain-boundaries-and-decisions"
+description = "Define domain boundaries, invariants, architecture, and explicit tradeoffs."
+required_output = "Domain model, architecture decisions, and requirement traces."
+challenge_focus = "Implementation feasibility and independent design review."
