@@ -12,6 +12,10 @@ from pathlib import Path
 
 import pytest
 
+from capstan.runtime import RuntimeController, SeatRuntime
+from capstan.runtime import RuntimeError as LifecycleError
+from capstan.runtime_config import load_fleet_config
+
 
 def run_capstan(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -218,6 +222,74 @@ git_branch = {json.dumps(branch)}
         encoding="utf-8",
     )
     return config, fleet_id
+
+
+def discovery_runtime(
+    tmp_path: Path,
+) -> tuple[RuntimeController, SeatRuntime, Path, Path]:
+    executable = make_fixture_executable(tmp_path)
+    adapters = write_adapters(tmp_path, executable)
+    project, branch = make_project(tmp_path)
+    config_path, fleet_id = write_fleet(tmp_path, project, branch, adapters)
+    state = tmp_path / "state"
+    controller = RuntimeController(load_fleet_config(config_path), state)
+    runtime = next(
+        runtime
+        for runtime in controller._runtimes()
+        if runtime.seat.seat_id == "discovery-seat"
+    )
+    session_store = (
+        state
+        / "v1"
+        / "fleets"
+        / fleet_id
+        / "adapter-state"
+        / "discovery-seat"
+        / "sessions.json"
+    )
+    session_store.parent.mkdir(parents=True)
+    return controller, runtime, session_store, project
+
+
+def test_discovery_baseline_only_retains_sessions_for_seat_cwd(tmp_path: Path) -> None:
+    controller, runtime, session_store, project = discovery_runtime(tmp_path)
+    unrelated = tmp_path / "unrelated"
+    unrelated.mkdir()
+    session_store.write_text(
+        json.dumps(
+            [
+                {"id": "native-project", "directory": str(project)},
+                {"id": "native-unrelated", "directory": str(unrelated)},
+                {"id": 42, "directory": str(unrelated)},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert controller._session_ids(runtime) == {"native-project"}
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"id": 42, "directory": "{project}"},
+        {"id": "", "directory": "{project}"},
+        {"id": "native-project", "directory": 42},
+    ],
+)
+def test_discovery_baseline_rejects_malformed_selected_records(
+    tmp_path: Path,
+    record: dict[str, object],
+) -> None:
+    controller, runtime, session_store, project = discovery_runtime(tmp_path)
+    selected = {
+        key: str(project) if value == "{project}" else value
+        for key, value in record.items()
+    }
+    session_store.write_text(json.dumps([selected]), encoding="utf-8")
+
+    with pytest.raises(LifecycleError, match="session discovery"):
+        controller._session_ids(runtime)
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
