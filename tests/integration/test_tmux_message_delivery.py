@@ -15,7 +15,6 @@ import pytest
 
 from capstan.registry import RegistryStore, SeatRecord, TmuxTarget
 
-
 TMUX = shutil.which("tmux")
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import stat
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from capstan.mailbox import (
     MailboxError,
     MailboxMessage,
     MailboxStore,
+    UnsupportedMailboxSchemaVersion,
 )
 
 
@@ -85,6 +87,17 @@ def test_conflicting_duplicate_message_id_is_rejected(tmp_path: Path) -> None:
     assert store.read_message("fleet-1", "seat-1", "message-1") == message()
 
 
+def test_concurrent_identical_writers_create_one_immutable_record(tmp_path: Path) -> None:
+    store = MailboxStore(tmp_path)
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(executor.map(lambda _: store.enqueue(message()), range(16)))
+
+    assert sum(not result.duplicate for result in results) == 1
+    assert sum(result.duplicate for result in results) == 15
+    assert store.read_message("fleet-1", "seat-1", "message-1") == message()
+
+
 def test_acknowledgement_requires_an_existing_matching_message(tmp_path: Path) -> None:
     store = MailboxStore(tmp_path)
 
@@ -94,6 +107,19 @@ def test_acknowledgement_requires_an_existing_matching_message(tmp_path: Path) -
     store.enqueue(message())
     with pytest.raises(MailboxError, match="message does not exist"):
         store.acknowledge(acknowledgement(recipient_seat_id="seat-2"))
+
+
+def test_acknowledgement_retry_is_detected_and_conflict_is_rejected(tmp_path: Path) -> None:
+    store = MailboxStore(tmp_path)
+    store.enqueue(message())
+    first = store.acknowledge(acknowledgement())
+
+    retried = store.acknowledge(acknowledgement())
+
+    assert first.duplicate is False
+    assert retried.duplicate is True
+    with pytest.raises(DuplicateMessageError, match="different content"):
+        store.acknowledge(acknowledgement(acknowledgement_id="ack-2"))
 
 
 def test_pending_messages_are_sorted_and_exclude_acknowledged(tmp_path: Path) -> None:
@@ -144,3 +170,27 @@ def test_symlinked_message_record_is_neither_followed_nor_replaced(tmp_path: Pat
         store.enqueue(message())
 
     assert outside.read_text() == json.dumps(message().to_dict())
+
+
+def test_symlinked_acknowledgement_is_rejected(tmp_path: Path) -> None:
+    store = MailboxStore(tmp_path)
+    store.enqueue(message())
+    path = store.acknowledgement_path("fleet-1", "seat-1", "message-1")
+    path.parent.mkdir(parents=True)
+    outside = tmp_path / "outside-ack.json"
+    outside.write_text(json.dumps(acknowledgement().to_dict()))
+    path.symlink_to(outside)
+
+    with pytest.raises(MailboxError, match="symlink"):
+        store.acknowledge(acknowledgement())
+
+
+def test_unsupported_mailbox_schema_is_rejected(tmp_path: Path) -> None:
+    store = MailboxStore(tmp_path)
+    path = store.enqueue(message()).path
+    payload = json.loads(path.read_text())
+    payload["schema_version"] = 99
+    path.write_text(json.dumps(payload))
+
+    with pytest.raises(UnsupportedMailboxSchemaVersion, match="99"):
+        store.read_message("fleet-1", "seat-1", "message-1")
