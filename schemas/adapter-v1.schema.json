@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstan.local/schemas/adapter-v1.schema.json",
+  "title": "Capstan declarative CLI adapter v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "observed_version",
+    "models",
+    "skill",
+    "executable",
+    "launch",
+    "resume",
+    "session_capture"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
+    "observed_version": {"type": "string", "minLength": 1},
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "skill": {"type": "string", "minLength": 1},
+    "executable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidates", "version_argv"],
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "version_argv": {"$ref": "#/$defs/argv"}
+      }
+    },
+    "launch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv"],
+      "properties": {"argv": {"$ref": "#/$defs/argv"}}
+    },
+    "resume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported"],
+      "properties": {
+        "supported": {"type": "boolean"},
+        "argv": {"$ref": "#/$defs/argv"}
+      }
+    },
+    "session_capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["none", "generated_uuid", "command_json_list_delta"]
+        },
+        "argv": {"$ref": "#/$defs/argv"},
+        "id_pointer": {"type": "string", "pattern": "^/"},
+        "cwd_pointer": {"type": "string", "pattern": "^/"}
+      }
+    }
+  },
+  "$defs": {
+    "argv": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

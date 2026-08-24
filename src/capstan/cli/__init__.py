@@ -9,11 +9,48 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from capstan.adapters import AdapterError
 from capstan.delivery import MessageDeliveryService, TmuxWakeService
 from capstan.mailbox import Acknowledgement, MailboxError, MailboxMessage, MailboxStore
 from capstan.onboarding import InitializationError, initialize_project
 from capstan.registry import RegistryError, RegistryStore
+from capstan.runtime import RuntimeController
+from capstan.runtime import RuntimeError as LifecycleError
+from capstan.runtime_config import ConfigError, load_fleet_config
 from capstan.status import PollStatusReader, StatusError, UnsupportedStatusSchemaVersion
+from capstan.tmux import TmuxError
+
+
+def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
+    """Register lifecycle commands without owning the top-level parser."""
+
+    commands = {
+        "launch": "Launch every configured seat in verified detached tmux windows.",
+        "status": "Reconcile registry, structured native IDs, and verified tmux liveness.",
+        "stop": "Stop only tmux windows whose stable user-option markers match.",
+        "resume": "Revive live tmux, resume native context, or log a fresh start.",
+    }
+    for command, description in commands.items():
+        runtime = subparsers.add_parser(command, help=description, description=description)
+        runtime.add_argument(
+            "--config",
+            required=True,
+            metavar="PATH",
+            type=Path,
+            help="Versioned fleet TOML containing usage pools and seat identities.",
+        )
+        runtime.add_argument(
+            "--state-dir",
+            required=True,
+            metavar="PATH",
+            type=Path,
+            help="Root directory for versioned registry, status, and audit state.",
+        )
+        runtime.add_argument(
+            "--json",
+            action="store_true",
+            help="Emit deterministic machine-readable JSON.",
+        )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -25,6 +62,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+    _add_runtime_parsers(subparsers)
 
     init = subparsers.add_parser(
         "init",
@@ -210,6 +248,28 @@ def _message_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _runtime_command(
+    command: str,
+    config_path: Path,
+    state_dir: Path,
+    *,
+    as_json: bool,
+) -> int:
+    config = load_fleet_config(config_path)
+    controller = RuntimeController(config, state_dir)
+    operation = getattr(controller, command)
+    seats = operation()
+    payload = {"fleet_id": config.fleet_id, "seats": seats}
+    if as_json:
+        sys.stdout.write(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+        sys.stdout.write("\n")
+    else:
+        for seat in seats:
+            action = f" {seat['action']}" if "action" in seat else ""
+            print(f"{seat['seat_id']}: {seat['state']}{action}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -225,14 +285,27 @@ def main(argv: list[str] | None = None) -> int:
             return _ack_message(args)
         if args.command == "message-status":
             return _message_status(args)
+        if args.command in {"launch", "status", "stop", "resume"}:
+            return _runtime_command(
+                args.command,
+                args.config,
+                args.state_dir,
+                as_json=args.json,
+            )
         parser.error(f"unsupported command: {args.command}")
     except UnsupportedStatusSchemaVersion as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    except (MailboxError, RegistryError, StatusError) as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-    except InitializationError as exc:
+    except (
+        AdapterError,
+        ConfigError,
+        InitializationError,
+        LifecycleError,
+        MailboxError,
+        RegistryError,
+        StatusError,
+        TmuxError,
+    ) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 

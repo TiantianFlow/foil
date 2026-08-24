@@ -52,7 +52,8 @@ def make_fixture_executable(tmp_path: Path) -> Path:
             store = Path(args[args.index("--store") + 1])
             store.parent.mkdir(parents=True, exist_ok=True)
             if args[:3] == ["session", "list", "--format"]:
-                print(store.read_text() if store.exists() else "[]")
+                if store.exists():
+                    print(store.read_text())
                 raise SystemExit
             seat = args[args.index("--seat") + 1]
             cwd = args[args.index("--cwd") + 1]
@@ -71,6 +72,45 @@ def make_fixture_executable(tmp_path: Path) -> Path:
 def write_adapters(tmp_path: Path, executable: Path) -> Path:
     adapter_dir = tmp_path / "adapters"
     adapter_dir.mkdir()
+    generated_launch = json.dumps(
+        [
+            str(executable),
+            "launch",
+            "--seat",
+            "{seat_id}",
+            "--cwd",
+            "{working_directory}",
+            "--store",
+            "{adapter_state_dir}/sessions.json",
+            "--native-id",
+            "{native_session_id}",
+        ]
+    )
+    generated_resume = generated_launch.replace('"launch"', '"resume"', 1)
+    discovered_launch = json.dumps(
+        [
+            str(executable),
+            "launch",
+            "--seat",
+            "{seat_id}",
+            "--cwd",
+            "{working_directory}",
+            "--store",
+            "{adapter_state_dir}/sessions.json",
+        ]
+    )
+    discovered_resume = generated_resume
+    discovery_argv = json.dumps(
+        [
+            str(executable),
+            "session",
+            "list",
+            "--format",
+            "json",
+            "--store",
+            "{adapter_state_dir}/sessions.json",
+        ]
+    )
     common = f"""
 schema_version = 1
 observed_version = "1.0"
@@ -89,11 +129,11 @@ id = "fixture-generated"
             + common
             + f"""
 [launch]
-argv = [{json.dumps(str(executable))}, "launch", "--seat", "{{seat_id}}", "--cwd", "{{working_directory}}", "--store", "{{adapter_state_dir}}/sessions.json", "--native-id", "{{native_session_id}}"]
+argv = {generated_launch}
 
 [resume]
 supported = true
-argv = [{json.dumps(str(executable))}, "resume", "--seat", "{{seat_id}}", "--cwd", "{{working_directory}}", "--store", "{{adapter_state_dir}}/sessions.json", "--native-id", "{{native_session_id}}"]
+argv = {generated_resume}
 
 [session_capture]
 kind = "generated_uuid"
@@ -109,15 +149,15 @@ id = "fixture-discovery"
             + common
             + f"""
 [launch]
-argv = [{json.dumps(str(executable))}, "launch", "--seat", "{{seat_id}}", "--cwd", "{{working_directory}}", "--store", "{{adapter_state_dir}}/sessions.json"]
+argv = {discovered_launch}
 
 [resume]
 supported = true
-argv = [{json.dumps(str(executable))}, "resume", "--seat", "{{seat_id}}", "--cwd", "{{working_directory}}", "--store", "{{adapter_state_dir}}/sessions.json", "--native-id", "{{native_session_id}}"]
+argv = {discovered_resume}
 
 [session_capture]
 kind = "command_json_list_delta"
-argv = [{json.dumps(str(executable))}, "session", "list", "--format", "json", "--store", "{{adapter_state_dir}}/sessions.json"]
+argv = {discovery_argv}
 id_pointer = "/id"
 cwd_pointer = "/directory"
 """
@@ -270,6 +310,57 @@ def test_launch_rejects_branch_mismatch_before_tmux_mutation(tmp_path: Path) -> 
         check=False,
     )
     assert probe.returncode != 0
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
+def test_stop_refuses_mismatched_tmux_user_option_marker(tmp_path: Path) -> None:
+    executable = make_fixture_executable(tmp_path)
+    adapters = write_adapters(tmp_path, executable)
+    project, branch = make_project(tmp_path)
+    config, fleet_id = write_fleet(tmp_path, project, branch, adapters)
+    state = tmp_path / "state"
+    launched = run_capstan(
+        "launch", "--config", str(config), "--state-dir", str(state), "--json"
+    )
+    assert launched.returncode == 0, launched.stderr
+    record_path = (
+        state
+        / "v1"
+        / "fleets"
+        / fleet_id
+        / "seats"
+        / "discovery-seat.json"
+    )
+    record = json.loads(record_path.read_text())
+    target = f"{record['tmux']['session_name']}:{record['tmux']['window_name']}"
+
+    try:
+        subprocess.run(
+            [
+                "tmux",
+                "set-option",
+                "-w",
+                "-t",
+                target,
+                "@capstan-seat-id",
+                "wrong-seat",
+            ],
+            check=True,
+        )
+        stopped = run_capstan(
+            "stop", "--config", str(config), "--state-dir", str(state), "--json"
+        )
+        assert stopped.returncode != 0
+        assert "unverified" in stopped.stderr
+        assert subprocess.run(
+            ["tmux", "has-session", "-t", record["tmux"]["session_name"]],
+            check=False,
+        ).returncode == 0
+    finally:
+        subprocess.run(
+            ["tmux", "kill-session", "-t", record["tmux"]["session_name"]],
+            check=False,
+        )
 
 
 def test_runtime_help_is_composable_and_documents_json_contract() -> None:
