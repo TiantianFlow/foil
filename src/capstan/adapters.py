@@ -199,23 +199,21 @@ def load_adapter(path: Path | str) -> AdapterRecord:
     )
 
 
-def _builtin_directory() -> Path:
-    source_tree = Path(__file__).resolve().parents[2] / "adapters"
-    if source_tree.is_dir():
-        return source_tree
-    packaged = resources.files("capstan").joinpath("resources", "adapters")
-    return Path(str(packaged))
-
-
 def load_builtin_adapter(adapter_id: str) -> AdapterRecord:
     if not isinstance(adapter_id, str) or not re.fullmatch(
         r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", adapter_id
     ):
         raise AdapterError("adapter ID is unsafe")
-    path = _builtin_directory() / f"{adapter_id}.toml"
+    resource = (
+        resources.files("capstan")
+        .joinpath("resources")
+        .joinpath("adapters")
+        .joinpath(f"{adapter_id}.toml")
+    )
     try:
-        record = load_adapter(path)
-    except FileNotFoundError as exc:
+        with resources.as_file(resource) as path:
+            record = load_adapter(path)
+    except (FileNotFoundError, ModuleNotFoundError) as exc:
         raise AdapterError(f"unknown built-in adapter: {adapter_id}") from exc
     if record.adapter_id != adapter_id:
         raise AdapterError("built-in adapter identity does not match its file name")

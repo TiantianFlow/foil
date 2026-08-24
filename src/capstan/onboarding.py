@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from capstan.registry import SCHEMA_VERSION, _atomic_write_json, _ensure_private_directory
+from capstan.runtime_config import ConfigError, load_fleet_config
 
 DEFAULT_ROLE_IDS = (
     "manager",
@@ -36,15 +38,19 @@ class InitializationError(ValueError):
 @dataclass(frozen=True, slots=True)
 class InitializationResult:
     config_path: Path
+    runtime_config_path: Path
     state_root: Path
     fleet_id: str
+    git_branch: str
     roles: tuple[str, ...] = DEFAULT_ROLE_IDS
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "config_path": str(self.config_path),
             "fleet_id": self.fleet_id,
+            "git_branch": self.git_branch,
             "roles": list(self.roles),
+            "runtime_config_path": str(self.runtime_config_path),
             "state_root": str(self.state_root),
         }
 
@@ -171,12 +177,23 @@ def _validate_templates(fleet_text: str, role_templates: Mapping[str, str]) -> N
                 raise InitializationError(f"challenge target has the same specialization: {target}")
 
 
-def _write_scaffold(project_root: Path, fleet_id: str) -> Path:
+def _write_scaffold(project_root: Path, fleet_id: str) -> tuple[Path, Path, str]:
     template_root = resources.files("capstan.templates")
     fleet_resource = template_root.joinpath("fleet.toml")
     if not fleet_resource.is_file():
         raise InitializationError("packaged fleet template is missing")
+    runtime_resource = template_root.joinpath("runtime.toml")
+    if not runtime_resource.is_file():
+        raise InitializationError("packaged runtime template is missing")
     fleet_text = fleet_resource.read_text(encoding="utf-8").replace("__FLEET_ID__", fleet_id)
+    runtime_text = (
+        runtime_resource.read_text(encoding="utf-8")
+        .replace("__FLEET_ID__", fleet_id)
+        .replace(
+            "__PROJECT_ROOT_TOML__",
+            json.dumps(str(project_root), ensure_ascii=False),
+        )
+    )
     role_templates = _load_role_templates()
     _validate_templates(fleet_text, role_templates)
 
@@ -188,14 +205,26 @@ def _write_scaffold(project_root: Path, fleet_id: str) -> Path:
         config_path = scaffold / "fleet.toml"
         config_path.write_text(fleet_text, encoding="utf-8")
         config_path.chmod(0o644)
+        runtime_config_path = scaffold / "runtime.toml"
+        runtime_config_path.write_text(runtime_text, encoding="utf-8")
+        runtime_config_path.chmod(0o644)
         for role_id, role_text in role_templates.items():
             role_path = roles_directory / f"{role_id}.toml"
             role_path.write_text(role_text, encoding="utf-8")
             role_path.chmod(0o644)
+        try:
+            runtime_config = load_fleet_config(runtime_config_path)
+        except ConfigError as exc:
+            raise InitializationError("packaged runtime template is invalid") from exc
+        if runtime_config.fleet_id != fleet_id:
+            raise InitializationError("packaged runtime template has the wrong fleet ID")
+        git_branches = {seat.git_branch for seat in runtime_config.seats}
+        if len(git_branches) != 1:
+            raise InitializationError("packaged runtime template requires one Git branch")
     except Exception:
         shutil.rmtree(scaffold, ignore_errors=True)
         raise
-    return config_path
+    return config_path, runtime_config_path, git_branches.pop()
 
 
 def _initialize_registry(state_root: Path, fleet_id: str, project_root: Path) -> Path:
@@ -250,7 +279,7 @@ def initialize_project(
         home=home,
     )
     fleet_id = f"starter-{hashlib.sha256(os.fsencode(project)).hexdigest()[:12]}"
-    config_path = _write_scaffold(project, fleet_id)
+    config_path, runtime_config_path, git_branch = _write_scaffold(project, fleet_id)
     try:
         _initialize_registry(state_root, fleet_id, project)
     except Exception:
@@ -258,6 +287,8 @@ def initialize_project(
         raise
     return InitializationResult(
         config_path=config_path,
+        runtime_config_path=runtime_config_path,
         state_root=state_root,
         fleet_id=fleet_id,
+        git_branch=git_branch,
     )

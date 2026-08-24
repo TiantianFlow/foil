@@ -68,8 +68,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "init",
         help="Scaffold a default fleet in an empty project directory.",
         description=(
-            "Scaffold .capstan/fleet.toml and the complete default role set in an empty "
-            "directory, then initialize versioned registry state. State precedence is "
+            "Scaffold the complete role plan in .capstan/fleet.toml and a directly "
+            "consumable two-seat .capstan/runtime.toml in an empty directory, then "
+            "initialize versioned registry state. After init, create the expected local "
+            "Git identity with `git init -b capstan-demo`. State precedence is "
             "CAPSTAN_STATE_DIR, the Git common directory, XDG_STATE_HOME, then the "
             "documented platform fallback (CAP-016, CAP-025)."
         ),
