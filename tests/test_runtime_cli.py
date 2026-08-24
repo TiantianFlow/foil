@@ -1,0 +1,287 @@
+"""Runtime continuity CLI integration tests (CAP-012–CAP-019, CAP-024, CAP-029–CAP-034)."""
+
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import sys
+import textwrap
+import uuid
+from pathlib import Path
+
+import pytest
+
+
+def run_capstan(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "capstan", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def git(*args: str, cwd: Path) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def make_fixture_executable(tmp_path: Path) -> Path:
+    executable = tmp_path / "fixture-agent"
+    executable.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env python3
+            import json
+            import os
+            import sys
+            import time
+            from pathlib import Path
+
+            args = sys.argv[1:]
+            if args == ["--version"]:
+                print("fixture 1.0")
+                raise SystemExit
+            store = Path(args[args.index("--store") + 1])
+            store.parent.mkdir(parents=True, exist_ok=True)
+            if args[:3] == ["session", "list", "--format"]:
+                print(store.read_text() if store.exists() else "[]")
+                raise SystemExit
+            seat = args[args.index("--seat") + 1]
+            cwd = args[args.index("--cwd") + 1]
+            if args[0] == "launch" and "--native-id" not in args:
+                store.write_text(json.dumps([{"id": f"native-{seat}", "directory": cwd}]))
+            Path(store.parent / f"{seat}-{args[0]}.started").write_text(str(os.getpid()))
+            time.sleep(300)
+            """
+        ),
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    return executable
+
+
+def write_adapters(tmp_path: Path, executable: Path) -> Path:
+    adapter_dir = tmp_path / "adapters"
+    adapter_dir.mkdir()
+    common = f"""
+schema_version = 1
+observed_version = "1.0"
+models = ["fixture/model"]
+skill = "skills/adapters/fixture/SKILL.md"
+
+[executable]
+candidates = [{json.dumps(str(executable))}]
+version_argv = [{json.dumps(str(executable))}, "--version"]
+"""
+    (adapter_dir / "generated.toml").write_text(
+        (
+            """
+id = "fixture-generated"
+"""
+            + common
+            + f"""
+[launch]
+argv = [{json.dumps(str(executable))}, "launch", "--seat", "{{seat_id}}", "--cwd", "{{working_directory}}", "--store", "{{adapter_state_dir}}/sessions.json", "--native-id", "{{native_session_id}}"]
+
+[resume]
+supported = true
+argv = [{json.dumps(str(executable))}, "resume", "--seat", "{{seat_id}}", "--cwd", "{{working_directory}}", "--store", "{{adapter_state_dir}}/sessions.json", "--native-id", "{{native_session_id}}"]
+
+[session_capture]
+kind = "generated_uuid"
+"""
+        ),
+        encoding="utf-8",
+    )
+    (adapter_dir / "discovery.toml").write_text(
+        (
+            """
+id = "fixture-discovery"
+"""
+            + common
+            + f"""
+[launch]
+argv = [{json.dumps(str(executable))}, "launch", "--seat", "{{seat_id}}", "--cwd", "{{working_directory}}", "--store", "{{adapter_state_dir}}/sessions.json"]
+
+[resume]
+supported = true
+argv = [{json.dumps(str(executable))}, "resume", "--seat", "{{seat_id}}", "--cwd", "{{working_directory}}", "--store", "{{adapter_state_dir}}/sessions.json", "--native-id", "{{native_session_id}}"]
+
+[session_capture]
+kind = "command_json_list_delta"
+argv = [{json.dumps(str(executable))}, "session", "list", "--format", "json", "--store", "{{adapter_state_dir}}/sessions.json"]
+id_pointer = "/id"
+cwd_pointer = "/directory"
+"""
+        ),
+        encoding="utf-8",
+    )
+    return adapter_dir
+
+
+def make_project(tmp_path: Path) -> tuple[Path, str]:
+    project = tmp_path / "project"
+    project.mkdir()
+    git("init", "-b", "runtime-test", cwd=project)
+    return project, "runtime-test"
+
+
+def write_fleet(
+    tmp_path: Path,
+    project: Path,
+    branch: str,
+    adapter_dir: Path,
+) -> tuple[Path, str]:
+    fleet_id = f"fleet-{uuid.uuid4().hex}"
+    config = tmp_path / "fleet.toml"
+    config.write_text(
+        f"""
+schema_version = 1
+fleet_id = {json.dumps(fleet_id)}
+display_name = "Runtime fixtures"
+adapter_paths = [{json.dumps(str(adapter_dir))}]
+
+[[usage_pools]]
+id = "generated-pool"
+adapter = "fixture-generated"
+model = "fixture/model"
+
+[[usage_pools]]
+id = "discovery-pool"
+adapter = "fixture-discovery"
+model = "fixture/model"
+
+[[seats]]
+id = "generated-seat"
+display_name = "Generated"
+usage_pool_id = "generated-pool"
+working_directory = {json.dumps(str(project))}
+worktree_path = {json.dumps(str(project))}
+git_branch = {json.dumps(branch)}
+
+[[seats]]
+id = "discovery-seat"
+display_name = "Discovery"
+usage_pool_id = "discovery-pool"
+working_directory = {json.dumps(str(project))}
+worktree_path = {json.dumps(str(project))}
+git_branch = {json.dumps(branch)}
+""",
+        encoding="utf-8",
+    )
+    return config, fleet_id
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
+def test_launch_status_stop_and_native_resume_two_fixture_pools(tmp_path: Path) -> None:
+    executable = make_fixture_executable(tmp_path)
+    adapters = write_adapters(tmp_path, executable)
+    project, branch = make_project(tmp_path)
+    config, fleet_id = write_fleet(tmp_path, project, branch, adapters)
+    state = tmp_path / "state"
+
+    try:
+        launched = run_capstan(
+            "launch", "--config", str(config), "--state-dir", str(state), "--json"
+        )
+        assert launched.returncode == 0, launched.stderr
+        launch_payload = json.loads(launched.stdout)
+        assert [seat["seat_id"] for seat in launch_payload["seats"]] == [
+            "discovery-seat",
+            "generated-seat",
+        ]
+
+        status = run_capstan(
+            "status", "--config", str(config), "--state-dir", str(state), "--json"
+        )
+        assert status.returncode == 0, status.stderr
+        status_payload = json.loads(status.stdout)
+        records = {seat["seat_id"]: seat for seat in status_payload["seats"]}
+        assert records["discovery-seat"]["registry"]["native_session_id"] == (
+            "native-discovery-seat"
+        )
+        assert uuid.UUID(records["generated-seat"]["registry"]["native_session_id"])
+        assert {seat["usage_pool_id"] for seat in records.values()} == {
+            "generated-pool",
+            "discovery-pool",
+        }
+        assert all(seat["state"] == "working" for seat in records.values())
+
+        revived = run_capstan(
+            "resume", "--config", str(config), "--state-dir", str(state), "--json"
+        )
+        assert revived.returncode == 0, revived.stderr
+        assert {seat["action"] for seat in json.loads(revived.stdout)["seats"]} == {
+            "revive_tmux"
+        }
+
+        stopped = run_capstan(
+            "stop", "--config", str(config), "--state-dir", str(state), "--json"
+        )
+        assert stopped.returncode == 0, stopped.stderr
+        assert all(seat["state"] == "exited" for seat in json.loads(stopped.stdout)["seats"])
+
+        resumed = run_capstan(
+            "resume", "--config", str(config), "--state-dir", str(state), "--json"
+        )
+        assert resumed.returncode == 0, resumed.stderr
+        assert {seat["action"] for seat in json.loads(resumed.stdout)["seats"]} == {
+            "resume_native"
+        }
+
+        events_path = state / "v1" / "fleets" / fleet_id / "events" / "events.jsonl"
+        events = [json.loads(line) for line in events_path.read_text().splitlines()]
+        assert {event["event_type"] for event in events} >= {
+            "launch_result",
+            "stop_result",
+            "resume_decision",
+            "resume_result",
+        }
+        assert all("argv" not in event for event in events)
+    finally:
+        run_capstan("stop", "--config", str(config), "--state-dir", str(state), "--json")
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
+def test_launch_rejects_branch_mismatch_before_tmux_mutation(tmp_path: Path) -> None:
+    executable = make_fixture_executable(tmp_path)
+    adapters = write_adapters(tmp_path, executable)
+    project, _branch = make_project(tmp_path)
+    config, fleet_id = write_fleet(tmp_path, project, "wrong-branch", adapters)
+    state = tmp_path / "state"
+
+    launched = run_capstan(
+        "launch", "--config", str(config), "--state-dir", str(state), "--json"
+    )
+
+    assert launched.returncode != 0
+    assert "branch" in launched.stderr.lower()
+    probe = subprocess.run(
+        ["tmux", "has-session", "-t", f"capstan-runtime-fixtures-{fleet_id[-8:]}"],
+        capture_output=True,
+        check=False,
+    )
+    assert probe.returncode != 0
+
+
+def test_runtime_help_is_composable_and_documents_json_contract() -> None:
+    result = run_capstan("--help")
+
+    assert result.returncode == 0
+    for command in ("launch", "status", "stop", "resume", "poll-status"):
+        assert command in result.stdout
+
+    for command in ("launch", "status", "stop", "resume"):
+        help_result = run_capstan(command, "--help")
+        assert help_result.returncode == 0
+        assert "--config" in help_result.stdout
+        assert "--state-dir" in help_result.stdout
+        assert "--json" in help_result.stdout
