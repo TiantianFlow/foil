@@ -1,10 +1,21 @@
 """Documentation contract for the generation-2 walking skeleton (CAP-001, CAP-017, CAP-027)."""
 
+import re
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).parents[2]
+
+
+def _level_three_sections(text: str) -> dict[str, str]:
+    headings = list(re.finditer(r"^### (.+)$", text, flags=re.MULTILINE))
+    return {
+        match.group(1): text[
+            match.end() : headings[index + 1].start() if index + 1 < len(headings) else None
+        ]
+        for index, match in enumerate(headings)
+    }
 
 
 @pytest.mark.parametrize(
@@ -94,3 +105,93 @@ def test_readme_states_security_and_cleanup_boundaries(readme_name: str) -> None
     assert "terminal buffer" in text
     assert "CAPSTAN_STATE_DIR" in text
     assert "DEMO_ROOT" in text
+
+
+@pytest.mark.parametrize(
+    ("readme_name", "headings"),
+    [
+        (
+            "README.md",
+            {
+                "T1 — Install from a clean checkout": (
+                    "uv tool install .",
+                    "uv tool install --reinstall .",
+                ),
+                "T2 — Initialize and scaffold an isolated project": (
+                    "capstan init .",
+                    "git init -b capstan-demo",
+                ),
+                "T3 — Launch two real seats and validate machine-readable JSON": (
+                    "capstan launch",
+                    "capstan status",
+                    "implementer",
+                    "reviewer-challenger",
+                ),
+                "T4 — Deliver a file-backed message and wake the reviewer": (
+                    "capstan send-message",
+                    "capstan message-status",
+                    "wake",
+                    "queued",
+                ),
+                "T5 — Kill tmux and verify resume precedence and registry continuity": (
+                    "tmux kill-session",
+                    "capstan resume",
+                    "resume_native",
+                    "registry",
+                ),
+                "Cleanup — Stop safely and remove the verified demo root": (
+                    "capstan stop",
+                    "rm -rf",
+                ),
+            },
+        ),
+        (
+            "README.zh-CN.md",
+            {
+                "T1 — 从干净 checkout 安装": (
+                    "uv tool install .",
+                    "uv tool install --reinstall .",
+                ),
+                "T2 — 初始化并生成隔离项目 scaffold": (
+                    "capstan init .",
+                    "git init -b capstan-demo",
+                ),
+                "T3 — 启动两个真实 seat 并验证机器可读 JSON": (
+                    "capstan launch",
+                    "capstan status",
+                    "implementer",
+                    "reviewer-challenger",
+                ),
+                "T4 — 通过文件投递消息并唤醒 reviewer": (
+                    "capstan send-message",
+                    "capstan message-status",
+                    "wake",
+                    "queued",
+                ),
+                "T5 — 终止 tmux 并验证 resume 优先级与 registry 连续性": (
+                    "tmux kill-session",
+                    "capstan resume",
+                    "resume_native",
+                    "registry",
+                ),
+                "清理 — 安全停止并删除已验证的 demo 根目录": (
+                    "capstan stop",
+                    "rm -rf",
+                ),
+            },
+        ),
+    ],
+)
+def test_readme_maps_t1_t5_and_cleanup_to_exact_acceptance_actions(
+    readme_name: str,
+    headings: dict[str, tuple[str, ...]],
+) -> None:
+    text = (ROOT / readme_name).read_text(encoding="utf-8")
+    sections = _level_three_sections(text)
+
+    for heading, actions in headings.items():
+        assert heading in sections
+        assert all(action in sections[heading] for action in actions)
+
+    t5_heading = next(heading for heading in headings if heading.startswith("T5 "))
+    assert "capstan stop" not in sections[t5_heading]
