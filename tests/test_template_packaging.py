@@ -5,6 +5,9 @@ from __future__ import annotations
 import tomllib
 from importlib import resources
 
+import pytest
+
+from capstan.adapters import load_builtin_adapter
 from capstan.onboarding import DEFAULT_ROLE_IDS
 
 
@@ -26,3 +29,25 @@ def test_default_fleet_and_every_role_are_package_resources() -> None:
         packaged_role_ids.add(role["id"])
 
     assert packaged_role_ids == set(DEFAULT_ROLE_IDS)
+
+
+@pytest.mark.parametrize(
+    ("adapter_id", "model"),
+    [
+        ("grok_cli", "grok-4.6"),
+        ("opencode", "xai/grok-4.6"),
+    ],
+)
+def test_builtin_adapter_records_are_package_local_resources(
+    adapter_id: str,
+    model: str,
+) -> None:
+    adapter_resource = (
+        resources.files("capstan")
+        .joinpath("resources")
+        .joinpath("adapters")
+        .joinpath(f"{adapter_id}.toml")
+    )
+
+    assert adapter_resource.is_file()
+    assert load_builtin_adapter(adapter_id).models == (model,)
