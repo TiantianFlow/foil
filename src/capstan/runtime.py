@@ -317,16 +317,43 @@ class RuntimeController:
         return payload
 
     def _session_ids(self, runtime: SeatRuntime) -> set[str]:
-        pointer = runtime.adapter.session_capture.id_pointer
-        if pointer is None:
+        if runtime.adapter.session_capture.id_pointer is None:
             return set()
         ids: set[str] = set()
         for item in self._list_sessions(runtime):
-            value = _json_pointer(item, pointer)
-            if not isinstance(value, str) or not value or len(value) > 512:
-                raise RuntimeError("structured session discovery returned an invalid ID")
-            ids.add(value)
+            session_id = self._selected_session_id(runtime, item)
+            if session_id is not None:
+                ids.add(session_id)
         return ids
+
+    def _selected_session_id(
+        self,
+        runtime: SeatRuntime,
+        item: dict[str, Any],
+    ) -> str | None:
+        capture = runtime.adapter.session_capture
+        if capture.cwd_pointer is not None:
+            observed_cwd = _json_pointer(item, capture.cwd_pointer)
+            if not isinstance(observed_cwd, str) or not observed_cwd:
+                raise RuntimeError("structured session discovery returned an invalid cwd")
+            observed_path = Path(observed_cwd)
+            if not observed_path.is_absolute():
+                raise RuntimeError("structured session discovery returned an invalid cwd")
+            try:
+                matches_working_directory = (
+                    observed_path.resolve() == runtime.seat.working_directory.resolve()
+                )
+            except (OSError, ValueError) as exc:
+                raise RuntimeError(
+                    "structured session discovery returned an invalid cwd"
+                ) from exc
+            if not matches_working_directory:
+                return None
+
+        session_id = _json_pointer(item, capture.id_pointer or "")
+        if not isinstance(session_id, str) or not session_id or len(session_id) > 512:
+            raise RuntimeError("structured session discovery returned an invalid ID")
+        return session_id
 
     def _capture_delta(
         self,
@@ -335,23 +362,13 @@ class RuntimeController:
         *,
         wait_seconds: float,
     ) -> str | None:
-        capture = runtime.adapter.session_capture
         deadline = time.monotonic() + wait_seconds
         while True:
             candidates: list[str] = []
             for item in self._list_sessions(runtime):
-                candidate = _json_pointer(item, capture.id_pointer or "")
-                if not isinstance(candidate, str) or candidate in baseline:
+                candidate = self._selected_session_id(runtime, item)
+                if candidate is None or candidate in baseline:
                     continue
-                if capture.cwd_pointer is not None:
-                    observed_cwd = _json_pointer(item, capture.cwd_pointer)
-                    if not isinstance(observed_cwd, str):
-                        raise RuntimeError("session cwd selector returned a non-string")
-                    try:
-                        if Path(observed_cwd).resolve() != runtime.seat.working_directory.resolve():
-                            continue
-                    except OSError:
-                        continue
                 candidates.append(candidate)
             candidates = sorted(set(candidates))
             if len(candidates) == 1:
