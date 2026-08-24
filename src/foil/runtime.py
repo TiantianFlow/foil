@@ -46,16 +46,6 @@ def _now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def _safe_environment() -> dict[str, str]:
-    exact = {"COLORTERM", "HOME", "LANG", "PATH", "SHELL", "TERM", "TMPDIR"}
-    prefixes = ("LC_", "XDG_")
-    return {
-        key: value
-        for key, value in os.environ.items()
-        if key in exact or key.startswith(prefixes)
-    }
-
-
 class AdapterCatalog:
     def __init__(self, search_paths: tuple[Path, ...]):
         self.search_paths = search_paths
@@ -99,15 +89,54 @@ class SeatRuntime:
     seat: SeatConfig
     pool: UsagePoolConfig
     adapter: AdapterRecord
-    executable: str
+    executable: str | None
 
 
-def _resolve_executable(adapter: AdapterRecord) -> str:
+def _usable_resolved_executable(adapter: AdapterRecord, resolved: str) -> bool:
+    path = Path(resolved)
+    if not path.is_absolute():
+        return False
+    try:
+        file_stat = path.stat()
+    except OSError:
+        return False
+    if not stat.S_ISREG(file_stat.st_mode) or not os.access(resolved, os.X_OK):
+        return False
+    return (
+        resolved in adapter.executable.candidates
+        or path.name in adapter.executable.candidates
+    )
+
+
+def _resolve_executable(
+    adapter: AdapterRecord,
+    *,
+    fallback: str | None = None,
+) -> str:
     for candidate in adapter.executable.candidates:
         resolved = shutil.which(candidate)
         if resolved:
             return resolved
+    if fallback is not None and _usable_resolved_executable(adapter, fallback):
+        return fallback
     raise RuntimeError(f"adapter executable is unavailable: {adapter.adapter_id}")
+
+
+def _safe_environment(*, executable: str | None = None) -> dict[str, str]:
+    exact = {"COLORTERM", "HOME", "LANG", "PATH", "SHELL", "TERM", "TMPDIR"}
+    prefixes = ("LC_", "XDG_")
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key in exact or key.startswith(prefixes)
+    }
+    if executable:
+        parent = str(Path(executable).parent)
+        current = environment.get("PATH", "")
+        parts = [part for part in current.split(os.pathsep) if part]
+        if parent not in parts:
+            environment["PATH"] = parent if not current else f"{parent}{os.pathsep}{current}"
+    return environment
 
 
 def _git_output(cwd: Path, *arguments: str) -> str:
@@ -233,12 +262,16 @@ class RuntimeController:
                 raise RuntimeError(
                     f"model {pool.model!r} is not declared by adapter {pool.adapter_id}"
                 )
+            try:
+                executable = _resolve_executable(adapter)
+            except RuntimeError:
+                executable = None
             runtimes.append(
                 SeatRuntime(
                     seat=seat,
                     pool=pool,
                     adapter=adapter,
-                    executable=_resolve_executable(adapter),
+                    executable=executable,
                 )
             )
         return runtimes
@@ -248,6 +281,20 @@ class RuntimeController:
         for runtime in runtimes:
             validate_worktree(runtime.seat)
         return runtimes
+
+    def _with_executable(
+        self,
+        runtime: SeatRuntime,
+        record: SeatRecord | None = None,
+    ) -> SeatRuntime:
+        if runtime.executable:
+            return runtime
+        fallback = None
+        if record is not None:
+            raw = record.extensions.get("resolved_executable")
+            if isinstance(raw, str):
+                fallback = raw
+        return replace(runtime, executable=_resolve_executable(runtime.adapter, fallback=fallback))
 
     def _adapter_state_dir(self, seat_id: str) -> Path:
         return (
@@ -280,6 +327,10 @@ class RuntimeController:
         template: tuple[str, ...],
         native_session_id: str | None,
     ) -> list[str]:
+        if runtime.executable is None:
+            raise RuntimeError(
+                f"adapter executable is unavailable: {runtime.adapter.adapter_id}"
+            )
         expanded = expand_argv(template, self._values(runtime, native_session_id))
         if expanded[0] in runtime.adapter.executable.candidates:
             expanded[0] = runtime.executable
@@ -296,7 +347,7 @@ class RuntimeController:
             result = subprocess.run(
                 argv,
                 cwd=runtime.seat.working_directory,
-                env=_safe_environment(),
+                env=_safe_environment(executable=runtime.executable),
                 capture_output=True,
                 text=True,
                 check=False,
@@ -393,7 +444,7 @@ class RuntimeController:
             {
                 "argv": argv,
                 "cwd": str(runtime.seat.working_directory),
-                "env": _safe_environment(),
+                "env": _safe_environment(executable=runtime.executable),
             },
         )
 
@@ -469,6 +520,11 @@ class RuntimeController:
                 "adapter_schema_version": runtime.adapter.schema_version,
                 "capture_baseline": sorted(baseline),
                 "model": runtime.pool.model,
+                **(
+                    {"resolved_executable": runtime.executable}
+                    if runtime.executable is not None
+                    else {}
+                ),
             },
         )
 
@@ -488,7 +544,7 @@ class RuntimeController:
             raise RuntimeError(f"seat {runtime.seat.seat_id} registry/config mismatch")
 
     def launch(self) -> list[dict[str, Any]]:
-        runtimes = self._validate_runtimes()
+        runtimes = [self._with_executable(runtime) for runtime in self._validate_runtimes()]
         for runtime in runtimes:
             try:
                 self.registry.read_seat(self.config.fleet_id, runtime.seat.seat_id)
@@ -579,6 +635,7 @@ class RuntimeController:
                 and runtime.adapter.session_capture.kind
                 is CaptureKind.COMMAND_JSON_LIST_DELTA
             ):
+                runtime = self._with_executable(runtime, record)
                 baseline = set(record.extensions.get("capture_baseline", []))
                 captured = self._capture_delta(runtime, baseline, wait_seconds=0)
                 if captured is not None:
@@ -684,6 +741,7 @@ class RuntimeController:
                     {"kind": "lifecycle_event", "event_id": event_id},
                 )
             else:
+                runtime = self._with_executable(runtime, record)
                 baseline: set[str] = set()
                 native_session_id = record.native_session_id
                 if decision.action is ResumeAction.RESUME_NATIVE:

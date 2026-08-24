@@ -622,4 +622,12 @@ def test_cli_dead_tmux_status_and_native_resume_survive_transient_adapter_path_l
         assert {seat["action"] for seat in resume_payload["seats"]} == {"resume_native"}
         assert all(seat["state"] == "working" for seat in resume_payload["seats"])
     finally:
-        run_foil("stop", "--config", str(config), "--state-dir", str(state), "--json", env=launch_env)
+        run_foil(
+            "stop",
+            "--config",
+            str(config),
+            "--state-dir",
+            str(state),
+            "--json",
+            env=launch_env,
+        )
