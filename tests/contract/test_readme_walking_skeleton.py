@@ -1,6 +1,9 @@
 """Documentation contract for the generation-2 walking skeleton (CAP-001, CAP-017, CAP-027)."""
 
+import json
+import os
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -16,6 +19,14 @@ def _level_three_sections(text: str) -> dict[str, str]:
         ]
         for index, match in enumerate(headings)
     }
+
+
+def _shell_block(readme_name: str, heading: str) -> str:
+    text = (ROOT / readme_name).read_text(encoding="utf-8")
+    section = _level_three_sections(text)[heading]
+    match = re.search(r"```sh\n(.*?)\n```", section, flags=re.DOTALL)
+    assert match is not None
+    return match.group(1)
 
 
 @pytest.mark.parametrize(
@@ -195,3 +206,67 @@ def test_readme_maps_t1_t5_and_cleanup_to_exact_acceptance_actions(
 
     t5_heading = next(heading for heading in headings if heading.startswith("T5 "))
     assert "capstan stop" not in sections[t5_heading]
+
+
+def test_documented_t2_setup_executes_with_a_symlinked_tmpdir(tmp_path: Path) -> None:
+    english = _shell_block("README.md", "T2 — Initialize and scaffold an isolated project")
+    chinese = _shell_block("README.zh-CN.md", "T2 — 初始化并生成隔离项目 scaffold")
+    assert english == chinese
+
+    real_tmp = tmp_path / "canonical-tmp"
+    real_tmp.mkdir()
+    linked_tmp = tmp_path / "linked-tmp"
+    linked_tmp.symlink_to(real_tmp, target_is_directory=True)
+    capture_path = tmp_path / "captured-paths.json"
+
+    executable_dir = tmp_path / "bin"
+    executable_dir.mkdir()
+    fake_capstan = executable_dir / "capstan"
+    fake_capstan.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+assert sys.argv[1:] == ["init", "."]
+project = Path.cwd().resolve()
+state_text = os.environ["CAPSTAN_STATE_DIR"]
+state = Path(state_text).resolve()
+runtime = project / ".capstan" / "runtime.toml"
+runtime.parent.mkdir()
+runtime.write_text("schema_version = 1\\n", encoding="utf-8")
+Path(os.environ["CAPSTAN_DOC_CAPTURE"]).write_text(
+    json.dumps({"project": str(project), "state_text": state_text}),
+    encoding="utf-8",
+)
+print(json.dumps({
+    "fleet_id": "starter-documentation-test",
+    "runtime_config_path": str(runtime),
+    "state_root": str(state),
+}))
+""",
+        encoding="utf-8",
+    )
+    fake_capstan.chmod(0o755)
+
+    environment = os.environ.copy()
+    environment["TMPDIR"] = str(linked_tmp)
+    environment["CAPSTAN_DOC_CAPTURE"] = str(capture_path)
+    environment["PATH"] = f"{executable_dir}{os.pathsep}{environment['PATH']}"
+    result = subprocess.run(
+        ["/bin/sh", "-c", english],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    captured = json.loads(capture_path.read_text(encoding="utf-8"))
+    expected_root = real_tmp.resolve() / "capstan-generation-2-demo"
+    assert captured == {
+        "project": str(expected_root / "project"),
+        "state_text": str(expected_root / "state"),
+    }
