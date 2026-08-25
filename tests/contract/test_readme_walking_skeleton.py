@@ -1,4 +1,4 @@
-"""Documentation contract for the generation-2 walking skeleton (CAP-001, CAP-017, CAP-027)."""
+"""Executable T1–T6 contract for the canonical walking-skeleton document."""
 
 import json
 import os
@@ -9,6 +9,40 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).parents[2]
+WALKING_SKELETON = ROOT / "docs" / "walking-skeleton.md"
+
+T1_T6_HEADINGS = {
+    "T1 — Install from a clean checkout": (
+        "uv tool install .",
+        "uv tool install --reinstall .",
+    ),
+    "T2 — Initialize and scaffold an isolated project": (
+        "foil init .",
+        "git init -b foil-demo",
+    ),
+    "T3 — Launch two real seats and validate machine-readable JSON": (
+        "foil launch",
+        "foil status",
+        "implementer",
+        "reviewer-challenger",
+    ),
+    "T4 — Deliver a file-backed message and wake the reviewer": (
+        "foil send-message",
+        "foil message-status",
+        "wake",
+        "queued",
+    ),
+    "T5 — Kill tmux and verify resume precedence and registry continuity": (
+        "tmux kill-session",
+        "foil resume",
+        "resume_native",
+        "registry",
+    ),
+    "T6 — Stop safely and remove the verified demo root": (
+        "foil stop",
+        "rm -rf",
+    ),
+}
 
 
 def _level_three_sections(text: str) -> dict[str, str]:
@@ -21,38 +55,22 @@ def _level_three_sections(text: str) -> dict[str, str]:
     }
 
 
-def _shell_block(readme_name: str, heading: str) -> str:
-    text = (ROOT / readme_name).read_text(encoding="utf-8")
+def _shell_block(heading: str) -> str:
+    text = WALKING_SKELETON.read_text(encoding="utf-8")
     section = _level_three_sections(text)[heading]
     match = re.search(r"```sh\n(.*?)\n```", section, flags=re.DOTALL)
     assert match is not None
     return match.group(1)
 
 
-@pytest.mark.parametrize(
-    ("readme_name", "title", "name_explanations"),
-    [
-        (
-            "README.md",
-            "# Foil · 运筹",
-            ("English/international name", "Chinese primary name"),
-        ),
-        (
-            "README.zh-CN.md",
-            "# 运筹 · Foil",
-            ("英文/国际名称", "中文主名称"),
-        ),
-    ],
-)
-def test_readme_documents_complete_walking_skeleton_contract(
-    readme_name: str,
-    title: str,
-    name_explanations: tuple[str, str],
-) -> None:
-    text = (ROOT / readme_name).read_text(encoding="utf-8")
+def test_walking_skeleton_document_exists() -> None:
+    assert WALKING_SKELETON.is_file()
 
-    assert text.startswith(f"{title}\n")
-    assert all(explanation in text for explanation in name_explanations)
+
+def test_walking_skeleton_documents_complete_contract() -> None:
+    text = WALKING_SKELETON.read_text(encoding="utf-8")
+
+    assert text.startswith("# T1–T6 walking skeleton\n")
     assert all(f"T{step}" in text for step in range(1, 7))
 
     prerequisites = (
@@ -107,9 +125,8 @@ def test_readme_documents_complete_walking_skeleton_contract(
     assert all(gate in text for gate in gates)
 
 
-@pytest.mark.parametrize("readme_name", ["README.md", "README.zh-CN.md"])
-def test_readme_states_security_and_cleanup_boundaries(readme_name: str) -> None:
-    text = (ROOT / readme_name).read_text(encoding="utf-8")
+def test_walking_skeleton_states_security_and_cleanup_boundaries() -> None:
+    text = WALKING_SKELETON.read_text(encoding="utf-8")
 
     assert "MCP" in text
     assert "credential" in text
@@ -118,100 +135,21 @@ def test_readme_states_security_and_cleanup_boundaries(readme_name: str) -> None
     assert "DEMO_ROOT" in text
 
 
-@pytest.mark.parametrize(
-    ("readme_name", "headings"),
-    [
-        (
-            "README.md",
-            {
-                "T1 — Install from a clean checkout": (
-                    "uv tool install .",
-                    "uv tool install --reinstall .",
-                ),
-                "T2 — Initialize and scaffold an isolated project": (
-                    "foil init .",
-                    "git init -b foil-demo",
-                ),
-                "T3 — Launch two real seats and validate machine-readable JSON": (
-                    "foil launch",
-                    "foil status",
-                    "implementer",
-                    "reviewer-challenger",
-                ),
-                "T4 — Deliver a file-backed message and wake the reviewer": (
-                    "foil send-message",
-                    "foil message-status",
-                    "wake",
-                    "queued",
-                ),
-                "T5 — Kill tmux and verify resume precedence and registry continuity": (
-                    "tmux kill-session",
-                    "foil resume",
-                    "resume_native",
-                    "registry",
-                ),
-                "T6 — Stop safely and remove the verified demo root": (
-                    "foil stop",
-                    "rm -rf",
-                ),
-            },
-        ),
-        (
-            "README.zh-CN.md",
-            {
-                "T1 — 从干净 checkout 安装": (
-                    "uv tool install .",
-                    "uv tool install --reinstall .",
-                ),
-                "T2 — 初始化并生成隔离项目 scaffold": (
-                    "foil init .",
-                    "git init -b foil-demo",
-                ),
-                "T3 — 启动两个真实 seat 并验证机器可读 JSON": (
-                    "foil launch",
-                    "foil status",
-                    "implementer",
-                    "reviewer-challenger",
-                ),
-                "T4 — 通过文件投递消息并唤醒 reviewer": (
-                    "foil send-message",
-                    "foil message-status",
-                    "wake",
-                    "queued",
-                ),
-                "T5 — 终止 tmux 并验证 resume 优先级与 registry 连续性": (
-                    "tmux kill-session",
-                    "foil resume",
-                    "resume_native",
-                    "registry",
-                ),
-                "T6 — 安全停止并删除已验证的 demo 根目录": (
-                    "foil stop",
-                    "rm -rf",
-                ),
-            },
-        ),
-    ],
-)
-def test_readme_maps_t1_t6_to_exact_acceptance_actions(
-    readme_name: str,
-    headings: dict[str, tuple[str, ...]],
-) -> None:
-    text = (ROOT / readme_name).read_text(encoding="utf-8")
+def test_walking_skeleton_maps_t1_t6_to_exact_acceptance_actions() -> None:
+    text = WALKING_SKELETON.read_text(encoding="utf-8")
     sections = _level_three_sections(text)
 
-    for heading, actions in headings.items():
+    for heading, actions in T1_T6_HEADINGS.items():
         assert heading in sections
         assert all(action in sections[heading] for action in actions)
 
-    t5_heading = next(heading for heading in headings if heading.startswith("T5 "))
-    assert "foil stop" not in sections[t5_heading]
+    assert "foil stop" not in sections[
+        "T5 — Kill tmux and verify resume precedence and registry continuity"
+    ]
 
 
 def test_documented_t2_setup_executes_with_a_symlinked_tmpdir(tmp_path: Path) -> None:
-    english = _shell_block("README.md", "T2 — Initialize and scaffold an isolated project")
-    chinese = _shell_block("README.zh-CN.md", "T2 — 初始化并生成隔离项目 scaffold")
-    assert english == chinese
+    setup = _shell_block("T2 — Initialize and scaffold an isolated project")
 
     real_tmp = tmp_path / "canonical-tmp"
     real_tmp.mkdir()
@@ -255,7 +193,7 @@ print(json.dumps({
     environment["FOIL_DOC_CAPTURE"] = str(capture_path)
     environment["PATH"] = f"{executable_dir}{os.pathsep}{environment['PATH']}"
     result = subprocess.run(
-        ["/bin/sh", "-c", english],
+        ["/bin/sh", "-c", setup],
         cwd=ROOT,
         env=environment,
         capture_output=True,
@@ -270,3 +208,13 @@ print(json.dumps({
         "project": str(expected_root / "project"),
         "state_text": str(expected_root / "state"),
     }
+
+
+@pytest.mark.parametrize("readme_name", ["README.md", "README.zh-CN.md"])
+def test_marketing_readmes_do_not_own_the_walking_skeleton_contract(readme_name: str) -> None:
+    text = (ROOT / readme_name).read_text(encoding="utf-8")
+    assert not re.search(r"\bT[1-6]\b", text)
+    assert "T1–T6" not in text
+    assert "T1-T6" not in text
+    for heading in T1_T6_HEADINGS:
+        assert heading not in text
