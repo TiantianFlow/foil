@@ -1,4 +1,4 @@
-"""Fail-closed operator mistakes. Launch must not leave stray tmux sessions."""
+"""Fail-closed operator mistakes. Spawn must not leave stray tmux sessions."""
 
 from __future__ import annotations
 
@@ -15,64 +15,85 @@ def test_init_rejects_a_nonempty_directory(fleet: OperatorFleet) -> None:
     assert not (fleet.project / ".foil").exists()
 
 
-def test_launch_without_git_identity_does_not_start_tmux(fleet: OperatorFleet) -> None:
+def test_spawn_without_git_identity_does_not_start_tmux(fleet: OperatorFleet) -> None:
     payload = fleet.foil("init", ".").json()
     fleet.fleet_id = payload["fleet_id"]
-    launched = fleet.lifecycle("launch")
-    assert launched.returncode != 0
-    assert "git" in launched.stderr.lower() or "worktree" in launched.stderr.lower()
+    spawned = fleet.spawn("lead", "grok", lead=True, role="manager")
+    assert spawned.returncode != 0
+    assert "git" in spawned.stderr.lower() or "worktree" in spawned.stderr.lower()
     assert not fleet.tmux_alive()
 
 
-def test_wrong_branch_does_not_start_tmux(initialized: OperatorFleet) -> None:
-    initialized.git("checkout", "-B", "not-foil-demo")
-    launched = initialized.lifecycle("launch")
-    assert launched.returncode != 0
-    assert "branch" in launched.stderr.lower()
+def test_worker_before_lead_does_not_start_tmux(initialized: OperatorFleet) -> None:
+    spawned = initialized.spawn(
+        "implementer",
+        "grok",
+        isolated=True,
+        role="implementer",
+    )
+    assert spawned.returncode != 0
+    assert "lead" in spawned.stderr.lower()
     assert not initialized.tmux_alive()
 
 
 def test_missing_agent_cli_fails_closed(initialized: OperatorFleet) -> None:
     (initialized.bin / "grok").unlink()
-    launched = initialized.lifecycle("launch")
-    assert launched.returncode != 0
-    assert "unavailable" in launched.stderr.lower()
+    spawned = initialized.spawn("lead", "grok", lead=True, role="manager")
+    assert spawned.returncode != 0
+    assert "unavailable" in spawned.stderr.lower()
     assert not initialized.tmux_alive()
 
 
 def test_missing_opencode_cli_fails_closed(initialized: OperatorFleet) -> None:
+    initialized.spawn("lead", "grok", lead=True, role="manager").json()
     (initialized.bin / "opencode").unlink()
-    launched = initialized.lifecycle("launch")
-    assert launched.returncode != 0
-    assert "unavailable" in launched.stderr.lower()
-    assert not initialized.tmux_alive()
+    spawned = initialized.spawn(
+        "reviewer-challenger",
+        "opencode",
+        isolated=True,
+        role="reviewer-challenger",
+    )
+    assert spawned.returncode != 0
+    assert "unavailable" in spawned.stderr.lower()
 
 
-def test_second_launch_is_rejected(initialized: OperatorFleet) -> None:
-    first = initialized.lifecycle("launch")
+def test_second_spawn_of_the_same_seat_is_rejected(initialized: OperatorFleet) -> None:
+    first = initialized.spawn("lead", "grok", lead=True, role="manager")
     assert first.returncode == 0, first.stderr
-    second = initialized.lifecycle("launch")
+    second = initialized.spawn("lead", "grok", lead=True, role="manager")
     assert second.returncode != 0
     assert "already" in second.stderr.lower()
     assert initialized.tmux_alive()
 
 
-def test_corrupt_runtime_toml_does_not_launch(initialized: OperatorFleet) -> None:
-    initialized.config.write_text("this is not toml {", encoding="utf-8")
-    launched = initialized.lifecycle("launch")
-    assert launched.returncode != 0
-    assert launched.stdout == ""
+def test_unknown_fleet_does_not_spawn(initialized: OperatorFleet) -> None:
+    spawned = initialized.foil(
+        "seat",
+        "spawn",
+        "--state-dir",
+        str(initialized.state),
+        "--fleet",
+        "missing-fleet",
+        "--json",
+        "--lead",
+        "--seat",
+        "lead",
+        "--cli",
+        "grok",
+    )
+    assert spawned.returncode != 0
+    assert spawned.stdout == ""
     assert not initialized.tmux_alive()
 
 
-def test_stop_without_launch_fails_without_a_seat_record(initialized: OperatorFleet) -> None:
+def test_stop_without_seats_fails_without_a_seat_record(initialized: OperatorFleet) -> None:
     result = initialized.lifecycle("stop")
     assert result.returncode != 0
     assert "registered" in result.stderr.lower()
     assert not initialized.tmux_alive()
 
 
-def test_send_message_before_launch_fails_without_a_seat_record(
+def test_send_message_before_spawn_fails_without_a_seat_record(
     initialized: OperatorFleet,
 ) -> None:
     result = initialized.mailbox(
@@ -87,12 +108,12 @@ def test_send_message_before_launch_fails_without_a_seat_record(
 
 
 def test_duplicate_message_does_not_wake_again(initialized: OperatorFleet) -> None:
-    initialized.lifecycle("launch").json()
+    initialized.start_complementary_fleet()
     args = (
         "send-message",
         "reviewer-challenger",
         "--sender",
-        "operator",
+        "lead",
         "--message-id",
         "dup-1",
         "--body",
@@ -109,39 +130,18 @@ def test_duplicate_message_does_not_wake_again(initialized: OperatorFleet) -> No
 
 
 def test_ack_completes_delivery_on_a_live_seat(initialized: OperatorFleet) -> None:
-    initialized.lifecycle("launch").json()
+    initialized.start_complementary_fleet()
     initialized.mailbox(
         "send-message",
         "implementer",
         "--sender",
-        "operator",
+        "lead",
         "--message-id",
         "ack-path-1",
         "--body",
         "Please implement the brief.",
     ).json()
-    queued = initialized.mailbox(
-        "message-status",
-        "implementer",
-        "--message",
-        "ack-path-1",
-    ).json()
-    ack = initialized.mailbox(
-        "ack-message",
-        "implementer",
-        "--message",
-        "ack-path-1",
-        "--actor",
-        "implementer",
-    ).json()
-    done = initialized.mailbox(
-        "message-status",
-        "implementer",
-        "--message",
-        "ack-path-1",
-    ).json()
-    assert queued["state"] == "queued"
-    assert ack["state"] == "acknowledged"
+    done = initialized.wait_for_ack("implementer", "ack-path-1")
     assert done["state"] == "acknowledged"
 
 
@@ -157,8 +157,8 @@ def test_missing_tmux_binary_is_a_nonzero_diagnostic(initialized: OperatorFleet)
     (hidden / "agent-home").write_text(str(initialized.agent_home), encoding="utf-8")
     env = initialized.env()
     env["PATH"] = str(hidden)
-    launched = initialized.lifecycle("launch", env=env)
-    assert launched.returncode != 0
-    combined = launched.stdout + launched.stderr
+    spawned = initialized.spawn("lead", "grok", lead=True, role="manager", extra=(), env=env)
+    assert spawned.returncode != 0
+    combined = spawned.stdout + spawned.stderr
     assert "tmux" in combined.lower()
     assert not initialized.tmux_alive()

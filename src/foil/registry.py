@@ -380,6 +380,15 @@ class RegistryStore:
             raise RegistryError("record identity does not match its path")
         return record
 
+    def delete_seat(self, fleet_id: str, seat_id: str) -> None:
+        path = self.seat_path(fleet_id, seat_id)
+        lock_path = self._seat_lock_path(fleet_id, seat_id)
+        with _exclusive_lock(lock_path):
+            try:
+                path.unlink()
+            except FileNotFoundError as exc:
+                raise RegistryError(f"seat {seat_id} is not registered") from exc
+
     def list_seats(self, fleet_id: str) -> list[SeatRecord]:
         _validate_id(fleet_id, "fleet_id")
         seat_dir = self.state_root / f"v{SCHEMA_VERSION}" / "fleets" / fleet_id / "seats"

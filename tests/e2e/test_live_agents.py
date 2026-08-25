@@ -39,15 +39,14 @@ def live_fleet(tmp_path: Path) -> Iterator[OperatorFleet]:
         session.cleanup()
 
 
-def test_live_two_seat_launch_status_and_stop(live_fleet: OperatorFleet) -> None:
+def test_live_lead_and_workers_spawn_status_and_stop(live_fleet: OperatorFleet) -> None:
     fleet = live_fleet
-    launched = fleet.lifecycle("launch").json()
-    seats = {seat["seat_id"]: seat for seat in launched["seats"]}
-    assert set(seats) == {"implementer", "reviewer-challenger"}
+    fleet.start_complementary_fleet()
+    status = fleet.lifecycle("status").json()
+    seats = {seat["seat_id"]: seat for seat in status["seats"]}
+    assert set(seats) == {"lead", "implementer", "reviewer-challenger"}
     assert all(seat["state"] == "working" for seat in seats.values())
     assert fleet.tmux_alive()
-    status = fleet.lifecycle("status").json()
-    assert all(seat["state"] == "working" for seat in status["seats"])
     stopped = fleet.lifecycle("stop").json()
     assert all(seat["state"] == "exited" for seat in stopped["seats"])
     assert not fleet.tmux_alive()

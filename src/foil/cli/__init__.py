@@ -14,6 +14,7 @@ from foil.catalog import CatalogError, list_personas, map_persona
 from foil.delivery import MessageDeliveryService, TmuxWakeService
 from foil.dispatch import dispatch
 from foil.doctor import DoctorError, doctor_report
+from foil.fleet import FleetError
 from foil.mailbox import Acknowledgement, MailboxError, MailboxMessage, MailboxStore
 from foil.memory import (
     accept_memory,
@@ -27,32 +28,52 @@ from foil.onboarding import InitializationError, initialize_project
 from foil.registry import RegistryError, RegistryStore
 from foil.runtime import RuntimeController
 from foil.runtime import RuntimeError as LifecycleError
-from foil.runtime_config import ConfigError, load_fleet_config
 from foil.status import PollStatusReader, StatusError, UnsupportedStatusSchemaVersion
 from foil.tmux import TmuxError
 
 
-def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
-    """Register lifecycle commands without owning the top-level parser."""
+def _add_fleet_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--state-dir",
+        required=True,
+        metavar="PATH",
+        type=Path,
+        help="Root directory for versioned registry, status, and audit state.",
+    )
+    parser.add_argument(
+        "--fleet",
+        required=True,
+        metavar="FLEET_ID",
+        help="Live fleet identity.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit deterministic machine-readable JSON.",
+    )
+    parser.add_argument(
+        "--actor",
+        metavar="SEAT_ID",
+        help="Calling seat. Operator (default) and the lead may change membership.",
+    )
 
-    commands = {
-        "launch": "Launch every configured seat in verified detached tmux windows.",
-        "status": "Reconcile registry, structured native IDs, and verified tmux liveness.",
-        "stop": "Stop only tmux windows whose stable user-option markers match.",
-    }
-    for command, description in commands.items():
-        runtime = subparsers.add_parser(command, help=description, description=description)
-        _add_lifecycle_flags(runtime)
+
+def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
+    status = subparsers.add_parser(
+        "status",
+        help="Reconcile the live registry with verified tmux liveness.",
+    )
+    _add_fleet_flags(status)
 
     resume = subparsers.add_parser(
         "resume",
-        help="Revive live tmux, resume native context, or start a fresh incarnation.",
+        help="Resume persisted seats after interruption. Not a recipe replay.",
         description=(
-            "Revive live tmux, resume native context, or log a fresh start. "
-            "Pass --fresh to request a clean context and incarnation lineage."
+            "Revive live tmux, use native resume when recorded, or start fresh. "
+            "Membership comes from the live registry, not a TOML roster."
         ),
     )
-    _add_lifecycle_flags(resume)
+    _add_fleet_flags(resume)
     resume.add_argument(
         "--fresh",
         action="store_true",
@@ -64,27 +85,50 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
         help="Limit resume to one seat identity.",
     )
 
+    seat = subparsers.add_parser("seat", help="Lead-controlled live seat lifecycle.")
+    seat_sub = seat.add_subparsers(dest="seat_command", required=True)
 
-def _add_lifecycle_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--config",
-        required=True,
-        metavar="PATH",
-        type=Path,
-        help="Versioned fleet TOML containing usage pools and seat identities.",
+    spawn = seat_sub.add_parser("spawn", help="Create one seat in the live fleet.")
+    _add_fleet_flags(spawn)
+    spawn.add_argument("--seat", required=True, metavar="SEAT_ID")
+    spawn.add_argument("--cli", required=True)
+    spawn.add_argument("--lead", action="store_true")
+    spawn.add_argument("--role", metavar="ROLE_ID")
+    spawn.add_argument("--role-file", type=Path)
+    spawn.add_argument("--isolated", action="store_true")
+    spawn.add_argument("--cwd", type=Path)
+    spawn.add_argument("--model")
+    spawn.add_argument("--display-name")
+    spawn.add_argument("--resume-arg", action="append", dest="resume_args")
+    spawn.add_argument("--session-list-arg", action="append", dest="session_list_args")
+    spawn.add_argument("--session-id-pointer")
+    spawn.add_argument("--session-cwd-pointer")
+    spawn.add_argument(
+        "--session-capture",
+        default="generated_uuid",
+        choices=("none", "generated_uuid", "command_json_list_delta"),
     )
-    parser.add_argument(
-        "--state-dir",
-        required=True,
-        metavar="PATH",
-        type=Path,
-        help="Root directory for versioned registry, status, and audit state.",
+    spawn.add_argument(
+        "launch_argv",
+        nargs=argparse.REMAINDER,
+        help="CLI arguments after -- . Example: -- --model claude-sonnet-5",
     )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Emit deterministic machine-readable JSON.",
-    )
+
+    listed = seat_sub.add_parser("list", help="List live seats.")
+    _add_fleet_flags(listed)
+
+    inspect = seat_sub.add_parser("inspect", help="Inspect one live seat.")
+    _add_fleet_flags(inspect)
+    inspect.add_argument("--seat", required=True, metavar="SEAT_ID")
+
+    stop = seat_sub.add_parser("stop", help="Stop one verified seat, or all seats.")
+    _add_fleet_flags(stop)
+    stop.add_argument("--seat", metavar="SEAT_ID")
+    stop.add_argument("--all", action="store_true", dest="all_seats")
+
+    remove = seat_sub.add_parser("remove", help="Stop and delete one seat record.")
+    _add_fleet_flags(remove)
+    remove.add_argument("--seat", required=True, metavar="SEAT_ID")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -101,14 +145,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     init = subparsers.add_parser(
         "init",
-        help="Scaffold a default fleet in an empty project directory.",
+        help="Scaffold a role library and an empty live fleet.",
         description=(
-            "Scaffold the complete role plan in .foil/fleet.toml and a directly "
-            "consumable two-seat .foil/runtime.toml in an empty directory, then "
-            "initialize versioned registry state. After init, create the expected local "
-            "Git identity with `git init -b foil-demo`. State precedence is "
-            "FOIL_STATE_DIR, the Git common directory, XDG_STATE_HOME, then the "
-            "documented platform fallback (CAP-016, CAP-025)."
+            "Write role templates to .foil/roles/ and initialize an empty live fleet "
+            "registry. No seats are created. Spawn a lead next with "
+            "`foil seat spawn --lead`. After init, create a local Git identity with "
+            "`git init -b foil-demo`. State precedence is FOIL_STATE_DIR, the Git "
+            "common directory, XDG_STATE_HOME, then the documented platform fallback."
         ),
     )
     init.add_argument(
@@ -249,21 +292,18 @@ def _build_parser() -> argparse.ArgumentParser:
             "lowest active_load. Does not scrape interactive slash /usage."
         ),
     )
-    dispatch_cmd.add_argument("--config", required=True, metavar="PATH", type=Path)
-    dispatch_cmd.add_argument("--state-dir", required=True, metavar="PATH", type=Path)
-    dispatch_cmd.add_argument("--json", action="store_true")
+    _add_fleet_flags(dispatch_cmd)
     dispatch_cmd.add_argument("--capability", required=True)
 
     doctor = subparsers.add_parser(
         "doctor",
-        help="Check prerequisites and print a dry-run launch plan.",
+        help="Check host tools and live-seat worktrees.",
         description=(
             "Discover tmux, git, and seat CLIs without inspecting credentials. "
-            "Pass --apply to create independent builder worktrees."
+            "Pass --apply to create missing isolated worktrees for registered seats."
         ),
     )
-    doctor.add_argument("--config", required=True, metavar="PATH", type=Path)
-    doctor.add_argument("--json", action="store_true")
+    _add_fleet_flags(doctor)
     doctor.add_argument(
         "--apply",
         action="store_true",
@@ -278,7 +318,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "waiting/idle without inspecting pane text."
         ),
     )
-    _add_lifecycle_flags(set_state)
+    _add_fleet_flags(set_state)
     set_state.add_argument("--seat", required=True, metavar="SEAT_ID")
     set_state.add_argument("--state", required=True, choices=("waiting", "idle", "working"))
 
@@ -414,8 +454,20 @@ def _message_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def _runtime_payload(config, seats: list, *, as_json: bool) -> int:
-    payload = {"fleet_id": config.fleet_id, "seats": seats}
+def _controller(args: argparse.Namespace) -> RuntimeController:
+    return RuntimeController(args.state_dir, args.fleet)
+
+
+def _runtime_payload(
+    fleet_id: str,
+    seats: list,
+    *,
+    as_json: bool,
+    extra: dict | None = None,
+) -> int:
+    payload = {"fleet_id": fleet_id, "seats": seats}
+    if extra:
+        payload.update(extra)
     if as_json:
         _emit(payload)
     else:
@@ -425,19 +477,54 @@ def _runtime_payload(config, seats: list, *, as_json: bool) -> int:
     return 0
 
 
-def _runtime_command(
-    command: str,
-    config_path: Path,
-    state_dir: Path,
-    *,
-    as_json: bool,
-    **kwargs,
-) -> int:
-    config = load_fleet_config(config_path)
-    controller = RuntimeController(config, state_dir)
-    operation = getattr(controller, command)
-    seats = operation(**kwargs)
-    return _runtime_payload(config, seats, as_json=as_json)
+def _seat_command(args: argparse.Namespace) -> int:
+    controller = _controller(args)
+    actor = getattr(args, "actor", None)
+    if args.seat_command == "spawn":
+        seats = controller.spawn(
+            seat_id=args.seat,
+            cli=args.cli,
+            launch_argv=tuple(args.launch_argv or ()),
+            actor=actor,
+            display_name=args.display_name,
+            resume_argv=tuple(args.resume_args) if args.resume_args else None,
+            session_capture=args.session_capture,
+            session_list_argv=tuple(args.session_list_args)
+            if args.session_list_args
+            else None,
+            session_id_pointer=args.session_id_pointer,
+            session_cwd_pointer=args.session_cwd_pointer,
+            role_id=args.role,
+            role_path=str(args.role_file) if args.role_file else None,
+            isolated=args.isolated,
+            working_directory=args.cwd,
+            model=args.model,
+            lead=args.lead,
+        )
+        return _runtime_payload(args.fleet, seats, as_json=args.json)
+    if args.seat_command == "list":
+        payload = controller.list_seats()
+        if args.json:
+            _emit(payload)
+        else:
+            for seat in payload["seats"]:
+                marker = " lead" if seat["is_lead"] else ""
+                print(f"{seat['seat_id']}:{marker} {seat.get('cli') or ''}")
+        return 0
+    if args.seat_command == "inspect":
+        _emit(controller.inspect(args.seat))
+        return 0
+    if args.seat_command == "stop":
+        seats = controller.stop(
+            seat_id=args.seat,
+            all_seats=args.all_seats,
+            actor=actor,
+        )
+        return _runtime_payload(args.fleet, seats, as_json=args.json)
+    if args.seat_command == "remove":
+        seats = controller.remove(seat_id=args.seat, actor=actor)
+        return _runtime_payload(args.fleet, seats, as_json=args.json)
+    raise ValueError(f"unsupported seat command: {args.seat_command}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -522,48 +609,44 @@ def main(argv: list[str] | None = None) -> int:
             _emit(status_memory(args.state_dir, args.fleet, args.lesson))
             return 0
         if args.command == "dispatch":
-            config = load_fleet_config(args.config)
-            _emit(dispatch(config, capability=args.capability))
+            _emit(
+                dispatch(
+                    args.state_dir,
+                    args.fleet,
+                    capability=args.capability,
+                )
+            )
             return 0
         if args.command == "doctor":
-            config = load_fleet_config(args.config)
-            report = doctor_report(config, apply=args.apply)
+            report = doctor_report(args.state_dir, args.fleet, apply=args.apply)
             if args.json:
                 _emit(report)
             else:
                 print(json.dumps(report, indent=2, sort_keys=True))
             return 0
         if args.command == "set-state":
-            return _runtime_command(
-                "set_state",
-                args.config,
-                args.state_dir,
-                as_json=args.json,
-                seat_id=args.seat,
-                state=args.state,
-            )
+            seats = _controller(args).set_state(args.seat, args.state)
+            return _runtime_payload(args.fleet, seats, as_json=args.json)
         if args.command == "catalog-list":
             _emit(list_personas(args.path))
             return 0
         if args.command == "catalog-map":
             _emit(map_persona(args.path, args.persona))
             return 0
-        if args.command in {"launch", "status", "stop"}:
-            return _runtime_command(
-                args.command,
-                args.config,
-                args.state_dir,
-                as_json=args.json,
-            )
+        if args.command == "status":
+            controller = _controller(args)
+            seats = controller.status()
+            extra = {"lead_seat_id": controller.fleet.lead_seat_id}
+            return _runtime_payload(args.fleet, seats, as_json=args.json, extra=extra)
         if args.command == "resume":
-            return _runtime_command(
-                "resume",
-                args.config,
-                args.state_dir,
-                as_json=args.json,
+            seats = _controller(args).resume(
                 seat_id=args.seat,
                 force_fresh=args.fresh,
+                actor=getattr(args, "actor", None),
             )
+            return _runtime_payload(args.fleet, seats, as_json=args.json)
+        if args.command == "seat":
+            return _seat_command(args)
         parser.error(f"unsupported command: {args.command}")
     except UnsupportedStatusSchemaVersion as exc:
         print(str(exc), file=sys.stderr)
@@ -571,14 +654,15 @@ def main(argv: list[str] | None = None) -> int:
     except (
         AdapterError,
         CatalogError,
-        ConfigError,
         DoctorError,
+        FleetError,
         InitializationError,
         LifecycleError,
         MailboxError,
         RegistryError,
         StatusError,
         TmuxError,
+        ValueError,
     ) as exc:
         print(str(exc), file=sys.stderr)
         return 1

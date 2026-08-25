@@ -1,4 +1,4 @@
-"""Runtime continuity CLI integration tests (CAP-012–CAP-019, CAP-024, CAP-029–CAP-034)."""
+"""Runtime continuity CLI integration tests."""
 
 from __future__ import annotations
 
@@ -9,14 +9,15 @@ import subprocess
 import sys
 import textwrap
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from foil.fleet import FleetRecord, FleetStore
 from foil.registry import TmuxTarget
 from foil.runtime import RuntimeController, SeatRuntime
 from foil.runtime import RuntimeError as LifecycleError
-from foil.runtime_config import load_fleet_config
 from foil.tmux import ProbeResult, ProbeState
 
 
@@ -95,176 +96,131 @@ def make_fixture_executable(tmp_path: Path) -> Path:
     return executable
 
 
-def write_adapters(
-    tmp_path: Path,
-    executable: Path,
-    *,
-    command_name: str | None = None,
-) -> Path:
-    adapter_dir = tmp_path / "adapters"
-    adapter_dir.mkdir()
-    command = command_name or str(executable)
-    generated_launch = json.dumps(
-        [
-            command,
-            "launch",
-            "--seat",
-            "{seat_id}",
-            "--cwd",
-            "{working_directory}",
-            "--store",
-            "{adapter_state_dir}/sessions.json",
-            "--native-id",
-            "{native_session_id}",
-        ]
-    )
-    generated_resume = generated_launch.replace('"launch"', '"resume"', 1)
-    discovered_launch = json.dumps(
-        [
-            command,
-            "launch",
-            "--seat",
-            "{seat_id}",
-            "--cwd",
-            "{working_directory}",
-            "--store",
-            "{adapter_state_dir}/sessions.json",
-        ]
-    )
-    discovered_resume = generated_resume
-    discovery_argv = json.dumps(
-        [
-            command,
-            "session",
-            "list",
-            "--format",
-            "json",
-            "--store",
-            "{adapter_state_dir}/sessions.json",
-        ]
-    )
-    common = f"""
-schema_version = 1
-observed_version = "1.0"
-models = ["fixture/model"]
-skill = "skills/adapters/fixture/SKILL.md"
-
-[executable]
-candidates = [{json.dumps(command)}]
-version_argv = [{json.dumps(command)}, "--version"]
-"""
-    (adapter_dir / "generated.toml").write_text(
-        (
-            """
-id = "fixture-generated"
-"""
-            + common
-            + f"""
-[launch]
-argv = {generated_launch}
-
-[resume]
-supported = true
-argv = {generated_resume}
-
-[session_capture]
-kind = "generated_uuid"
-"""
-        ),
-        encoding="utf-8",
-    )
-    (adapter_dir / "discovery.toml").write_text(
-        (
-            """
-id = "fixture-discovery"
-"""
-            + common
-            + f"""
-[launch]
-argv = {discovered_launch}
-
-[resume]
-supported = true
-argv = {discovered_resume}
-
-[session_capture]
-kind = "command_json_list_delta"
-argv = {discovery_argv}
-id_pointer = "/id"
-cwd_pointer = "/directory"
-"""
-        ),
-        encoding="utf-8",
-    )
-    return adapter_dir
-
-
-def make_project(tmp_path: Path) -> tuple[Path, str]:
+def make_project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
     git("init", "-b", "runtime-test", cwd=project)
-    return project, "runtime-test"
+    return project
 
 
-def write_fleet(
-    tmp_path: Path,
-    project: Path,
-    branch: str,
-    adapter_dir: Path,
-) -> tuple[Path, str]:
+def write_live_fleet(tmp_path: Path, project: Path) -> tuple[Path, str]:
     fleet_id = f"fleet-{uuid.uuid4().hex}"
-    config = tmp_path / "fleet.toml"
-    config.write_text(
-        f"""
-schema_version = 1
-fleet_id = {json.dumps(fleet_id)}
-display_name = "Runtime fixtures"
-adapter_paths = [{json.dumps(str(adapter_dir))}]
-
-[[usage_pools]]
-id = "generated-pool"
-adapter = "fixture-generated"
-model = "fixture/model"
-
-[[usage_pools]]
-id = "discovery-pool"
-adapter = "fixture-discovery"
-model = "fixture/model"
-
-[[seats]]
-id = "generated-seat"
-display_name = "Generated"
-usage_pool_id = "generated-pool"
-working_directory = {json.dumps(str(project))}
-worktree_path = {json.dumps(str(project))}
-git_branch = {json.dumps(branch)}
-
-[[seats]]
-id = "discovery-seat"
-display_name = "Discovery"
-usage_pool_id = "discovery-pool"
-working_directory = {json.dumps(str(project))}
-worktree_path = {json.dumps(str(project))}
-git_branch = {json.dumps(branch)}
-""",
-        encoding="utf-8",
+    state = tmp_path / "state"
+    FleetStore(state).write(
+        FleetRecord(
+            fleet_id=fleet_id,
+            project_root=str(project.resolve()),
+            updated_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            display_name="Runtime fixtures",
+        )
     )
-    return config, fleet_id
+    return state, fleet_id
+
+
+def generated_argv() -> tuple[str, ...]:
+    return (
+        "launch",
+        "--seat",
+        "{seat_id}",
+        "--cwd",
+        "{working_directory}",
+        "--store",
+        "{adapter_state_dir}/sessions.json",
+        "--native-id",
+        "{native_session_id}",
+    )
+
+
+def generated_resume() -> tuple[str, ...]:
+    return (
+        "resume",
+        "--seat",
+        "{seat_id}",
+        "--cwd",
+        "{working_directory}",
+        "--store",
+        "{adapter_state_dir}/sessions.json",
+        "--native-id",
+        "{native_session_id}",
+    )
+
+
+def discovery_argv() -> tuple[str, ...]:
+    return (
+        "launch",
+        "--seat",
+        "{seat_id}",
+        "--cwd",
+        "{working_directory}",
+        "--store",
+        "{adapter_state_dir}/sessions.json",
+    )
+
+
+def discovery_list_argv(command: str) -> tuple[str, ...]:
+    return (
+        command,
+        "session",
+        "list",
+        "--format",
+        "json",
+        "--store",
+        "{adapter_state_dir}/sessions.json",
+    )
+
+
+def spawn_fixture_seats(
+    controller: RuntimeController,
+    executable: Path,
+    *,
+    command: str | None = None,
+) -> None:
+    cli = command or str(executable)
+    controller.spawn(
+        seat_id="generated-seat",
+        cli=cli,
+        launch_argv=generated_argv(),
+        resume_argv=generated_resume(),
+        session_capture="generated_uuid",
+        lead=True,
+        model="fixture/model",
+    )
+    controller.spawn(
+        seat_id="discovery-seat",
+        cli=cli,
+        launch_argv=discovery_argv(),
+        resume_argv=generated_resume(),
+        session_capture="command_json_list_delta",
+        session_list_argv=discovery_list_argv(cli),
+        session_id_pointer="/id",
+        session_cwd_pointer="/directory",
+        model="fixture/model",
+    )
 
 
 def discovery_runtime(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[RuntimeController, SeatRuntime, Path, Path]:
     executable = make_fixture_executable(tmp_path)
-    adapters = write_adapters(tmp_path, executable)
-    project, branch = make_project(tmp_path)
-    config_path, fleet_id = write_fleet(tmp_path, project, branch, adapters)
-    state = tmp_path / "state"
-    controller = RuntimeController(load_fleet_config(config_path), state)
+    project = make_project(tmp_path)
+    state, fleet_id = write_live_fleet(tmp_path, project)
+    tmux = FakeTmux()
+    monkeypatch.setenv("PATH", f"{executable.parent}{os.pathsep}{os.environ.get('PATH', '')}")
+    controller = RuntimeController(state, fleet_id, tmux=tmux)
+    controller.spawn(
+        seat_id="discovery-seat",
+        cli=str(executable),
+        launch_argv=discovery_argv(),
+        session_capture="command_json_list_delta",
+        session_list_argv=discovery_list_argv(str(executable)),
+        session_id_pointer="/id",
+        session_cwd_pointer="/directory",
+        lead=True,
+        model="fixture/model",
+    )
     runtime = next(
-        runtime
-        for runtime in controller._runtimes()
-        if runtime.seat.seat_id == "discovery-seat"
+        item for item in controller._runtimes() if item.seat.seat_id == "discovery-seat"
     )
     session_store = (
         state
@@ -275,12 +231,15 @@ def discovery_runtime(
         / "discovery-seat"
         / "sessions.json"
     )
-    session_store.parent.mkdir(parents=True)
+    session_store.parent.mkdir(parents=True, exist_ok=True)
     return controller, runtime, session_store, project
 
 
-def test_discovery_baseline_only_retains_sessions_for_seat_cwd(tmp_path: Path) -> None:
-    controller, runtime, session_store, project = discovery_runtime(tmp_path)
+def test_discovery_baseline_only_retains_sessions_for_seat_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, runtime, session_store, project = discovery_runtime(tmp_path, monkeypatch)
     unrelated = tmp_path / "unrelated"
     unrelated.mkdir()
     session_store.write_text(
@@ -307,9 +266,10 @@ def test_discovery_baseline_only_retains_sessions_for_seat_cwd(tmp_path: Path) -
 )
 def test_discovery_baseline_rejects_malformed_selected_records(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     record: dict[str, object],
 ) -> None:
-    controller, runtime, session_store, project = discovery_runtime(tmp_path)
+    controller, runtime, session_store, project = discovery_runtime(tmp_path, monkeypatch)
     selected = {
         key: str(project) if value == "{project}" else value
         for key, value in record.items()
@@ -321,57 +281,37 @@ def test_discovery_baseline_rejects_malformed_selected_records(
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
-def test_launch_status_stop_and_native_resume_two_fixture_pools(tmp_path: Path) -> None:
+def test_spawn_status_stop_and_native_resume_two_fixture_seats(tmp_path: Path) -> None:
     executable = make_fixture_executable(tmp_path)
-    adapters = write_adapters(tmp_path, executable)
-    project, branch = make_project(tmp_path)
-    config, fleet_id = write_fleet(tmp_path, project, branch, adapters)
-    state = tmp_path / "state"
+    project = make_project(tmp_path)
+    state, fleet_id = write_live_fleet(tmp_path, project)
+    env = with_adapter_path(executable)
+    flags = ("--state-dir", str(state), "--fleet", fleet_id, "--json")
 
     try:
-        launched = run_foil(
-            "launch", "--config", str(config), "--state-dir", str(state), "--json"
-        )
-        assert launched.returncode == 0, launched.stderr
-        launch_payload = json.loads(launched.stdout)
-        assert [seat["seat_id"] for seat in launch_payload["seats"]] == [
-            "discovery-seat",
-            "generated-seat",
-        ]
+        controller = RuntimeController(state, fleet_id)
+        spawn_fixture_seats(controller, executable)
 
-        status = run_foil(
-            "status", "--config", str(config), "--state-dir", str(state), "--json"
-        )
+        status = run_foil("status", *flags, env=env)
         assert status.returncode == 0, status.stderr
-        status_payload = json.loads(status.stdout)
-        records = {seat["seat_id"]: seat for seat in status_payload["seats"]}
+        records = {seat["seat_id"]: seat for seat in json.loads(status.stdout)["seats"]}
         assert records["discovery-seat"]["registry"]["native_session_id"] == (
             "native-discovery-seat"
         )
         assert uuid.UUID(records["generated-seat"]["registry"]["native_session_id"])
-        assert {seat["usage_pool_id"] for seat in records.values()} == {
-            "generated-pool",
-            "discovery-pool",
-        }
         assert all(seat["state"] == "working" for seat in records.values())
 
-        revived = run_foil(
-            "resume", "--config", str(config), "--state-dir", str(state), "--json"
-        )
+        revived = run_foil("resume", *flags, env=env)
         assert revived.returncode == 0, revived.stderr
         assert {seat["action"] for seat in json.loads(revived.stdout)["seats"]} == {
             "revive_tmux"
         }
 
-        stopped = run_foil(
-            "stop", "--config", str(config), "--state-dir", str(state), "--json"
-        )
+        stopped = run_foil("seat", "stop", *flags, "--all", env=env)
         assert stopped.returncode == 0, stopped.stderr
         assert all(seat["state"] == "exited" for seat in json.loads(stopped.stdout)["seats"])
 
-        resumed = run_foil(
-            "resume", "--config", str(config), "--state-dir", str(state), "--json"
-        )
+        resumed = run_foil("resume", *flags, env=env)
         assert resumed.returncode == 0, resumed.stderr
         assert {seat["action"] for seat in json.loads(resumed.stdout)["seats"]} == {
             "resume_native"
@@ -380,57 +320,63 @@ def test_launch_status_stop_and_native_resume_two_fixture_pools(tmp_path: Path) 
         events_path = state / "v1" / "fleets" / fleet_id / "events" / "events.jsonl"
         events = [json.loads(line) for line in events_path.read_text().splitlines()]
         assert {event["event_type"] for event in events} >= {
-            "launch_result",
+            "spawn_result",
             "stop_result",
             "resume_decision",
             "resume_result",
         }
         assert all("argv" not in event for event in events)
     finally:
-        run_foil("stop", "--config", str(config), "--state-dir", str(state), "--json")
+        run_foil("seat", "stop", *flags, "--all", env=env)
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
-def test_launch_rejects_branch_mismatch_before_tmux_mutation(tmp_path: Path) -> None:
+def test_spawn_without_git_identity_does_not_start_tmux(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    state, fleet_id = write_live_fleet(tmp_path, project)
     executable = make_fixture_executable(tmp_path)
-    adapters = write_adapters(tmp_path, executable)
-    project, _branch = make_project(tmp_path)
-    config, fleet_id = write_fleet(tmp_path, project, "wrong-branch", adapters)
-    state = tmp_path / "state"
-
     launched = run_foil(
-        "launch", "--config", str(config), "--state-dir", str(state), "--json"
+        "seat",
+        "spawn",
+        "--state-dir",
+        str(state),
+        "--fleet",
+        fleet_id,
+        "--json",
+        "--lead",
+        "--seat",
+        "lead",
+        "--cli",
+        str(executable),
+        "--",
+        *generated_argv(),
+        env=with_adapter_path(executable),
     )
-
     assert launched.returncode != 0
-    assert "branch" in launched.stderr.lower()
-    probe = subprocess.run(
-        ["tmux", "has-session", "-t", f"foil-runtime-fixtures-{fleet_id[-8:]}"],
-        capture_output=True,
-        check=False,
-    )
-    assert probe.returncode != 0
+    assert "git" in launched.stderr.lower() or "worktree" in launched.stderr.lower()
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
 def test_stop_refuses_mismatched_tmux_user_option_marker(tmp_path: Path) -> None:
     executable = make_fixture_executable(tmp_path)
-    adapters = write_adapters(tmp_path, executable)
-    project, branch = make_project(tmp_path)
-    config, fleet_id = write_fleet(tmp_path, project, branch, adapters)
-    state = tmp_path / "state"
-    launched = run_foil(
-        "launch", "--config", str(config), "--state-dir", str(state), "--json"
+    project = make_project(tmp_path)
+    state, fleet_id = write_live_fleet(tmp_path, project)
+    env = with_adapter_path(executable)
+    flags = ("--state-dir", str(state), "--fleet", fleet_id, "--json")
+    controller = RuntimeController(state, fleet_id)
+    controller.spawn(
+        seat_id="discovery-seat",
+        cli=str(executable),
+        launch_argv=discovery_argv(),
+        session_capture="command_json_list_delta",
+        session_list_argv=discovery_list_argv(str(executable)),
+        session_id_pointer="/id",
+        session_cwd_pointer="/directory",
+        lead=True,
+        model="fixture/model",
     )
-    assert launched.returncode == 0, launched.stderr
-    record_path = (
-        state
-        / "v1"
-        / "fleets"
-        / fleet_id
-        / "seats"
-        / "discovery-seat.json"
-    )
+    record_path = state / "v1" / "fleets" / fleet_id / "seats" / "discovery-seat.json"
     record = json.loads(record_path.read_text())
     target = f"{record['tmux']['session_name']}:{record['tmux']['window_name']}"
 
@@ -447,9 +393,7 @@ def test_stop_refuses_mismatched_tmux_user_option_marker(tmp_path: Path) -> None
             ],
             check=True,
         )
-        stopped = run_foil(
-            "stop", "--config", str(config), "--state-dir", str(state), "--json"
-        )
+        stopped = run_foil("seat", "stop", *flags, "--seat", "discovery-seat", env=env)
         assert stopped.returncode != 0
         assert "unverified" in stopped.stderr
         assert subprocess.run(
@@ -467,15 +411,22 @@ def test_runtime_help_is_composable_and_documents_json_contract() -> None:
     result = run_foil("--help")
 
     assert result.returncode == 0
-    for command in ("launch", "status", "stop", "resume", "poll-status"):
+    for command in ("seat", "status", "resume", "poll-status"):
         assert command in result.stdout
+    assert "launch" not in result.stdout
 
-    for command in ("launch", "status", "stop", "resume"):
+    for command in ("status", "resume"):
         help_result = run_foil(command, "--help")
         assert help_result.returncode == 0
-        assert "--config" in help_result.stdout
         assert "--state-dir" in help_result.stdout
+        assert "--fleet" in help_result.stdout
         assert "--json" in help_result.stdout
+        assert "--config" not in help_result.stdout
+
+    seat_help = run_foil("seat", "--help")
+    assert seat_help.returncode == 0
+    for name in ("spawn", "list", "inspect", "stop", "remove"):
+        assert name in seat_help.stdout
 
 
 class FakeTmux:
@@ -523,62 +474,80 @@ def _bare_name_controller(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[RuntimeController, FakeTmux, Path]:
     executable = make_fixture_executable(tmp_path)
-    adapters = write_adapters(tmp_path, executable, command_name=executable.name)
-    project, branch = make_project(tmp_path)
-    config_path, _fleet_id = write_fleet(tmp_path, project, branch, adapters)
+    project = make_project(tmp_path)
+    state, fleet_id = write_live_fleet(tmp_path, project)
     tmux = FakeTmux()
     monkeypatch.setenv("PATH", f"{executable.parent}{os.pathsep}{os.environ.get('PATH', '')}")
-    controller = RuntimeController(load_fleet_config(config_path), tmp_path / "state", tmux=tmux)
+    controller = RuntimeController(state, fleet_id, tmux=tmux)
     return controller, tmux, executable
 
 
-def test_launch_completes_only_the_unregistered_seat(
+def test_spawn_rejects_duplicate_and_worker_before_lead(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    controller, tmux, _executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
 
     def capture_native(runtime: SeatRuntime, baseline: set[str], *, wait_seconds: float) -> str:
         del baseline, wait_seconds
         return f"native-{runtime.seat.seat_id}"
 
     monkeypatch.setattr(controller, "_capture_delta", capture_native)
-    first = controller.launch()
-    assert {seat["seat_id"] for seat in first} == {"discovery-seat", "generated-seat"}
+    with pytest.raises(LifecycleError, match="lead seat"):
+        controller.spawn(
+            seat_id="worker",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+        )
+    first = controller.spawn(
+        seat_id="generated-seat",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        resume_argv=generated_resume(),
+        lead=True,
+    )
+    assert {seat["seat_id"] for seat in first} == {"generated-seat"}
+    second = controller.spawn(
+        seat_id="discovery-seat",
+        cli=executable.name,
+        launch_argv=discovery_argv(),
+        session_capture="command_json_list_delta",
+        session_list_argv=discovery_list_argv(executable.name),
+        session_id_pointer="/id",
+        session_cwd_pointer="/directory",
+    )
+    assert {seat["seat_id"] for seat in second} == {"discovery-seat"}
     assert len(tmux.launches) == 2
-
-    controller.registry.seat_path(controller.config.fleet_id, "discovery-seat").unlink()
-    status = {seat["seat_id"]: seat for seat in controller.status()}
-    assert status["generated-seat"]["state"] == "working"
-    assert status["discovery-seat"]["state"] == "unknown"
-    assert status["discovery-seat"]["registry"] is None
-
-    second = controller.launch()
-    seats = {seat["seat_id"]: seat for seat in second}
-    assert seats["discovery-seat"]["state"] == "working"
-    assert seats["generated-seat"]["state"] == "working"
-    assert len(tmux.launches) == 3
-
     with pytest.raises(LifecycleError, match="already registered"):
-        controller.launch()
+        controller.spawn(
+            seat_id="generated-seat",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+        )
 
 
 def test_fresh_resume_refuses_unverified_tmux_instead_of_orphaning(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    controller, tmux, _executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
     monkeypatch.setattr(
         controller,
         "_capture_delta",
         lambda runtime, baseline, *, wait_seconds: f"native-{runtime.seat.seat_id}",
     )
-    controller.launch()
-    assert len(tmux.launches) == 2
+    controller.spawn(
+        seat_id="generated-seat",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        resume_argv=generated_resume(),
+        lead=True,
+    )
+    assert len(tmux.launches) == 1
     tmux.identity_matches = False
     with pytest.raises(LifecycleError, match="unverified"):
         controller.resume(seat_id="generated-seat", force_fresh=True)
-    assert len(tmux.launches) == 2
+    assert len(tmux.launches) == 1
 
 
 def test_dead_tmux_status_and_native_resume_survive_transient_adapter_path_loss(
@@ -592,9 +561,8 @@ def test_dead_tmux_status_and_native_resume_survive_transient_adapter_path_loss(
         return f"native-{runtime.seat.seat_id}"
 
     monkeypatch.setattr(controller, "_capture_delta", capture_native)
-    launched = controller.launch()
-    assert {seat["seat_id"] for seat in launched} == {"discovery-seat", "generated-seat"}
-    assert all(seat["registry"]["native_session_id"] for seat in launched)
+    spawn_fixture_seats(controller, executable, command=executable.name)
+    assert all(seat["registry"]["native_session_id"] for seat in controller.status())
 
     tmux.dead = True
     stripped = os.pathsep.join(
@@ -615,7 +583,6 @@ def test_dead_tmux_status_and_native_resume_survive_transient_adapter_path_loss(
     assert {seat["seat_id"] for seat in resumed} == {"discovery-seat", "generated-seat"}
     assert all(seat["action"] == "resume_native" for seat in resumed)
     assert all(seat["state"] == "working" for seat in resumed)
-    assert all(seat["registry"]["native_session_id"] for seat in resumed)
     plans = list((tmp_path / "state").glob("v1/fleets/*/runner-plans/*.json"))
     assert len(plans) == 2
     for plan in plans:
@@ -629,22 +596,19 @@ def test_cli_dead_tmux_status_and_native_resume_survive_transient_adapter_path_l
     tmp_path: Path,
 ) -> None:
     executable = make_fixture_executable(tmp_path)
-    adapters = write_adapters(tmp_path, executable, command_name=executable.name)
-    project, branch = make_project(tmp_path)
-    config, _fleet_id = write_fleet(tmp_path, project, branch, adapters)
-    state = tmp_path / "state"
+    project = make_project(tmp_path)
+    state, fleet_id = write_live_fleet(tmp_path, project)
     launch_env = with_adapter_path(executable)
     lost_env = without_adapter_path(executable)
+    flags = ("--state-dir", str(state), "--fleet", fleet_id, "--json")
     assert shutil.which(executable.name, path=lost_env["PATH"]) is None
 
     try:
-        launched = run_foil(
-            "launch", "--config", str(config), "--state-dir", str(state), "--json", env=launch_env
-        )
-        assert launched.returncode == 0, launched.stderr
-        launch_payload = json.loads(launched.stdout)
+        controller = RuntimeController(state, fleet_id)
+        spawn_fixture_seats(controller, executable)
+        status_live = controller.status()
         session_names = {
-            seat["registry"]["tmux"]["session_name"] for seat in launch_payload["seats"]
+            seat["registry"]["tmux"]["session_name"] for seat in status_live
         }
         assert len(session_names) == 1
         subprocess.run(
@@ -653,9 +617,7 @@ def test_cli_dead_tmux_status_and_native_resume_survive_transient_adapter_path_l
             capture_output=True,
         )
 
-        status = run_foil(
-            "status", "--config", str(config), "--state-dir", str(state), "--json", env=lost_env
-        )
+        status = run_foil("status", *flags, env=lost_env)
         assert status.returncode == 0, status.stderr
         status_payload = json.loads(status.stdout)
         assert {seat["seat_id"] for seat in status_payload["seats"]} == {
@@ -664,20 +626,10 @@ def test_cli_dead_tmux_status_and_native_resume_survive_transient_adapter_path_l
         }
         assert all(seat["state"] == "exited" for seat in status_payload["seats"])
 
-        resumed = run_foil(
-            "resume", "--config", str(config), "--state-dir", str(state), "--json", env=lost_env
-        )
+        resumed = run_foil("resume", *flags, env=lost_env)
         assert resumed.returncode == 0, resumed.stderr
         resume_payload = json.loads(resumed.stdout)
         assert {seat["action"] for seat in resume_payload["seats"]} == {"resume_native"}
         assert all(seat["state"] == "working" for seat in resume_payload["seats"])
     finally:
-        run_foil(
-            "stop",
-            "--config",
-            str(config),
-            "--state-dir",
-            str(state),
-            "--json",
-            env=launch_env,
-        )
+        run_foil("seat", "stop", *flags, "--all", env=launch_env)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import shutil
 import subprocess
@@ -16,8 +15,8 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from foil.registry import SCHEMA_VERSION, _atomic_write_json, _ensure_private_directory
-from foil.runtime_config import ConfigError, load_fleet_config
+from foil.fleet import FleetRecord, FleetStore
+from foil.registry import SCHEMA_VERSION, _ensure_private_directory
 
 DEFAULT_ROLE_IDS = (
     "manager",
@@ -37,20 +36,22 @@ class InitializationError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class InitializationResult:
-    config_path: Path
-    runtime_config_path: Path
+    project_root: Path
+    roles_path: Path
     state_root: Path
     fleet_id: str
-    git_branch: str
+    lead_seat_id: str | None = None
+    git_branch: str = "foil-demo"
     roles: tuple[str, ...] = DEFAULT_ROLE_IDS
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "config_path": str(self.config_path),
             "fleet_id": self.fleet_id,
             "git_branch": self.git_branch,
+            "lead_seat_id": self.lead_seat_id,
+            "project_root": str(self.project_root),
             "roles": list(self.roles),
-            "runtime_config_path": str(self.runtime_config_path),
+            "roles_path": str(self.roles_path),
             "state_root": str(self.state_root),
         }
 
@@ -134,107 +135,43 @@ def _load_role_templates() -> dict[str, str]:
     return templates
 
 
-def _validate_templates(fleet_text: str, role_templates: Mapping[str, str]) -> None:
-    try:
-        fleet = tomllib.loads(fleet_text)
-        roles = {role_id: tomllib.loads(text) for role_id, text in role_templates.items()}
-    except tomllib.TOMLDecodeError as exc:
-        raise InitializationError("packaged onboarding template is malformed") from exc
-
-    if fleet.get("schema_version") != SCHEMA_VERSION:
-        raise InitializationError("packaged fleet template has an unsupported schema version")
-    pools = fleet.get("usage_pools")
-    seats = fleet.get("seats")
-    if not isinstance(pools, list) or len({pool.get("id") for pool in pools}) < 2:
-        raise InitializationError("packaged fleet template requires at least two usage pools")
-    if not isinstance(seats, list) or [seat.get("id") for seat in seats] != list(DEFAULT_ROLE_IDS):
-        raise InitializationError("packaged fleet template does not contain the default role set")
-
-    specializations: dict[str, str] = {}
-    for seat in seats:
-        seat_id = seat["id"]
-        specialization = seat.get("primary_specialization")
-        if not isinstance(specialization, str) or not specialization:
-            raise InitializationError(f"default seat has no primary specialization: {seat_id}")
-        if "specializations" in seat:
-            raise InitializationError(f"default seat has multiple specializations: {seat_id}")
-        specializations[seat_id] = specialization
-        role = roles.get(seat_id)
+def _validate_role_library(role_templates: Mapping[str, str]) -> None:
+    specializations: set[str] = set()
+    for role_id, text in role_templates.items():
+        try:
+            role = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as exc:
+            raise InitializationError(f"packaged role is malformed: {role_id}") from exc
+        specialization = role.get("primary_specialization")
         if (
-            role is None
-            or role.get("schema_version") != SCHEMA_VERSION
-            or role.get("id") != seat_id
-            or role.get("primary_specialization") != specialization
+            role.get("schema_version") != SCHEMA_VERSION
+            or role.get("id") != role_id
+            or not isinstance(specialization, str)
+            or not specialization
             or "primary_specializations" in role
         ):
-            raise InitializationError(f"packaged role does not match its default seat: {seat_id}")
-
-    for seat in seats:
-        for target in seat.get("challenges", []):
-            if target not in specializations:
-                raise InitializationError(f"challenge target does not exist: {target}")
-            if specializations[target] == seat["primary_specialization"]:
-                raise InitializationError(f"challenge target has the same specialization: {target}")
+            raise InitializationError(f"packaged role is invalid: {role_id}")
+        if specialization in specializations:
+            raise InitializationError(f"role library reuses specialization: {specialization}")
+        specializations.add(specialization)
 
 
-def _write_scaffold(project_root: Path, fleet_id: str) -> tuple[Path, Path, str]:
-    template_root = resources.files("foil.templates")
-    fleet_resource = template_root.joinpath("fleet.toml")
-    if not fleet_resource.is_file():
-        raise InitializationError("packaged fleet template is missing")
-    runtime_resource = template_root.joinpath("runtime.toml")
-    if not runtime_resource.is_file():
-        raise InitializationError("packaged runtime template is missing")
-    fleet_text = fleet_resource.read_text(encoding="utf-8").replace("__FLEET_ID__", fleet_id)
-    implementer_worktree = json.dumps(
-        str(project_root / "worktrees" / "implementer"),
-        ensure_ascii=False,
-    )
-    reviewer_worktree = json.dumps(
-        str(project_root / "worktrees" / "reviewer-challenger"),
-        ensure_ascii=False,
-    )
-    runtime_text = (
-        runtime_resource.read_text(encoding="utf-8")
-        .replace("__FLEET_ID__", fleet_id)
-        .replace(
-            "__PROJECT_ROOT_TOML__",
-            json.dumps(str(project_root), ensure_ascii=False),
-        )
-        .replace("__IMPLEMENTER_WORKTREE_TOML__", implementer_worktree)
-        .replace("__REVIEWER_WORKTREE_TOML__", reviewer_worktree)
-    )
+def _write_role_library(project_root: Path) -> Path:
     role_templates = _load_role_templates()
-    _validate_templates(fleet_text, role_templates)
-
+    _validate_role_library(role_templates)
     scaffold = project_root / ".foil"
     scaffold.mkdir(mode=0o755)
+    roles_directory = scaffold / "roles"
+    roles_directory.mkdir(mode=0o755)
     try:
-        roles_directory = scaffold / "roles"
-        roles_directory.mkdir(mode=0o755)
-        config_path = scaffold / "fleet.toml"
-        config_path.write_text(fleet_text, encoding="utf-8")
-        config_path.chmod(0o644)
-        runtime_config_path = scaffold / "runtime.toml"
-        runtime_config_path.write_text(runtime_text, encoding="utf-8")
-        runtime_config_path.chmod(0o644)
         for role_id, role_text in role_templates.items():
             role_path = roles_directory / f"{role_id}.toml"
             role_path.write_text(role_text, encoding="utf-8")
             role_path.chmod(0o644)
-        try:
-            runtime_config = load_fleet_config(runtime_config_path)
-        except ConfigError as exc:
-            raise InitializationError("packaged runtime template is invalid") from exc
-        if runtime_config.fleet_id != fleet_id:
-            raise InitializationError("packaged runtime template has the wrong fleet ID")
-        git_branches = {seat.git_branch for seat in runtime_config.seats}
-        if len(git_branches) != 1:
-            raise InitializationError("packaged runtime template requires one Git branch")
     except Exception:
         shutil.rmtree(scaffold, ignore_errors=True)
         raise
-    return config_path, runtime_config_path, git_branches.pop()
+    return roles_directory
 
 
 def _initialize_registry(state_root: Path, fleet_id: str, project_root: Path) -> Path:
@@ -256,16 +193,15 @@ def _initialize_registry(state_root: Path, fleet_id: str, project_root: Path) ->
         _ensure_private_directory(path)
 
     updated_at = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-    return _atomic_write_json(
-        fleet_root / "fleet.json",
-        {
-            "schema_version": SCHEMA_VERSION,
-            "fleet_id": fleet_id,
-            "state": "initialized",
-            "project_root": str(project_root),
-            "updated_at": updated_at,
-            "extensions": {},
-        },
+    return FleetStore(state_root).write(
+        FleetRecord(
+            fleet_id=fleet_id,
+            project_root=str(project_root),
+            updated_at=updated_at,
+            display_name="Foil fleet",
+            lead_seat_id=None,
+            state="initialized",
+        )
     )
 
 
@@ -291,16 +227,15 @@ def initialize_project(
         home=home,
     )
     fleet_id = f"starter-{hashlib.sha256(os.fsencode(project)).hexdigest()[:12]}"
-    config_path, runtime_config_path, git_branch = _write_scaffold(project, fleet_id)
+    roles_path = _write_role_library(project)
     try:
         _initialize_registry(state_root, fleet_id, project)
     except Exception:
-        shutil.rmtree(config_path.parent, ignore_errors=True)
+        shutil.rmtree(roles_path.parent, ignore_errors=True)
         raise
     return InitializationResult(
-        config_path=config_path,
-        runtime_config_path=runtime_config_path,
+        project_root=project,
+        roles_path=roles_path,
         state_root=state_root,
         fleet_id=fleet_id,
-        git_branch=git_branch,
     )

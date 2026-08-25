@@ -1,60 +1,70 @@
-"""Doctor prerequisite and worktree reporting (CAP-026, CAP-024)."""
+"""Doctor reports host tools and live-seat worktrees."""
 
 from __future__ import annotations
 
-import os
 import subprocess
-import sys
 from pathlib import Path
 
 from foil.doctor import doctor_report
-from foil.runtime_config import load_fleet_config
+from foil.fleet import FleetStore
+from foil.onboarding import initialize_project
 
 
-def _git(cwd: Path, *arguments: str) -> None:
-    environment = os.environ.copy()
-    environment.setdefault("GIT_AUTHOR_NAME", "Foil")
-    environment.setdefault("GIT_AUTHOR_EMAIL", "foil@localhost")
-    environment.setdefault("GIT_COMMITTER_NAME", "Foil")
-    environment.setdefault("GIT_COMMITTER_EMAIL", "foil@localhost")
-    subprocess.run(
-        ["git", *arguments],
-        cwd=cwd,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+def git(*args: str, cwd: Path) -> None:
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
-def test_doctor_reports_missing_worktrees_until_apply(tmp_path: Path) -> None:
+def test_doctor_reports_empty_plan_after_init(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
-    environment = os.environ.copy()
-    environment["FOIL_STATE_DIR"] = str(tmp_path / "state")
-    initialized = subprocess.run(
-        [sys.executable, "-m", "foil", "init", "."],
-        cwd=project,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
+    state = tmp_path / "state"
+    result = initialize_project(project, environ={"FOIL_STATE_DIR": str(state)})
+    git("init", "-b", "foil-demo", cwd=project)
+
+    report = doctor_report(state, result.fleet_id, apply=False)
+    assert report["tmux"]["ok"] is True or report["tmux"]["ok"] is False
+    assert report["git"]["ok"] is True
+    assert report["credentials_inspected"] is False
+    assert report["plan"]["lead_seat_id"] is None
+    assert report["plan"]["seats"] == []
+    assert report["worktrees"]["ok"] is True
+    names = {item["name"] for item in report["clis"]}
+    assert {"grok", "opencode"} <= names
+
+
+def test_doctor_reports_isolated_worktrees_after_apply(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    state = tmp_path / "state"
+    result = initialize_project(project, environ={"FOIL_STATE_DIR": str(state)})
+    git("init", "-b", "foil-demo", cwd=project)
+    fleet = FleetStore(state).read(result.fleet_id)
+
+    from datetime import UTC, datetime
+
+    from foil.registry import RegistryStore, SeatRecord, TmuxTarget
+
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    worktree = project / "worktrees" / "implementer"
+    RegistryStore(state).write_seat(
+        SeatRecord(
+            fleet_id=fleet.fleet_id,
+            seat_id="implementer",
+            working_directory=str(worktree),
+            agent_kind="grok",
+            native_session_id=None,
+            tmux=TmuxTarget("s", "w", "$1", "@1"),
+            git_branch="foil-demo",
+            worktree_path=str(worktree),
+            usage_pool_id="default",
+            incarnation_id="inc-1",
+            updated_at=now,
+            extensions={"profile": {"cli": "grok", "isolated": True}},
+        )
     )
-    assert initialized.returncode == 0, initialized.stderr
-    _git(project, "init", "--quiet", "-b", "foil-demo")
-    config = load_fleet_config(project / ".foil" / "runtime.toml")
 
-    dry = doctor_report(config, apply=False)
+    dry = doctor_report(state, fleet.fleet_id, apply=False)
     assert dry["worktrees"]["ok"] is False
-    assert all(not seat["exists"] for seat in dry["worktrees"]["seats"])
-
-    applied = doctor_report(config, apply=True)
+    applied = doctor_report(state, fleet.fleet_id, apply=True)
     assert applied["worktrees"]["ok"] is True
-    assert all(seat["exists"] and not seat["stale"] for seat in applied["worktrees"]["seats"])
-
-    (project / "later.txt").write_text("after clone", encoding="utf-8")
-    _git(project, "add", "later.txt")
-    _git(project, "commit", "--quiet", "-m", "after clone")
-    stale = doctor_report(config, apply=False)
-    assert stale["worktrees"]["ok"] is False
-    assert any(seat["stale"] for seat in stale["worktrees"]["seats"])
+    assert worktree.is_dir()

@@ -1,4 +1,4 @@
-"""CLI acceptance tests for `foil init` (CAP-001, CAP-016, CAP-025–CAP-028)."""
+"""CLI acceptance tests for `foil init`."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 
@@ -37,6 +36,9 @@ def test_foil_help_lists_init() -> None:
 
     assert result.returncode == 0
     assert "init" in result.stdout
+    assert "seat" in result.stdout
+    assert "resume" in result.stdout
+    assert "launch" not in result.stdout
 
 
 def test_init_help_documents_empty_directory_and_state_precedence() -> None:
@@ -54,6 +56,7 @@ def test_init_help_documents_empty_directory_and_state_precedence() -> None:
     assert "git common" in lowered
     assert "xdg_state_home" in lowered
     assert "provider" not in lowered
+    assert "runtime.toml" not in lowered
 
 
 def test_init_in_current_empty_directory_emits_resolved_json(tmp_path: Path) -> None:
@@ -66,8 +69,10 @@ def test_init_in_current_empty_directory_emits_resolved_json(tmp_path: Path) -> 
     assert result.returncode == 0, result.stderr
     assert result.stderr == ""
     payload = json.loads(result.stdout)
-    assert payload["config_path"] == str(project / ".foil" / "fleet.toml")
+    assert payload["roles_path"] == str(project / ".foil" / "roles")
     assert payload["state_root"] == str(state_root.resolve())
+    assert payload["lead_seat_id"] is None
+    assert payload["git_branch"] == "foil-demo"
     assert payload["roles"] == [
         "manager",
         "requirements-owner",
@@ -78,9 +83,8 @@ def test_init_in_current_empty_directory_emits_resolved_json(tmp_path: Path) -> 
         "researcher",
         "memory-curator",
     ]
-
-    config = tomllib.loads((project / ".foil" / "fleet.toml").read_text(encoding="utf-8"))
-    assert payload["fleet_id"] == config["fleet_id"]
+    assert (project / ".foil" / "roles" / "manager.toml").is_file()
+    assert not (project / ".foil" / "runtime.toml").exists()
     assert (state_root / "v1" / "fleets" / payload["fleet_id"] / "seats").is_dir()
 
 
@@ -94,7 +98,7 @@ def test_init_accepts_an_explicit_empty_directory(tmp_path: Path) -> None:
     result = run_foil("init", str(project), cwd=invocation_directory, state_root=state_root)
 
     assert result.returncode == 0, result.stderr
-    assert (project / ".foil" / "fleet.toml").is_file()
+    assert (project / ".foil" / "roles" / "implementer.toml").is_file()
 
 
 def test_init_nonempty_directory_fails_without_partial_scaffold(tmp_path: Path) -> None:

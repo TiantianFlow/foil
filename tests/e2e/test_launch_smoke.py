@@ -1,4 +1,4 @@
-"""Launch-confidence smokes beyond the walking-skeleton happy path."""
+"""Spawn-confidence smokes beyond the walking-skeleton happy path."""
 
 from __future__ import annotations
 
@@ -12,14 +12,14 @@ def test_doctor_reports_stale_worktrees_after_later_project_commits(
     initialized: OperatorFleet,
 ) -> None:
     fleet = initialized
-    fleet.lifecycle("launch").json()
-    fresh = fleet.foil("doctor", "--config", str(fleet.config), "--json").json()
+    fleet.start_complementary_fleet()
+    fresh = fleet.foil("doctor", *fleet.fleet_flags(), "--json").json()
     assert fresh["worktrees"]["ok"] is True
 
     (fleet.project / "after-clone.txt").write_text("later", encoding="utf-8")
     fleet.git("add", "after-clone.txt")
     fleet.git("commit", "--quiet", "-m", "after clone")
-    stale = fleet.foil("doctor", "--config", str(fleet.config), "--json").json()
+    stale = fleet.foil("doctor", *fleet.fleet_flags(), "--json").json()
     assert stale["worktrees"]["ok"] is False
     assert any(seat["stale"] for seat in stale["worktrees"]["seats"])
     assert not (
@@ -27,83 +27,64 @@ def test_doctor_reports_stale_worktrees_after_later_project_commits(
     ).exists()
 
 
-def test_launch_completes_a_missing_seat_after_partial_registration(
+def test_operator_can_spawn_a_replacement_after_remove(
     initialized: OperatorFleet,
 ) -> None:
     fleet = initialized
-    first = fleet.lifecycle("launch").json()
-    assert set(_seats(first)) == {"implementer", "reviewer-challenger"}
-    fleet.seat_record_path("reviewer-challenger").unlink()
-    reviewer_window = next(
-        name for name in fleet.tmux_windows() if "reviewer" in name
-    )
-    fleet.kill_tmux_window(reviewer_window)
-
-    observed = _seats(fleet.lifecycle("status").json())
-    assert observed["implementer"]["state"] == "working"
-    assert observed["reviewer-challenger"]["state"] == "unknown"
-    assert observed["reviewer-challenger"]["registry"] is None
-
-    stopped = fleet.lifecycle("stop").json()
-    assert _seats(stopped)["implementer"]["state"] == "exited"
-
-    retried = fleet.lifecycle("launch").json()
-    seats = _seats(retried)
-    assert seats["reviewer-challenger"]["state"] == "working"
-    assert seats["implementer"]["state"] == "exited"
-    assert seats["reviewer-challenger"]["registry"] is not None
-    assert len(fleet.tmux_windows()) == 1
-
-    resumed = fleet.foil(
-        "resume",
-        "--config",
-        str(fleet.config),
-        "--state-dir",
-        str(fleet.state),
+    fleet.start_complementary_fleet()
+    fleet.foil(
+        "seat",
+        "remove",
+        *fleet.fleet_flags(),
         "--json",
         "--seat",
-        "implementer",
+        "reviewer-challenger",
     ).json()
-    assert _seats(resumed)["implementer"]["state"] == "working"
-    assert fleet.tmux_alive()
-    assert len(fleet.tmux_windows()) == 2
+    remaining = _seats(fleet.lifecycle("status").json())
+    assert set(remaining) == {"lead", "implementer"}
+    assert remaining["implementer"]["state"] == "working"
+
+    replacement = fleet.spawn(
+        "reviewer-challenger",
+        "opencode",
+        isolated=True,
+        role="reviewer-challenger",
+    ).json()
+    assert _seats(replacement)["reviewer-challenger"]["state"] == "working"
+    assert len(fleet.tmux_windows()) == 3
 
 
-def test_launch_after_a_full_stop_still_requires_resume(
+def test_spawn_after_a_full_stop_still_requires_resume(
     initialized: OperatorFleet,
 ) -> None:
     fleet = initialized
-    fleet.lifecycle("launch").json()
+    fleet.start_complementary_fleet()
     fleet.lifecycle("stop").json()
-    second = fleet.lifecycle("launch")
+    second = fleet.spawn("lead", "grok", lead=True, role="manager")
     assert second.returncode != 0
     assert "already" in second.stderr.lower()
     assert not fleet.tmux_alive()
+    resumed = fleet.lifecycle("resume").json()
+    assert all(seat["state"] == "working" for seat in resumed["seats"])
 
 
-def test_status_before_launch_lists_unregistered_seats(
-    initialized: OperatorFleet,
-) -> None:
+def test_status_before_spawn_lists_no_seats(initialized: OperatorFleet) -> None:
     fleet = initialized
     status = fleet.lifecycle("status").json()
-    seats = _seats(status)
-    assert set(seats) == {"implementer", "reviewer-challenger"}
-    assert all(seat["state"] == "unknown" for seat in seats.values())
-    assert all(seat["registry"] is None for seat in seats.values())
+    assert status["seats"] == []
+    assert status["lead_seat_id"] is None
 
 
-def test_fresh_resume_keeps_two_verified_windows(
+def test_fresh_resume_keeps_verified_windows(
     initialized: OperatorFleet,
 ) -> None:
     fleet = initialized
-    launched = _seats(fleet.lifecycle("launch").json())
+    fleet.start_complementary_fleet()
+    launched = _seats(fleet.lifecycle("status").json())
     before = launched["implementer"]["registry"]
     freshened = fleet.foil(
         "resume",
-        "--config",
-        str(fleet.config),
-        "--state-dir",
-        str(fleet.state),
+        *fleet.fleet_flags(),
         "--json",
         "--fresh",
         "--seat",
@@ -113,8 +94,8 @@ def test_fresh_resume_keeps_two_verified_windows(
     assert after["action"] == "start_fresh"
     assert after["registry"]["previous_incarnation_id"] == before["incarnation_id"]
     windows = fleet.tmux_windows()
-    assert len(windows) == 2
-    assert len(set(windows)) == 2
+    assert len(windows) == 3
+    assert len(set(windows)) == 3
 
 
 def test_uncommitted_project_files_stay_out_of_seat_clones(
@@ -123,7 +104,7 @@ def test_uncommitted_project_files_stay_out_of_seat_clones(
     fleet = initialized
     leaked = "secret-draft.txt"
     (fleet.project / leaked).write_text("not for seats", encoding="utf-8")
-    fleet.lifecycle("launch").json()
+    fleet.start_complementary_fleet()
     for seat_id in ("implementer", "reviewer-challenger"):
         clone = fleet.project / "worktrees" / seat_id
         assert clone.is_dir()

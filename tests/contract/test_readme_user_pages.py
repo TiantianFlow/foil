@@ -38,8 +38,7 @@ LAB_MARKERS = (
 QUICK_START_COMMANDS = (
     "uv tool install .",
     "foil init",
-    "foil launch",
-    "--config",
+    "foil seat spawn",
     "--state-dir",
     "foil send-message",
     "--fleet",

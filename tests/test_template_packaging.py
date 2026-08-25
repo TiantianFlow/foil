@@ -1,4 +1,4 @@
-"""Distribution contracts for onboarding templates (CAP-025, CAP-031)."""
+"""Distribution contracts for onboarding templates."""
 
 from __future__ import annotations
 
@@ -11,13 +11,10 @@ from foil.adapters import load_builtin_adapter
 from foil.onboarding import DEFAULT_ROLE_IDS
 
 
-def test_default_fleet_and_every_role_are_package_resources() -> None:
+def test_role_library_templates_are_package_resources() -> None:
     template_root = resources.files("foil.templates")
-    fleet_template = template_root.joinpath("fleet.toml")
-
-    assert fleet_template.is_file()
-    fleet = tomllib.loads(fleet_template.read_text(encoding="utf-8"))
-    assert fleet["schema_version"] == 1
+    assert not template_root.joinpath("fleet.toml").is_file()
+    assert not template_root.joinpath("runtime.toml").is_file()
 
     roles_root = template_root.joinpath("roles")
     packaged_role_ids = set()

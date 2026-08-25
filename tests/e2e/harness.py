@@ -2,7 +2,7 @@
 
 CI does not have authenticated Grok or OpenCode. The harness puts PATH shims
 that honor the shipped adapter argv contracts in front of `foil`, then drives
-the same commands an operator or controller skill would: init, git, launch,
+the same commands an operator or controller skill would: init, git, spawn,
 status, mailbox, resume, stop.
 """
 
@@ -25,7 +25,7 @@ from foil.naming import tmux_session_name
 
 E2E_DIR = Path(__file__).resolve().parent
 FAKE_CLI = E2E_DIR / "fake_cli.py"
-STARTER_DISPLAY_NAME = "Starter runtime"
+FLEET_DISPLAY_NAME = "Foil fleet"
 
 
 def require_tmux() -> str:
@@ -70,7 +70,7 @@ class OperatorFleet:
         self.agent_home = self.root / "agent-home"
         self.live = live
         self.fleet_id = ""
-        self.config = self.project / ".foil" / "runtime.toml"
+        self.roles_path = self.project / ".foil" / "roles"
         self._tmux = require_tmux()
         self._keeper = ""
 
@@ -133,16 +133,71 @@ class OperatorFleet:
         )
         return OperatorResult(completed)
 
-    def lifecycle(self, command: str, **kwargs: Any) -> OperatorResult:
-        return self.foil(
-            command,
-            "--config",
-            str(self.config),
-            "--state-dir",
-            str(self.state),
+    def fleet_flags(self) -> list[str]:
+        return ["--state-dir", str(self.state), "--fleet", self.fleet_id]
+
+    def lifecycle(self, command: str, *extra: str, **kwargs: Any) -> OperatorResult:
+        if command == "stop":
+            return self.foil(
+                "seat",
+                "stop",
+                *self.fleet_flags(),
+                "--json",
+                "--all",
+                *extra,
+                **kwargs,
+            )
+        return self.foil(command, *self.fleet_flags(), "--json", *extra, **kwargs)
+
+    def spawn(
+        self,
+        seat: str,
+        cli: str,
+        *,
+        lead: bool = False,
+        isolated: bool = False,
+        role: str | None = None,
+        extra: tuple[str, ...] = (),
+        **kwargs: Any,
+    ) -> OperatorResult:
+        args = [
+            "seat",
+            "spawn",
+            *self.fleet_flags(),
             "--json",
-            **kwargs,
-        )
+            "--seat",
+            seat,
+            "--cli",
+            cli,
+        ]
+        if lead:
+            args.append("--lead")
+        if isolated:
+            args.append("--isolated")
+        if role:
+            args.extend(["--role", role])
+        args.extend(extra)
+        return self.foil(*args, **kwargs)
+
+    def start_complementary_fleet(self) -> dict[str, Any]:
+        lead = self.spawn("lead", "grok", lead=True, role="manager").json()
+        implementer = self.spawn(
+            "implementer",
+            "grok",
+            isolated=True,
+            role="implementer",
+        ).json()
+        reviewer = self.spawn(
+            "reviewer-challenger",
+            "opencode",
+            isolated=True,
+            role="reviewer-challenger",
+        ).json()
+        return {
+            "lead": lead,
+            "implementer": implementer,
+            "reviewer-challenger": reviewer,
+        }
 
     def mailbox(self, command: str, seat: str, *args: str, **kwargs: Any) -> OperatorResult:
         return self.foil(
@@ -181,7 +236,7 @@ class OperatorFleet:
     def tmux_session(self) -> str:
         if not self.fleet_id:
             raise RuntimeError("init_project must run before tmux_session")
-        return tmux_session_name(STARTER_DISPLAY_NAME, self.fleet_id)
+        return tmux_session_name(FLEET_DISPLAY_NAME, self.fleet_id)
 
     def kill_tmux(self) -> None:
         subprocess.run(
@@ -292,10 +347,29 @@ class OperatorFleet:
     def wake_count(self) -> int:
         return sum(1 for line in self.stdin_lines() if TmuxWakeService.WAKE_TEXT in line)
 
+    def wait_for_ack(
+        self,
+        seat: str,
+        message_id: str,
+        *,
+        timeout: float = 5.0,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout
+        last: dict[str, Any] | None = None
+        while time.monotonic() < deadline:
+            result = self.mailbox("message-status", seat, "--message", message_id)
+            if result.returncode == 0:
+                last = result.json()
+                if last.get("state") == "acknowledged":
+                    return last
+            time.sleep(0.05)
+        raise AssertionError(
+            f"timed out waiting for {seat}/{message_id} acknowledgement: {last}"
+        )
+
     def cleanup(self) -> None:
-        if self.config.is_file() and self.fleet_id:
-            self.lifecycle("stop")
         if self.fleet_id:
+            self.lifecycle("stop")
             self.kill_tmux()
         if self._keeper:
             subprocess.run(

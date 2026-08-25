@@ -1,4 +1,4 @@
-"""Unit and contract tests for deterministic onboarding (CAP-003–CAP-004, CAP-016, CAP-025)."""
+"""Unit and contract tests for deterministic onboarding."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from foil.fleet import FleetStore
 from foil.onboarding import (
     DEFAULT_ROLE_IDS,
     InitializationError,
@@ -112,7 +113,7 @@ def test_state_root_rejects_empty_explicit_override(tmp_path: Path) -> None:
         )
 
 
-def test_initialize_project_scaffolds_valid_default_fleet_and_registry(tmp_path: Path) -> None:
+def test_initialize_project_scaffolds_role_library_and_empty_fleet(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     state_root = tmp_path / "state"
@@ -124,42 +125,29 @@ def test_initialize_project_scaffolds_valid_default_fleet_and_registry(tmp_path:
         home=tmp_path / "home",
     )
 
-    assert result.config_path == project / ".foil" / "fleet.toml"
-    config = tomllib.loads(result.config_path.read_text(encoding="utf-8"))
-    assert config["schema_version"] == 1
-    assert config["fleet_id"] == result.fleet_id
+    assert result.roles_path == project / ".foil" / "roles"
+    assert result.lead_seat_id is None
+    assert result.git_branch == "foil-demo"
+    assert result.roles == DEFAULT_ROLE_IDS
+    assert not (project / ".foil" / "fleet.toml").exists()
+    assert not (project / ".foil" / "runtime.toml").exists()
 
-    pools = config["usage_pools"]
-    pool_ids = {pool["id"] for pool in pools}
-    assert len(pool_ids) >= 2
-
-    seats = config["seats"]
-    assert {seat["id"] for seat in seats} == set(DEFAULT_ROLE_IDS)
-    assert len(seats) == len(DEFAULT_ROLE_IDS)
-    specializations = {seat["id"]: seat["primary_specialization"] for seat in seats}
-    assert all(isinstance(value, str) and value for value in specializations.values())
-    assert len(set(specializations.values())) == len(DEFAULT_ROLE_IDS)
-
-    for seat in seats:
-        assert "specializations" not in seat
-        assert seat["usage_pool_id"] in pool_ids
-        assert seat["context_source"] == f"roles/{seat['id']}.toml"
-        for challenged_id in seat["challenges"]:
-            assert challenged_id in specializations
-            assert specializations[challenged_id] != seat["primary_specialization"]
-
-        role_path = project / ".foil" / seat["context_source"]
-        role = tomllib.loads(role_path.read_text(encoding="utf-8"))
+    specializations: set[str] = set()
+    for role_id in DEFAULT_ROLE_IDS:
+        role = tomllib.loads((result.roles_path / f"{role_id}.toml").read_text(encoding="utf-8"))
         assert role["schema_version"] == 1
-        assert role["id"] == seat["id"]
-        assert role["primary_specialization"] == seat["primary_specialization"]
+        assert role["id"] == role_id
+        assert isinstance(role["primary_specialization"], str) and role["primary_specialization"]
         assert "primary_specializations" not in role
+        specializations.add(role["primary_specialization"])
+    assert len(specializations) == len(DEFAULT_ROLE_IDS)
 
     expected_fleet_dir = state_root / "v1" / "fleets" / result.fleet_id
     assert result.state_root == state_root.resolve()
     assert (expected_fleet_dir / "seats").is_dir()
     assert (expected_fleet_dir / "locks").is_dir()
     assert RegistryStore(state_root).list_seats(result.fleet_id) == []
+    assert FleetStore(state_root).read(result.fleet_id).lead_seat_id is None
     assert stat.S_IMODE(state_root.stat().st_mode) == 0o700
     assert stat.S_IMODE((expected_fleet_dir / "seats").stat().st_mode) == 0o700
 
@@ -168,6 +156,7 @@ def test_initialize_project_scaffolds_valid_default_fleet_and_registry(tmp_path:
     assert fleet_record["schema_version"] == 1
     assert fleet_record["fleet_id"] == result.fleet_id
     assert fleet_record["state"] == "initialized"
+    assert fleet_record["lead_seat_id"] is None
     assert fleet_record["project_root"] == str(project.resolve())
     assert fleet_record["extensions"] == {}
     assert stat.S_IMODE(fleet_record_path.stat().st_mode) == 0o600
@@ -203,9 +192,9 @@ def test_initialize_project_refuses_to_overwrite_existing_scaffold(tmp_path: Pat
         "home": tmp_path / "home",
     }
     first = initialize_project(project, **options)
-    original = first.config_path.read_bytes()
+    original = (first.roles_path / "manager.toml").read_bytes()
 
     with pytest.raises(InitializationError, match="empty"):
         initialize_project(project, **options)
 
-    assert first.config_path.read_bytes() == original
+    assert (first.roles_path / "manager.toml").read_bytes() == original

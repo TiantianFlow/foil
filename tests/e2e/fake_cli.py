@@ -2,8 +2,10 @@
 """PATH stand-ins for the shipped grok and opencode adapter argv contracts.
 
 CI cannot authenticate real agent CLIs. These binaries keep the same names,
-flags, session-capture shapes, and idle-at-prompt behavior so Foil's generated
-runtime.toml and builtin adapters are exercised unchanged.
+flags, session-capture shapes, and idle-at-prompt behavior so Foil's shipped
+grok and opencode contracts are exercised unchanged. When FOIL_* bootstrap
+variables are present, the shim acknowledges queued mailbox messages after
+it is woken.
 
 Foil's runner sanitizes the seat environment, so the shim directory carries an
 `agent-home` file rather than relying on FOIL_E2E_* variables inside tmux.
@@ -13,10 +15,12 @@ from __future__ import annotations
 
 import json
 import os
+import select
 import sys
 import time
 import uuid
 from contextlib import suppress
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -62,6 +66,43 @@ def _save_sessions(home: Path, sessions: list[dict[str, str]]) -> None:
     _sessions_path(home).write_text(json.dumps(sessions), encoding="utf-8")
 
 
+def _ack_pending_mail() -> None:
+    state = os.environ.get("FOIL_STATE_DIR")
+    fleet = os.environ.get("FOIL_FLEET_ID")
+    seat = os.environ.get("FOIL_SEAT_ID")
+    if not state or not fleet or not seat:
+        return
+    inbox = Path(state) / "v1" / "fleets" / fleet / "mailboxes" / seat / "inbox"
+    ack_dir = Path(state) / "v1" / "fleets" / fleet / "mailboxes" / seat / "ack"
+    if not inbox.is_dir():
+        return
+    ack_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    for path in sorted(inbox.glob("*.json")):
+        ack_path = ack_dir / path.name
+        if ack_path.exists():
+            continue
+        try:
+            message = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        message_id = message.get("message_id") or path.stem
+        payload = {
+            "schema_version": 1,
+            "acknowledgement_id": f"ack-{message_id}",
+            "acknowledged_at": now,
+            "acknowledged_by": seat,
+            "extensions": {},
+            "fleet_id": fleet,
+            "message_id": message_id,
+            "recipient_seat_id": seat,
+        }
+        ack_path.write_text(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+
+
 def _idle(home: Path, name: str, args: list[str]) -> None:
     marker = home / f"ready-{name}-{os.getpid()}.json"
     marker.write_text(
@@ -78,6 +119,10 @@ def _idle(home: Path, name: str, args: list[str]) -> None:
     )
     stdin_log = home / "stdin.jsonl"
     while True:
+        _ack_pending_mail()
+        ready, _, _ = select.select([sys.stdin], [], [], 0.25)
+        if not ready:
+            continue
         line = sys.stdin.readline()
         if line == "":
             time.sleep(0.25)
@@ -86,6 +131,7 @@ def _idle(home: Path, name: str, args: list[str]) -> None:
             handle.write(
                 json.dumps({"cli": name, "line": line, "pid": os.getpid()}) + "\n"
             )
+        _ack_pending_mail()
 
 
 def _run_opencode(home: Path, args: list[str]) -> int:

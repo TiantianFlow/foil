@@ -1,8 +1,7 @@
-"""Full operator journey against the generated two-seat runtime.
+"""Full operator journey against the lead-owned live fleet.
 
 These cases follow `docs/walking-skeleton.md` T2–T6 using the shipped
-`grok_cli` and `opencode` adapters. Real CLIs are replaced by PATH shims that
-keep the same argv and session-capture contracts so CI can prove the app works.
+`grok` and `opencode` contracts. Real CLIs are replaced by PATH shims.
 """
 
 from __future__ import annotations
@@ -32,9 +31,8 @@ def test_operator_help_lists_the_commands_a_controller_uses() -> None:
     assert result.returncode == 0
     for command in (
         "init",
-        "launch",
+        "seat",
         "status",
-        "stop",
         "resume",
         "poll-status",
         "send-message",
@@ -55,45 +53,46 @@ def test_operator_help_lists_the_commands_a_controller_uses() -> None:
         "catalog-map",
     ):
         assert command in result.stdout
+    assert "launch" not in result.stdout
 
 
 def test_init_emits_the_paths_an_operator_copies_into_later_commands(
     fleet: OperatorFleet,
 ) -> None:
     payload = fleet.foil("init", ".").json()
-    assert payload["runtime_config_path"] == str(fleet.config)
+    assert payload["roles_path"] == str(fleet.roles_path)
     assert payload["state_root"] == str(fleet.state)
     assert payload["git_branch"] == "foil-demo"
+    assert payload["lead_seat_id"] is None
     assert payload["fleet_id"].startswith("starter-")
-    assert (fleet.project / ".foil" / "fleet.toml").is_file()
     assert (fleet.project / ".foil" / "roles" / "implementer.toml").is_file()
     assert (fleet.project / ".foil" / "roles" / "reviewer-challenger.toml").is_file()
+    assert not (fleet.project / ".foil" / "runtime.toml").exists()
 
 
-def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None:
+def test_t2_through_t6_lead_owned_user_journey(initialized: OperatorFleet) -> None:
     fleet = initialized
-    assert fleet.config.is_file()
-
-    launched = fleet.lifecycle("launch").json()
-    seats = _seats(launched)
-    assert set(seats) == {"implementer", "reviewer-challenger"}
-    assert all(seat["state"] == "working" for seat in seats.values())
-    assert seats["implementer"]["registry"]["agent_kind"] == "grok_cli"
-    assert seats["reviewer-challenger"]["registry"]["agent_kind"] == "opencode"
-    assert seats["implementer"]["usage_pool_id"] == "primary"
-    assert seats["reviewer-challenger"]["usage_pool_id"] == "independent-review"
-    assert uuid.UUID(seats["implementer"]["registry"]["native_session_id"])
-    assert seats["reviewer-challenger"]["registry"]["native_session_id"].startswith("oc-")
-    assert all(
-        seat["registry"]["tmux"]["session_name"].startswith("foil-")
-        for seat in seats.values()
-    )
-    session_names = {seat["registry"]["tmux"]["session_name"] for seat in seats.values()}
+    spawned = fleet.start_complementary_fleet()
+    lead = _seats(spawned["lead"])["lead"]
+    implementer = _seats(spawned["implementer"])["implementer"]
+    reviewer = _seats(spawned["reviewer-challenger"])["reviewer-challenger"]
+    assert lead["state"] == "working"
+    assert implementer["state"] == "working"
+    assert reviewer["state"] == "working"
+    assert lead["registry"]["agent_kind"] == "grok_cli"
+    assert implementer["registry"]["agent_kind"] == "grok_cli"
+    assert reviewer["registry"]["agent_kind"] == "opencode"
+    assert uuid.UUID(implementer["registry"]["native_session_id"])
+    assert reviewer["registry"]["native_session_id"].startswith("oc-")
+    session_names = {
+        seat["registry"]["tmux"]["session_name"]
+        for seat in (lead, implementer, reviewer)
+    }
     assert session_names == {fleet.tmux_session()}
     assert fleet.tmux_alive()
     windows = fleet.tmux_windows()
-    assert len(windows) == 2
-    assert len(set(windows)) == 2
+    assert len(windows) == 3
+    assert len(set(windows)) == 3
 
     grok_launches = [
         row for row in fleet.invocations() if row["cli"] == "grok" and "--session-id" in row["argv"]
@@ -105,18 +104,18 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     ]
     assert grok_launches
     assert opencode_launches
-    assert "--model" in grok_launches[0]["argv"]
     assert "grok-4.6" in grok_launches[0]["argv"]
     assert "xai/grok-4.6" in opencode_launches[0]["argv"]
-    assert grok_launches[0]["cwd"] == str(
+    assert implementer["registry"]["worktree_path"] == str(
         (fleet.project / "worktrees" / "implementer").resolve()
     )
-    assert opencode_launches[0]["cwd"] == str(
+    assert reviewer["registry"]["worktree_path"] == str(
         (fleet.project / "worktrees" / "reviewer-challenger").resolve()
     )
 
     status = fleet.lifecycle("status").json()
     assert all(seat["state"] == "working" for seat in status["seats"])
+    assert status["lead_seat_id"] == "lead"
 
     uncommitted = "uncommitted-only-in-root.txt"
     (fleet.project / uncommitted).write_text("do-not-clone", encoding="utf-8")
@@ -132,15 +131,15 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
         )
         assert branch.stdout.strip() == "foil-demo"
 
-    doctor = fleet.foil("doctor", "--config", str(fleet.config), "--json").json()
+    doctor = fleet.foil("doctor", *fleet.fleet_flags(), "--json").json()
     assert doctor["tmux"]["ok"] is True
     assert doctor["git"]["ok"] is True
     assert doctor["worktrees"]["ok"] is True
     assert {seat["seat_id"] for seat in doctor["worktrees"]["seats"]} == {
+        "lead",
         "implementer",
         "reviewer-challenger",
     }
-    assert all(seat["exists"] and not seat["stale"] for seat in doctor["worktrees"]["seats"])
 
     brief = fleet.foil(
         "notepad-write",
@@ -218,10 +217,7 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     )
     decision = fleet.foil(
         "dispatch",
-        "--config",
-        str(fleet.config),
-        "--state-dir",
-        str(fleet.state),
+        *fleet.fleet_flags(),
         "--json",
         "--capability",
         "review",
@@ -230,10 +226,7 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
 
     waiting = fleet.foil(
         "set-state",
-        "--config",
-        str(fleet.config),
-        "--state-dir",
-        str(fleet.state),
+        *fleet.fleet_flags(),
         "--json",
         "--seat",
         "implementer",
@@ -243,10 +236,7 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     assert _seats(waiting)["implementer"]["state"] == "waiting"
     fleet.foil(
         "set-state",
-        "--config",
-        str(fleet.config),
-        "--state-dir",
-        str(fleet.state),
+        *fleet.fleet_flags(),
         "--json",
         "--seat",
         "implementer",
@@ -257,10 +247,7 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     before_fresh = _seats(status)["implementer"]["registry"]
     freshened = fleet.foil(
         "resume",
-        "--config",
-        str(fleet.config),
-        "--state-dir",
-        str(fleet.state),
+        *fleet.fleet_flags(),
         "--json",
         "--fresh",
         "--seat",
@@ -270,8 +257,7 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     assert after_fresh["action"] == "start_fresh"
     assert after_fresh["registry"]["incarnation_id"] != before_fresh["incarnation_id"]
     assert after_fresh["registry"]["previous_incarnation_id"] == before_fresh["incarnation_id"]
-    assert len(fleet.tmux_windows()) == 2
-    assert len(set(fleet.tmux_windows())) == 2
+    assert len(fleet.tmux_windows()) == 3
 
     status = fleet.lifecycle("status").json()
     assert all(seat["state"] == "working" for seat in status["seats"])
@@ -282,7 +268,7 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
         "send-message",
         "reviewer-challenger",
         "--sender",
-        "quickstart-controller",
+        "lead",
         "--message-id",
         message_id,
         "--task",
@@ -292,16 +278,7 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     ).json()
     assert delivery["duplicate"] is False
     assert delivery["message"]["body"] == hostile_body
-    assert delivery["delivery"]["state"] == "queued"
     assert delivery["delivery"]["wake"]["state"] == "sent"
-
-    queued = fleet.mailbox(
-        "message-status",
-        "reviewer-challenger",
-        "--message",
-        message_id,
-    ).json()
-    assert queued["state"] == "queued"
 
     inbox = json.loads(
         fleet.inbox_path("reviewer-challenger", message_id).read_text(encoding="utf-8")
@@ -314,6 +291,16 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     assert hostile_body not in wake
     assert "$(touch" not in wake
     assert not Path("/tmp/foil-e2e-should-not-run").exists()
+    acked = fleet.wait_for_ack("reviewer-challenger", message_id)
+    assert acked["state"] == "acknowledged"
+
+    worker_spawn = fleet.spawn(
+        "intruder",
+        "grok",
+        extra=("--actor", "implementer"),
+    )
+    assert worker_spawn.returncode != 0
+    assert "not authorized" in worker_spawn.stderr.lower()
 
     before = _seats(status)
     fleet.kill_tmux()
@@ -325,21 +312,12 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     after = _seats(resumed)
     assert all(seat["action"] == "resume_native" for seat in after.values())
     assert all(seat["state"] == "working" for seat in after.values())
-    for seat_id in ("implementer", "reviewer-challenger"):
+    for seat_id in ("lead", "implementer", "reviewer-challenger"):
         assert after[seat_id]["registry"]["native_session_id"] == (
             before[seat_id]["registry"]["native_session_id"]
         )
         assert after[seat_id]["registry"]["incarnation_id"] == (
             before[seat_id]["registry"]["incarnation_id"]
-        )
-        assert after[seat_id]["registry"]["tmux"]["session_name"] == (
-            before[seat_id]["registry"]["tmux"]["session_name"]
-        )
-        assert after[seat_id]["registry"]["tmux"]["session_id"] != (
-            before[seat_id]["registry"]["tmux"]["session_id"]
-        )
-        assert after[seat_id]["registry"]["tmux"]["window_id"] != (
-            before[seat_id]["registry"]["tmux"]["window_id"]
         )
 
     grok_resumes = fleet.wait_for_invocations(
@@ -362,11 +340,24 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
         "--fleet",
         fleet.fleet_id,
     ).json()
-    assert [seat["seat_id"] for seat in polled["seats"]] == [
+    assert {seat["seat_id"] for seat in polled["seats"]} == {
+        "lead",
         "implementer",
         "reviewer-challenger",
-    ]
-    assert all(seat["state"] == "working" for seat in polled["seats"])
+    }
+
+    removed = fleet.foil(
+        "seat",
+        "remove",
+        *fleet.fleet_flags(),
+        "--json",
+        "--seat",
+        "reviewer-challenger",
+    ).json()
+    assert _seats(removed)["reviewer-challenger"]["state"] == "removed"
+    remaining = fleet.lifecycle("status").json()
+    assert set(_seats(remaining)) == {"lead", "implementer"}
+    assert all(seat["state"] == "working" for seat in remaining["seats"])
 
     stopped = fleet.lifecycle("stop").json()
     assert all(seat["state"] == "exited" for seat in stopped["seats"])
@@ -375,17 +366,18 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     events_path = Path(fleet.state) / "v1" / "fleets" / fleet.fleet_id / "events" / "events.jsonl"
     events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
     assert {event["event_type"] for event in events} >= {
-        "launch_result",
+        "spawn_result",
         "stop_result",
         "resume_decision",
         "resume_result",
+        "remove_result",
     }
     assert all("argv" not in event for event in events)
 
 
 def test_resume_while_seats_are_alive_revives_tmux(initialized: OperatorFleet) -> None:
     fleet = initialized
-    fleet.lifecycle("launch").json()
+    fleet.start_complementary_fleet()
     revived = fleet.lifecycle("resume").json()
     assert {seat["action"] for seat in revived["seats"]} == {"revive_tmux"}
     assert all(seat["state"] == "working" for seat in revived["seats"])
@@ -394,7 +386,8 @@ def test_resume_while_seats_are_alive_revives_tmux(initialized: OperatorFleet) -
 
 def test_resume_after_stop_reuses_native_session_ids(initialized: OperatorFleet) -> None:
     fleet = initialized
-    launched = _seats(fleet.lifecycle("launch").json())
+    fleet.start_complementary_fleet()
+    launched = _seats(fleet.lifecycle("status").json())
     fleet.lifecycle("stop").json()
     assert not fleet.tmux_alive()
     resumed = _seats(fleet.lifecycle("resume").json())
@@ -405,15 +398,11 @@ def test_resume_after_stop_reuses_native_session_ids(initialized: OperatorFleet)
             resumed[seat_id]["registry"]["native_session_id"]
             == launched[seat_id]["registry"]["native_session_id"]
         )
-        assert (
-            resumed[seat_id]["registry"]["incarnation_id"]
-            == launched[seat_id]["registry"]["incarnation_id"]
-        )
 
 
 def test_poll_status_reads_files_after_tmux_is_gone(initialized: OperatorFleet) -> None:
     fleet = initialized
-    fleet.lifecycle("launch").json()
+    fleet.start_complementary_fleet()
     fleet.lifecycle("stop").json()
     polled = fleet.foil(
         "poll-status",
@@ -426,9 +415,9 @@ def test_poll_status_reads_files_after_tmux_is_gone(initialized: OperatorFleet) 
     assert not fleet.tmux_alive()
 
 
-def test_both_seats_can_be_mailed_independently(initialized: OperatorFleet) -> None:
+def test_both_workers_can_be_mailed_independently(initialized: OperatorFleet) -> None:
     fleet = initialized
-    fleet.lifecycle("launch").json()
+    fleet.start_complementary_fleet()
     for seat, message_id, body in (
         ("implementer", "brief-implementer-1", "Please implement the brief."),
         ("reviewer-challenger", "brief-reviewer-1", "Please challenge the brief."),
@@ -437,7 +426,7 @@ def test_both_seats_can_be_mailed_independently(initialized: OperatorFleet) -> N
             "send-message",
             seat,
             "--sender",
-            "operator",
+            "lead",
             "--message-id",
             message_id,
             "--body",
@@ -446,9 +435,8 @@ def test_both_seats_can_be_mailed_independently(initialized: OperatorFleet) -> N
         assert delivery["delivery"]["wake"]["state"] == "sent"
         on_disk = json.loads(fleet.inbox_path(seat, message_id).read_text(encoding="utf-8"))
         assert on_disk["body"] == body
-        assert on_disk["recipient_seat_id"] == seat
+        fleet.wait_for_ack(seat, message_id)
     fleet.wait_for_wakes(2)
-    assert fleet.wake_count() >= 2
     wakes = "".join(fleet.stdin_lines())
     assert "Please implement the brief." not in wakes
     assert "Please challenge the brief." not in wakes

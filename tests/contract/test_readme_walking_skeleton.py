@@ -20,8 +20,8 @@ T1_T6_HEADINGS = {
         "foil init .",
         "git init -b foil-demo",
     ),
-    "T3 — Launch two real seats and validate machine-readable JSON": (
-        "foil launch",
+    "T3 — Spawn a lead and complementary seats": (
+        "foil seat spawn",
         "foil status",
         "implementer",
         "reviewer-challenger",
@@ -39,7 +39,7 @@ T1_T6_HEADINGS = {
         "registry",
     ),
     "T6 — Stop safely and remove the verified demo root": (
-        "foil stop",
+        "foil seat stop",
         "rm -rf",
     ),
 }
@@ -86,7 +86,7 @@ def test_walking_skeleton_documents_complete_contract() -> None:
     assert all(prerequisite in text for prerequisite in prerequisites)
 
     adapter_pairings = (
-        "grok_cli",
+        "grok",
         "grok-4.6",
         "opencode",
         "xai/grok-4.6",
@@ -98,17 +98,18 @@ def test_walking_skeleton_documents_complete_contract() -> None:
         "uv tool install --reinstall .",
         "foil init .",
         "git init -b foil-demo",
-        ".foil/runtime.toml",
-        "foil launch",
+        "foil seat spawn",
         "foil status",
         "foil poll-status",
         "foil send-message",
         "foil message-status",
         "tmux kill-session",
         "foil resume",
-        "foil stop",
+        "foil seat stop",
     )
     assert all(command in text for command in commands)
+    assert "foil launch" not in text
+    assert ".foil/runtime.toml" not in text
 
     gates = (
         "reviewer-challenger",
@@ -143,7 +144,7 @@ def test_walking_skeleton_maps_t1_t6_to_exact_acceptance_actions() -> None:
         assert heading in sections
         assert all(action in sections[heading] for action in actions)
 
-    assert "foil stop" not in sections[
+    assert "foil seat stop" not in sections[
         "T5 — Kill tmux and verify resume precedence and registry continuity"
     ]
 
@@ -171,16 +172,17 @@ assert sys.argv[1:] == ["init", "."]
 project = Path.cwd().resolve()
 state_text = os.environ["FOIL_STATE_DIR"]
 state = Path(state_text).resolve()
-runtime = project / ".foil" / "runtime.toml"
-runtime.parent.mkdir()
-runtime.write_text("schema_version = 1\\n", encoding="utf-8")
+roles = project / ".foil" / "roles"
+roles.mkdir(parents=True)
 Path(os.environ["FOIL_DOC_CAPTURE"]).write_text(
     json.dumps({"project": str(project), "state_text": state_text}),
     encoding="utf-8",
 )
 print(json.dumps({
     "fleet_id": "starter-documentation-test",
-    "runtime_config_path": str(runtime),
+    "roles_path": str(roles),
+    "lead_seat_id": None,
+    "git_branch": "foil-demo",
     "state_root": str(state),
 }))
 """,

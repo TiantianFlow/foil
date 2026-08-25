@@ -28,7 +28,14 @@ from foil.adapters import (
     load_adapter,
     load_builtin_adapter,
 )
-from foil.doctor import DoctorError, ensure_worktrees
+from foil.doctor import DoctorError, ensure_isolated_worktree
+from foil.fleet import (
+    LEAD_CAPABILITIES,
+    WORKER_CAPABILITIES,
+    FleetRecord,
+    FleetStore,
+)
+from foil.known_clis import adapter_id_for_cli
 from foil.naming import tmux_session_name, tmux_window_name
 from foil.registry import (
     RegistryStore,
@@ -38,7 +45,7 @@ from foil.registry import (
     _atomic_write_json,
 )
 from foil.resume import ResumeAction, ResumeEvidence, TmuxProbeState, resolve_resume
-from foil.runtime_config import FleetConfig, SeatConfig, UsagePoolConfig
+from foil.runtime_config import SeatConfig, UsagePoolConfig
 from foil.status import PollStatusReader, SeatState, StatusSnapshot
 from foil.tmux import ProbeResult, ProbeState, TmuxController
 
@@ -127,7 +134,11 @@ def _resolve_executable(
     raise RuntimeError(f"adapter executable is unavailable: {adapter.adapter_id}")
 
 
-def _safe_environment(*, executable: str | None = None) -> dict[str, str]:
+def _safe_environment(
+    *,
+    executable: str | None = None,
+    foil: dict[str, str] | None = None,
+) -> dict[str, str]:
     exact = {"COLORTERM", "HOME", "LANG", "PATH", "SHELL", "TERM", "TMPDIR"}
     prefixes = ("LC_", "XDG_")
     environment = {
@@ -141,6 +152,10 @@ def _safe_environment(*, executable: str | None = None) -> dict[str, str]:
         parts = [part for part in current.split(os.pathsep) if part]
         if parent not in parts:
             environment["PATH"] = parent if not current else f"{parent}{os.pathsep}{current}"
+    if foil:
+        for key, value in foil.items():
+            if key.startswith("FOIL_") and value:
+                environment[key] = value
     return environment
 
 
@@ -245,48 +260,55 @@ class AuditLog:
 class RuntimeController:
     def __init__(
         self,
-        config: FleetConfig,
         state_root: Path | str,
+        fleet_id: str,
         *,
         tmux: TmuxController | None = None,
     ):
-        self.config = config
         self.state_root = Path(state_root)
+        self.fleets = FleetStore(self.state_root)
+        self.fleet = self.fleets.read(fleet_id)
         self.registry = RegistryStore(self.state_root)
         self.status_store = PollStatusReader(self.state_root)
-        self.catalog = AdapterCatalog(config.adapter_paths)
+        self.catalog = AdapterCatalog(())
         self.tmux = tmux or TmuxController()
-        self.audit = AuditLog(self.state_root, config.fleet_id)
+        self.audit = AuditLog(self.state_root, self.fleet.fleet_id)
 
     def _runtimes(self) -> list[SeatRuntime]:
-        runtimes: list[SeatRuntime] = []
-        for seat in self.config.seats:
-            pool = self.config.pool_for(seat)
-            if seat.cli:
-                adapter = _profile_adapter(seat, pool)
-            else:
-                if not pool.adapter_id:
-                    raise RuntimeError(
-                        f"seat {seat.seat_id} needs cli= or a pool adapter"
-                    )
-                adapter = self.catalog.load(pool.adapter_id)
-                if pool.model is not None and pool.model not in adapter.models:
-                    raise RuntimeError(
-                        f"model {pool.model!r} is not declared by adapter {pool.adapter_id}"
-                    )
-            try:
-                executable = _resolve_executable(adapter)
-            except RuntimeError:
-                executable = None
-            runtimes.append(
-                SeatRuntime(
-                    seat=seat,
-                    pool=pool,
-                    adapter=adapter,
-                    executable=executable,
-                )
-            )
-        return runtimes
+        return [
+            self._runtime_from_record(record)
+            for record in self.registry.list_seats(self.fleet.fleet_id)
+        ]
+
+    def _runtime_from_record(self, record: SeatRecord) -> SeatRuntime:
+        profile = record.extensions.get("profile")
+        if not isinstance(profile, dict) or not profile.get("cli"):
+            raise RuntimeError(f"seat {record.seat_id} is missing a spawn profile")
+        seat = SeatConfig(
+            seat_id=record.seat_id,
+            display_name=str(profile.get("display_name") or record.seat_id),
+            usage_pool_id=record.usage_pool_id,
+            working_directory=Path(record.working_directory),
+            worktree_path=Path(record.worktree_path),
+            git_branch=record.git_branch,
+            cli=str(profile["cli"]),
+            launch_argv=tuple(profile.get("launch_argv") or ()),
+            resume_argv=tuple(profile["resume_argv"]) if profile.get("resume_argv") else None,
+            session_capture=profile.get("session_capture"),
+        )
+        pool = UsagePoolConfig(
+            pool_id=record.usage_pool_id,
+            adapter_id=profile.get("adapter_id")
+            if isinstance(profile.get("adapter_id"), str)
+            else None,
+            model=profile.get("model") if isinstance(profile.get("model"), str) else None,
+        )
+        adapter = _adapter_from_profile(seat, pool, profile)
+        try:
+            executable = _resolve_executable(adapter)
+        except RuntimeError:
+            executable = None
+        return SeatRuntime(seat=seat, pool=pool, adapter=adapter, executable=executable)
 
     def _validate_runtimes(self) -> list[SeatRuntime]:
         runtimes = self._runtimes()
@@ -313,7 +335,7 @@ class RuntimeController:
             self.state_root
             / "v1"
             / "fleets"
-            / self.config.fleet_id
+            / self.fleet.fleet_id
             / "adapter-state"
             / seat_id
         )
@@ -443,12 +465,57 @@ class RuntimeController:
                 return None
             time.sleep(0.1)
 
-    def _write_plan(self, runtime: SeatRuntime, argv: list[str]) -> Path:
+    def _bootstrap_env(
+        self,
+        runtime: SeatRuntime,
+        *,
+        incarnation_id: str,
+        profile: dict[str, Any],
+        lead_seat_id: str | None = None,
+    ) -> dict[str, str]:
+        path = self._adapter_state_dir(runtime.seat.seat_id) / "bootstrap.json"
+        capabilities = [str(item) for item in profile.get("capabilities") or WORKER_CAPABILITIES]
+        resolved_lead = lead_seat_id if lead_seat_id is not None else self.fleet.lead_seat_id
+        payload = {
+            "fleet_id": self.fleet.fleet_id,
+            "seat_id": runtime.seat.seat_id,
+            "lead_seat_id": resolved_lead,
+            "state_dir": str(self.state_root.resolve()),
+            "incarnation_id": incarnation_id,
+            "capabilities": capabilities,
+            "role_id": profile.get("role_id"),
+            "role_path": profile.get("role_path"),
+            "is_lead": bool(profile.get("is_lead")),
+        }
+        _atomic_write_json(path, payload)
+        instructions = runtime.seat.working_directory / "FOIL.md"
+        instructions.write_text(
+            _worker_instructions(payload, runtime.seat.seat_id),
+            encoding="utf-8",
+        )
+        return {
+            "FOIL_STATE_DIR": str(self.state_root.resolve()),
+            "FOIL_FLEET_ID": self.fleet.fleet_id,
+            "FOIL_SEAT_ID": runtime.seat.seat_id,
+            "FOIL_INCARNATION_ID": incarnation_id,
+            "FOIL_LEAD_SEAT_ID": resolved_lead or "",
+            "FOIL_CAPABILITIES": ",".join(capabilities),
+            "FOIL_ROLE_FILE": str(profile.get("role_path") or ""),
+            "FOIL_BOOTSTRAP": str(path),
+        }
+
+    def _write_plan(
+        self,
+        runtime: SeatRuntime,
+        argv: list[str],
+        *,
+        foil: dict[str, str] | None = None,
+    ) -> Path:
         plan_dir = (
             self.state_root
             / "v1"
             / "fleets"
-            / self.config.fleet_id
+            / self.fleet.fleet_id
             / "runner-plans"
         )
         plan = plan_dir / f"{runtime.seat.seat_id}.json"
@@ -457,7 +524,7 @@ class RuntimeController:
             {
                 "argv": argv,
                 "cwd": str(runtime.seat.working_directory),
-                "env": _safe_environment(executable=runtime.executable),
+                "env": _safe_environment(executable=runtime.executable, foil=foil),
             },
         )
 
@@ -465,14 +532,16 @@ class RuntimeController:
         self,
         runtime: SeatRuntime,
         argv: list[str],
+        *,
+        foil: dict[str, str] | None = None,
     ) -> TmuxTarget:
-        plan = self._write_plan(runtime, argv)
+        plan = self._write_plan(runtime, argv, foil=foil)
         return self.tmux.launch(
-            fleet_id=self.config.fleet_id,
+            fleet_id=self.fleet.fleet_id,
             seat_id=runtime.seat.seat_id,
             session_name=tmux_session_name(
-                self.config.display_name,
-                self.config.fleet_id,
+                self.fleet.display_name,
+                self.fleet.fleet_id,
             ),
             window_name=tmux_window_name(
                 runtime.seat.display_name,
@@ -490,7 +559,7 @@ class RuntimeController:
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
         snapshot = StatusSnapshot(
-            fleet_id=self.config.fleet_id,
+            fleet_id=self.fleet.fleet_id,
             seat_id=runtime.seat.seat_id,
             state=state,
             updated_at=_now(),
@@ -517,17 +586,20 @@ class RuntimeController:
         *,
         incarnation_id: str | None = None,
         previous_incarnation_id: str | None = None,
+        extra_extensions: dict[str, Any] | None = None,
     ) -> SeatRecord:
         extensions: dict[str, Any] = {
             "adapter_schema_version": runtime.adapter.schema_version,
             "capture_baseline": sorted(baseline),
         }
+        if extra_extensions:
+            extensions.update(extra_extensions)
         if runtime.pool.model is not None:
             extensions["model"] = runtime.pool.model
         if runtime.executable is not None:
             extensions["resolved_executable"] = runtime.executable
         return SeatRecord(
-            fleet_id=self.config.fleet_id,
+            fleet_id=self.fleet.fleet_id,
             seat_id=runtime.seat.seat_id,
             working_directory=str(runtime.seat.working_directory.resolve()),
             agent_kind=runtime.adapter.adapter_id,
@@ -544,7 +616,7 @@ class RuntimeController:
 
     def _validate_record(self, runtime: SeatRuntime, record: SeatRecord) -> None:
         expected = (
-            record.fleet_id == self.config.fleet_id
+            record.fleet_id == self.fleet.fleet_id
             and record.seat_id == runtime.seat.seat_id
             and Path(record.working_directory).resolve()
             == runtime.seat.working_directory.resolve()
@@ -559,96 +631,163 @@ class RuntimeController:
 
     def _read_registered(self, runtime: SeatRuntime) -> SeatRecord | None:
         try:
-            return self.registry.read_seat(self.config.fleet_id, runtime.seat.seat_id)
+            return self.registry.read_seat(self.fleet.fleet_id, runtime.seat.seat_id)
         except FileNotFoundError:
             return None
 
-    def launch(self) -> list[dict[str, Any]]:
+    def spawn(
+        self,
+        *,
+        seat_id: str,
+        cli: str,
+        launch_argv: tuple[str, ...],
+        actor: str | None = None,
+        display_name: str | None = None,
+        resume_argv: tuple[str, ...] | None = None,
+        session_capture: str = "generated_uuid",
+        session_list_argv: tuple[str, ...] | None = None,
+        session_id_pointer: str | None = None,
+        session_cwd_pointer: str | None = None,
+        role_id: str | None = None,
+        role_path: str | None = None,
+        isolated: bool = False,
+        working_directory: Path | None = None,
+        model: str | None = None,
+        lead: bool = False,
+    ) -> list[dict[str, Any]]:
+        self.fleets.require_lead_actor(self.fleet.fleet_id, actor)
         if shutil.which("tmux") is None:
             raise RuntimeError("tmux is unavailable")
         try:
-            ensure_worktrees(self.config)
-        except DoctorError as exc:
-            raise RuntimeError(str(exc)) from exc
-        runtimes = [self._with_executable(runtime) for runtime in self._validate_runtimes()]
-        results_by_id: dict[str, dict[str, Any]] = {}
-        to_spawn: list[SeatRuntime] = []
-        kept: list[tuple[SeatRuntime, SeatRecord, ProbeResult]] = []
-        for runtime in runtimes:
-            record = self._read_registered(runtime)
-            if record is None:
-                to_spawn.append(runtime)
-                continue
-            self._validate_record(runtime, record)
-            kept.append(
-                (
-                    runtime,
-                    record,
-                    self.tmux.probe(
-                        self.config.fleet_id,
-                        runtime.seat.seat_id,
-                        record.tmux,
-                    ),
-                )
+            self.registry.read_seat(self.fleet.fleet_id, seat_id)
+        except FileNotFoundError:
+            pass
+        else:
+            raise RuntimeError(f"seat {seat_id} is already registered")
+        fleet = self.fleets.read(self.fleet.fleet_id)
+        if lead and fleet.lead_seat_id is not None:
+            raise RuntimeError("fleet already has a lead seat")
+        if not lead and fleet.lead_seat_id is None:
+            raise RuntimeError("fleet must start with a lead seat")
+        project = Path(fleet.project_root)
+        if _git_toplevel(project) is None:
+            raise RuntimeError("working directory is not a valid Git worktree")
+        launch_argv = _normalize_remainder(launch_argv)
+        worktree = working_directory or (
+            project / "worktrees" / seat_id if isolated else project
+        )
+        if isolated:
+            try:
+                ensure_isolated_worktree(project, worktree)
+            except DoctorError as exc:
+                raise RuntimeError(str(exc)) from exc
+        worktree.mkdir(parents=True, exist_ok=True)
+        git_branch = _observed_branch(worktree) or "foil-demo"
+        capabilities = LEAD_CAPABILITIES if lead else WORKER_CAPABILITIES
+        if role_id and role_path is None:
+            candidate = project / ".foil" / "roles" / f"{role_id}.toml"
+            if candidate.is_file():
+                role_path = str(candidate)
+        adapter_id = adapter_id_for_cli(cli)
+        profile = {
+            "cli": cli,
+            "adapter_id": adapter_id,
+            "launch_argv": list(launch_argv),
+            "resume_argv": list(resume_argv) if resume_argv else None,
+            "session_capture": session_capture,
+            "session_list_argv": list(session_list_argv) if session_list_argv else None,
+            "session_id_pointer": session_id_pointer,
+            "session_cwd_pointer": session_cwd_pointer,
+            "display_name": display_name or seat_id,
+            "capabilities": list(capabilities),
+            "role_id": role_id,
+            "role_path": role_path,
+            "is_lead": lead,
+            "model": model,
+            "isolated": isolated,
+        }
+        seat = SeatConfig(
+            seat_id=seat_id,
+            display_name=display_name or seat_id,
+            usage_pool_id="default",
+            working_directory=worktree,
+            worktree_path=worktree,
+            git_branch=git_branch,
+            cli=cli,
+            launch_argv=launch_argv or None,
+            resume_argv=resume_argv,
+            session_capture=session_capture,
+        )
+        pool = UsagePoolConfig("default", adapter_id, model)
+        adapter = _adapter_from_profile(seat, pool, profile)
+        if model is None and adapter.models:
+            model = adapter.models[0]
+            pool = UsagePoolConfig("default", adapter_id, model)
+            profile["model"] = model
+        runtime = self._with_executable(
+            SeatRuntime(seat=seat, pool=pool, adapter=adapter, executable=None)
+        )
+        if isolated or worktree.resolve() != project.resolve():
+            validate_worktree(runtime.seat)
+        incarnation_id = str(uuid.uuid4())
+        foil = self._bootstrap_env(
+            runtime,
+            incarnation_id=incarnation_id,
+            profile=profile,
+            lead_seat_id=seat_id if lead else fleet.lead_seat_id,
+        )
+        baseline: set[str] = set()
+        native_session_id: str | None = None
+        if runtime.adapter.session_capture.kind is CaptureKind.GENERATED_UUID:
+            native_session_id = str(uuid.uuid4())
+        elif runtime.adapter.session_capture.kind is CaptureKind.COMMAND_JSON_LIST_DELTA:
+            baseline = self._session_ids(runtime)
+        argv = self._expanded(runtime, runtime.adapter.launch.argv, native_session_id)
+        self.audit.append(
+            "spawn_attempt",
+            seat_id,
+            adapter_id=runtime.adapter.adapter_id,
+            lead=lead,
+            argv_shape=[f"arg-{index}" for index in range(len(argv))],
+        )
+        target = self._spawn(runtime, argv, foil=foil)
+        if runtime.adapter.session_capture.kind is CaptureKind.COMMAND_JSON_LIST_DELTA:
+            native_session_id = self._capture_delta(runtime, baseline, wait_seconds=3)
+        record = self._new_record(
+            runtime,
+            native_session_id,
+            target,
+            baseline,
+            incarnation_id=incarnation_id,
+            extra_extensions={"profile": profile, "model": model},
+        )
+        self.registry.write_seat(record)
+        if lead:
+            self.fleet = FleetRecord(
+                fleet_id=fleet.fleet_id,
+                project_root=fleet.project_root,
+                updated_at=_now(),
+                display_name=fleet.display_name,
+                lead_seat_id=seat_id,
+                state="running",
+                extensions=fleet.extensions,
             )
-        if not to_spawn:
-            raise RuntimeError("seats are already registered")
-        for runtime, record, probe in kept:
-            results_by_id[runtime.seat.seat_id] = self._status(
-                runtime,
-                record,
-                self._live_state(record, probe),
-                {
-                    "kind": "tmux_probe",
-                    "state": probe.state.value,
-                    "identity_matches": probe.identity_matches,
-                },
-            )
-
-        for runtime in to_spawn:
-            baseline: set[str] = set()
-            native_session_id: str | None = None
-            if runtime.adapter.session_capture.kind is CaptureKind.GENERATED_UUID:
-                native_session_id = str(uuid.uuid4())
-            elif (
-                runtime.adapter.session_capture.kind
-                is CaptureKind.COMMAND_JSON_LIST_DELTA
-            ):
-                baseline = self._session_ids(runtime)
-            argv = self._expanded(runtime, runtime.adapter.launch.argv, native_session_id)
-            self.audit.append(
-                "launch_attempt",
-                runtime.seat.seat_id,
-                adapter_id=runtime.adapter.adapter_id,
-                usage_pool_id=runtime.pool.pool_id,
-                argv_shape=[f"arg-{index}" for index in range(len(argv))],
-            )
-            target = self._spawn(runtime, argv)
-            if (
-                runtime.adapter.session_capture.kind
-                is CaptureKind.COMMAND_JSON_LIST_DELTA
-            ):
-                native_session_id = self._capture_delta(runtime, baseline, wait_seconds=3)
-            record = self._new_record(
-                runtime,
-                native_session_id,
-                target,
-                baseline,
-            )
-            self.registry.write_seat(record)
-            event_id = self.audit.append(
-                "launch_result",
-                runtime.seat.seat_id,
-                result="started",
-                native_session_captured=native_session_id is not None,
-            )
-            results_by_id[runtime.seat.seat_id] = self._status(
+            self.fleets.write(self.fleet)
+        event_id = self.audit.append(
+            "spawn_result",
+            seat_id,
+            result="started",
+            native_session_captured=native_session_id is not None,
+            lead=lead,
+        )
+        return [
+            self._status(
                 runtime,
                 record,
                 SeatState.WORKING,
                 {"kind": "lifecycle_event", "event_id": event_id},
             )
-        return [results_by_id[runtime.seat.seat_id] for runtime in runtimes]
+        ]
 
     def _records_and_probes(
         self,
@@ -666,7 +805,7 @@ class RuntimeController:
                     runtime,
                     record,
                     self.tmux.probe(
-                        self.config.fleet_id,
+                        self.fleet.fleet_id,
                         runtime.seat.seat_id,
                         record.tmux,
                     ),
@@ -675,6 +814,52 @@ class RuntimeController:
         if require_any and not records_and_probes:
             raise RuntimeError("no seats are registered")
         return records_and_probes
+
+    def list_seats(self) -> dict[str, Any]:
+        self.fleet = self.fleets.read(self.fleet.fleet_id)
+        return {
+            "fleet": self.fleet.to_dict(),
+            "seats": [
+                {
+                    "seat_id": record.seat_id,
+                    "is_lead": record.seat_id == self.fleet.lead_seat_id,
+                    "cli": (record.extensions.get("profile") or {}).get("cli"),
+                    "role_id": (record.extensions.get("profile") or {}).get("role_id"),
+                    "isolated": bool(
+                        (record.extensions.get("profile") or {}).get("isolated")
+                    ),
+                    "working_directory": record.working_directory,
+                    "worktree_path": record.worktree_path,
+                }
+                for record in self.registry.list_seats(self.fleet.fleet_id)
+            ],
+        }
+
+    def inspect(self, seat_id: str) -> dict[str, Any]:
+        record = self.registry.read_seat(self.fleet.fleet_id, seat_id)
+        runtime = self._runtime_from_record(record)
+        probe = self.tmux.probe(self.fleet.fleet_id, seat_id, record.tmux)
+        status = self._status(
+            runtime,
+            record,
+            self._live_state(record, probe),
+            {
+                "kind": "tmux_probe",
+                "state": probe.state.value,
+                "identity_matches": probe.identity_matches,
+            },
+        )
+        bootstrap_path = self._adapter_state_dir(seat_id) / "bootstrap.json"
+        bootstrap = None
+        if bootstrap_path.is_file():
+            bootstrap = json.loads(bootstrap_path.read_text(encoding="utf-8"))
+        return {
+            **status,
+            "is_lead": seat_id == self.fleet.lead_seat_id,
+            "profile": record.extensions.get("profile") or {},
+            "bootstrap": bootstrap,
+            "fleet": self.fleet.to_dict(),
+        }
 
     def status(self) -> list[dict[str, Any]]:
         present = {
@@ -730,8 +915,23 @@ class RuntimeController:
             )
         return results
 
-    def stop(self) -> list[dict[str, Any]]:
+    def stop(
+        self,
+        *,
+        seat_id: str | None = None,
+        all_seats: bool = False,
+        actor: str | None = None,
+    ) -> list[dict[str, Any]]:
+        self.fleets.require_lead_actor(self.fleet.fleet_id, actor)
+        if seat_id is None and not all_seats:
+            raise RuntimeError("stop requires --seat or --all")
         entries = self._records_and_probes()
+        if seat_id is not None:
+            entries = [
+                entry for entry in entries if entry[0].seat.seat_id == seat_id
+            ]
+            if not entries:
+                raise RuntimeError(f"seat {seat_id} is not registered")
         for _runtime, _record, probe in entries:
             if probe.state is ProbeState.UNKNOWN or (
                 probe.state is ProbeState.ALIVE and not probe.identity_matches
@@ -740,7 +940,7 @@ class RuntimeController:
         results: list[dict[str, Any]] = []
         for runtime, record, _probe in entries:
             stopped = self.tmux.stop_verified(
-                self.config.fleet_id,
+                self.fleet.fleet_id,
                 runtime.seat.seat_id,
                 record.tmux,
             )
@@ -759,9 +959,35 @@ class RuntimeController:
             )
         return results
 
+    def remove(self, *, seat_id: str, actor: str | None = None) -> list[dict[str, Any]]:
+        self.fleets.require_lead_actor(self.fleet.fleet_id, actor)
+        stopped = self.stop(seat_id=seat_id, actor=actor)
+        self.registry.delete_seat(self.fleet.fleet_id, seat_id)
+        fleet = self.fleets.read(self.fleet.fleet_id)
+        if fleet.lead_seat_id == seat_id:
+            self.fleet = FleetRecord(
+                fleet_id=fleet.fleet_id,
+                project_root=fleet.project_root,
+                updated_at=_now(),
+                display_name=fleet.display_name,
+                lead_seat_id=None,
+                state="initialized",
+                extensions=fleet.extensions,
+            )
+            self.fleets.write(self.fleet)
+        self.audit.append("remove_result", seat_id, result="removed")
+        for item in stopped:
+            item["state"] = "removed"
+        return stopped
+
     def resume(
-        self, *, seat_id: str | None = None, force_fresh: bool = False
+        self,
+        *,
+        seat_id: str | None = None,
+        force_fresh: bool = False,
+        actor: str | None = None,
     ) -> list[dict[str, Any]]:
+        self.fleets.require_lead_actor(self.fleet.fleet_id, actor)
         entries = self._records_and_probes()
         results: list[dict[str, Any]] = []
         for runtime, record, probe in entries:
@@ -820,7 +1046,7 @@ class RuntimeController:
                             "tmux identity is unverified"
                         )
                     self.tmux.stop_verified(
-                        self.config.fleet_id,
+                        self.fleet.fleet_id,
                         runtime.seat.seat_id,
                         record.tmux,
                     )
@@ -855,7 +1081,11 @@ class RuntimeController:
                     )
                     incarnation_id = str(uuid.uuid4())
                     previous_incarnation_id = record.incarnation_id
-                target = self._spawn(runtime, argv)
+                profile = dict(record.extensions.get("profile") or {})
+                foil = self._bootstrap_env(
+                    runtime, incarnation_id=incarnation_id, profile=profile
+                )
+                target = self._spawn(runtime, argv, foil=foil)
                 if (
                     decision.action is ResumeAction.START_FRESH
                     and runtime.adapter.session_capture.kind
@@ -864,11 +1094,17 @@ class RuntimeController:
                     native_session_id = self._capture_delta(
                         runtime, baseline, wait_seconds=3
                     )
+                extra = {
+                    key: value
+                    for key, value in record.extensions.items()
+                    if key in {"profile", "model"}
+                }
                 record = self._new_record(
                     runtime,
                     native_session_id,
                     target,
                     baseline,
+                    extra_extensions=extra,
                     incarnation_id=incarnation_id,
                     previous_incarnation_id=previous_incarnation_id,
                 )
@@ -931,13 +1167,50 @@ class RuntimeController:
         return SeatState.WORKING
 
 
-def _profile_adapter(seat: SeatConfig, pool: UsagePoolConfig) -> AdapterRecord:
-    if not seat.cli or not seat.launch_argv:
+def _normalize_remainder(argv: tuple[str, ...] | None) -> tuple[str, ...]:
+    items = list(argv or ())
+    if items[:1] == ["--"]:
+        items = items[1:]
+    return tuple(items)
+
+
+def _adapter_from_profile(
+    seat: SeatConfig,
+    pool: UsagePoolConfig,
+    profile: dict[str, Any] | None = None,
+) -> AdapterRecord:
+    profile = profile or {}
+    custom_argv = tuple(profile.get("launch_argv") or seat.launch_argv or ())
+    adapter_id = (
+        profile.get("adapter_id") or pool.adapter_id or adapter_id_for_cli(seat.cli)
+    )
+    if adapter_id and not custom_argv:
+        try:
+            return load_builtin_adapter(str(adapter_id))
+        except AdapterError as exc:
+            raise RuntimeError(f"adapter is unavailable: {adapter_id}") from exc
+    return _profile_adapter(seat, pool, profile)
+
+
+def _profile_adapter(
+    seat: SeatConfig,
+    pool: UsagePoolConfig,
+    profile: dict[str, Any] | None = None,
+) -> AdapterRecord:
+    profile = profile or {}
+    launch_argv = tuple(profile.get("launch_argv") or seat.launch_argv or ())
+    if not seat.cli or not launch_argv:
         raise RuntimeError(f"seat {seat.seat_id} has no profile-owned launch argv")
-    kind = CaptureKind(seat.session_capture or CaptureKind.GENERATED_UUID.value)
+    kind = CaptureKind(
+        profile.get("session_capture")
+        or seat.session_capture
+        or CaptureKind.GENERATED_UUID.value
+    )
+    list_argv = profile.get("session_list_argv")
     models = (pool.model,) if pool.model else ("unspecified",)
+    resume_argv = tuple(profile.get("resume_argv") or seat.resume_argv or ())
     return AdapterRecord(
-        adapter_id=seat.cli,
+        adapter_id=str(profile.get("adapter_id") or seat.cli),
         observed_version="profile",
         models=models,
         skill="skills/controller/SKILL.md",
@@ -945,10 +1218,54 @@ def _profile_adapter(seat: SeatConfig, pool: UsagePoolConfig) -> AdapterRecord:
             candidates=(seat.cli,),
             version_argv=(seat.cli, "--version"),
         ),
-        launch=LaunchSpec(argv=(seat.cli, *seat.launch_argv)),
+        launch=LaunchSpec(argv=(seat.cli, *launch_argv)),
         resume=ResumeSpec(
-            supported=seat.resume_argv is not None,
-            argv=(seat.cli, *seat.resume_argv) if seat.resume_argv else None,
+            supported=bool(resume_argv),
+            argv=(seat.cli, *resume_argv) if resume_argv else None,
         ),
-        session_capture=SessionCaptureSpec(kind=kind),
+        session_capture=SessionCaptureSpec(
+            kind=kind,
+            argv=tuple(list_argv) if list_argv else None,
+            id_pointer=profile.get("session_id_pointer"),
+            cwd_pointer=profile.get("session_cwd_pointer"),
+        ),
+    )
+
+
+def _git_toplevel(start: Path) -> Path | None:
+    try:
+        return Path(_git_output(start, "rev-parse", "--show-toplevel")).resolve()
+    except RuntimeError:
+        return None
+
+
+def _observed_branch(cwd: Path) -> str | None:
+    try:
+        return _git_output(cwd, "branch", "--show-current")
+    except RuntimeError:
+        return None
+
+
+def _worker_instructions(payload: dict[str, Any], seat_id: str) -> str:
+    state = payload["state_dir"]
+    fleet = payload["fleet_id"]
+    role = payload.get("role_path") or "(none)"
+    capabilities = ", ".join(payload.get("capabilities") or [])
+    return (
+        "# Foil seat\n\n"
+        f"You are seat `{seat_id}` in fleet `{fleet}`.\n"
+        f"Lead seat: `{payload.get('lead_seat_id') or 'operator'}`.\n"
+        f"Role file: `{role}`.\n"
+        f"Capabilities: {capabilities}.\n\n"
+        "On start and whenever you are woken, poll your mailbox and "
+        "acknowledge only after you have read the message. Do not treat "
+        "acknowledgement as task completion. Reply with `foil send-message` "
+        "or a shared notepad/file.\n\n"
+        "```sh\n"
+        f"foil message-status --state-dir {state} --fleet {fleet} "
+        f"--seat {seat_id} --message MESSAGE_ID\n"
+        f"foil ack-message --state-dir {state} --fleet {fleet} "
+        f"--seat {seat_id} --message MESSAGE_ID --actor {seat_id}\n"
+        "```\n"
+        "Do not spawn, stop, or remove seats unless you are the lead.\n"
     )

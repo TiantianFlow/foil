@@ -1,4 +1,4 @@
-"""Distribution and documentation contracts for management skills (CAP-001, CAP-010, CAP-027)."""
+"""Distribution and documentation contracts for management skills."""
 
 from __future__ import annotations
 
@@ -20,12 +20,12 @@ MANAGEMENT_SKILLS = (
     "poll-status",
     "shared-notepads",
     "memory-update",
+    "worker",
 )
 SHIPPED_COMMANDS = (
     "init",
-    "launch",
+    "seat",
     "status",
-    "stop",
     "resume",
     "poll-status",
     "send-message",
@@ -135,7 +135,8 @@ def test_skills_do_not_offer_forbidden_control_surfaces() -> None:
 def test_controller_covers_lifecycle_mailbox_and_resume_precedence() -> None:
     body = _parse_skill("controller")[1]
     assert "foil init" in body
-    assert "foil launch" in body
+    assert "foil seat spawn" in body
+    assert "foil resume" in body
     assert "foil send-message" in body
     assert "foil ack-message" in body
     assert "foil message-status" in body
@@ -147,22 +148,22 @@ def test_controller_covers_lifecycle_mailbox_and_resume_precedence() -> None:
     assert "FOIL_STATE_DIR" in body
     assert "--json" in body
     assert "display name" in body.lower()
+    assert "foil launch" not in body
 
 
 def test_manager_documents_current_staffing_and_later_boundaries() -> None:
     body = _parse_skill("manager")[1]
-    assert "adapter_paths" in body
     assert "Python adapter" in body
     assert "foil doctor" in body
     assert "--fresh" in body
     assert "scheduler" not in body.lower() or "do not claim a scheduler" in body.lower()
     assert "catalog-list" in body
-    assert "workspace" in body.lower()
     assert "cli" in body.lower()
     assert "parse, download, or vendor" in body.lower()
     assert "notepad-write" in body
     assert "memory-propose" in body
     assert "dispatch" in body
+    assert "foil seat spawn" in body
 
 
 def test_poll_status_skill_distinguishes_files_from_live_status() -> None:
@@ -178,3 +179,14 @@ def test_poll_status_skill_distinguishes_files_from_live_status() -> None:
     assert "waiting" in body
     assert "idle" in body
     assert "foil set-state" in body
+
+
+def test_worker_skill_covers_mailbox_ack_and_forbids_lifecycle() -> None:
+    body = _parse_skill("worker")[1]
+    assert "foil ack-message" in body
+    assert "foil message-status" in body
+    assert "FOIL_SEAT_ID" in body
+    assert "queued" in body
+    assert "acknowledged" in body
+    assert "foil seat spawn" in body
+    assert "lead" in body.lower()
