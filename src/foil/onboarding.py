@@ -186,6 +186,14 @@ def _write_scaffold(project_root: Path, fleet_id: str) -> tuple[Path, Path, str]
     if not runtime_resource.is_file():
         raise InitializationError("packaged runtime template is missing")
     fleet_text = fleet_resource.read_text(encoding="utf-8").replace("__FLEET_ID__", fleet_id)
+    implementer_worktree = json.dumps(
+        str(project_root / "worktrees" / "implementer"),
+        ensure_ascii=False,
+    )
+    reviewer_worktree = json.dumps(
+        str(project_root / "worktrees" / "reviewer-challenger"),
+        ensure_ascii=False,
+    )
     runtime_text = (
         runtime_resource.read_text(encoding="utf-8")
         .replace("__FLEET_ID__", fleet_id)
@@ -193,6 +201,8 @@ def _write_scaffold(project_root: Path, fleet_id: str) -> tuple[Path, Path, str]
             "__PROJECT_ROOT_TOML__",
             json.dumps(str(project_root), ensure_ascii=False),
         )
+        .replace("__IMPLEMENTER_WORKTREE_TOML__", implementer_worktree)
+        .replace("__REVIEWER_WORKTREE_TOML__", reviewer_worktree)
     )
     role_templates = _load_role_templates()
     _validate_templates(fleet_text, role_templates)
@@ -239,6 +249,8 @@ def _initialize_registry(state_root: Path, fleet_id: str, project_root: Path) ->
         fleet_root,
         fleet_root / "seats",
         fleet_root / "locks",
+        fleet_root / "notepads",
+        fleet_root / "memory",
     )
     for path in layout:
         _ensure_private_directory(path)

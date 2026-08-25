@@ -20,10 +20,15 @@ from foil.adapters import (
     AdapterError,
     AdapterRecord,
     CaptureKind,
+    ExecutableSpec,
+    LaunchSpec,
+    ResumeSpec,
+    SessionCaptureSpec,
     expand_argv,
     load_adapter,
     load_builtin_adapter,
 )
+from foil.doctor import DoctorError, ensure_worktrees
 from foil.naming import tmux_session_name, tmux_window_name
 from foil.registry import (
     RegistryStore,
@@ -257,11 +262,18 @@ class RuntimeController:
         runtimes: list[SeatRuntime] = []
         for seat in self.config.seats:
             pool = self.config.pool_for(seat)
-            adapter = self.catalog.load(pool.adapter_id)
-            if pool.model not in adapter.models:
-                raise RuntimeError(
-                    f"model {pool.model!r} is not declared by adapter {pool.adapter_id}"
-                )
+            if seat.cli:
+                adapter = _profile_adapter(seat, pool)
+            else:
+                if not pool.adapter_id:
+                    raise RuntimeError(
+                        f"seat {seat.seat_id} needs cli= or a pool adapter"
+                    )
+                adapter = self.catalog.load(pool.adapter_id)
+                if pool.model is not None and pool.model not in adapter.models:
+                    raise RuntimeError(
+                        f"model {pool.model!r} is not declared by adapter {pool.adapter_id}"
+                    )
             try:
                 executable = _resolve_executable(adapter)
             except RuntimeError:
@@ -313,10 +325,11 @@ class RuntimeController:
     ) -> dict[str, str]:
         values = {
             "adapter_state_dir": str(self._adapter_state_dir(runtime.seat.seat_id)),
-            "model": runtime.pool.model,
             "seat_id": runtime.seat.seat_id,
             "working_directory": str(runtime.seat.working_directory),
         }
+        if runtime.pool.model is not None:
+            values["model"] = runtime.pool.model
         if native_session_id is not None:
             values["native_session_id"] = native_session_id
         return values
@@ -503,7 +516,16 @@ class RuntimeController:
         baseline: set[str],
         *,
         incarnation_id: str | None = None,
+        previous_incarnation_id: str | None = None,
     ) -> SeatRecord:
+        extensions: dict[str, Any] = {
+            "adapter_schema_version": runtime.adapter.schema_version,
+            "capture_baseline": sorted(baseline),
+        }
+        if runtime.pool.model is not None:
+            extensions["model"] = runtime.pool.model
+        if runtime.executable is not None:
+            extensions["resolved_executable"] = runtime.executable
         return SeatRecord(
             fleet_id=self.config.fleet_id,
             seat_id=runtime.seat.seat_id,
@@ -516,16 +538,8 @@ class RuntimeController:
             usage_pool_id=runtime.pool.pool_id,
             incarnation_id=incarnation_id or str(uuid.uuid4()),
             updated_at=_now(),
-            extensions={
-                "adapter_schema_version": runtime.adapter.schema_version,
-                "capture_baseline": sorted(baseline),
-                "model": runtime.pool.model,
-                **(
-                    {"resolved_executable": runtime.executable}
-                    if runtime.executable is not None
-                    else {}
-                ),
-            },
+            previous_incarnation_id=previous_incarnation_id,
+            extensions=extensions,
         )
 
     def _validate_record(self, runtime: SeatRuntime, record: SeatRecord) -> None:
@@ -544,6 +558,12 @@ class RuntimeController:
             raise RuntimeError(f"seat {runtime.seat.seat_id} registry/config mismatch")
 
     def launch(self) -> list[dict[str, Any]]:
+        if shutil.which("tmux") is None:
+            raise RuntimeError("tmux is unavailable")
+        try:
+            ensure_worktrees(self.config)
+        except DoctorError as exc:
+            raise RuntimeError(str(exc)) from exc
         runtimes = [self._with_executable(runtime) for runtime in self._validate_runtimes()]
         for runtime in runtimes:
             try:
@@ -603,7 +623,7 @@ class RuntimeController:
     def _records_and_probes(
         self,
     ) -> list[tuple[SeatRuntime, SeatRecord, ProbeResult]]:
-        runtimes = self._validate_runtimes()
+        runtimes = self._runtimes()
         records_and_probes: list[tuple[SeatRuntime, SeatRecord, ProbeResult]] = []
         for runtime in runtimes:
             try:
@@ -650,12 +670,7 @@ class RuntimeController:
                         runtime.seat.seat_id,
                         result="captured",
                     )
-            if probe.state is ProbeState.ALIVE and probe.identity_matches:
-                state = SeatState.WORKING
-            elif probe.state is ProbeState.DEAD:
-                state = SeatState.EXITED
-            else:
-                state = SeatState.BLOCKED
+            state = self._live_state(record, probe)
             results.append(
                 self._status(
                     runtime,
@@ -699,10 +714,14 @@ class RuntimeController:
             )
         return results
 
-    def resume(self) -> list[dict[str, Any]]:
+    def resume(
+        self, *, seat_id: str | None = None, force_fresh: bool = False
+    ) -> list[dict[str, Any]]:
         entries = self._records_and_probes()
         results: list[dict[str, Any]] = []
         for runtime, record, probe in entries:
+            if seat_id is not None and runtime.seat.seat_id != seat_id:
+                continue
             tmux_state = {
                 ProbeState.ALIVE: TmuxProbeState.ALIVE,
                 ProbeState.DEAD: TmuxProbeState.DEAD,
@@ -711,6 +730,7 @@ class RuntimeController:
             decision = resolve_resume(
                 ResumeEvidence(
                     tmux_state=tmux_state,
+                    force_fresh=force_fresh,
                     tmux_identity_matches=(
                         probe.identity_matches
                         if probe.state is ProbeState.ALIVE
@@ -729,6 +749,10 @@ class RuntimeController:
             if decision.action is ResumeAction.BLOCKED:
                 raise RuntimeError(f"seat {runtime.seat.seat_id} resume is blocked")
             if decision.action is ResumeAction.REVIVE_TMUX:
+                extensions = dict(record.extensions)
+                extensions.pop("operator_state", None)
+                record = replace(record, extensions=extensions, updated_at=_now())
+                self.registry.write_seat(record)
                 event_id = self.audit.append(
                     "resume_result",
                     runtime.seat.seat_id,
@@ -741,9 +765,20 @@ class RuntimeController:
                     {"kind": "lifecycle_event", "event_id": event_id},
                 )
             else:
+                if (
+                    decision.action is ResumeAction.START_FRESH
+                    and probe.state is ProbeState.ALIVE
+                    and probe.identity_matches
+                ):
+                    self.tmux.stop_verified(
+                        self.config.fleet_id,
+                        runtime.seat.seat_id,
+                        record.tmux,
+                    )
                 runtime = self._with_executable(runtime, record)
                 baseline: set[str] = set()
                 native_session_id = record.native_session_id
+                previous_incarnation_id = record.previous_incarnation_id
                 if decision.action is ResumeAction.RESUME_NATIVE:
                     assert runtime.adapter.resume.argv is not None
                     argv = self._expanded(
@@ -770,6 +805,7 @@ class RuntimeController:
                         native_session_id,
                     )
                     incarnation_id = str(uuid.uuid4())
+                    previous_incarnation_id = record.incarnation_id
                 target = self._spawn(runtime, argv)
                 if (
                     decision.action is ResumeAction.START_FRESH
@@ -785,6 +821,7 @@ class RuntimeController:
                     target,
                     baseline,
                     incarnation_id=incarnation_id,
+                    previous_incarnation_id=previous_incarnation_id,
                 )
                 self.registry.write_seat(record)
                 event_id = self.audit.append(
@@ -801,4 +838,68 @@ class RuntimeController:
             result["action"] = decision.action.value
             result["reason"] = decision.reason
             results.append(result)
+        if seat_id is not None and not results:
+            raise RuntimeError(f"seat {seat_id} is not registered")
         return results
+
+    def set_state(self, seat_id: str, state: str) -> list[dict[str, Any]]:
+        allowed = {SeatState.WAITING, SeatState.IDLE, SeatState.WORKING}
+        try:
+            desired = SeatState(state)
+        except ValueError as exc:
+            raise RuntimeError(f"unknown state {state!r}") from exc
+        if desired not in allowed:
+            raise RuntimeError(f"unknown state {state!r}")
+        found = False
+        for runtime, record, _probe in self._records_and_probes():
+            if runtime.seat.seat_id != seat_id:
+                continue
+            found = True
+            extensions = dict(record.extensions)
+            if desired is SeatState.WORKING:
+                extensions.pop("operator_state", None)
+            else:
+                extensions["operator_state"] = desired.value
+            self.registry.write_seat(
+                replace(record, extensions=extensions, updated_at=_now())
+            )
+        if not found:
+            raise RuntimeError(f"seat {seat_id} is not registered")
+        return self.status()
+
+    def _live_state(self, record: SeatRecord, probe: ProbeResult) -> SeatState:
+        if probe.state is ProbeState.DEAD:
+            return SeatState.EXITED
+        if not (probe.state is ProbeState.ALIVE and probe.identity_matches):
+            return SeatState.BLOCKED
+        operator_state = record.extensions.get("operator_state")
+        if operator_state in {
+            SeatState.WAITING.value,
+            SeatState.IDLE.value,
+            SeatState.WORKING.value,
+        }:
+            return SeatState(operator_state)
+        return SeatState.WORKING
+
+
+def _profile_adapter(seat: SeatConfig, pool: UsagePoolConfig) -> AdapterRecord:
+    if not seat.cli or not seat.launch_argv:
+        raise RuntimeError(f"seat {seat.seat_id} has no profile-owned launch argv")
+    kind = CaptureKind(seat.session_capture or CaptureKind.GENERATED_UUID.value)
+    models = (pool.model,) if pool.model else ("unspecified",)
+    return AdapterRecord(
+        adapter_id=seat.cli,
+        observed_version="profile",
+        models=models,
+        skill="skills/controller/SKILL.md",
+        executable=ExecutableSpec(
+            candidates=(seat.cli,),
+            version_argv=(seat.cli, "--version"),
+        ),
+        launch=LaunchSpec(argv=(seat.cli, *seat.launch_argv)),
+        resume=ResumeSpec(
+            supported=seat.resume_argv is not None,
+            argv=(seat.cli, *seat.resume_argv) if seat.resume_argv else None,
+        ),
+        session_capture=SessionCaptureSpec(kind=kind),
+    )

@@ -242,6 +242,7 @@ class SeatRecord:
     usage_pool_id: str
     incarnation_id: str
     updated_at: str
+    previous_incarnation_id: str | None = None
     extensions: dict[str, Any] = field(default_factory=dict)
     schema_version: int = field(default=SCHEMA_VERSION, init=False)
 
@@ -250,6 +251,8 @@ class SeatRecord:
         _validate_id(self.seat_id, "seat_id")
         _validate_id(self.usage_pool_id, "usage_pool_id")
         _validate_id(self.incarnation_id, "incarnation_id")
+        if self.previous_incarnation_id is not None:
+            _validate_id(self.previous_incarnation_id, "previous_incarnation_id")
         if not isinstance(self.agent_kind, str) or not self.agent_kind:
             raise RegistryError("agent_kind must be a non-empty string")
         if not isinstance(self.working_directory, str) or not self.working_directory:
@@ -289,6 +292,7 @@ class SeatRecord:
             "usage_pool_id": self.usage_pool_id,
             "incarnation_id": self.incarnation_id,
             "updated_at": self.updated_at,
+            "previous_incarnation_id": self.previous_incarnation_id,
             "extensions": self.extensions,
         }
 
@@ -311,7 +315,8 @@ class SeatRecord:
             "updated_at",
             "extensions",
         }
-        unknown = set(payload) - expected
+        optional = {"previous_incarnation_id"}
+        unknown = set(payload) - expected - optional
         missing = expected - set(payload)
         if unknown:
             raise RegistryError(f"unknown fields: {sorted(unknown)}")
@@ -322,6 +327,7 @@ class SeatRecord:
             raise UnsupportedSchemaVersion(f"unsupported registry schema version: {version}")
         values = {key: payload[key] for key in expected - {"schema_version", "tmux"}}
         values["tmux"] = TmuxTarget.from_dict(payload["tmux"])
+        values["previous_incarnation_id"] = payload.get("previous_incarnation_id")
         return cls(**values)
 
 

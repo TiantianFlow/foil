@@ -158,9 +158,15 @@ class OperatorFleet:
         )
 
     def git(self, *args: str) -> None:
+        environment = os.environ.copy()
+        environment.setdefault("GIT_AUTHOR_NAME", "Foil E2E")
+        environment.setdefault("GIT_AUTHOR_EMAIL", "foil-e2e@localhost")
+        environment.setdefault("GIT_COMMITTER_NAME", "Foil E2E")
+        environment.setdefault("GIT_COMMITTER_EMAIL", "foil-e2e@localhost")
         subprocess.run(
             ["git", *args],
             cwd=self.project,
+            env=environment,
             capture_output=True,
             text=True,
             check=True,

@@ -9,8 +9,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from foil.adapters import CaptureKind
+
 CONFIG_SCHEMA_VERSION = 1
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_SEAT_CAPTURE_KINDS = {
+    CaptureKind.NONE.value,
+    CaptureKind.GENERATED_UUID.value,
+    CaptureKind.COMMAND_JSON_LIST_DELTA.value,
+}
 
 
 class ConfigError(ValueError):
@@ -50,11 +57,21 @@ def _only(table: dict[str, Any], expected: set[str], field_name: str) -> None:
         raise ConfigError(f"{field_name} contains unknown fields")
 
 
+def _optional_argv(value: Any, field_name: str) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value:
+        raise ConfigError(f"{field_name} must be a non-empty array of strings")
+    if not all(isinstance(item, str) and item and "\x00" not in item for item in value):
+        raise ConfigError(f"{field_name} entries must be non-empty strings")
+    return tuple(value)
+
+
 @dataclass(frozen=True, slots=True)
 class UsagePoolConfig:
     pool_id: str
-    adapter_id: str
-    model: str
+    adapter_id: str | None
+    model: str | None
     extensions: dict[str, Any] = field(default_factory=dict)
 
 
@@ -66,6 +83,10 @@ class SeatConfig:
     working_directory: Path
     worktree_path: Path
     git_branch: str
+    cli: str | None = None
+    launch_argv: tuple[str, ...] | None = None
+    resume_argv: tuple[str, ...] | None = None
+    session_capture: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,11 +154,17 @@ def load_fleet_config(path: Path | str) -> FleetConfig:
         extensions = raw.get("extensions", {})
         if not isinstance(extensions, dict):
             raise ConfigError("usage_pool.extensions must be an object")
+        raw_adapter = raw.get("adapter")
+        raw_model = raw.get("model")
+        adapter_id = _id(raw_adapter, "usage_pool.adapter") if raw_adapter is not None else None
+        if raw_adapter is not None and raw_model is None:
+            raise ConfigError(f"usage pool {pool_id} is missing model")
+        model = _text(raw_model, "usage_pool.model") if raw_model is not None else None
         pools.append(
             UsagePoolConfig(
                 pool_id=pool_id,
-                adapter_id=_id(raw.get("adapter"), "usage_pool.adapter"),
-                model=_text(raw.get("model"), "usage_pool.model"),
+                adapter_id=adapter_id,
+                model=model,
                 extensions=extensions,
             )
         )
@@ -154,6 +181,10 @@ def load_fleet_config(path: Path | str) -> FleetConfig:
                 "working_directory",
                 "worktree_path",
                 "git_branch",
+                "cli",
+                "launch_argv",
+                "resume_argv",
+                "session_capture",
             },
             f"seats[{index}]",
         )
@@ -164,6 +195,20 @@ def load_fleet_config(path: Path | str) -> FleetConfig:
         usage_pool_id = _id(raw.get("usage_pool_id"), "seat.usage_pool_id")
         if usage_pool_id not in pool_ids:
             raise ConfigError(f"seat {seat_id} references unknown usage pool")
+        cli = _id(raw.get("cli"), "seat.cli") if raw.get("cli") is not None else None
+        launch_argv = _optional_argv(raw.get("launch_argv"), "seat.launch_argv")
+        resume_argv = _optional_argv(raw.get("resume_argv"), "seat.resume_argv")
+        session_capture = raw.get("session_capture")
+        if session_capture is not None:
+            session_capture = _text(session_capture, "seat.session_capture")
+            if session_capture not in _SEAT_CAPTURE_KINDS:
+                raise ConfigError(f"seat {seat_id} has an unknown session_capture")
+        if cli is None:
+            pool = next(item for item in pools if item.pool_id == usage_pool_id)
+            if pool.adapter_id is None:
+                raise ConfigError(f"seat {seat_id} needs cli= or a pool adapter")
+        elif launch_argv is None:
+            raise ConfigError(f"seat {seat_id} declares cli= without launch_argv")
         seats.append(
             SeatConfig(
                 seat_id=seat_id,
@@ -174,6 +219,10 @@ def load_fleet_config(path: Path | str) -> FleetConfig:
                 ),
                 worktree_path=_absolute_path(raw.get("worktree_path"), "seat.worktree_path"),
                 git_branch=_text(raw.get("git_branch"), "seat.git_branch"),
+                cli=cli,
+                launch_argv=launch_argv,
+                resume_argv=resume_argv,
+                session_capture=session_capture,
             )
         )
 

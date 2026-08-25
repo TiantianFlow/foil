@@ -66,6 +66,12 @@ def test_init_git_setup_produces_loadable_two_seat_runtime_config(tmp_path: Path
         ("implementer", "primary"),
         ("reviewer-challenger", "independent-review"),
     ]
-    assert all(seat.working_directory == project.resolve() for seat in runtime.seats)
-    assert all(seat.worktree_path == project.resolve() for seat in runtime.seats)
+    assert runtime.seats[0].working_directory == (
+        project / "worktrees" / "implementer"
+    ).resolve()
+    assert runtime.seats[1].working_directory == (
+        project / "worktrees" / "reviewer-challenger"
+    ).resolve()
+    assert runtime.seats[0].worktree_path == runtime.seats[0].working_directory
+    assert runtime.seats[1].worktree_path == runtime.seats[1].working_directory
     assert all(seat.git_branch == "foil-demo" for seat in runtime.seats)

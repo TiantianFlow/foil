@@ -16,6 +16,7 @@ import os
 import sys
 import time
 import uuid
+from contextlib import suppress
 from pathlib import Path
 
 
@@ -94,10 +95,21 @@ def _run_opencode(home: Path, args: list[str]) -> int:
     if args[:4] == ["session", "list", "--format", "json"]:
         print(json.dumps(_load_sessions(home)))
         return 0
+    if args[:2] == ["usage", "--format"] or args == ["usage", "--json"]:
+        payload_path = home / "usage-opencode.json"
+        if payload_path.is_file():
+            print(payload_path.read_text(encoding="utf-8"))
+        else:
+            print(json.dumps({"availability": "ok", "active_load": 0}))
+        return 0
     if not args or args[0] != ".":
         print("unsupported opencode argv", file=sys.stderr)
         return 2
     if "--session" not in args:
+        delay_path = home / "opencode-capture-delay-seconds"
+        if delay_path.is_file():
+            with suppress(ValueError):
+                time.sleep(float(delay_path.read_text(encoding="utf-8").strip() or "0"))
         session_id = f"oc-{uuid.uuid4().hex[:16]}"
         sessions = _load_sessions(home)
         sessions.append({"id": session_id, "directory": str(Path.cwd())})
@@ -109,6 +121,13 @@ def _run_opencode(home: Path, args: list[str]) -> int:
 def _run_grok(home: Path, args: list[str]) -> int:
     if args == ["--version"]:
         print("1.0.5")
+        return 0
+    if args[:2] == ["usage", "--format"] or args == ["usage", "--json"]:
+        payload_path = home / "usage-grok.json"
+        if payload_path.is_file():
+            print(payload_path.read_text(encoding="utf-8"))
+        else:
+            print(json.dumps({"availability": "ok", "active_load": 0}))
         return 0
     if "--session-id" not in args and "--resume" not in args:
         print("unsupported grok argv", file=sys.stderr)

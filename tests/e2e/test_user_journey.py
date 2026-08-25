@@ -95,8 +95,12 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     assert "--model" in grok_launches[0]["argv"]
     assert "grok-4.6" in grok_launches[0]["argv"]
     assert "xai/grok-4.6" in opencode_launches[0]["argv"]
-    assert grok_launches[0]["cwd"] == str(fleet.project.resolve())
-    assert opencode_launches[0]["cwd"] == str(fleet.project.resolve())
+    assert grok_launches[0]["cwd"] == str(
+        (fleet.project / "worktrees" / "implementer").resolve()
+    )
+    assert opencode_launches[0]["cwd"] == str(
+        (fleet.project / "worktrees" / "reviewer-challenger").resolve()
+    )
 
     status = fleet.lifecycle("status").json()
     assert all(seat["state"] == "working" for seat in status["seats"])

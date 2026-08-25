@@ -18,14 +18,14 @@ model = "xai/grok-4.6"
 id = "implementer"
 display_name = "Implementer"
 usage_pool_id = "primary"
-working_directory = __PROJECT_ROOT_TOML__
-worktree_path = __PROJECT_ROOT_TOML__
+working_directory = __IMPLEMENTER_WORKTREE_TOML__
+worktree_path = __IMPLEMENTER_WORKTREE_TOML__
 git_branch = "foil-demo"
 
 [[seats]]
 id = "reviewer-challenger"
 display_name = "Reviewer/challenger"
 usage_pool_id = "independent-review"
-working_directory = __PROJECT_ROOT_TOML__
-worktree_path = __PROJECT_ROOT_TOML__
+working_directory = __REVIEWER_WORKTREE_TOML__
+worktree_path = __REVIEWER_WORKTREE_TOML__
 git_branch = "foil-demo"

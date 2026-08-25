@@ -60,7 +60,16 @@ def test_registry_write_is_private_and_leaves_no_partial_file(tmp_path: Path) ->
     assert list(path.parent.glob("*.tmp")) == []
 
 
-def test_unknown_top_level_fields_are_rejected(tmp_path: Path) -> None:
+def test_previous_incarnation_id_is_optional_on_read(tmp_path: Path) -> None:
+    store = RegistryStore(tmp_path)
+    path = store.write_seat(make_record(previous_incarnation_id="incarnation-0"))
+    payload = json.loads(path.read_text())
+    del payload["previous_incarnation_id"]
+    path.write_text(json.dumps(payload))
+
+    record = store.read_seat("fleet-1", "seat-1")
+    assert record.previous_incarnation_id is None
+    assert record.to_dict()["previous_incarnation_id"] is None
     store = RegistryStore(tmp_path)
     path = store.write_seat(make_record())
     payload = json.loads(path.read_text())

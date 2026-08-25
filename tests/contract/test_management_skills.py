@@ -14,7 +14,13 @@ ROOT = Path(__file__).parents[2]
 SKILLS_ROOT = ROOT / "skills"
 PYPROJECT = ROOT / "pyproject.toml"
 
-MANAGEMENT_SKILLS = ("controller", "manager", "poll-status")
+MANAGEMENT_SKILLS = (
+    "controller",
+    "manager",
+    "poll-status",
+    "shared-notepads",
+    "memory-update",
+)
 SHIPPED_COMMANDS = (
     "init",
     "launch",
@@ -25,6 +31,19 @@ SHIPPED_COMMANDS = (
     "send-message",
     "ack-message",
     "message-status",
+    "notepad-write",
+    "notepad-read",
+    "notepad-ack",
+    "memory-propose",
+    "memory-accept",
+    "memory-supersede",
+    "memory-reject",
+    "memory-status",
+    "dispatch",
+    "doctor",
+    "set-state",
+    "catalog-list",
+    "catalog-map",
 )
 FORBIDDEN_CONTROL_SURFACES = (
     "mcp",
@@ -134,15 +153,16 @@ def test_manager_documents_current_staffing_and_later_boundaries() -> None:
     body = _parse_skill("manager")[1]
     assert "adapter_paths" in body
     assert "Python adapter" in body
-    assert "not shipped" in body.lower()
-    assert "catalog" in body.lower()
+    assert "foil doctor" in body
+    assert "--fresh" in body
+    assert "scheduler" not in body.lower() or "do not claim a scheduler" in body.lower()
+    assert "catalog-list" in body
     assert "workspace" in body.lower()
     assert "cli" in body.lower()
-    assert "catalog support is not shipped" in body.lower()
     assert "parse, download, or vendor" in body.lower()
-    assert "foil doctor" not in body
-    assert "--fresh" not in body
-    assert "scheduler" in body.lower()
+    assert "notepad-write" in body
+    assert "memory-propose" in body
+    assert "dispatch" in body
 
 
 def test_poll_status_skill_distinguishes_files_from_live_status() -> None:
@@ -155,3 +175,6 @@ def test_poll_status_skill_distinguishes_files_from_live_status() -> None:
     assert "working" in body
     assert "exited" in body
     assert "blocked" in body
+    assert "waiting" in body
+    assert "idle" in body
+    assert "foil set-state" in body
