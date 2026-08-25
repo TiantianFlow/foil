@@ -24,7 +24,9 @@ jobs:
       - name: Install tmux
         run: sudo apt-get update && sudo apt-get install -y tmux
       - name: Test
-        run: uv run --isolated --extra dev pytest
+        run: uv run --isolated --extra dev pytest --ignore=tests/e2e
+      - name: End-to-end user journeys
+        run: uv run --isolated --extra dev pytest tests/e2e -m "not e2e_live"
       - name: Lint
         run: uv run --isolated --extra dev ruff check .
       - name: Build
