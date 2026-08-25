@@ -40,6 +40,19 @@ def test_operator_help_lists_the_commands_a_controller_uses() -> None:
         "send-message",
         "ack-message",
         "message-status",
+        "notepad-write",
+        "notepad-read",
+        "notepad-ack",
+        "memory-propose",
+        "memory-accept",
+        "memory-supersede",
+        "memory-reject",
+        "memory-status",
+        "dispatch",
+        "doctor",
+        "set-state",
+        "catalog-list",
+        "catalog-map",
     ):
         assert command in result.stdout
 
@@ -101,6 +114,164 @@ def test_t2_through_t6_two_seat_user_journey(initialized: OperatorFleet) -> None
     assert opencode_launches[0]["cwd"] == str(
         (fleet.project / "worktrees" / "reviewer-challenger").resolve()
     )
+
+    status = fleet.lifecycle("status").json()
+    assert all(seat["state"] == "working" for seat in status["seats"])
+
+    uncommitted = "uncommitted-only-in-root.txt"
+    (fleet.project / uncommitted).write_text("do-not-clone", encoding="utf-8")
+    for seat_id in ("implementer", "reviewer-challenger"):
+        worktree = fleet.project / "worktrees" / seat_id
+        assert worktree.is_dir()
+        assert not (worktree / uncommitted).exists()
+        branch = subprocess.run(
+            ["git", "-C", str(worktree), "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert branch.stdout.strip() == "foil-demo"
+
+    doctor = fleet.foil("doctor", "--config", str(fleet.config), "--json").json()
+    assert doctor["tmux"]["ok"] is True
+    assert doctor["git"]["ok"] is True
+    assert doctor["worktrees"]["ok"] is True
+    assert {seat["seat_id"] for seat in doctor["worktrees"]["seats"]} == {
+        "implementer",
+        "reviewer-challenger",
+    }
+    assert all(seat["exists"] and not seat["stale"] for seat in doctor["worktrees"]["seats"])
+
+    brief = fleet.foil(
+        "notepad-write",
+        "--state-dir",
+        str(fleet.state),
+        "--fleet",
+        fleet.fleet_id,
+        "--notepad",
+        "journey-brief",
+        "--author",
+        "implementer",
+        "--body",
+        "Implementer drafts; reviewer challenges the same brief.",
+    ).json()
+    assert brief["duplicate"] is False
+    read_brief = fleet.foil(
+        "notepad-read",
+        "--state-dir",
+        str(fleet.state),
+        "--fleet",
+        fleet.fleet_id,
+        "--notepad",
+        "journey-brief",
+    ).json()
+    assert "reviewer challenges" in read_brief["body"]
+    ack = fleet.foil(
+        "notepad-ack",
+        "--state-dir",
+        str(fleet.state),
+        "--fleet",
+        fleet.fleet_id,
+        "--notepad",
+        "journey-brief",
+        "--actor",
+        "reviewer-challenger",
+    ).json()
+    assert ack["state"] == "acknowledged"
+
+    lesson = fleet.foil(
+        "memory-propose",
+        "--state-dir",
+        str(fleet.state),
+        "--fleet",
+        fleet.fleet_id,
+        "--lesson",
+        "journey-ack-first",
+        "--author",
+        "memory-curator",
+        "--task",
+        "quickstart-review",
+        "--body",
+        "Acknowledge mailbox messages before claiming the task is done.",
+    ).json()
+    assert lesson["state"] == "proposed"
+    accepted = fleet.foil(
+        "memory-accept",
+        "--state-dir",
+        str(fleet.state),
+        "--fleet",
+        fleet.fleet_id,
+        "--lesson",
+        "journey-ack-first",
+        "--actor",
+        "manager",
+    ).json()
+    assert accepted["state"] == "accepted"
+
+    (fleet.agent_home / "usage-grok.json").write_text(
+        json.dumps({"availability": "ok", "active_load": 2}),
+        encoding="utf-8",
+    )
+    (fleet.agent_home / "usage-opencode.json").write_text(
+        json.dumps({"availability": "ok", "active_load": 0}),
+        encoding="utf-8",
+    )
+    decision = fleet.foil(
+        "dispatch",
+        "--config",
+        str(fleet.config),
+        "--state-dir",
+        str(fleet.state),
+        "--json",
+        "--capability",
+        "review",
+    ).json()
+    assert decision["selected_seat_id"] == "reviewer-challenger"
+
+    waiting = fleet.foil(
+        "set-state",
+        "--config",
+        str(fleet.config),
+        "--state-dir",
+        str(fleet.state),
+        "--json",
+        "--seat",
+        "implementer",
+        "--state",
+        "waiting",
+    ).json()
+    assert _seats(waiting)["implementer"]["state"] == "waiting"
+    fleet.foil(
+        "set-state",
+        "--config",
+        str(fleet.config),
+        "--state-dir",
+        str(fleet.state),
+        "--json",
+        "--seat",
+        "implementer",
+        "--state",
+        "working",
+    ).json()
+
+    before_fresh = _seats(status)["implementer"]["registry"]
+    freshened = fleet.foil(
+        "resume",
+        "--config",
+        str(fleet.config),
+        "--state-dir",
+        str(fleet.state),
+        "--json",
+        "--fresh",
+        "--seat",
+        "implementer",
+    ).json()
+    after_fresh = _seats(freshened)["implementer"]
+    assert after_fresh["action"] == "start_fresh"
+    assert after_fresh["registry"]["incarnation_id"] != before_fresh["incarnation_id"]
+    assert after_fresh["registry"]["previous_incarnation_id"] == before_fresh["incarnation_id"]
+    assert len(fleet.tmux_windows()) == 2
+    assert len(set(fleet.tmux_windows())) == 2
 
     status = fleet.lifecycle("status").json()
     assert all(seat["state"] == "working" for seat in status["seats"])

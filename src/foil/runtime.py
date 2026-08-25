@@ -557,6 +557,12 @@ class RuntimeController:
         if not expected:
             raise RuntimeError(f"seat {runtime.seat.seat_id} registry/config mismatch")
 
+    def _read_registered(self, runtime: SeatRuntime) -> SeatRecord | None:
+        try:
+            return self.registry.read_seat(self.config.fleet_id, runtime.seat.seat_id)
+        except FileNotFoundError:
+            return None
+
     def launch(self) -> list[dict[str, Any]]:
         if shutil.which("tmux") is None:
             raise RuntimeError("tmux is unavailable")
@@ -565,15 +571,41 @@ class RuntimeController:
         except DoctorError as exc:
             raise RuntimeError(str(exc)) from exc
         runtimes = [self._with_executable(runtime) for runtime in self._validate_runtimes()]
+        results_by_id: dict[str, dict[str, Any]] = {}
+        to_spawn: list[SeatRuntime] = []
+        kept: list[tuple[SeatRuntime, SeatRecord, ProbeResult]] = []
         for runtime in runtimes:
-            try:
-                self.registry.read_seat(self.config.fleet_id, runtime.seat.seat_id)
-            except FileNotFoundError:
+            record = self._read_registered(runtime)
+            if record is None:
+                to_spawn.append(runtime)
                 continue
-            raise RuntimeError(f"seat {runtime.seat.seat_id} is already registered")
+            self._validate_record(runtime, record)
+            kept.append(
+                (
+                    runtime,
+                    record,
+                    self.tmux.probe(
+                        self.config.fleet_id,
+                        runtime.seat.seat_id,
+                        record.tmux,
+                    ),
+                )
+            )
+        if not to_spawn:
+            raise RuntimeError("seats are already registered")
+        for runtime, record, probe in kept:
+            results_by_id[runtime.seat.seat_id] = self._status(
+                runtime,
+                record,
+                self._live_state(record, probe),
+                {
+                    "kind": "tmux_probe",
+                    "state": probe.state.value,
+                    "identity_matches": probe.identity_matches,
+                },
+            )
 
-        results: list[dict[str, Any]] = []
-        for runtime in runtimes:
+        for runtime in to_spawn:
             baseline: set[str] = set()
             native_session_id: str | None = None
             if runtime.adapter.session_capture.kind is CaptureKind.GENERATED_UUID:
@@ -610,28 +642,24 @@ class RuntimeController:
                 result="started",
                 native_session_captured=native_session_id is not None,
             )
-            results.append(
-                self._status(
-                    runtime,
-                    record,
-                    SeatState.WORKING,
-                    {"kind": "lifecycle_event", "event_id": event_id},
-                )
+            results_by_id[runtime.seat.seat_id] = self._status(
+                runtime,
+                record,
+                SeatState.WORKING,
+                {"kind": "lifecycle_event", "event_id": event_id},
             )
-        return results
+        return [results_by_id[runtime.seat.seat_id] for runtime in runtimes]
 
     def _records_and_probes(
         self,
+        *,
+        require_any: bool = True,
     ) -> list[tuple[SeatRuntime, SeatRecord, ProbeResult]]:
-        runtimes = self._runtimes()
         records_and_probes: list[tuple[SeatRuntime, SeatRecord, ProbeResult]] = []
-        for runtime in runtimes:
-            try:
-                record = self.registry.read_seat(
-                    self.config.fleet_id, runtime.seat.seat_id
-                )
-            except FileNotFoundError as exc:
-                raise RuntimeError(f"seat {runtime.seat.seat_id} is not registered") from exc
+        for runtime in self._runtimes():
+            record = self._read_registered(runtime)
+            if record is None:
+                continue
             self._validate_record(runtime, record)
             records_and_probes.append(
                 (
@@ -644,12 +672,29 @@ class RuntimeController:
                     ),
                 )
             )
+        if require_any and not records_and_probes:
+            raise RuntimeError("no seats are registered")
         return records_and_probes
 
     def status(self) -> list[dict[str, Any]]:
-        entries = self._records_and_probes()
+        present = {
+            runtime.seat.seat_id: (runtime, record, probe)
+            for runtime, record, probe in self._records_and_probes(require_any=False)
+        }
         results: list[dict[str, Any]] = []
-        for runtime, record, probe in entries:
+        for configured in self._runtimes():
+            entry = present.get(configured.seat.seat_id)
+            if entry is None:
+                results.append(
+                    {
+                        "seat_id": configured.seat.seat_id,
+                        "usage_pool_id": configured.pool.pool_id,
+                        "state": SeatState.UNKNOWN.value,
+                        "registry": None,
+                    }
+                )
+                continue
+            runtime, record, probe = entry
             if (
                 record.native_session_id is None
                 and runtime.adapter.session_capture.kind
@@ -768,8 +813,12 @@ class RuntimeController:
                 if (
                     decision.action is ResumeAction.START_FRESH
                     and probe.state is ProbeState.ALIVE
-                    and probe.identity_matches
                 ):
+                    if not probe.identity_matches:
+                        raise RuntimeError(
+                            f"seat {runtime.seat.seat_id} resume --fresh refused: "
+                            "tmux identity is unverified"
+                        )
                     self.tmux.stop_verified(
                         self.config.fleet_id,
                         runtime.seat.seat_id,

@@ -38,15 +38,12 @@ def doctor_report(config: FleetConfig, *, apply: bool = False) -> dict[str, Any]
             clis.append({"name": name, "ok": resolved is not None, "path": resolved})
     if apply:
         ensure_worktrees(config)
-    worktrees_ok = True
-    if apply:
-        worktrees_ok = all(seat.worktree_path.is_dir() for seat in config.seats)
     return {
         "tmux": {"ok": tmux is not None, "path": tmux},
         "git": {"ok": git is not None, "path": git},
         "clis": clis,
         "credentials_inspected": False,
-        "worktrees": {"ok": worktrees_ok},
+        "worktrees": _worktree_status(config),
         "plan": {
             "fleet_id": config.fleet_id,
             "seats": [
@@ -116,15 +113,69 @@ def _load_pool_adapter(config: FleetConfig, pool: UsagePoolConfig):
         return None
 
 
-def _git_toplevel_for_config(config: FleetConfig) -> Path | None:
+def _worktree_status(config: FleetConfig) -> dict[str, Any]:
+    git_root = _git_toplevel_for_config(config)
+    project_head = _git_head(git_root) if git_root is not None else None
+    seats: list[dict[str, Any]] = []
+    ok = True
     for seat in config.seats:
-        found = _git_toplevel(seat.worktree_path)
-        if found is not None:
-            return found
-        found = _git_toplevel(seat.working_directory)
-        if found is not None:
-            return found
-    return None
+        path = seat.worktree_path
+        exists = path.is_dir()
+        tree_head = _git_head(path) if exists else None
+        same_root = (
+            git_root is not None and exists and path.resolve() == git_root.resolve()
+        )
+        stale = (
+            not same_root
+            and project_head is not None
+            and tree_head is not None
+            and tree_head != project_head
+        )
+        ready = exists and tree_head is not None and not stale
+        if not ready:
+            ok = False
+        seats.append(
+            {
+                "seat_id": seat.seat_id,
+                "path": str(path),
+                "exists": exists,
+                "stale": stale,
+            }
+        )
+    return {"ok": ok, "seats": seats}
+
+
+def _git_head(path: Path) -> str | None:
+    result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    return result.stdout.strip()
+
+
+def _git_toplevel_for_config(config: FleetConfig) -> Path | None:
+    """Prefer the hosting project repo over an already-cloned seat worktree."""
+
+    seat_roots = {seat.worktree_path.resolve() for seat in config.seats}
+    fallback: Path | None = None
+    for seat in config.seats:
+        for start in (seat.worktree_path, seat.working_directory):
+            found = _git_toplevel(start)
+            if found is None:
+                continue
+            if fallback is None:
+                fallback = found
+            resolved = found.resolve()
+            if resolved not in seat_roots:
+                return resolved
+            ancestor = _git_toplevel(found.parent)
+            if ancestor is not None and ancestor.resolve() not in seat_roots:
+                return ancestor.resolve()
+    return fallback
 
 
 def _git_toplevel(start: Path) -> Path | None:

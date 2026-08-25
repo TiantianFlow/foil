@@ -216,6 +216,23 @@ class OperatorFleet:
             return []
         return [line for line in listed.stdout.splitlines() if line]
 
+    def seat_record_path(self, seat_id: str) -> Path:
+        return (
+            self.state / "v1" / "fleets" / self.fleet_id / "seats" / f"{seat_id}.json"
+        )
+
+    def kill_tmux_window(self, window_name: str) -> None:
+        subprocess.run(
+            [
+                self._tmux,
+                "kill-window",
+                "-t",
+                f"{self.tmux_session()}:{window_name}",
+            ],
+            capture_output=True,
+            check=False,
+        )
+
     def inbox_path(self, seat: str, message_id: str) -> Path:
         return (
             self.state

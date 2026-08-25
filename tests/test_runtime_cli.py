@@ -481,6 +481,7 @@ def test_runtime_help_is_composable_and_documents_json_contract() -> None:
 class FakeTmux:
     def __init__(self) -> None:
         self.dead = False
+        self.identity_matches = True
         self.launches: list[TmuxTarget] = []
 
     def launch(
@@ -507,7 +508,7 @@ class FakeTmux:
         del fleet_id, seat_id
         if self.dead:
             return ProbeResult(ProbeState.DEAD, False)
-        return ProbeResult(ProbeState.ALIVE, True, target)
+        return ProbeResult(ProbeState.ALIVE, self.identity_matches, target)
 
     def stop_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
         del fleet_id, seat_id, target
@@ -529,6 +530,55 @@ def _bare_name_controller(
     monkeypatch.setenv("PATH", f"{executable.parent}{os.pathsep}{os.environ.get('PATH', '')}")
     controller = RuntimeController(load_fleet_config(config_path), tmp_path / "state", tmux=tmux)
     return controller, tmux, executable
+
+
+def test_launch_completes_only_the_unregistered_seat(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, _executable = _bare_name_controller(tmp_path, monkeypatch)
+
+    def capture_native(runtime: SeatRuntime, baseline: set[str], *, wait_seconds: float) -> str:
+        del baseline, wait_seconds
+        return f"native-{runtime.seat.seat_id}"
+
+    monkeypatch.setattr(controller, "_capture_delta", capture_native)
+    first = controller.launch()
+    assert {seat["seat_id"] for seat in first} == {"discovery-seat", "generated-seat"}
+    assert len(tmux.launches) == 2
+
+    controller.registry.seat_path(controller.config.fleet_id, "discovery-seat").unlink()
+    status = {seat["seat_id"]: seat for seat in controller.status()}
+    assert status["generated-seat"]["state"] == "working"
+    assert status["discovery-seat"]["state"] == "unknown"
+    assert status["discovery-seat"]["registry"] is None
+
+    second = controller.launch()
+    seats = {seat["seat_id"]: seat for seat in second}
+    assert seats["discovery-seat"]["state"] == "working"
+    assert seats["generated-seat"]["state"] == "working"
+    assert len(tmux.launches) == 3
+
+    with pytest.raises(LifecycleError, match="already registered"):
+        controller.launch()
+
+
+def test_fresh_resume_refuses_unverified_tmux_instead_of_orphaning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, _executable = _bare_name_controller(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        controller,
+        "_capture_delta",
+        lambda runtime, baseline, *, wait_seconds: f"native-{runtime.seat.seat_id}",
+    )
+    controller.launch()
+    assert len(tmux.launches) == 2
+    tmux.identity_matches = False
+    with pytest.raises(LifecycleError, match="unverified"):
+        controller.resume(seat_id="generated-seat", force_fresh=True)
+    assert len(tmux.launches) == 2
 
 
 def test_dead_tmux_status_and_native_resume_survive_transient_adapter_path_loss(

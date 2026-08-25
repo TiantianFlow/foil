@@ -224,10 +224,32 @@ class MemoryStore:
         body: str,
         task_id: str,
     ) -> MemoryLesson:
-        with _exclusive_lock(self._lock(fleet_id, lesson_id)):
+        if lesson_id == replacement_id:
+            raise MemoryError("replacement lesson must be a new identity")
+        first, second = sorted((lesson_id, replacement_id))
+        with (
+            _exclusive_lock(self._lock(fleet_id, first)),
+            _exclusive_lock(self._lock(fleet_id, second)),
+        ):
             current = self.read(fleet_id, lesson_id)
+            replacement_path = self.path(fleet_id, replacement_id)
+            if (
+                current.state is LessonState.SUPERSEDED
+                and current.replacement_lesson_id == replacement_id
+                and replacement_path.is_file()
+            ):
+                existing = self.read(fleet_id, replacement_id)
+                if (
+                    existing.previous_lesson_id == lesson_id
+                    and existing.body == body
+                    and existing.proposed_by == author
+                    and existing.source_task_id == task_id
+                ):
+                    return current
             if current.state not in {LessonState.PROPOSED, LessonState.ACCEPTED}:
                 raise MemoryError("lesson cannot be superseded")
+            if replacement_path.is_file():
+                raise MemoryError("replacement lesson already exists")
             replacement = MemoryLesson(
                 fleet_id=fleet_id,
                 lesson_id=replacement_id,
