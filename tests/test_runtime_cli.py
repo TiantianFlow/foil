@@ -18,7 +18,7 @@ from foil.fleet import FleetError, FleetRecord, FleetStore
 from foil.registry import TmuxTarget
 from foil.runtime import RuntimeController, SeatRuntime
 from foil.runtime import RuntimeError as LifecycleError
-from foil.tmux import ProbeResult, ProbeState
+from foil.tmux import ProbeResult, ProbeState, TmuxController
 
 
 def run_foil(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -355,6 +355,54 @@ def test_spawn_without_git_identity_does_not_start_tmux(tmp_path: Path) -> None:
     )
     assert launched.returncode != 0
     assert "git" in launched.stderr.lower() or "worktree" in launched.stderr.lower()
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
+def test_remove_cleans_a_seat_whose_recorded_window_is_gone(tmp_path: Path) -> None:
+    """Stale registry rows must not be trapped by tmux name-fallback probes."""
+
+    executable = make_fixture_executable(tmp_path)
+    project = make_project(tmp_path)
+    state, fleet_id = write_live_fleet(tmp_path, project)
+    env = with_adapter_path(executable)
+    flags = ("--state-dir", str(state), "--fleet", fleet_id, "--json")
+    controller = RuntimeController(state, fleet_id)
+    controller.spawn(
+        seat_id="lead",
+        cli=str(executable),
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+    controller.spawn(
+        seat_id="worker",
+        cli=str(executable),
+        launch_argv=generated_argv(),
+    )
+    worker = controller.registry.read_seat(fleet_id, "worker")
+    assert worker.tmux.window_id is not None
+    try:
+        # The recorded worker window is gone; its stored name is now stale.
+        gone = subprocess.run(
+            ["tmux", "kill-window", "-t", worker.tmux.window_id],
+            check=False,
+            capture_output=True,
+        )
+        assert gone.returncode == 0
+
+        removed = run_foil("seat", "remove", *flags, "--seat", "worker", env=env)
+        assert removed.returncode == 0, removed.stderr
+        payload = json.loads(removed.stdout)
+        assert payload["seats"][0]["state"] == "removed"
+        with pytest.raises(FileNotFoundError):
+            controller.registry.read_seat(fleet_id, "worker")
+
+        # The lead window in the same session was never targeted.
+        lead = controller.registry.read_seat(fleet_id, "lead")
+        probe = TmuxController().probe(fleet_id, "lead", lead.tmux)
+        assert probe.state is ProbeState.ALIVE
+        assert probe.identity_matches is True
+    finally:
+        run_foil("seat", "stop", *flags, "--all", env=env)
 
 
 @pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
