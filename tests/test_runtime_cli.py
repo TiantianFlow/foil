@@ -1000,6 +1000,122 @@ def test_cli_dead_tmux_status_and_native_resume_survive_transient_adapter_path_l
         run_foil("seat", "stop", *flags, "--all", env=launch_env)
 
 
+def test_aborted_spawn_rolls_back_worktree_and_adapter_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failure after worktree creation and before tmux/registry is cleaned."""
+
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("injected bootstrap failure")
+
+    monkeypatch.setattr(controller, "_bootstrap_env", boom)
+    with pytest.raises(RuntimeError, match="injected bootstrap failure"):
+        controller.spawn(
+            seat_id="worker",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+        )
+
+    project = tmp_path / "project"
+    fleet_root = tmp_path / "state" / "v1" / "fleets" / controller.fleet.fleet_id
+    assert not (project / "worktrees" / "worker").exists()
+    assert not (fleet_root / "adapter-state" / "worker").exists()
+    assert not (fleet_root / "runner-plans" / "worker.json").exists()
+    assert len(tmux.launches) == 1
+    with pytest.raises(FileNotFoundError):
+        controller.registry.read_seat(controller.fleet.fleet_id, "worker")
+    events = (fleet_root / "events" / "events.jsonl").read_text(encoding="utf-8")
+    assert "spawn_failed" in events
+    assert '"worktree"' in events
+
+
+def test_aborted_spawn_after_bootstrap_removes_adapter_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bootstrap cards written before a later failure are rolled back too."""
+
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("injected argv failure")
+
+    monkeypatch.setattr(controller, "_launch_argv", boom)
+    with pytest.raises(RuntimeError, match="injected argv failure"):
+        controller.spawn(
+            seat_id="worker",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+        )
+
+    project = tmp_path / "project"
+    fleet_root = tmp_path / "state" / "v1" / "fleets" / controller.fleet.fleet_id
+    assert not (project / "worktrees" / "worker").exists()
+    assert not (fleet_root / "adapter-state" / "worker").exists()
+    assert len(tmux.launches) == 1
+    with pytest.raises(FileNotFoundError):
+        controller.registry.read_seat(controller.fleet.fleet_id, "worker")
+    events = (fleet_root / "events" / "events.jsonl").read_text(encoding="utf-8")
+    assert '"adapter-state"' in events
+    assert '"worktree"' in events
+
+
+def test_aborted_spawn_preserves_preexisting_worktree_and_adapter_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rollback never deletes paths that pre-date the failed spawn attempt."""
+
+    from foil.doctor import ensure_isolated_worktree
+
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+    project = tmp_path / "project"
+    worker_tree = project / "worktrees" / "worker"
+    ensure_isolated_worktree(project, worker_tree)
+    (worker_tree / "user.txt").write_text("keep", encoding="utf-8")
+    adapter_state = controller._adapter_state_dir("worker")
+    adapter_state.mkdir(parents=True)
+    (adapter_state / "leftover.txt").write_text("keep", encoding="utf-8")
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("injected argv failure")
+
+    monkeypatch.setattr(controller, "_launch_argv", boom)
+    with pytest.raises(RuntimeError, match="injected argv failure"):
+        controller.spawn(
+            seat_id="worker",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+        )
+
+    assert (worker_tree / "user.txt").read_text(encoding="utf-8") == "keep"
+    assert (adapter_state / "leftover.txt").read_text(encoding="utf-8") == "keep"
+    assert len(tmux.launches) == 1
+    with pytest.raises(FileNotFoundError):
+        controller.registry.read_seat(controller.fleet.fleet_id, "worker")
+
+
 def test_auto_permission_fails_on_profile_owned_cli(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -860,12 +860,16 @@ class RuntimeController:
             project / "worktrees" / seat_id if isolated else project
         )
         self._reject_shared_cwd(worktree, shared_cwd=shared_cwd)
+        worktree_preexisting = worktree.exists()
         if isolated:
             try:
                 ensure_isolated_worktree(project, worktree)
             except DoctorError as exc:
                 raise RuntimeError(str(exc)) from exc
         worktree.mkdir(parents=True, exist_ok=True)
+        # Rollback scope: only a worktree this attempt created may be
+        # removed on abort — a pre-existing path is user-owned.
+        created_worktree = None if worktree_preexisting else worktree
         git_branch = _observed_branch(worktree) or "foil-demo"
         capabilities = LEAD_CAPABILITIES if lead else WORKER_CAPABILITIES
         adapter_id = (
@@ -944,35 +948,44 @@ class RuntimeController:
             model = adapter.models[0]
             pool = UsagePoolConfig("default", adapter_id, model)
             profile["model"] = model
-        runtime = self._with_executable(
-            SeatRuntime(seat=seat, pool=pool, adapter=adapter, executable=None)
-        )
-        if isolated or worktree.resolve() != project.resolve():
-            validate_worktree(runtime.seat)
+        adapter_state = self._adapter_state_dir(seat_id)
+        adapter_state_preexisting = adapter_state.exists()
         incarnation_id = str(uuid.uuid4())
-        foil = self._bootstrap_env(
-            runtime,
-            incarnation_id=incarnation_id,
-            profile=profile,
-            lead_seat_id=seat_id if lead else fleet.lead_seat_id,
-        )
-        baseline: set[str] = set()
-        native_session_id: str | None = None
-        if runtime.adapter.session_capture.kind is CaptureKind.GENERATED_UUID:
-            native_session_id = str(uuid.uuid4())
-        elif runtime.adapter.session_capture.kind is CaptureKind.COMMAND_JSON_LIST_DELTA:
-            baseline = self._session_ids(runtime)
-        argv = self._launch_argv(runtime, native_session_id, permission=permission)
-        self.audit.append(
-            "spawn_attempt",
-            seat_id,
-            adapter_id=runtime.adapter.adapter_id,
-            lead=lead,
-            argv_shape=[f"arg-{index}" for index in range(len(argv))],
-            environment_forwarded=len(runtime.seat.environment_forward),
-        )
         target = None
         try:
+            # Everything from executable resolution through the registry
+            # write sits inside the abort scope: a failure after worktree
+            # creation and before a tmux/registry row exists must not orphan
+            # the isolated worktree or adapter-state cards.
+            runtime = self._with_executable(
+                SeatRuntime(seat=seat, pool=pool, adapter=adapter, executable=None)
+            )
+            if isolated or worktree.resolve() != project.resolve():
+                validate_worktree(runtime.seat)
+            foil = self._bootstrap_env(
+                runtime,
+                incarnation_id=incarnation_id,
+                profile=profile,
+                lead_seat_id=seat_id if lead else fleet.lead_seat_id,
+            )
+            baseline: set[str] = set()
+            native_session_id: str | None = None
+            if runtime.adapter.session_capture.kind is CaptureKind.GENERATED_UUID:
+                native_session_id = str(uuid.uuid4())
+            elif (
+                runtime.adapter.session_capture.kind
+                is CaptureKind.COMMAND_JSON_LIST_DELTA
+            ):
+                baseline = self._session_ids(runtime)
+            argv = self._launch_argv(runtime, native_session_id, permission=permission)
+            self.audit.append(
+                "spawn_attempt",
+                seat_id,
+                adapter_id=runtime.adapter.adapter_id,
+                lead=lead,
+                argv_shape=[f"arg-{index}" for index in range(len(argv))],
+                environment_forwarded=len(runtime.seat.environment_forward),
+            )
             target = self._spawn(
                 runtime,
                 argv,
@@ -1002,7 +1015,13 @@ class RuntimeController:
                 )
                 self.fleets._write_unlocked(self.fleet)
         except Exception as exc:
-            self._abort_spawn(seat_id, target, reason=str(exc))
+            self._abort_spawn(
+                seat_id,
+                target,
+                reason=str(exc),
+                worktree=created_worktree,
+                adapter_state=None if adapter_state_preexisting else adapter_state,
+            )
             raise
         event_id = self.audit.append(
             "spawn_result",
@@ -1038,6 +1057,8 @@ class RuntimeController:
         target: TmuxTarget | None,
         *,
         reason: str,
+        worktree: Path | None = None,
+        adapter_state: Path | None = None,
     ) -> None:
         if target is not None:
             try:
@@ -1047,6 +1068,17 @@ class RuntimeController:
         with suppress(Exception):
             self.registry.delete_seat(self.fleet.fleet_id, seat_id)
         self.status_store.delete_snapshot(self.fleet.fleet_id, seat_id)
+        removed: list[str] = []
+        # Remove only artifacts this attempt created; pre-existing paths are
+        # user-owned and are left for `foil doctor` to report instead.
+        if adapter_state is not None and adapter_state.exists():
+            with suppress(OSError):
+                shutil.rmtree(adapter_state)
+                removed.append("adapter-state")
+        if worktree is not None and worktree.exists():
+            with suppress(OSError):
+                shutil.rmtree(worktree)
+                removed.append("worktree")
         fleet = self.fleets.read(self.fleet.fleet_id)
         if fleet.lead_seat_id == seat_id:
             self.fleet = FleetRecord(
@@ -1059,7 +1091,10 @@ class RuntimeController:
                 extensions=fleet.extensions,
             )
             self.fleets._write_unlocked(self.fleet)
-        self.audit.append("spawn_failed", seat_id, result="aborted", reason=reason[:512])
+        details: dict[str, Any] = {"result": "aborted", "reason": reason[:512]}
+        if removed:
+            details["cleaned"] = removed
+        self.audit.append("spawn_failed", seat_id, **details)
 
     def _records_and_probes(
         self,
