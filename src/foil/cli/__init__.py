@@ -14,7 +14,7 @@ from foil.catalog import CatalogError, list_personas, map_persona
 from foil.delivery import MessageDeliveryService, TmuxWakeService
 from foil.dispatch import dispatch
 from foil.doctor import DoctorError, doctor_report
-from foil.fleet import FleetError
+from foil.fleet import OPERATOR_ACTOR, FleetError, FleetStore, resolve_caller
 from foil.mailbox import Acknowledgement, MailboxError, MailboxMessage, MailboxStore
 from foil.memory import (
     accept_memory,
@@ -54,7 +54,10 @@ def _add_fleet_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--actor",
         metavar="SEAT_ID",
-        help="Calling seat. Operator (default) and the lead may change membership.",
+        help=(
+            "Calling seat when FOIL_SEAT_ID is unset. An in-seat caller cannot "
+            "override FOIL_SEAT_ID. Cooperative same-user protection, not isolation."
+        ),
     )
 
 
@@ -95,7 +98,17 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
     spawn.add_argument("--lead", action="store_true")
     spawn.add_argument("--role", metavar="ROLE_ID")
     spawn.add_argument("--role-file", type=Path)
-    spawn.add_argument("--isolated", action="store_true")
+    spawn.add_argument(
+        "--isolated",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Isolate in worktrees/<seat_id>. Workers default to isolated.",
+    )
+    spawn.add_argument(
+        "--shared-cwd",
+        action="store_true",
+        help="Allow this seat to share a working directory with another seat.",
+    )
     spawn.add_argument("--cwd", type=Path)
     spawn.add_argument("--model")
     spawn.add_argument("--display-name")
@@ -129,6 +142,13 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
     remove = seat_sub.add_parser("remove", help="Stop and delete one seat record.")
     _add_fleet_flags(remove)
     remove.add_argument("--seat", required=True, metavar="SEAT_ID")
+
+    wake = seat_sub.add_parser(
+        "wake",
+        help="Send a bounded tmux wake for queued mailbox messages.",
+    )
+    _add_fleet_flags(wake)
+    wake.add_argument("--seat", required=True, metavar="SEAT_ID")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -188,10 +208,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     send_message = subparsers.add_parser(
         "send-message",
-        help="Queue an immutable seat message and attempt a bounded tmux wake.",
+        help="Queue an immutable seat message. Wake is opt-in.",
         description=(
-            "Atomically queue a durable mailbox message, report duplicate delivery, "
-            "and generically wake a validated live tmux seat without injecting the body."
+            "Atomically queue a durable mailbox message without injecting the body. "
+            "Pass --wake or run `foil seat wake` after inspecting tmux."
         ),
     )
     _add_mailbox_location(send_message)
@@ -199,6 +219,11 @@ def _build_parser() -> argparse.ArgumentParser:
     send_message.add_argument("--message-id", metavar="STABLE_ID")
     send_message.add_argument("--task", metavar="STABLE_ID")
     send_message.add_argument("--body", required=True)
+    send_message.add_argument(
+        "--wake",
+        action="store_true",
+        help="After queuing, send a bounded tmux wake. Default is persist only.",
+    )
 
     ack_message = subparsers.add_parser(
         "ack-message",
@@ -206,7 +231,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_mailbox_location(ack_message)
     ack_message.add_argument("--message", required=True, metavar="MESSAGE_ID")
-    ack_message.add_argument("--actor", required=True, metavar="STABLE_ID")
+    ack_message.add_argument("--actor", metavar="STABLE_ID")
     ack_message.add_argument("--ack-id", metavar="STABLE_ID")
 
     message_status = subparsers.add_parser(
@@ -238,7 +263,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_collaboration_location(notepad_ack)
     notepad_ack.add_argument("--notepad", required=True, metavar="NOTEPAD_ID")
-    notepad_ack.add_argument("--actor", required=True, metavar="STABLE_ID")
+    notepad_ack.add_argument("--actor", metavar="STABLE_ID")
 
     memory_propose = subparsers.add_parser(
         "memory-propose",
@@ -256,7 +281,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_collaboration_location(memory_accept)
     memory_accept.add_argument("--lesson", required=True, metavar="LESSON_ID")
-    memory_accept.add_argument("--actor", required=True, metavar="STABLE_ID")
+    memory_accept.add_argument("--actor", metavar="STABLE_ID")
 
     memory_reject = subparsers.add_parser(
         "memory-reject",
@@ -264,7 +289,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_collaboration_location(memory_reject)
     memory_reject.add_argument("--lesson", required=True, metavar="LESSON_ID")
-    memory_reject.add_argument("--actor", required=True, metavar="STABLE_ID")
+    memory_reject.add_argument("--actor", metavar="STABLE_ID")
 
     memory_supersede = subparsers.add_parser(
         "memory-supersede",
@@ -297,10 +322,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     doctor = subparsers.add_parser(
         "doctor",
-        help="Check host tools and live-seat worktrees.",
+        help="Check host tools, live-seat worktrees, and leftover fleet files.",
         description=(
             "Discover tmux, git, and seat CLIs without inspecting credentials. "
-            "Pass --apply to create missing isolated worktrees for registered seats."
+            "Report orphan tmux windows, stale status, leftover plans, and retained "
+            "worktrees. Pass --apply to create missing isolated worktrees only."
         ),
     )
     _add_fleet_flags(doctor)
@@ -376,7 +402,28 @@ def _poll_status(state_dir: Path, fleet_id: str) -> int:
     return 0
 
 
+def _bound_actor(actor_flag: str | None, *, required: bool = True) -> str:
+    caller = resolve_caller(actor_flag)
+    if required and not caller:
+        raise FleetError("actor is required")
+    return caller
+
+
+def _bound_named_id(flag: str | None, field_name: str) -> str:
+    seat = resolve_caller(None)
+    if seat != OPERATOR_ACTOR and flag and flag != seat:
+        raise FleetError(
+            f"in-seat caller {seat} cannot claim {field_name} {flag}"
+        )
+    if seat != OPERATOR_ACTOR:
+        return seat
+    if not flag:
+        raise FleetError(f"{field_name} is required")
+    return flag
+
+
 def _send_message(args: argparse.Namespace) -> int:
+    sender = _bound_named_id(args.sender, "sender")
     store = MailboxStore(args.state_dir)
     message_id = args.message_id or f"msg-{uuid.uuid4().hex}"
     try:
@@ -385,7 +432,7 @@ def _send_message(args: argparse.Namespace) -> int:
         existing = None
     if (
         existing is not None
-        and existing.sender_id == args.sender
+        and existing.sender_id == sender
         and existing.body == args.body
         and existing.causal_task_id == args.task
     ):
@@ -395,7 +442,7 @@ def _send_message(args: argparse.Namespace) -> int:
             fleet_id=args.fleet,
             message_id=message_id,
             recipient_seat_id=args.seat,
-            sender_id=args.sender,
+            sender_id=sender,
             created_at=_now(),
             body=args.body,
             causal_task_id=args.task,
@@ -405,12 +452,13 @@ def _send_message(args: argparse.Namespace) -> int:
         store,
         RegistryStore(args.state_dir),
         TmuxWakeService(),
-    ).send(message)
+    ).send(message, wake=args.wake)
     _emit(result.to_dict())
     return 0
 
 
 def _ack_message(args: argparse.Namespace) -> int:
+    actor = _bound_actor(args.actor)
     store = MailboxStore(args.state_dir)
     acknowledgement_id = args.ack_id or f"ack-{uuid.uuid4().hex}"
     try:
@@ -420,7 +468,7 @@ def _ack_message(args: argparse.Namespace) -> int:
     if (
         existing is not None
         and existing.acknowledgement_id == acknowledgement_id
-        and existing.acknowledged_by == args.actor
+        and existing.acknowledged_by == actor
     ):
         acknowledgement = existing
     else:
@@ -429,7 +477,7 @@ def _ack_message(args: argparse.Namespace) -> int:
             message_id=args.message,
             acknowledgement_id=acknowledgement_id,
             recipient_seat_id=args.seat,
-            acknowledged_by=args.actor,
+            acknowledged_by=actor,
             acknowledged_at=_now(),
             extensions={},
         )
@@ -478,6 +526,22 @@ def _runtime_payload(
 
 
 def _seat_command(args: argparse.Namespace) -> int:
+    if args.seat_command == "wake":
+        result = MessageDeliveryService(
+            MailboxStore(args.state_dir),
+            RegistryStore(args.state_dir),
+            TmuxWakeService(),
+        ).wake(args.fleet, args.seat)
+        payload = {
+            "fleet_id": args.fleet,
+            "seat_id": args.seat,
+            "wake": result.to_dict(),
+        }
+        if args.json:
+            _emit(payload)
+        else:
+            print(result.state.value)
+        return 0
     controller = _controller(args)
     actor = getattr(args, "actor", None)
     if args.seat_command == "spawn":
@@ -497,6 +561,7 @@ def _seat_command(args: argparse.Namespace) -> int:
             role_id=args.role,
             role_path=str(args.role_file) if args.role_file else None,
             isolated=args.isolated,
+            shared_cwd=args.shared_cwd,
             working_directory=args.cwd,
             model=args.model,
             lead=args.lead,
@@ -548,7 +613,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.state_dir,
                     args.fleet,
                     args.notepad,
-                    author=args.author,
+                    author=_bound_named_id(args.author, "author"),
                     body=args.body,
                 )
             )
@@ -562,7 +627,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.state_dir,
                     args.fleet,
                     args.notepad,
-                    actor=args.actor,
+                    actor=_bound_actor(args.actor),
                 )
             )
             return 0
@@ -572,33 +637,38 @@ def main(argv: list[str] | None = None) -> int:
                     args.state_dir,
                     args.fleet,
                     args.lesson,
-                    author=args.author,
+                    author=_bound_named_id(args.author, "author"),
                     body=args.body,
                     task_id=args.task,
                 )
             )
             return 0
         if args.command == "memory-accept":
+            actor = FleetStore(args.state_dir).require_reviewer(args.fleet, args.actor)
             _emit(
                 accept_memory(
-                    args.state_dir, args.fleet, args.lesson, actor=args.actor
+                    args.state_dir, args.fleet, args.lesson, actor=actor
                 )
             )
             return 0
         if args.command == "memory-reject":
+            actor = FleetStore(args.state_dir).require_reviewer(args.fleet, args.actor)
             _emit(
                 reject_memory(
-                    args.state_dir, args.fleet, args.lesson, actor=args.actor
+                    args.state_dir, args.fleet, args.lesson, actor=actor
                 )
             )
             return 0
         if args.command == "memory-supersede":
+            author = FleetStore(args.state_dir).require_reviewer(
+                args.fleet, args.author
+            )
             _emit(
                 supersede_memory(
                     args.state_dir,
                     args.fleet,
                     args.lesson,
-                    author=args.author,
+                    author=author,
                     replacement_id=args.replacement,
                     body=args.body,
                     task_id=args.task,

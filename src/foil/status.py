@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import stat
+from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -135,6 +136,11 @@ class PollStatusReader:
             self.status_path(snapshot.fleet_id, snapshot.seat_id),
             snapshot.to_dict(),
         )
+
+    def delete_snapshot(self, fleet_id: str, seat_id: str) -> None:
+        path = self.status_path(fleet_id, seat_id)
+        with suppress(FileNotFoundError):
+            path.unlink()
 
     def read_fleet(self, fleet_id: str) -> list[StatusSnapshot]:
         status_dir = self.status_dir(fleet_id)

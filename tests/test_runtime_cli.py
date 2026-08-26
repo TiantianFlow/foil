@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from foil.fleet import FleetRecord, FleetStore
+from foil.fleet import FleetError, FleetRecord, FleetStore
 from foil.registry import TmuxTarget
 from foil.runtime import RuntimeController, SeatRuntime
 from foil.runtime import RuntimeError as LifecycleError
@@ -425,7 +425,7 @@ def test_runtime_help_is_composable_and_documents_json_contract() -> None:
 
     seat_help = run_foil("seat", "--help")
     assert seat_help.returncode == 0
-    for name in ("spawn", "list", "inspect", "stop", "remove"):
+    for name in ("spawn", "list", "inspect", "stop", "remove", "wake"):
         assert name in seat_help.stdout
 
 
@@ -462,11 +462,16 @@ class FakeTmux:
         return ProbeResult(ProbeState.ALIVE, self.identity_matches, target)
 
     def stop_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
-        del fleet_id, seat_id, target
+        del fleet_id, seat_id
         if self.dead:
             return False
         self.dead = True
+        self.launches = [item for item in self.launches if item != target]
         return True
+
+    def abandon_window(self, target: TmuxTarget) -> None:
+        self.launches = [item for item in self.launches if item != target]
+        self.dead = True
 
 
 def _bare_name_controller(
@@ -524,6 +529,107 @@ def test_spawn_rejects_duplicate_and_worker_before_lead(
             cli=executable.name,
             launch_argv=generated_argv(),
         )
+
+
+def test_worker_env_cannot_claim_operator_or_lead(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+    monkeypatch.setenv("FOIL_SEAT_ID", "implementer")
+    for actor in (None, "operator", "lead"):
+        with pytest.raises(FleetError):
+            controller.spawn(
+                seat_id="intruder",
+                cli=executable.name,
+                launch_argv=generated_argv(),
+                actor=actor,
+            )
+    assert len(tmux.launches) == 1
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    worker = controller.spawn(
+        seat_id="implementer",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+    )
+    assert {seat["seat_id"] for seat in worker} == {"implementer"}
+
+
+def test_shared_cwd_is_required_for_a_second_project_root_seat(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+    with pytest.raises(LifecycleError, match="already used"):
+        controller.spawn(
+            seat_id="roommate",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+            isolated=False,
+        )
+    shared = controller.spawn(
+        seat_id="roommate",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        shared_cwd=True,
+    )
+    assert {seat["seat_id"] for seat in shared} == {"roommate"}
+    assert len(tmux.launches) == 2
+    lead_root = Path(controller.inspect("lead")["registry"]["working_directory"])
+    assert not (lead_root / "FOIL.md").exists()
+    bootstrap = Path(controller.inspect("roommate")["bootstrap"]["state_dir"])
+    assert (
+        bootstrap
+        / "v1"
+        / "fleets"
+        / controller.fleet.fleet_id
+        / "adapter-state"
+        / "roommate"
+        / "FOIL.md"
+    ).is_file()
+
+
+def test_failed_registry_write_stops_the_new_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+
+    def boom(record):
+        raise RuntimeError("injected registry failure")
+
+    monkeypatch.setattr(controller.registry, "write_seat", boom)
+    with pytest.raises(RuntimeError, match="injected registry failure"):
+        controller.spawn(
+            seat_id="lead",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+            lead=True,
+        )
+    assert tmux.launches == []
+    with pytest.raises(FileNotFoundError):
+        controller.registry.read_seat(controller.fleet.fleet_id, "lead")
+    events = (
+        controller.state_root
+        / "v1"
+        / "fleets"
+        / controller.fleet.fleet_id
+        / "events"
+        / "events.jsonl"
+    )
+    assert "spawn_failed" in events.read_text()
 
 
 def test_fresh_resume_refuses_unverified_tmux_instead_of_orphaning(

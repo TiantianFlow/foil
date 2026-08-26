@@ -65,6 +65,12 @@
         "id_pointer": {"type": "string", "pattern": "^/"},
         "cwd_pointer": {"type": "string", "pattern": "^/"}
       }
+    },
+    "startup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv"],
+      "properties": {"argv": {"$ref": "#/$defs/argv"}}
     }
   },
   "$defs": {

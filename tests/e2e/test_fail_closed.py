@@ -118,6 +118,7 @@ def test_duplicate_message_does_not_wake_again(initialized: OperatorFleet) -> No
         "dup-1",
         "--body",
         "Same body twice.",
+        "--wake",
     )
     first = initialized.mailbox(*args).json()
     initialized.wait_for_wake()
@@ -143,6 +144,55 @@ def test_ack_completes_delivery_on_a_live_seat(initialized: OperatorFleet) -> No
     ).json()
     done = initialized.wait_for_ack("implementer", "ack-path-1")
     assert done["state"] == "acknowledged"
+
+
+def test_in_seat_worker_cannot_change_membership(initialized: OperatorFleet) -> None:
+    initialized.start_complementary_fleet()
+    env = initialized.env()
+    env["FOIL_SEAT_ID"] = "implementer"
+    for extra in ((), ("--actor", "operator"), ("--actor", "lead")):
+        spawned = initialized.spawn(
+            "intruder",
+            "grok",
+            extra=extra,
+            env=env,
+        )
+        assert spawned.returncode != 0
+        assert "authorized" in spawned.stderr.lower() or "override" in spawned.stderr.lower()
+
+
+def test_send_message_without_wake_does_not_type_into_tmux(
+    initialized: OperatorFleet,
+) -> None:
+    initialized.start_complementary_fleet()
+    before = initialized.wake_count()
+    delivery = initialized.mailbox(
+        "send-message",
+        "implementer",
+        "--sender",
+        "lead",
+        "--message-id",
+        "no-wake-1",
+        "--body",
+        "Queued only.",
+    ).json()
+    assert delivery["delivery"]["wake"]["state"] == "not_requested"
+    assert initialized.wake_count() == before
+    woken = initialized.foil(
+        "seat",
+        "wake",
+        *initialized.fleet_flags(),
+        "--json",
+        "--seat",
+        "implementer",
+    ).json()
+    # The shim may acknowledge from its poll loop before this explicit wake.
+    assert woken["wake"]["state"] in {"sent", "skipped_empty"}
+    if woken["wake"]["state"] == "sent":
+        assert initialized.wake_count() == before + 1
+    else:
+        assert initialized.wake_count() == before
+    initialized.wait_for_ack("implementer", "no-wake-1")
 
 
 def test_missing_tmux_binary_is_a_nonzero_diagnostic(initialized: OperatorFleet) -> None:

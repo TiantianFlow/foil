@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +25,7 @@ from foil.adapters import (
     LaunchSpec,
     ResumeSpec,
     SessionCaptureSpec,
+    StartupSpec,
     expand_argv,
     load_adapter,
     load_builtin_adapter,
@@ -347,6 +349,9 @@ class RuntimeController:
     ) -> dict[str, str]:
         values = {
             "adapter_state_dir": str(self._adapter_state_dir(runtime.seat.seat_id)),
+            "bootstrap_path": str(
+                self._adapter_state_dir(runtime.seat.seat_id) / "bootstrap.json"
+            ),
             "seat_id": runtime.seat.seat_id,
             "working_directory": str(runtime.seat.working_directory),
         }
@@ -355,6 +360,16 @@ class RuntimeController:
         if native_session_id is not None:
             values["native_session_id"] = native_session_id
         return values
+
+    def _launch_argv(
+        self,
+        runtime: SeatRuntime,
+        native_session_id: str | None,
+    ) -> list[str]:
+        template = runtime.adapter.launch.argv
+        if runtime.adapter.startup.argv:
+            template = template + runtime.adapter.startup.argv
+        return self._expanded(runtime, template, native_session_id)
 
     def _expanded(
         self,
@@ -488,11 +503,14 @@ class RuntimeController:
             "is_lead": bool(profile.get("is_lead")),
         }
         _atomic_write_json(path, payload)
-        instructions = runtime.seat.working_directory / "FOIL.md"
-        instructions.write_text(
-            _worker_instructions(payload, runtime.seat.seat_id),
-            encoding="utf-8",
-        )
+        instructions_text = _worker_instructions(payload, runtime.seat.seat_id)
+        instructions = path.with_name("FOIL.md")
+        instructions.write_text(instructions_text, encoding="utf-8")
+        if profile.get("isolated"):
+            (runtime.seat.working_directory / "FOIL.md").write_text(
+                instructions_text,
+                encoding="utf-8",
+            )
         return {
             "FOIL_STATE_DIR": str(self.state_root.resolve()),
             "FOIL_FLEET_ID": self.fleet.fleet_id,
@@ -502,6 +520,7 @@ class RuntimeController:
             "FOIL_CAPABILITIES": ",".join(capabilities),
             "FOIL_ROLE_FILE": str(profile.get("role_path") or ""),
             "FOIL_BOOTSTRAP": str(path),
+            "FOIL_INSTRUCTIONS": str(instructions),
         }
 
     def _write_plan(
@@ -650,12 +669,55 @@ class RuntimeController:
         session_cwd_pointer: str | None = None,
         role_id: str | None = None,
         role_path: str | None = None,
-        isolated: bool = False,
+        isolated: bool | None = None,
+        shared_cwd: bool = False,
         working_directory: Path | None = None,
         model: str | None = None,
         lead: bool = False,
     ) -> list[dict[str, Any]]:
-        self.fleets.require_lead_actor(self.fleet.fleet_id, actor)
+        with self.fleets.operation_lock(self.fleet.fleet_id):
+            return self._spawn_locked(
+                seat_id=seat_id,
+                cli=cli,
+                launch_argv=launch_argv,
+                actor=actor,
+                display_name=display_name,
+                resume_argv=resume_argv,
+                session_capture=session_capture,
+                session_list_argv=session_list_argv,
+                session_id_pointer=session_id_pointer,
+                session_cwd_pointer=session_cwd_pointer,
+                role_id=role_id,
+                role_path=role_path,
+                isolated=isolated,
+                shared_cwd=shared_cwd,
+                working_directory=working_directory,
+                model=model,
+                lead=lead,
+            )
+
+    def _spawn_locked(
+        self,
+        *,
+        seat_id: str,
+        cli: str,
+        launch_argv: tuple[str, ...],
+        actor: str | None,
+        display_name: str | None,
+        resume_argv: tuple[str, ...] | None,
+        session_capture: str,
+        session_list_argv: tuple[str, ...] | None,
+        session_id_pointer: str | None,
+        session_cwd_pointer: str | None,
+        role_id: str | None,
+        role_path: str | None,
+        isolated: bool | None,
+        shared_cwd: bool,
+        working_directory: Path | None,
+        model: str | None,
+        lead: bool,
+    ) -> list[dict[str, Any]]:
+        self.fleets.require_lifecycle_actor(self.fleet.fleet_id, actor)
         if shutil.which("tmux") is None:
             raise RuntimeError("tmux is unavailable")
         try:
@@ -665,10 +727,17 @@ class RuntimeController:
         else:
             raise RuntimeError(f"seat {seat_id} is already registered")
         fleet = self.fleets.read(self.fleet.fleet_id)
+        self.fleet = fleet
         if lead and fleet.lead_seat_id is not None:
             raise RuntimeError("fleet already has a lead seat")
         if not lead and fleet.lead_seat_id is None:
             raise RuntimeError("fleet must start with a lead seat")
+        if shared_cwd and isolated is True:
+            raise RuntimeError("shared-cwd cannot be combined with isolated")
+        if isolated is None:
+            isolated = not (lead or shared_cwd)
+        if shared_cwd:
+            isolated = False
         project = Path(fleet.project_root)
         if _git_toplevel(project) is None:
             raise RuntimeError("working directory is not a valid Git worktree")
@@ -676,6 +745,7 @@ class RuntimeController:
         worktree = working_directory or (
             project / "worktrees" / seat_id if isolated else project
         )
+        self._reject_shared_cwd(worktree, shared_cwd=shared_cwd)
         if isolated:
             try:
                 ensure_isolated_worktree(project, worktree)
@@ -705,6 +775,7 @@ class RuntimeController:
             "is_lead": lead,
             "model": model,
             "isolated": isolated,
+            "shared_cwd": shared_cwd,
         }
         seat = SeatConfig(
             seat_id=seat_id,
@@ -742,7 +813,7 @@ class RuntimeController:
             native_session_id = str(uuid.uuid4())
         elif runtime.adapter.session_capture.kind is CaptureKind.COMMAND_JSON_LIST_DELTA:
             baseline = self._session_ids(runtime)
-        argv = self._expanded(runtime, runtime.adapter.launch.argv, native_session_id)
+        argv = self._launch_argv(runtime, native_session_id)
         self.audit.append(
             "spawn_attempt",
             seat_id,
@@ -750,29 +821,34 @@ class RuntimeController:
             lead=lead,
             argv_shape=[f"arg-{index}" for index in range(len(argv))],
         )
-        target = self._spawn(runtime, argv, foil=foil)
-        if runtime.adapter.session_capture.kind is CaptureKind.COMMAND_JSON_LIST_DELTA:
-            native_session_id = self._capture_delta(runtime, baseline, wait_seconds=3)
-        record = self._new_record(
-            runtime,
-            native_session_id,
-            target,
-            baseline,
-            incarnation_id=incarnation_id,
-            extra_extensions={"profile": profile, "model": model},
-        )
-        self.registry.write_seat(record)
-        if lead:
-            self.fleet = FleetRecord(
-                fleet_id=fleet.fleet_id,
-                project_root=fleet.project_root,
-                updated_at=_now(),
-                display_name=fleet.display_name,
-                lead_seat_id=seat_id,
-                state="running",
-                extensions=fleet.extensions,
+        target = None
+        try:
+            target = self._spawn(runtime, argv, foil=foil)
+            if runtime.adapter.session_capture.kind is CaptureKind.COMMAND_JSON_LIST_DELTA:
+                native_session_id = self._capture_delta(runtime, baseline, wait_seconds=3)
+            record = self._new_record(
+                runtime,
+                native_session_id,
+                target,
+                baseline,
+                incarnation_id=incarnation_id,
+                extra_extensions={"profile": profile, "model": model},
             )
-            self.fleets.write(self.fleet)
+            self.registry.write_seat(record)
+            if lead:
+                self.fleet = FleetRecord(
+                    fleet_id=fleet.fleet_id,
+                    project_root=fleet.project_root,
+                    updated_at=_now(),
+                    display_name=fleet.display_name,
+                    lead_seat_id=seat_id,
+                    state="running",
+                    extensions=fleet.extensions,
+                )
+                self.fleets._write_unlocked(self.fleet)
+        except Exception as exc:
+            self._abort_spawn(seat_id, target, reason=str(exc))
+            raise
         event_id = self.audit.append(
             "spawn_result",
             seat_id,
@@ -788,6 +864,47 @@ class RuntimeController:
                 {"kind": "lifecycle_event", "event_id": event_id},
             )
         ]
+
+    def _reject_shared_cwd(self, worktree: Path, *, shared_cwd: bool) -> None:
+        if shared_cwd:
+            return
+        resolved = worktree.resolve()
+        for record in self.registry.list_seats(self.fleet.fleet_id):
+            existing = Path(record.working_directory).resolve()
+            if existing == resolved:
+                raise RuntimeError(
+                    f"working directory {resolved} is already used by seat "
+                    f"{record.seat_id}; pass --shared-cwd to override"
+                )
+
+    def _abort_spawn(
+        self,
+        seat_id: str,
+        target: TmuxTarget | None,
+        *,
+        reason: str,
+    ) -> None:
+        if target is not None:
+            try:
+                self.tmux.stop_verified(self.fleet.fleet_id, seat_id, target)
+            except Exception:
+                self.tmux.abandon_window(target)
+        with suppress(Exception):
+            self.registry.delete_seat(self.fleet.fleet_id, seat_id)
+        self.status_store.delete_snapshot(self.fleet.fleet_id, seat_id)
+        fleet = self.fleets.read(self.fleet.fleet_id)
+        if fleet.lead_seat_id == seat_id:
+            self.fleet = FleetRecord(
+                fleet_id=fleet.fleet_id,
+                project_root=fleet.project_root,
+                updated_at=_now(),
+                display_name=fleet.display_name,
+                lead_seat_id=None,
+                state="initialized",
+                extensions=fleet.extensions,
+            )
+            self.fleets._write_unlocked(self.fleet)
+        self.audit.append("spawn_failed", seat_id, result="aborted", reason=reason[:512])
 
     def _records_and_probes(
         self,
@@ -922,7 +1039,17 @@ class RuntimeController:
         all_seats: bool = False,
         actor: str | None = None,
     ) -> list[dict[str, Any]]:
-        self.fleets.require_lead_actor(self.fleet.fleet_id, actor)
+        with self.fleets.operation_lock(self.fleet.fleet_id):
+            return self._stop_locked(seat_id=seat_id, all_seats=all_seats, actor=actor)
+
+    def _stop_locked(
+        self,
+        *,
+        seat_id: str | None,
+        all_seats: bool,
+        actor: str | None,
+    ) -> list[dict[str, Any]]:
+        self.fleets.require_lifecycle_actor(self.fleet.fleet_id, actor)
         if seat_id is None and not all_seats:
             raise RuntimeError("stop requires --seat or --all")
         entries = self._records_and_probes()
@@ -960,25 +1087,27 @@ class RuntimeController:
         return results
 
     def remove(self, *, seat_id: str, actor: str | None = None) -> list[dict[str, Any]]:
-        self.fleets.require_lead_actor(self.fleet.fleet_id, actor)
-        stopped = self.stop(seat_id=seat_id, actor=actor)
-        self.registry.delete_seat(self.fleet.fleet_id, seat_id)
-        fleet = self.fleets.read(self.fleet.fleet_id)
-        if fleet.lead_seat_id == seat_id:
-            self.fleet = FleetRecord(
-                fleet_id=fleet.fleet_id,
-                project_root=fleet.project_root,
-                updated_at=_now(),
-                display_name=fleet.display_name,
-                lead_seat_id=None,
-                state="initialized",
-                extensions=fleet.extensions,
-            )
-            self.fleets.write(self.fleet)
-        self.audit.append("remove_result", seat_id, result="removed")
-        for item in stopped:
-            item["state"] = "removed"
-        return stopped
+        with self.fleets.operation_lock(self.fleet.fleet_id):
+            self.fleets.require_lifecycle_actor(self.fleet.fleet_id, actor)
+            stopped = self._stop_locked(seat_id=seat_id, all_seats=False, actor=actor)
+            fleet = self.fleets.read(self.fleet.fleet_id)
+            if fleet.lead_seat_id == seat_id:
+                self.fleet = FleetRecord(
+                    fleet_id=fleet.fleet_id,
+                    project_root=fleet.project_root,
+                    updated_at=_now(),
+                    display_name=fleet.display_name,
+                    lead_seat_id=None,
+                    state="initialized",
+                    extensions=fleet.extensions,
+                )
+                self.fleets._write_unlocked(self.fleet)
+            self.registry.delete_seat(self.fleet.fleet_id, seat_id)
+            self.status_store.delete_snapshot(self.fleet.fleet_id, seat_id)
+            self.audit.append("remove_result", seat_id, result="removed")
+            for item in stopped:
+                item["state"] = "removed"
+            return stopped
 
     def resume(
         self,
@@ -987,7 +1116,19 @@ class RuntimeController:
         force_fresh: bool = False,
         actor: str | None = None,
     ) -> list[dict[str, Any]]:
-        self.fleets.require_lead_actor(self.fleet.fleet_id, actor)
+        with self.fleets.operation_lock(self.fleet.fleet_id):
+            return self._resume_locked(
+                seat_id=seat_id, force_fresh=force_fresh, actor=actor
+            )
+
+    def _resume_locked(
+        self,
+        *,
+        seat_id: str | None,
+        force_fresh: bool,
+        actor: str | None,
+    ) -> list[dict[str, Any]]:
+        self.fleets.require_lifecycle_actor(self.fleet.fleet_id, actor)
         entries = self._records_and_probes()
         results: list[dict[str, Any]] = []
         for runtime, record, probe in entries:
@@ -1074,11 +1215,7 @@ class RuntimeController:
                     ):
                         baseline = self._session_ids(runtime)
                         native_session_id = None
-                    argv = self._expanded(
-                        runtime,
-                        runtime.adapter.launch.argv,
-                        native_session_id,
-                    )
+                    argv = self._launch_argv(runtime, native_session_id)
                     incarnation_id = str(uuid.uuid4())
                     previous_incarnation_id = record.incarnation_id
                 profile = dict(record.extensions.get("profile") or {})
@@ -1229,6 +1366,7 @@ def _profile_adapter(
             id_pointer=profile.get("session_id_pointer"),
             cwd_pointer=profile.get("session_cwd_pointer"),
         ),
+        startup=StartupSpec(),
     )
 
 

@@ -19,6 +19,7 @@ _WINDOW_ID = re.compile(r"^@[0-9]+$")
 class WakeState(StrEnum):
     SENT = "sent"
     SKIPPED_EMPTY = "skipped_empty"
+    NOT_REQUESTED = "not_requested"
     DUPLICATE_SKIPPED = "duplicate_skipped"
     INVALID_TARGET = "invalid_target"
     NOT_RUNNING = "not_running"
@@ -138,19 +139,31 @@ class MessageDeliveryService:
         self.registry = registry
         self.waker = waker
 
-    def send(self, message: MailboxMessage) -> MessageDeliveryResult:
+    def send(
+        self,
+        message: MailboxMessage,
+        *,
+        wake: bool = False,
+    ) -> MessageDeliveryResult:
         seat = self.registry.read_seat(message.fleet_id, message.recipient_seat_id)
         written = self.mailbox.enqueue(message)
         if written.duplicate:
-            wake = WakeResult(WakeState.DUPLICATE_SKIPPED)
+            wake_result = WakeResult(WakeState.DUPLICATE_SKIPPED)
+        elif not wake:
+            wake_result = WakeResult(WakeState.NOT_REQUESTED)
         else:
             queued_count = len(
                 self.mailbox.pending(message.fleet_id, message.recipient_seat_id)
             )
-            wake = self.waker.wake_if_queued(seat.tmux, queued_count=queued_count)
+            wake_result = self.waker.wake_if_queued(seat.tmux, queued_count=queued_count)
         return MessageDeliveryResult(
             message=message,
             duplicate=written.duplicate,
             state=DeliveryState.QUEUED,
-            wake=wake,
+            wake=wake_result,
         )
+
+    def wake(self, fleet_id: str, seat_id: str) -> WakeResult:
+        seat = self.registry.read_seat(fleet_id, seat_id)
+        queued_count = len(self.mailbox.pending(fleet_id, seat_id))
+        return self.waker.wake_if_queued(seat.tmux, queued_count=queued_count)

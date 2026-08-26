@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,10 +36,39 @@ WORKER_CAPABILITIES = (
     "notepad",
     "memory.propose",
 )
+OPERATOR_ACTOR = "operator"
 
 
 class FleetError(RegistryError):
     """Fleet membership or authorization is invalid."""
+
+
+def resolve_caller(
+    actor_flag: str | None,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    """Resolve the calling identity.
+
+    When ``FOIL_SEAT_ID`` is set, that seat is the caller. An in-seat process
+    cannot override that identity with ``--actor``. This is cooperative
+    same-user protection, not hostile-process isolation.
+    """
+
+    environment = os.environ if environ is None else environ
+    seat = str(environment.get("FOIL_SEAT_ID") or "").strip()
+    flag = str(actor_flag or "").strip()
+    if seat:
+        _validate_id(seat, "FOIL_SEAT_ID")
+        if flag and flag != seat:
+            raise FleetError(
+                f"in-seat caller {seat} cannot override identity with --actor {flag}"
+            )
+        return seat
+    if flag in {"", OPERATOR_ACTOR}:
+        return OPERATOR_ACTOR
+    _validate_id(flag, "actor")
+    return flag
 
 
 def _now() -> str:
@@ -129,15 +161,60 @@ class FleetStore:
         )
 
     def write(self, record: FleetRecord) -> Path:
+        with _exclusive_lock(self.lock_path(record.fleet_id)):
+            return self._write_unlocked(record)
+
+    def _write_unlocked(self, record: FleetRecord) -> Path:
         path = self.path(record.fleet_id)
         _ensure_private_directory(path.parent)
-        with _exclusive_lock(self.lock_path(record.fleet_id)):
-            return _atomic_write_json(path, record.to_dict())
+        return _atomic_write_json(path, record.to_dict())
 
-    def require_lead_actor(self, fleet_id: str, actor: str | None) -> None:
-        if actor in {None, "", "operator"}:
-            return
-        _validate_id(actor, "actor")
+    @contextmanager
+    def operation_lock(self, fleet_id: str) -> Iterator[None]:
+        """Hold the fleet lock across one membership mutation."""
+
+        with _exclusive_lock(self.lock_path(fleet_id)):
+            yield
+
+    def require_lifecycle_actor(
+        self,
+        fleet_id: str,
+        actor: str | None,
+        *,
+        environ: Mapping[str, str] | None = None,
+    ) -> str:
+        caller = resolve_caller(actor, environ=environ)
+        if caller == OPERATOR_ACTOR:
+            return caller
         fleet = self.read(fleet_id)
-        if fleet.lead_seat_id != actor:
-            raise FleetError(f"seat {actor} is not authorized for fleet lifecycle")
+        if fleet.lead_seat_id != caller:
+            raise FleetError(f"seat {caller} is not authorized for fleet lifecycle")
+        return caller
+
+    def require_reviewer(
+        self,
+        fleet_id: str,
+        actor: str | None,
+        *,
+        environ: Mapping[str, str] | None = None,
+    ) -> str:
+        environment = os.environ if environ is None else environ
+        if str(environment.get("FOIL_SEAT_ID") or "").strip():
+            caller = resolve_caller(actor, environ=environment)
+            fleet = self.read(fleet_id)
+            if fleet.lead_seat_id != caller:
+                raise FleetError(f"seat {caller} is not authorized to review memory")
+            return caller
+        if actor in {None, "", OPERATOR_ACTOR}:
+            return OPERATOR_ACTOR
+        _validate_id(actor, "actor")
+        return actor
+
+    def require_lead_actor(
+        self,
+        fleet_id: str,
+        actor: str | None,
+        *,
+        environ: Mapping[str, str] | None = None,
+    ) -> str:
+        return self.require_lifecycle_actor(fleet_id, actor, environ=environ)

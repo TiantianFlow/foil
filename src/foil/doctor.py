@@ -10,6 +10,7 @@ from typing import Any
 
 from foil.fleet import FleetStore
 from foil.registry import RegistryStore
+from foil.tmux import TmuxController
 
 GIT_IDENTITY = {
     "GIT_AUTHOR_NAME": "Foil",
@@ -51,6 +52,7 @@ def doctor_report(
         "clis": clis,
         "credentials_inspected": False,
         "worktrees": _worktree_status(Path(fleet.project_root), records),
+        "reconciliation": _reconciliation(Path(state_root), fleet, records),
         "plan": {
             "fleet_id": fleet.fleet_id,
             "lead_seat_id": fleet.lead_seat_id,
@@ -125,6 +127,79 @@ def git_toplevel(start: Path) -> Path | None:
             break
         probe = probe.parent
     return None
+
+
+def _reconciliation(state_root: Path, fleet, records) -> dict[str, Any]:
+    registered = {record.seat_id for record in records}
+    orphan_tmux: list[dict[str, str]] = []
+    missing_tmux: list[str] = []
+    try:
+        controller = TmuxController()
+        marked = controller.list_marked_windows(fleet.fleet_id)
+    except Exception:
+        marked = []
+    for window in marked:
+        if window["seat_id"] not in registered:
+            orphan_tmux.append(window)
+    for record in records:
+        probe = None
+        try:
+            probe = TmuxController().probe(fleet.fleet_id, record.seat_id, record.tmux)
+        except Exception:
+            probe = None
+        if probe is None or probe.state.value == "dead":
+            missing_tmux.append(record.seat_id)
+    status_dir = (
+        state_root / "v1" / "fleets" / fleet.fleet_id / "status" / "seats"
+    )
+    stale_status = [
+        path.stem
+        for path in sorted(status_dir.glob("*.json"))
+        if path.stem not in registered
+    ]
+    obsolete_plans = _unknown_names(
+        state_root / "v1" / "fleets" / fleet.fleet_id / "runner-plans",
+        registered,
+        suffix=".json",
+    )
+    obsolete_bootstrap = _unknown_names(
+        state_root / "v1" / "fleets" / fleet.fleet_id / "adapter-state",
+        registered,
+        directories=True,
+    )
+    retained_worktrees = []
+    worktrees = Path(fleet.project_root) / "worktrees"
+    if worktrees.is_dir():
+        for path in sorted(worktrees.iterdir()):
+            if path.is_dir() and path.name not in registered:
+                retained_worktrees.append(str(path))
+    return {
+        "orphan_tmux": orphan_tmux,
+        "missing_tmux": missing_tmux,
+        "stale_status": stale_status,
+        "obsolete_plans": obsolete_plans,
+        "obsolete_bootstrap": obsolete_bootstrap,
+        "retained_worktrees": retained_worktrees,
+    }
+
+
+def _unknown_names(
+    directory: Path,
+    registered: set[str],
+    *,
+    suffix: str = "",
+    directories: bool = False,
+) -> list[str]:
+    if not directory.is_dir():
+        return []
+    names: list[str] = []
+    for path in sorted(directory.iterdir()):
+        name = path.name[: -len(suffix)] if suffix and path.name.endswith(suffix) else path.name
+        if directories and not path.is_dir():
+            continue
+        if name not in registered:
+            names.append(name)
+    return names
 
 
 def _seat_cli_names(records) -> list[str]:

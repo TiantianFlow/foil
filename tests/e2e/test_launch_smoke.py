@@ -68,6 +68,29 @@ def test_spawn_after_a_full_stop_still_requires_resume(
     assert all(seat["state"] == "working" for seat in resumed["seats"])
 
 
+def test_two_non_isolated_workers_require_shared_cwd(
+    initialized: OperatorFleet,
+) -> None:
+    fleet = initialized
+    fleet.spawn("lead", "grok", lead=True, role="manager").json()
+    refused = fleet.spawn(
+        "roommate",
+        "grok",
+        isolated=False,
+        role="implementer",
+    )
+    assert refused.returncode != 0
+    assert "shared-cwd" in refused.stderr.lower() or "already used" in refused.stderr.lower()
+    shared = fleet.spawn(
+        "roommate",
+        "grok",
+        shared_cwd=True,
+        role="implementer",
+    )
+    assert shared.returncode == 0, shared.stderr
+    assert not (fleet.project / "FOIL.md").exists()
+
+
 def test_status_before_spawn_lists_no_seats(initialized: OperatorFleet) -> None:
     fleet = initialized
     status = fleet.lifecycle("status").json()

@@ -275,6 +275,7 @@ def test_t2_through_t6_lead_owned_user_journey(initialized: OperatorFleet) -> No
         "quickstart-review",
         "--body",
         hostile_body,
+        "--wake",
     ).json()
     assert delivery["duplicate"] is False
     assert delivery["message"]["body"] == hostile_body
@@ -431,6 +432,7 @@ def test_both_workers_can_be_mailed_independently(initialized: OperatorFleet) ->
             message_id,
             "--body",
             body,
+            "--wake",
         ).json()
         assert delivery["delivery"]["wake"]["state"] == "sent"
         on_disk = json.loads(fleet.inbox_path(seat, message_id).read_text(encoding="utf-8"))

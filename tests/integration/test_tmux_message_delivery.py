@@ -110,6 +110,7 @@ pathlib.Path(sys.argv[1]).write_text(line, encoding="utf-8")
                 "message-1",
                 "--body",
                 "This body stays on disk and is not injected into tmux.",
+                "--wake",
             ],
             capture_output=True,
             text=True,

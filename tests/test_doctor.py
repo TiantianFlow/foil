@@ -30,6 +30,9 @@ def test_doctor_reports_empty_plan_after_init(tmp_path: Path) -> None:
     assert report["worktrees"]["ok"] is True
     names = {item["name"] for item in report["clis"]}
     assert {"grok", "opencode"} <= names
+    assert report["reconciliation"]["orphan_tmux"] == []
+    assert report["reconciliation"]["missing_tmux"] == []
+    assert report["reconciliation"]["stale_status"] == []
 
 
 def test_doctor_reports_isolated_worktrees_after_apply(tmp_path: Path) -> None:

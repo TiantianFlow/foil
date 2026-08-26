@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from importlib import resources
 from pathlib import Path
@@ -19,6 +19,7 @@ _ALLOWED_PLACEHOLDERS = frozenset(
         "native_session_id",
         "seat_id",
         "working_directory",
+        "bootstrap_path",
     }
 )
 _SAFE_VALUE = re.compile(r"^[^\x00\r\n]{1,4096}$")
@@ -60,6 +61,11 @@ class SessionCaptureSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class StartupSpec:
+    argv: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AdapterRecord:
     adapter_id: str
     observed_version: str
@@ -69,6 +75,7 @@ class AdapterRecord:
     launch: LaunchSpec
     resume: ResumeSpec
     session_capture: SessionCaptureSpec
+    startup: StartupSpec = field(default_factory=StartupSpec)
     schema_version: int = ADAPTER_SCHEMA_VERSION
 
 
@@ -137,6 +144,7 @@ def load_adapter(path: Path | str) -> AdapterRecord:
             "launch",
             "resume",
             "session_capture",
+            "startup",
         },
         "adapter",
     )
@@ -179,6 +187,12 @@ def load_adapter(path: Path | str) -> AdapterRecord:
     elif any(value is not None for value in (capture_argv, id_pointer, cwd_pointer)):
         raise AdapterError("capture command fields require command_json_list_delta")
 
+    startup_argv = None
+    if "startup" in payload:
+        startup = _object(payload.get("startup"), "startup")
+        _only(startup, {"argv"}, "startup")
+        startup_argv = _argv(startup.get("argv"), "startup")
+
     return AdapterRecord(
         adapter_id=_string(payload.get("id"), "id"),
         observed_version=_string(payload.get("observed_version"), "observed_version"),
@@ -196,6 +210,7 @@ def load_adapter(path: Path | str) -> AdapterRecord:
             id_pointer=id_pointer,
             cwd_pointer=cwd_pointer,
         ),
+        startup=StartupSpec(argv=startup_argv),
     )
 
 

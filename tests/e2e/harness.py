@@ -1,9 +1,12 @@
 """End-to-end operator harness for Foil user journeys.
 
 CI does not have authenticated Grok or OpenCode. The harness puts PATH shims
-that honor the shipped adapter argv contracts in front of `foil`, then drives
+that honor the shipped adapter argv contracts in a private bin, then drives
 the same commands an operator or controller skill would: init, git, spawn,
-status, mailbox, resume, stop.
+status, mailbox, resume, stop. Host `tmux` and `git` are symlinked into
+that bin. `python3` is always `sys.executable` so `#!/usr/bin/env python3`
+does not pick Apple 3.9. Their parent directories stay off PATH so a
+Homebrew `grok` beside `tmux` cannot leak into shim tests.
 """
 
 from __future__ import annotations
@@ -90,6 +93,34 @@ class OperatorFleet:
             target.write_bytes(source)
             target.chmod(target.stat().st_mode | stat.S_IXUSR)
         (self.bin / "agent-home").write_text(str(self.agent_home), encoding="utf-8")
+        self._link_host_tools()
+
+    def _link_host_tools(self) -> None:
+        """Expose only named host binaries, not the directories that contain them.
+
+        Homebrew keeps `tmux`, `git`, `python3`, and real `grok` in the same
+        directory. Adding that parent to PATH lets missing-CLI tests launch
+        the real agent.
+        """
+        self.bin.mkdir(parents=True, exist_ok=True)
+        for name, found in (
+            ("tmux", shutil.which("tmux")),
+            ("git", shutil.which("git")),
+        ):
+            if not found:
+                continue
+            link = self.bin / name
+            if link.exists() or link.is_symlink():
+                continue
+            link.symlink_to(found)
+        python3 = self.bin / "python3"
+        if not (python3.exists() or python3.is_symlink()):
+            python3.symlink_to(sys.executable)
+        if not os.path.samefile(python3, sys.executable):
+            raise RuntimeError(
+                "private-bin python3 must resolve to sys.executable so "
+                "the fake CLI does not run Apple Python 3.9"
+            )
 
     def _start_keeper(self) -> None:
         """Keep the tmux server occupied so Foil session IDs do not reset to $0.
@@ -113,8 +144,20 @@ class OperatorFleet:
         environment["FOIL_STATE_DIR"] = str(self.state)
         environment["FOIL_E2E_AGENT_HOME"] = str(self.agent_home)
         if not self.live:
-            environment["PATH"] = f"{self.bin}{os.pathsep}{environment.get('PATH', '')}"
+            environment["PATH"] = self._hermetic_path()
         return environment
+
+    def _hermetic_path(self) -> str:
+        self._link_host_tools()
+        parts = [str(self.bin)]
+        for extra in ("/usr/bin", "/bin"):
+            extra_path = Path(extra)
+            # Never reopen a host dir that also contains a real agent CLI.
+            if (extra_path / "grok").exists() or (extra_path / "opencode").exists():
+                continue
+            if extra not in parts:
+                parts.append(extra)
+        return os.pathsep.join(parts)
 
     def foil(
         self,
@@ -155,7 +198,8 @@ class OperatorFleet:
         cli: str,
         *,
         lead: bool = False,
-        isolated: bool = False,
+        isolated: bool | None = None,
+        shared_cwd: bool = False,
         role: str | None = None,
         extra: tuple[str, ...] = (),
         **kwargs: Any,
@@ -172,8 +216,12 @@ class OperatorFleet:
         ]
         if lead:
             args.append("--lead")
-        if isolated:
+        if isolated is True:
             args.append("--isolated")
+        if isolated is False:
+            args.append("--no-isolated")
+        if shared_cwd:
+            args.append("--shared-cwd")
         if role:
             args.extend(["--role", role])
         args.extend(extra)
@@ -184,13 +232,11 @@ class OperatorFleet:
         implementer = self.spawn(
             "implementer",
             "grok",
-            isolated=True,
             role="implementer",
         ).json()
         reviewer = self.spawn(
             "reviewer-challenger",
             "opencode",
-            isolated=True,
             role="reviewer-challenger",
         ).json()
         return {

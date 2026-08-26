@@ -118,6 +118,46 @@ kind = "none"
         load_adapter(shell_string)
 
 
+def test_adapter_can_declare_startup_argv(tmp_path: Path) -> None:
+    path = tmp_path / "startup.toml"
+    path.write_text(
+        """
+schema_version = 1
+id = "fixture"
+observed_version = "1"
+models = ["fixture/model"]
+skill = "skills/adapters/fixture/SKILL.md"
+
+[executable]
+candidates = ["fixture"]
+version_argv = ["fixture", "--version"]
+
+[launch]
+argv = ["fixture", "--model", "{model}"]
+
+[resume]
+supported = false
+
+[session_capture]
+kind = "none"
+
+[startup]
+argv = ["Read {bootstrap_path} before beginning."]
+""",
+        encoding="utf-8",
+    )
+    record = load_adapter(path)
+    assert record.startup.argv == ("Read {bootstrap_path} before beginning.",)
+    expanded = expand_argv(
+        record.launch.argv + record.startup.argv,
+        {
+            "model": "fixture/model",
+            "bootstrap_path": "/tmp/state/bootstrap.json",
+        },
+    )
+    assert expanded[-1] == "Read /tmp/state/bootstrap.json before beginning."
+
+
 def test_core_runtime_has_no_known_provider_name_conditionals() -> None:
     core = Path(__file__).parents[1] / "src" / "foil"
     runtime_sources = [

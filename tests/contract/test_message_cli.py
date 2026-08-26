@@ -89,6 +89,7 @@ def test_send_message_commits_mail_then_wakes_with_fixed_text(tmp_path: Path) ->
         "task-1",
         "--body",
         hostile_body,
+        "--wake",
         env=env,
     )
 
@@ -127,6 +128,7 @@ def test_duplicate_send_is_detected_and_does_not_repeat_wake(tmp_path: Path) -> 
         "message-1",
         "--body",
         "Inspect queued work.",
+        "--wake",
     )
 
     first = run_foil(*args, env=env)
@@ -207,6 +209,84 @@ def test_ack_message_and_message_status_are_pollable(tmp_path: Path) -> None:
     delivered_payload = json.loads(delivered.stdout)
     assert delivered_payload["state"] == "acknowledged"
     assert delivered_payload["acknowledgement"]["acknowledgement_id"] == "ack-1"
+
+
+def test_seat_wake_sends_after_persist_only_delivery(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    write_seat(state_dir)
+    executable, log = fake_tmux(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{executable.parent}{os.pathsep}{env['PATH']}"
+    env["FOIL_TMUX_LOG"] = str(log)
+
+    queued = run_foil(
+        "send-message",
+        "--state-dir",
+        str(state_dir),
+        "--fleet",
+        "fleet-1",
+        "--seat",
+        "seat-1",
+        "--sender",
+        "controller-1",
+        "--message-id",
+        "message-1",
+        "--body",
+        "Persisted only.",
+        env=env,
+    )
+    assert queued.returncode == 0, queued.stderr
+    assert json.loads(queued.stdout)["delivery"]["wake"]["state"] == "not_requested"
+    assert not log.exists() or log.read_text() == ""
+
+    woken = run_foil(
+        "seat",
+        "wake",
+        "--state-dir",
+        str(state_dir),
+        "--fleet",
+        "fleet-1",
+        "--json",
+        "--seat",
+        "seat-1",
+        env=env,
+    )
+    assert woken.returncode == 0, woken.stderr
+    assert json.loads(woken.stdout)["wake"]["state"] == "sent"
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert calls[0] == ["has-session", "-t", "$42"]
+    assert "poll" in calls[1][4].lower()
+
+
+def test_send_message_defaults_to_persist_without_wake(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    write_seat(state_dir)
+    executable, log = fake_tmux(tmp_path)
+    env = os.environ.copy()
+    env["PATH"] = f"{executable.parent}{os.pathsep}{env['PATH']}"
+    env["FOIL_TMUX_LOG"] = str(log)
+
+    result = run_foil(
+        "send-message",
+        "--state-dir",
+        str(state_dir),
+        "--fleet",
+        "fleet-1",
+        "--seat",
+        "seat-1",
+        "--sender",
+        "controller-1",
+        "--message-id",
+        "message-1",
+        "--body",
+        "Persisted only.",
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["delivery"] == {"state": "queued", "wake": {"state": "not_requested"}}
+    assert not log.exists() or log.read_text() == ""
 
 
 def test_help_lists_narrow_composable_message_commands() -> None:
