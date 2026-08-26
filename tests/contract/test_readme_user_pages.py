@@ -46,6 +46,14 @@ QUICK_START_COMMANDS = (
     "--sender",
     "--body",
 )
+EXISTING_REPO_MARKERS = {
+    "README.md": "existing Git repository",
+    "README.zh-CN.md": "已有的 Git 仓库",
+}
+EMPTY_DIR_LAB_MARKERS = (
+    "mkdir my-project",
+    "cd my-project",
+)
 
 
 @pytest.mark.parametrize(
@@ -143,6 +151,20 @@ def test_readme_has_short_human_quick_start(readme_name: str, heading: str) -> N
     assert "locally authenticated" in section or "完成本地认证" in section
     assert section.count("```") <= 8
     assert "python3 -c" not in section
+
+
+@pytest.mark.parametrize("readme_name", ["README.md", "README.zh-CN.md"])
+def test_readme_quick_start_targets_an_existing_git_repo(readme_name: str) -> None:
+    """The primary path onboards an existing Git repo, not a lab directory."""
+    text = (ROOT / readme_name).read_text(encoding="utf-8")
+    heading = "## Quick Start" if readme_name == "README.md" else "## 快速开始"
+    section = text.split(heading, 1)[1]
+    next_heading = re.search(r"\n## ", section)
+    if next_heading:
+        section = section[: next_heading.start()]
+    assert EXISTING_REPO_MARKERS[readme_name] in section
+    for marker in EMPTY_DIR_LAB_MARKERS:
+        assert marker not in section
 
 
 @pytest.mark.parametrize("readme_name", ["README.md", "README.zh-CN.md"])
