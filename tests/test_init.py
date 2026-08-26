@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 import subprocess
 import tomllib
@@ -20,13 +21,55 @@ from foil.onboarding import (
 from foil.registry import RegistryStore
 
 
+def _identity_environ() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GIT_AUTHOR_NAME": "Foil Test",
+            "GIT_AUTHOR_EMAIL": "foil-test@localhost",
+            "GIT_COMMITTER_NAME": "Foil Test",
+            "GIT_COMMITTER_EMAIL": "foil-test@localhost",
+        }
+    )
+    return environment
+
+
 def _init_git_repository(path: Path) -> None:
     subprocess.run(
         ["git", "init", "--quiet", str(path)],
         check=True,
         capture_output=True,
         text=True,
+        env=_identity_environ(),
     )
+
+
+def _git(cwd: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_identity_environ(),
+    )
+    return result.stdout.strip()
+
+
+def _git_repository_with_user_files(path: Path) -> None:
+    _init_git_repository(path)
+    (path / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    _git(path, "add", "tracked.txt")
+    _git(path, "commit", "--quiet", "-m", "initial")
+    (path / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+
+
+def _project_files(root: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(root)): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and ".git" not in path.parts
+    }
 
 
 def test_state_root_explicit_override_precedes_git(tmp_path: Path) -> None:
@@ -162,14 +205,59 @@ def test_initialize_project_scaffolds_role_library_and_empty_fleet(tmp_path: Pat
     assert stat.S_IMODE(fleet_record_path.stat().st_mode) == 0o600
 
 
-def test_initialize_project_refuses_nonempty_directory_without_writes(tmp_path: Path) -> None:
+def test_initialize_project_accepts_an_existing_git_repository(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _git_repository_with_user_files(project)
+    head_before = _git(project, "rev-parse", "HEAD")
+    branch_before = _git(project, "branch", "--show-current")
+    status_before = _git(project, "status", "--porcelain").splitlines()
+    state_root = tmp_path / "state"
+
+    result = initialize_project(
+        project,
+        environ={"FOIL_STATE_DIR": str(state_root)},
+        platform="linux",
+        home=tmp_path / "home",
+    )
+
+    assert result.roles_path == project / ".foil" / "roles"
+    assert result.git_branch == branch_before
+    assert (result.roles_path / "implementer.toml").is_file()
+    assert (state_root / "v1" / "fleets" / result.fleet_id / "seats").is_dir()
+    # Every tracked and untracked user file and the Git state are preserved.
+    assert (project / "tracked.txt").read_text(encoding="utf-8") == "tracked\n"
+    assert (project / "untracked.txt").read_text(encoding="utf-8") == "untracked\n"
+    assert _git(project, "rev-parse", "HEAD") == head_before
+    assert _git(project, "branch", "--show-current") == branch_before
+    status_after = _git(project, "status", "--porcelain").splitlines()
+    assert sorted(set(status_after) - set(status_before)) == ["?? .foil/"]
+
+
+def test_initialize_project_uses_the_git_common_directory_for_state(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _git_repository_with_user_files(project)
+
+    result = initialize_project(
+        project,
+        environ={},
+        platform="linux",
+        home=tmp_path / "home",
+    )
+
+    assert result.state_root == (project / ".git" / "foil").resolve()
+    assert (result.state_root / "v1" / "fleets" / result.fleet_id).is_dir()
+
+
+def test_initialize_project_refuses_nonempty_directory_without_git(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     existing = project / "keep.txt"
     existing.write_text("keep", encoding="utf-8")
     state_root = tmp_path / "state"
 
-    with pytest.raises(InitializationError, match="empty"):
+    with pytest.raises(InitializationError, match="not a Git repository"):
         initialize_project(
             project,
             environ={"FOIL_STATE_DIR": str(state_root)},
@@ -182,9 +270,10 @@ def test_initialize_project_refuses_nonempty_directory_without_writes(tmp_path: 
     assert not state_root.exists()
 
 
-def test_initialize_project_refuses_to_overwrite_existing_scaffold(tmp_path: Path) -> None:
+def test_initialize_project_second_run_fails_closed_without_mutation(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
+    _git_repository_with_user_files(project)
     state_root = tmp_path / "state"
     options = {
         "environ": {"FOIL_STATE_DIR": str(state_root)},
@@ -192,9 +281,147 @@ def test_initialize_project_refuses_to_overwrite_existing_scaffold(tmp_path: Pat
         "home": tmp_path / "home",
     }
     first = initialize_project(project, **options)
-    original = (first.roles_path / "manager.toml").read_bytes()
+    before = _project_files(project)
 
-    with pytest.raises(InitializationError, match="empty"):
+    with pytest.raises(InitializationError, match="fleet state already exists"):
         initialize_project(project, **options)
 
-    assert (first.roles_path / "manager.toml").read_bytes() == original
+    assert _project_files(project) == before
+    assert (first.roles_path / "manager.toml").is_file()
+
+
+def test_initialize_project_rerun_with_identical_scaffold_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _git_repository_with_user_files(project)
+    state_root = tmp_path / "state"
+    options = {
+        "environ": {"FOIL_STATE_DIR": str(state_root)},
+        "platform": "linux",
+        "home": tmp_path / "home",
+    }
+    first = initialize_project(project, **options)
+    manager = first.roles_path / "manager.toml"
+    original = manager.read_bytes()
+    original_mtime = manager.stat().st_mtime_ns
+    import shutil
+
+    shutil.rmtree(state_root)
+
+    second = initialize_project(project, **options)
+
+    assert second.fleet_id == first.fleet_id
+    assert manager.read_bytes() == original
+    assert manager.stat().st_mtime_ns == original_mtime
+
+
+def test_initialize_project_refuses_conflicting_role_file_without_writes(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _git_repository_with_user_files(project)
+    first = initialize_project(
+        project,
+        environ={"FOIL_STATE_DIR": str(tmp_path / "state-a")},
+        platform="linux",
+        home=tmp_path / "home",
+    )
+    manager = first.roles_path / "manager.toml"
+    manager.write_text("operator-edited\n", encoding="utf-8")
+    state_b = tmp_path / "state-b"
+
+    with pytest.raises(InitializationError, match="conflicting"):
+        initialize_project(
+            project,
+            environ={"FOIL_STATE_DIR": str(state_b)},
+            platform="linux",
+            home=tmp_path / "home",
+        )
+
+    assert manager.read_text(encoding="utf-8") == "operator-edited\n"
+    assert _project_files(project)[str(manager.relative_to(project))] == b"operator-edited\n"
+    assert not state_b.exists()
+
+
+def test_initialize_project_retry_after_partial_failure_preserves_user_extras(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _git_repository_with_user_files(project)
+    extras = project / ".foil" / "roles"
+    extras.mkdir(parents=True)
+    (project / ".foil" / "notes.md").write_text("user notes\n", encoding="utf-8")
+    (extras / "custom.toml").write_text("user role\n", encoding="utf-8")
+    state_root = tmp_path / "state"
+    options = {
+        "environ": {"FOIL_STATE_DIR": str(state_root)},
+        "platform": "linux",
+        "home": tmp_path / "home",
+    }
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("injected registry failure")
+
+    monkeypatch.setattr("foil.onboarding._initialize_registry", boom)
+    with pytest.raises(RuntimeError, match="injected registry failure"):
+        initialize_project(project, **options)
+
+    # Rollback removes only Foil-created artifacts, never user .foil extras.
+    assert (project / ".foil" / "notes.md").read_text(encoding="utf-8") == "user notes\n"
+    assert (extras / "custom.toml").read_text(encoding="utf-8") == "user role\n"
+    assert not (extras / "manager.toml").exists()
+    assert not state_root.exists()
+
+    monkeypatch.undo()
+    result = initialize_project(project, **options)
+
+    assert (result.roles_path / "manager.toml").is_file()
+    assert (extras / "custom.toml").read_text(encoding="utf-8") == "user role\n"
+    assert (project / ".foil" / "notes.md").read_text(encoding="utf-8") == "user notes\n"
+    assert (project / "untracked.txt").read_text(encoding="utf-8") == "untracked\n"
+
+
+def test_initialize_project_refuses_a_scaffold_path_that_is_a_file(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _git_repository_with_user_files(project)
+    (project / ".foil").write_text("not a directory\n", encoding="utf-8")
+    state_root = tmp_path / "state"
+
+    with pytest.raises(InitializationError, match="not a directory"):
+        initialize_project(
+            project,
+            environ={"FOIL_STATE_DIR": str(state_root)},
+            platform="linux",
+            home=tmp_path / "home",
+        )
+
+    assert (project / ".foil").read_text(encoding="utf-8") == "not a directory\n"
+    assert not state_root.exists()
+
+
+def test_initialize_project_refuses_a_symlinked_role_file(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _git_repository_with_user_files(project)
+    roles = project / ".foil" / "roles"
+    roles.mkdir(parents=True)
+    target = tmp_path / "elsewhere.toml"
+    target.write_text("elsewhere\n", encoding="utf-8")
+    (roles / "manager.toml").symlink_to(target)
+    state_root = tmp_path / "state"
+
+    with pytest.raises(InitializationError, match="regular file"):
+        initialize_project(
+            project,
+            environ={"FOIL_STATE_DIR": str(state_root)},
+            platform="linux",
+            home=tmp_path / "home",
+        )
+
+    assert not state_root.exists()

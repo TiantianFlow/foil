@@ -7,12 +7,30 @@ import shutil
 from tests.e2e.harness import OperatorFleet, require_tmux
 
 
-def test_init_rejects_a_nonempty_directory(fleet: OperatorFleet) -> None:
+def test_init_rejects_a_nonempty_directory_without_git(fleet: OperatorFleet) -> None:
     (fleet.project / "already-here.txt").write_text("nope", encoding="utf-8")
     result = fleet.foil("init", ".")
     assert result.returncode != 0
     assert "empty" in result.stderr.lower()
+    assert "git" in result.stderr.lower()
     assert not (fleet.project / ".foil").exists()
+
+
+def test_init_accepts_an_existing_git_repository(fleet: OperatorFleet) -> None:
+    fleet.git("init", "--quiet", "-b", "trunk")
+    (fleet.project / "app.py").write_text("print('hello')\n", encoding="utf-8")
+    fleet.git("add", "app.py")
+    fleet.git("commit", "--quiet", "-m", "initial")
+    (fleet.project / "untracked.txt").write_text("keep me\n", encoding="utf-8")
+
+    payload = fleet.foil("init", ".").json()
+
+    fleet.fleet_id = payload["fleet_id"]
+    assert payload["git_branch"] == "trunk"
+    assert (fleet.project / "untracked.txt").read_text(encoding="utf-8") == "keep me\n"
+    assert (fleet.project / "app.py").read_text(encoding="utf-8") == "print('hello')\n"
+    spawned = fleet.spawn("lead", "grok", lead=True, role="manager")
+    assert spawned.returncode == 0, spawned.stderr
 
 
 def test_spawn_without_git_identity_does_not_start_tmux(fleet: OperatorFleet) -> None:

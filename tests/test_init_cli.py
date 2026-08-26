@@ -41,7 +41,7 @@ def test_foil_help_lists_init() -> None:
     assert "launch" not in result.stdout
 
 
-def test_init_help_documents_empty_directory_and_state_precedence() -> None:
+def test_init_help_documents_existing_repositories_and_state_precedence() -> None:
     result = subprocess.run(
         [sys.executable, "-m", "foil", "init", "--help"],
         capture_output=True,
@@ -52,6 +52,9 @@ def test_init_help_documents_empty_directory_and_state_precedence() -> None:
     assert result.returncode == 0
     lowered = result.stdout.lower()
     assert "empty" in lowered
+    assert "existing git repository" in lowered
+    assert "accepts only an empty" not in lowered
+    assert "must be empty" not in lowered
     assert "foil_state_dir" in lowered
     assert "git common" in lowered
     assert "xdg_state_home" in lowered
@@ -101,7 +104,52 @@ def test_init_accepts_an_explicit_empty_directory(tmp_path: Path) -> None:
     assert (project / ".foil" / "roles" / "implementer.toml").is_file()
 
 
-def test_init_nonempty_directory_fails_without_partial_scaffold(tmp_path: Path) -> None:
+def test_init_accepts_an_existing_git_repository(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GIT_AUTHOR_NAME": "Foil Test",
+            "GIT_AUTHOR_EMAIL": "foil-test@localhost",
+            "GIT_COMMITTER_NAME": "Foil Test",
+            "GIT_COMMITTER_EMAIL": "foil-test@localhost",
+        }
+    )
+    subprocess.run(
+        ["git", "init", "--quiet", "-b", "trunk"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+    )
+    (project / "app.py").write_text("print('hello')\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "app.py"], cwd=project, check=True, capture_output=True
+    )
+    subprocess.run(
+        ["git", "commit", "--quiet", "-m", "initial"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+        env=environment,
+    )
+    (project / "untracked.txt").write_text("keep me\n", encoding="utf-8")
+    state_root = tmp_path / "state"
+
+    result = run_foil("init", cwd=project, state_root=state_root)
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["git_branch"] == "trunk"
+    assert (project / ".foil" / "roles" / "implementer.toml").is_file()
+    assert (project / "app.py").read_text(encoding="utf-8") == "print('hello')\n"
+    assert (project / "untracked.txt").read_text(encoding="utf-8") == "keep me\n"
+    assert (state_root / "v1" / "fleets" / payload["fleet_id"] / "seats").is_dir()
+
+
+def test_init_nonempty_directory_without_git_fails_without_partial_scaffold(
+    tmp_path: Path,
+) -> None:
     project = tmp_path / "project"
     project.mkdir()
     (project / "existing.txt").write_text("keep", encoding="utf-8")
@@ -112,5 +160,31 @@ def test_init_nonempty_directory_fails_without_partial_scaffold(tmp_path: Path) 
     assert result.returncode != 0
     assert result.stdout == ""
     assert "empty" in result.stderr.lower()
+    assert "git" in result.stderr.lower()
     assert not (project / ".foil").exists()
     assert not state_root.exists()
+
+
+def test_init_second_run_fails_closed_without_mutating_the_scaffold(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(
+        ["git", "init", "--quiet", "-b", "trunk"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+    )
+    state_root = tmp_path / "state"
+
+    first = run_foil("init", cwd=project, state_root=state_root)
+    assert first.returncode == 0, first.stderr
+    manager = project / ".foil" / "roles" / "manager.toml"
+    original = manager.read_bytes()
+
+    second = run_foil("init", cwd=project, state_root=state_root)
+
+    assert second.returncode != 0
+    assert "already" in second.stderr.lower()
+    assert manager.read_bytes() == original

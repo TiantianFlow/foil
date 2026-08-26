@@ -177,10 +177,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Scaffold a role library and an empty live fleet.",
         description=(
             "Write role templates to .foil/roles/ and initialize an empty live fleet "
-            "registry. No seats are created. Spawn a lead next with "
-            "`foil seat spawn --lead`. After init, create a local Git identity with "
-            "`git init -b foil-demo`. State precedence is FOIL_STATE_DIR, the Git "
-            "common directory, XDG_STATE_HOME, then the documented platform fallback."
+            "registry. Accepts an empty directory or an existing Git repository; "
+            "tracked and untracked files and Git state are preserved. A non-empty "
+            "directory outside Git and conflicting .foil or fleet-state collisions "
+            "fail closed. No seats are created. Spawn a lead next with "
+            "`foil seat spawn --lead`. In a new empty directory, create a local Git "
+            "identity after init with `git init -b foil-demo`. State precedence is "
+            "FOIL_STATE_DIR, the Git common directory, XDG_STATE_HOME, then the "
+            "documented platform fallback."
         ),
     )
     init.add_argument(
@@ -189,7 +193,10 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path("."),
         type=Path,
         metavar="DIRECTORY",
-        help="Empty project directory to initialize (default: current directory).",
+        help=(
+            "Project directory to initialize: empty or an existing Git repository "
+            "(default: current directory)."
+        ),
     )
 
     poll_status = subparsers.add_parser(
