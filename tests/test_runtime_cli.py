@@ -601,6 +601,18 @@ def test_shared_cwd_is_required_for_a_second_project_root_seat(
     ).is_file()
 
 
+def _seat_instructions(controller: RuntimeController, state: Path, seat_id: str) -> str:
+    return (
+        state
+        / "v1"
+        / "fleets"
+        / controller.fleet.fleet_id
+        / "adapter-state"
+        / seat_id
+        / "FOIL.md"
+    ).read_text(encoding="utf-8")
+
+
 def test_generated_instructions_scope_standalone_personas(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -612,21 +624,173 @@ def test_generated_instructions_scope_standalone_personas(
         launch_argv=generated_argv(),
         lead=True,
     )
-    instructions = (
-        tmp_path
-        / "state"
-        / "v1"
-        / "fleets"
-        / controller.fleet.fleet_id
-        / "adapter-state"
-        / "lead"
-        / "FOIL.md"
-    ).read_text(encoding="utf-8")
+    instructions = _seat_instructions(controller, tmp_path / "state", "lead")
     assert "specialist lens scoped to this seat's assigned work" in instructions
     assert "produce X for this assignment and return it to the lead" in instructions
     assert "do not assume ownership of the whole project" in instructions
     assert "override persona-specific" in instructions
-    assert "Do not spawn, stop, or remove seats unless you are the lead." in instructions
+
+
+def test_generated_instructions_require_reading_the_validated_role_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    persona = tmp_path / "persona.md"
+    persona.write_text(
+        "---\nname: Builder\ndescription: Implements scoped changes.\n---\n# Builder\n",
+        encoding="utf-8",
+    )
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+        role_path=str(persona),
+    )
+    instructions = _seat_instructions(controller, tmp_path / "state", "lead")
+    resolved = str(persona.resolve())
+    assert f"read the role file at `{resolved}`" in instructions
+    assert "validated `role_path` recorded in `bootstrap.json`" in instructions
+
+    bootstrap = json.loads(
+        (
+            tmp_path
+            / "state"
+            / "v1"
+            / "fleets"
+            / controller.fleet.fleet_id
+            / "adapter-state"
+            / "lead"
+            / "bootstrap.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert bootstrap["role_path"] == resolved
+
+
+def test_generated_instructions_define_lead_and_worker_team_responsibilities(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+    controller.spawn(
+        seat_id="implementer",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+    )
+    lead = _seat_instructions(controller, tmp_path / "state", "lead")
+    worker = _seat_instructions(controller, tmp_path / "state", "implementer")
+
+    assert "you are the fleet lead" in lead
+    assert "spawn, stop, and remove seats" in lead
+    assert "Workers must not spawn, stop, or remove seats" in lead
+    assert "you are a worker seat" not in lead
+
+    assert "you are a worker seat" in worker
+    assert "Do not spawn, stop, or remove seats" in worker
+    assert "only the lead manages fleet membership" in worker
+    assert "Return your assigned work and its evidence to the lead" in worker
+    assert "you are the fleet lead" not in worker
+
+
+def test_spawn_with_a_missing_role_file_fails_closed_before_side_effects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+    project = tmp_path / "project"
+    state = tmp_path / "state"
+
+    with pytest.raises(LifecycleError, match="role file does not exist"):
+        controller.spawn(
+            seat_id="implementer",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+            role_path=str(tmp_path / "missing.toml"),
+        )
+
+    assert len(tmux.launches) == 1
+    assert not (project / "worktrees" / "implementer").exists()
+    fleet_root = state / "v1" / "fleets" / controller.fleet.fleet_id
+    with pytest.raises(FileNotFoundError):
+        controller.registry.read_seat(controller.fleet.fleet_id, "implementer")
+    assert not (fleet_root / "runner-plans" / "implementer.json").exists()
+    assert not (fleet_root / "adapter-state" / "implementer").exists()
+
+
+def test_spawn_with_a_directory_role_file_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    with pytest.raises(LifecycleError, match="regular file"):
+        controller.spawn(
+            seat_id="lead",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+            lead=True,
+            role_path=str(tmp_path),
+        )
+    assert tmux.launches == []
+
+
+def test_spawn_with_an_unknown_role_id_fails_closed_before_side_effects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    with pytest.raises(LifecycleError, match="role library has no file"):
+        controller.spawn(
+            seat_id="lead",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+            lead=True,
+            role_id="ghost",
+        )
+    assert tmux.launches == []
+    with pytest.raises(FileNotFoundError):
+        controller.registry.read_seat(controller.fleet.fleet_id, "lead")
+
+
+def test_spawn_from_a_markdown_persona_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    persona = tmp_path / "catalog" / "reviewer.md"
+    persona.parent.mkdir()
+    persona.write_text(
+        "---\nname: Reviewer\ndescription: Challenges plans.\n---\n# Reviewer\n",
+        encoding="utf-8",
+    )
+    spawned = controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+        role_id="reviewer",
+        role_path=str(persona),
+    )
+    assert {seat["seat_id"] for seat in spawned} == {"lead"}
+    assert len(tmux.launches) == 1
+    record = controller.registry.read_seat(controller.fleet.fleet_id, "lead")
+    profile = record.extensions["profile"]
+    assert profile["role_id"] == "reviewer"
+    assert profile["role_path"] == str(persona.resolve())
+    instructions = _seat_instructions(controller, tmp_path / "state", "lead")
+    assert f"read the role file at `{persona.resolve()}`" in instructions
 
 
 def test_failed_registry_write_stops_the_new_window(

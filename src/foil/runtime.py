@@ -760,6 +760,10 @@ class RuntimeController:
         if _git_toplevel(project) is None:
             raise RuntimeError("working directory is not a valid Git worktree")
         launch_argv = _normalize_remainder(launch_argv)
+        # Validate and normalize the role file before any side effect: no new
+        # worktree, runner plan, registry record, or tmux window may be
+        # created for a missing or invalid role file.
+        role_path = _resolve_role_file(project, role_id=role_id, role_path=role_path)
         worktree = working_directory or (
             project / "worktrees" / seat_id if isolated else project
         )
@@ -772,10 +776,6 @@ class RuntimeController:
         worktree.mkdir(parents=True, exist_ok=True)
         git_branch = _observed_branch(worktree) or "foil-demo"
         capabilities = LEAD_CAPABILITIES if lead else WORKER_CAPABILITIES
-        if role_id and role_path is None:
-            candidate = project / ".foil" / "roles" / f"{role_id}.toml"
-            if candidate.is_file():
-                role_path = str(candidate)
         adapter_id = adapter_id_for_cli(cli)
         profile = {
             "cli": cli,
@@ -1346,6 +1346,37 @@ def _normalize_remainder(argv: tuple[str, ...] | None) -> tuple[str, ...]:
     return tuple(items)
 
 
+def _resolve_role_file(
+    project: Path,
+    *,
+    role_id: str | None,
+    role_path: str | None,
+) -> str | None:
+    """Resolve the role file to an absolute existing regular file.
+
+    Fails closed: a requested role that is missing or not a regular file is
+    an error, never a silent spawn without a role.
+    """
+
+    if role_path is None and role_id:
+        candidate = project / ".foil" / "roles" / f"{role_id}.toml"
+        if not candidate.is_file():
+            raise RuntimeError(
+                f"role library has no file for role {role_id}: expected {candidate}"
+            )
+        role_path = str(candidate)
+    if role_path is None:
+        return None
+    path = Path(role_path).expanduser()
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise RuntimeError(f"role file does not exist: {role_path}") from exc
+    if not resolved.is_file():
+        raise RuntimeError(f"role file must be a regular file: {role_path}")
+    return str(resolved)
+
+
 def _adapter_from_profile(
     seat: SeatConfig,
     pool: UsagePoolConfig,
@@ -1439,13 +1470,38 @@ def _git_tracks(cwd: Path, name: str) -> bool:
 def _worker_instructions(payload: dict[str, Any], seat_id: str) -> str:
     state = payload["state_dir"]
     fleet = payload["fleet_id"]
-    role = payload.get("role_path") or "(none)"
     capabilities = ", ".join(payload.get("capabilities") or [])
+    role_path = payload.get("role_path")
+    if role_path:
+        role_block = (
+            f"Role file: `{role_path}`.\n"
+            f"Before beginning any work, read the role file at `{role_path}`: "
+            "it is the validated `role_path` recorded in `bootstrap.json`.\n"
+        )
+    else:
+        role_block = (
+            "Role file: (none); no validated `role_path` was recorded in "
+            "`bootstrap.json`.\n"
+        )
+    if payload.get("is_lead"):
+        team_block = (
+            "Team responsibilities: you are the fleet lead, so you own fleet "
+            "membership — spawn, stop, and remove seats — along with "
+            "decomposition, progress intervention, independent review, and "
+            "final synthesis. Workers must not spawn, stop, or remove seats; "
+            "they return evidence and results to you.\n"
+        )
+    else:
+        team_block = (
+            "Team responsibilities: you are a worker seat. Do not spawn, "
+            "stop, or remove seats; only the lead manages fleet membership. "
+            "Return your assigned work and its evidence to the lead.\n"
+        )
     return (
         "# Foil seat\n\n"
         f"You are seat `{seat_id}` in fleet `{fleet}`.\n"
         f"Lead seat: `{payload.get('lead_seat_id') or 'operator'}`.\n"
-        f"Role file: `{role}`.\n"
+        f"{role_block}"
         f"Capabilities: {capabilities}.\n\n"
         "On start and whenever you are woken, poll your mailbox and "
         "acknowledge only after you have read the message. Do not treat "
@@ -1465,5 +1521,5 @@ def _worker_instructions(payload: dict[str, Any], seat_id: str) -> str:
         "project, and task instructions override persona-specific stacks, "
         "paths, tools, examples, quotas, and workflows unless explicitly "
         "selected.\n"
-        "Do not spawn, stop, or remove seats unless you are the lead.\n"
+        f"{team_block}"
     )

@@ -56,6 +56,7 @@ def map_persona(path: Path, persona_name: str) -> dict[str, Any]:
                 "display_name": persona["name"],
                 "primary_specialization": specialization,
                 "description": persona["description"],
+                "path": persona["path"],
                 "preset": None,
                 "cli": None,
                 "usage_pool_id": (
