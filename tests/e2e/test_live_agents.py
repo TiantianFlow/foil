@@ -59,7 +59,17 @@ schema_version = 1
 id = "exam-lead"
 display_name = "Exam lead"
 primary_specialization = "coordination-and-synthesis"
-description = "Read FOIL_BOOTSTRAP and FOIL.md. You are the lead. Immediately spawn one OpenCode worker with: foil seat spawn --state-dir $FOIL_STATE_DIR --fleet $FOIL_FLEET_ID --json --seat reviewer-challenger --cli opencode --role reviewer-challenger --permission auto. Then send that seat a mailbox message whose body is exactly REAL_FOIL_ROUNDTRIP_PLEASE. After it replies REAL_FOIL_ROUNDTRIP_OK, acknowledge the reply. Do not wait for a human."
+description = '''
+Read FOIL_BOOTSTRAP and FOIL.md. You are the lead.
+Immediately spawn one OpenCode worker with foil seat spawn,
+--state-dir $FOIL_STATE_DIR, --fleet $FOIL_FLEET_ID, --json,
+--seat reviewer-challenger, --cli opencode,
+--role reviewer-challenger, and --permission auto.
+Then send that seat a mailbox message whose body is exactly
+REAL_FOIL_ROUNDTRIP_PLEASE.
+After it replies REAL_FOIL_ROUNDTRIP_OK, acknowledge the reply.
+Do not wait for a human.
+'''
 required_output = "Spawned OpenCode worker and completed the mailbox round trip."
 challenge_focus = "None."
 """
@@ -69,7 +79,11 @@ schema_version = 1
 id = "exam-worker"
 display_name = "Exam worker"
 primary_specialization = "defect-first-independent-review"
-description = "Read FOIL_BOOTSTRAP and FOIL.md. Poll your mailbox. When you read REAL_FOIL_ROUNDTRIP_PLEASE, acknowledge it, then reply to the lead with foil send-message body REAL_FOIL_ROUNDTRIP_OK."
+description = '''
+Read FOIL_BOOTSTRAP and FOIL.md. Poll your mailbox.
+When you read REAL_FOIL_ROUNDTRIP_PLEASE, acknowledge it.
+Then reply to the lead with foil send-message body REAL_FOIL_ROUNDTRIP_OK.
+'''
 required_output = "REAL_FOIL_ROUNDTRIP_OK mailbox reply."
 challenge_focus = "None."
 """

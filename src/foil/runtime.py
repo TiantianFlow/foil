@@ -18,13 +18,13 @@ from pathlib import Path
 from typing import Any
 
 from foil.adapters import (
+    PERMISSION_PROFILES,
+    PERMISSION_SUPERVISED,
     AdapterError,
     AdapterRecord,
     CaptureKind,
     ExecutableSpec,
     LaunchSpec,
-    PERMISSION_PROFILES,
-    PERMISSION_SUPERVISED,
     PermissionsSpec,
     ResumeSpec,
     SessionCaptureSpec,
