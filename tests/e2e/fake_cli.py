@@ -43,6 +43,11 @@ def _log(home: Path, name: str, args: list[str]) -> None:
         "argv": args,
         "cwd": str(Path.cwd()),
         "pid": os.getpid(),
+        "forwarded": {
+            key: value
+            for key, value in os.environ.items()
+            if key.startswith("FOIL_E2E_FORWARD_")
+        },
     }
     with (home / "invocations.jsonl").open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")

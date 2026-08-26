@@ -94,7 +94,23 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
     spawn = seat_sub.add_parser("spawn", help="Create one seat in the live fleet.")
     _add_fleet_flags(spawn)
     spawn.add_argument("--seat", required=True, metavar="SEAT_ID")
-    spawn.add_argument("--cli", required=True)
+    spawn.add_argument(
+        "--cli",
+        help=(
+            "Seat CLI name or path. Required unless --profile declares one; "
+            "must match the profile cli when both are given."
+        ),
+    )
+    spawn.add_argument(
+        "--profile",
+        type=Path,
+        metavar="PATH",
+        help=(
+            "Declarative seat profile TOML (schema v1): executable candidates, "
+            "launch/resume/startup argv, session capture, permission flags, "
+            "workdir behavior, and environment forwarding by variable name."
+        ),
+    )
     spawn.add_argument("--lead", action="store_true")
     spawn.add_argument("--role", metavar="ROLE_ID")
     spawn.add_argument("--role-file", type=Path)
@@ -118,8 +134,9 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
     spawn.add_argument("--session-cwd-pointer")
     spawn.add_argument(
         "--session-capture",
-        default="generated_uuid",
+        default=None,
         choices=("none", "generated_uuid", "command_json_list_delta"),
+        help="Default generated_uuid unless a --profile declares one.",
     )
     spawn.add_argument(
         "--permission",
@@ -561,6 +578,8 @@ def _seat_command(args: argparse.Namespace) -> int:
     controller = _controller(args)
     actor = getattr(args, "actor", None)
     if args.seat_command == "spawn":
+        if not args.cli and not args.profile:
+            raise LifecycleError("seat spawn requires --cli or a --profile file")
         seats = controller.spawn(
             seat_id=args.seat,
             cli=args.cli,
@@ -582,6 +601,7 @@ def _seat_command(args: argparse.Namespace) -> int:
             model=args.model,
             lead=args.lead,
             permission=args.permission,
+            profile_file=str(args.profile) if args.profile else None,
         )
         return _runtime_payload(args.fleet, seats, as_json=args.json)
     if args.seat_command == "list":

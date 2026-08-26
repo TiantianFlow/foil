@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import sys
 from pathlib import Path
 from typing import Any
 
 MAX_PLAN_BYTES = 128 * 1024
+_ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 
 
 class RunnerError(ValueError):
@@ -23,8 +25,17 @@ def _load_plan(path: Path) -> dict[str, Any]:
     if file_stat.st_size > MAX_PLAN_BYTES:
         raise RunnerError("runner plan exceeds size limit")
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or set(payload) != {"argv", "cwd", "env"}:
+    required = {"argv", "cwd", "env"}
+    optional = {"env_forward"}
+    if not isinstance(payload, dict) or not required <= set(payload):
         raise RunnerError("runner plan has invalid fields")
+    if set(payload) - required - optional:
+        raise RunnerError("runner plan has invalid fields")
+    forward = payload.get("env_forward", [])
+    if not isinstance(forward, list) or not all(
+        isinstance(name, str) and _ENVIRONMENT_NAME.fullmatch(name) for name in forward
+    ):
+        raise RunnerError("runner env_forward is invalid")
     return payload
 
 
@@ -33,6 +44,7 @@ def run(path: Path) -> None:
     argv = payload["argv"]
     cwd = payload["cwd"]
     environment = payload["env"]
+    forward = payload.get("env_forward", [])
     if (
         not isinstance(argv, list)
         or not argv
@@ -49,8 +61,16 @@ def run(path: Path) -> None:
         for key, value in environment.items()
     ):
         raise RunnerError("runner environment is invalid")
+    # Forwarded variables are declared by name in the plan; values are
+    # resolved here, at exec time, from the launch environment so they are
+    # never persisted in the plan itself.
+    child_environment = dict(environment)
+    for name in forward:
+        value = os.environ.get(name)
+        if value is not None and "\x00" not in value:
+            child_environment[name] = value
     os.chdir(cwd)
-    os.execvpe(argv[0], argv, environment)
+    os.execvpe(argv[0], argv, child_environment)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -434,6 +434,7 @@ class FakeTmux:
         self.dead = False
         self.identity_matches = True
         self.launches: list[TmuxTarget] = []
+        self.environments: list[dict[str, str] | None] = []
 
     def launch(
         self,
@@ -444,6 +445,7 @@ class FakeTmux:
         window_name: str,
         working_directory: Path,
         runner_argv: list[str],
+        environment: dict[str, str] | None = None,
     ) -> TmuxTarget:
         del fleet_id, seat_id, working_directory, runner_argv
         target = TmuxTarget(
@@ -453,6 +455,7 @@ class FakeTmux:
             window_id=f"@{len(self.launches) + 1}",
         )
         self.launches.append(target)
+        self.environments.append(environment)
         return target
 
     def probe(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> ProbeResult:
@@ -762,6 +765,22 @@ def test_spawn_with_an_unknown_role_id_fails_closed_before_side_effects(
     assert tmux.launches == []
     with pytest.raises(FileNotFoundError):
         controller.registry.read_seat(controller.fleet.fleet_id, "lead")
+
+
+def test_spawn_with_an_unsafe_role_id_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    with pytest.raises(LifecycleError, match="not a safe stable ID"):
+        controller.spawn(
+            seat_id="lead",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+            lead=True,
+            role_id="../escape",
+        )
+    assert tmux.launches == []
 
 
 def test_spawn_from_a_markdown_persona_file(

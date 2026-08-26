@@ -27,3 +27,4 @@ class SeatConfig:
     launch_argv: tuple[str, ...] | None = None
     resume_argv: tuple[str, ...] | None = None
     session_capture: str | None = None
+    environment_forward: tuple[str, ...] = ()

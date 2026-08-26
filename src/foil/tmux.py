@@ -76,10 +76,19 @@ class TmuxController:
         window_name: str,
         working_directory: Path,
         runner_argv: list[str],
+        environment: dict[str, str] | None = None,
     ) -> TmuxTarget:
-        """Create a detached verified window running a fixed Foil runner argv."""
+        """Create a detached verified window running a fixed Foil runner argv.
+
+        ``environment`` entries are injected with tmux ``-e`` so selected host
+        variables reach the runner process without being persisted in any
+        Foil state file.
+        """
 
         target = f"{session_name}:{window_name}"
+        env_args: list[str] = []
+        for key, value in (environment or {}).items():
+            env_args.extend(["-e", f"{key}={value}"])
         created_session = False
         if self._session_exists(session_name):
             if self._session_fleet_marker(session_name) != fleet_id:
@@ -94,6 +103,7 @@ class TmuxController:
                     window_name,
                     "-c",
                     str(working_directory),
+                    *env_args,
                     *runner_argv,
                 ],
                 "window launch",
@@ -109,6 +119,7 @@ class TmuxController:
                     window_name,
                     "-c",
                     str(working_directory),
+                    *env_args,
                     *runner_argv,
                 ],
                 "session launch",

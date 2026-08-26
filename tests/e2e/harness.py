@@ -195,13 +195,14 @@ class OperatorFleet:
     def spawn(
         self,
         seat: str,
-        cli: str,
+        cli: str | None = None,
         *,
         lead: bool = False,
         isolated: bool | None = None,
         shared_cwd: bool = False,
         role: str | None = None,
         permission: str | None = None,
+        profile: str | None = None,
         extra: tuple[str, ...] = (),
         **kwargs: Any,
     ) -> OperatorResult:
@@ -212,9 +213,11 @@ class OperatorFleet:
             "--json",
             "--seat",
             seat,
-            "--cli",
-            cli,
         ]
+        if cli:
+            args.extend(["--cli", cli])
+        if profile:
+            args.extend(["--profile", profile])
         if lead:
             args.append("--lead")
         if isolated is True:

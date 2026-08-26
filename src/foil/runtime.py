@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from foil.adapters import (
+    _SAFE_VALUE,
     PERMISSION_PROFILES,
     PERMISSION_SUPERVISED,
     AdapterError,
@@ -43,12 +44,15 @@ from foil.fleet import (
 )
 from foil.known_clis import adapter_id_for_cli
 from foil.naming import tmux_session_name, tmux_window_name
+from foil.profiles import ProfileError, SeatProfile, load_profile
 from foil.registry import (
+    RegistryError,
     RegistryStore,
     SeatRecord,
     TmuxTarget,
     _assert_no_secret,
     _atomic_write_json,
+    _validate_id,
 )
 from foil.resume import ResumeAction, ResumeEvidence, TmuxProbeState, resolve_resume
 from foil.runtime_config import SeatConfig, UsagePoolConfig
@@ -301,6 +305,7 @@ class RuntimeController:
             launch_argv=tuple(profile.get("launch_argv") or ()),
             resume_argv=tuple(profile["resume_argv"]) if profile.get("resume_argv") else None,
             session_capture=profile.get("session_capture"),
+            environment_forward=tuple(profile.get("environment_forward") or ()),
         )
         pool = UsagePoolConfig(
             pool_id=record.usage_pool_id,
@@ -551,14 +556,16 @@ class RuntimeController:
             / "runner-plans"
         )
         plan = plan_dir / f"{runtime.seat.seat_id}.json"
-        return _atomic_write_json(
-            plan,
-            {
-                "argv": argv,
-                "cwd": str(runtime.seat.working_directory),
-                "env": _safe_environment(executable=runtime.executable, foil=foil),
-            },
-        )
+        payload: dict[str, Any] = {
+            "argv": argv,
+            "cwd": str(runtime.seat.working_directory),
+            "env": _safe_environment(executable=runtime.executable, foil=foil),
+        }
+        if runtime.seat.environment_forward:
+            # Variable names only; values are resolved at exec time by the
+            # runner and are never persisted.
+            payload["env_forward"] = list(runtime.seat.environment_forward)
+        return _atomic_write_json(plan, payload)
 
     def _spawn(
         self,
@@ -566,6 +573,7 @@ class RuntimeController:
         argv: list[str],
         *,
         foil: dict[str, str] | None = None,
+        environment: dict[str, str] | None = None,
     ) -> TmuxTarget:
         plan = self._write_plan(runtime, argv, foil=foil)
         return self.tmux.launch(
@@ -581,6 +589,7 @@ class RuntimeController:
             ),
             working_directory=runtime.seat.working_directory,
             runner_argv=[sys.executable, "-m", "foil.runner", str(plan)],
+            environment=environment,
         )
 
     def _status(
@@ -671,12 +680,12 @@ class RuntimeController:
         self,
         *,
         seat_id: str,
-        cli: str,
-        launch_argv: tuple[str, ...],
+        cli: str | None = None,
+        launch_argv: tuple[str, ...] = (),
         actor: str | None = None,
         display_name: str | None = None,
         resume_argv: tuple[str, ...] | None = None,
-        session_capture: str = "generated_uuid",
+        session_capture: str | None = None,
         session_list_argv: tuple[str, ...] | None = None,
         session_id_pointer: str | None = None,
         session_cwd_pointer: str | None = None,
@@ -688,6 +697,7 @@ class RuntimeController:
         model: str | None = None,
         lead: bool = False,
         permission: str = PERMISSION_SUPERVISED,
+        profile_file: str | None = None,
     ) -> list[dict[str, Any]]:
         with self.fleets.operation_lock(self.fleet.fleet_id):
             return self._spawn_locked(
@@ -709,18 +719,19 @@ class RuntimeController:
                 model=model,
                 lead=lead,
                 permission=permission,
+                profile_file=profile_file,
             )
 
     def _spawn_locked(
         self,
         *,
         seat_id: str,
-        cli: str,
+        cli: str | None,
         launch_argv: tuple[str, ...],
         actor: str | None,
         display_name: str | None,
         resume_argv: tuple[str, ...] | None,
-        session_capture: str,
+        session_capture: str | None,
         session_list_argv: tuple[str, ...] | None,
         session_id_pointer: str | None,
         session_cwd_pointer: str | None,
@@ -732,6 +743,7 @@ class RuntimeController:
         model: str | None,
         lead: bool,
         permission: str,
+        profile_file: str | None,
     ) -> list[dict[str, Any]]:
         self.fleets.require_lifecycle_actor(self.fleet.fleet_id, actor)
         if permission not in PERMISSION_PROFILES:
@@ -752,6 +764,50 @@ class RuntimeController:
             raise RuntimeError("fleet must start with a lead seat")
         if shared_cwd and isolated is True:
             raise RuntimeError("shared-cwd cannot be combined with isolated")
+        # Load and merge the declarative seat profile before any side effect.
+        seat_profile: SeatProfile | None = None
+        if profile_file is not None:
+            try:
+                seat_profile = load_profile(profile_file)
+            except ProfileError as exc:
+                raise RuntimeError(str(exc)) from exc
+            if cli is not None and cli != seat_profile.cli:
+                raise RuntimeError(
+                    f"--cli {cli} conflicts with the profile cli {seat_profile.cli}"
+                )
+            cli = seat_profile.cli
+            if isolated is None and seat_profile.isolated is not None:
+                isolated = seat_profile.isolated
+        if not cli:
+            raise RuntimeError("seat spawn requires --cli or --profile")
+        launch_argv = _normalize_remainder(launch_argv)
+        declarative = seat_profile is not None
+        if declarative:
+            assert seat_profile is not None
+            if launch_argv:
+                # Profile-owned remainder argv wins over the file's launch argv.
+                full_launch_argv: tuple[str, ...] = (cli, *launch_argv)
+            elif seat_profile.launch_argv:
+                # Declarative launch argv includes argv[0], like adapter records.
+                full_launch_argv = seat_profile.launch_argv
+            else:
+                full_launch_argv = ()
+            if resume_argv is None:
+                resume_argv = seat_profile.resume_argv
+            if session_capture is None:
+                session_capture = seat_profile.session_capture
+            if session_list_argv is None:
+                session_list_argv = seat_profile.session_list_argv
+            if session_id_pointer is None:
+                session_id_pointer = seat_profile.session_id_pointer
+            if session_cwd_pointer is None:
+                session_cwd_pointer = seat_profile.session_cwd_pointer
+        else:
+            full_launch_argv = ()
+        session_capture = session_capture or "generated_uuid"
+        environment_forward = (
+            seat_profile.environment_forward if seat_profile is not None else ()
+        )
         if isolated is None:
             isolated = not (lead or shared_cwd)
         if shared_cwd:
@@ -759,11 +815,47 @@ class RuntimeController:
         project = Path(fleet.project_root)
         if _git_toplevel(project) is None:
             raise RuntimeError("working directory is not a valid Git worktree")
-        launch_argv = _normalize_remainder(launch_argv)
         # Validate and normalize the role file before any side effect: no new
         # worktree, runner plan, registry record, or tmux window may be
         # created for a missing or invalid role file.
         role_path = _resolve_role_file(project, role_id=role_id, role_path=role_path)
+        # Reject credential-shaped argv and other unsafe launch data before
+        # any runner-plan, bootstrap, or registry artifact is written.
+        launch_data: dict[str, Any] = {
+            "cli": cli,
+            "launch_argv": list(full_launch_argv) if declarative else list(launch_argv),
+            "resume_argv": list(resume_argv) if resume_argv else [],
+            "session_capture": session_capture,
+            "session_list_argv": list(session_list_argv) if session_list_argv else [],
+            "session_id_pointer": session_id_pointer,
+            "session_cwd_pointer": session_cwd_pointer,
+            "display_name": display_name or seat_id,
+            "model": model,
+            "permission": permission,
+            "environment_forward": list(environment_forward),
+            "startup_argv": (
+                list(seat_profile.startup_argv)
+                if seat_profile is not None and seat_profile.startup_argv
+                else []
+            ),
+            "permission_flags": (
+                [
+                    *seat_profile.permission_supervised,
+                    *(seat_profile.permission_auto or ()),
+                ]
+                if seat_profile is not None
+                else []
+            ),
+        }
+        try:
+            _assert_no_secret(launch_data)
+        except RegistryError as exc:
+            raise RuntimeError(
+                f"unsafe launch data rejected before any artifact: {exc}"
+            ) from exc
+        # Values are resolved from the host environment now; they travel
+        # through tmux injection and the runner's exec-time merge only.
+        forwarded_environment = _resolve_forwarded_environment(environment_forward)
         worktree = working_directory or (
             project / "worktrees" / seat_id if isolated else project
         )
@@ -776,11 +868,18 @@ class RuntimeController:
         worktree.mkdir(parents=True, exist_ok=True)
         git_branch = _observed_branch(worktree) or "foil-demo"
         capabilities = LEAD_CAPABILITIES if lead else WORKER_CAPABILITIES
-        adapter_id = adapter_id_for_cli(cli)
+        adapter_id = (
+            seat_profile.profile_id
+            if seat_profile is not None
+            else adapter_id_for_cli(cli)
+        )
         profile = {
             "cli": cli,
             "adapter_id": adapter_id,
-            "launch_argv": list(launch_argv),
+            "profile_id": seat_profile.profile_id if seat_profile is not None else None,
+            "launch_argv": (
+                list(full_launch_argv) if declarative else list(launch_argv)
+            ),
             "resume_argv": list(resume_argv) if resume_argv else None,
             "session_capture": session_capture,
             "session_list_argv": list(session_list_argv) if session_list_argv else None,
@@ -795,6 +894,32 @@ class RuntimeController:
             "isolated": isolated,
             "shared_cwd": shared_cwd,
             "permission": permission,
+            "executable_candidates": (
+                list(seat_profile.executable_candidates)
+                if seat_profile is not None
+                else None
+            ),
+            "version_argv": (
+                list(seat_profile.version_argv)
+                if seat_profile is not None and seat_profile.version_argv
+                else None
+            ),
+            "startup_argv": (
+                list(seat_profile.startup_argv)
+                if seat_profile is not None and seat_profile.startup_argv
+                else None
+            ),
+            "permission_supervised": (
+                list(seat_profile.permission_supervised)
+                if seat_profile is not None
+                else None
+            ),
+            "permission_auto": (
+                list(seat_profile.permission_auto)
+                if seat_profile is not None and seat_profile.permission_auto
+                else None
+            ),
+            "environment_forward": list(environment_forward),
         }
         seat = SeatConfig(
             seat_id=seat_id,
@@ -804,9 +929,10 @@ class RuntimeController:
             worktree_path=worktree,
             git_branch=git_branch,
             cli=cli,
-            launch_argv=launch_argv or None,
+            launch_argv=(full_launch_argv if declarative else launch_argv) or None,
             resume_argv=resume_argv,
             session_capture=session_capture,
+            environment_forward=environment_forward,
         )
         pool = UsagePoolConfig("default", adapter_id, model)
         adapter = _adapter_from_profile(seat, pool, profile)
@@ -843,10 +969,16 @@ class RuntimeController:
             adapter_id=runtime.adapter.adapter_id,
             lead=lead,
             argv_shape=[f"arg-{index}" for index in range(len(argv))],
+            environment_forwarded=len(runtime.seat.environment_forward),
         )
         target = None
         try:
-            target = self._spawn(runtime, argv, foil=foil)
+            target = self._spawn(
+                runtime,
+                argv,
+                foil=foil,
+                environment=forwarded_environment,
+            )
             if runtime.adapter.session_capture.kind is CaptureKind.COMMAND_JSON_LIST_DELTA:
                 native_session_id = self._capture_delta(runtime, baseline, wait_seconds=3)
             record = self._new_record(
@@ -1254,10 +1386,13 @@ class RuntimeController:
                     )
                     incarnation_id = str(uuid.uuid4())
                     previous_incarnation_id = record.incarnation_id
+                forwarded = _resolve_forwarded_environment(
+                    runtime.seat.environment_forward
+                )
                 foil = self._bootstrap_env(
                     runtime, incarnation_id=incarnation_id, profile=profile
                 )
-                target = self._spawn(runtime, argv, foil=foil)
+                target = self._spawn(runtime, argv, foil=foil, environment=forwarded)
                 if (
                     decision.action is ResumeAction.START_FRESH
                     and runtime.adapter.session_capture.kind
@@ -1359,6 +1494,10 @@ def _resolve_role_file(
     """
 
     if role_path is None and role_id:
+        try:
+            _validate_id(role_id, "role_id")
+        except RegistryError as exc:
+            raise RuntimeError(f"role_id is not a safe stable ID: {role_id}") from exc
         candidate = project / ".foil" / "roles" / f"{role_id}.toml"
         if not candidate.is_file():
             raise RuntimeError(
@@ -1387,7 +1526,9 @@ def _adapter_from_profile(
     adapter_id = (
         profile.get("adapter_id") or pool.adapter_id or adapter_id_for_cli(seat.cli)
     )
-    if adapter_id and not custom_argv:
+    # Shipped adapters stay the convenient preset; a declarative profile file
+    # always builds its own record from the same framework.
+    if adapter_id and not custom_argv and not profile.get("profile_id"):
         try:
             return load_builtin_adapter(str(adapter_id))
         except AdapterError as exc:
@@ -1401,8 +1542,16 @@ def _profile_adapter(
     profile: dict[str, Any] | None = None,
 ) -> AdapterRecord:
     profile = profile or {}
-    launch_argv = tuple(profile.get("launch_argv") or seat.launch_argv or ())
-    if not seat.cli or not launch_argv:
+    declarative = bool(profile.get("profile_id"))
+    stored_launch = tuple(profile.get("launch_argv") or seat.launch_argv or ())
+    if declarative:
+        # Declarative argv includes argv[0], like shipped adapter records.
+        launch = stored_launch
+        candidates = tuple(profile.get("executable_candidates") or ())
+    else:
+        launch = (seat.cli, *stored_launch) if seat.cli and stored_launch else ()
+        candidates = (seat.cli,) if seat.cli else ()
+    if not seat.cli or not launch:
         raise RuntimeError(f"seat {seat.seat_id} has no profile-owned launch argv")
     kind = CaptureKind(
         profile.get("session_capture")
@@ -1411,20 +1560,25 @@ def _profile_adapter(
     )
     list_argv = profile.get("session_list_argv")
     models = (pool.model,) if pool.model else ("unspecified",)
-    resume_argv = tuple(profile.get("resume_argv") or seat.resume_argv or ())
+    stored_resume = tuple(profile.get("resume_argv") or seat.resume_argv or ())
+    resume = stored_resume if declarative or not stored_resume else (seat.cli, *stored_resume)
+    version_argv = tuple(profile.get("version_argv") or (seat.cli, "--version"))
+    startup_argv = tuple(profile["startup_argv"]) if profile.get("startup_argv") else None
+    supervised = tuple(profile.get("permission_supervised") or ())
+    auto = tuple(profile["permission_auto"]) if profile.get("permission_auto") else None
     return AdapterRecord(
         adapter_id=str(profile.get("adapter_id") or seat.cli),
         observed_version="profile",
         models=models,
         skill="skills/controller/SKILL.md",
         executable=ExecutableSpec(
-            candidates=(seat.cli,),
-            version_argv=(seat.cli, "--version"),
+            candidates=candidates,
+            version_argv=version_argv,
         ),
-        launch=LaunchSpec(argv=(seat.cli, *launch_argv)),
+        launch=LaunchSpec(argv=launch),
         resume=ResumeSpec(
-            supported=bool(resume_argv),
-            argv=(seat.cli, *resume_argv) if resume_argv else None,
+            supported=bool(resume),
+            argv=resume or None,
         ),
         session_capture=SessionCaptureSpec(
             kind=kind,
@@ -1432,9 +1586,32 @@ def _profile_adapter(
             id_pointer=profile.get("session_id_pointer"),
             cwd_pointer=profile.get("session_cwd_pointer"),
         ),
-        startup=StartupSpec(),
-        permissions=PermissionsSpec(),
+        startup=StartupSpec(argv=startup_argv),
+        permissions=PermissionsSpec(supervised=supervised, auto=auto),
     )
+
+
+def _resolve_forwarded_environment(
+    names: tuple[str, ...],
+) -> dict[str, str] | None:
+    """Resolve declared variable names from the host environment at launch.
+
+    Values travel through tmux injection and the runner's exec-time merge;
+    they are never written to Foil state. Host variables that are absent are
+    skipped so optional credentials stay opt-in.
+    """
+
+    if not names:
+        return None
+    resolved: dict[str, str] = {}
+    for name in names:
+        value = os.environ.get(name)
+        if value is None:
+            continue
+        if not _SAFE_VALUE.fullmatch(value):
+            raise RuntimeError(f"forwarded environment value is unsafe: {name}")
+        resolved[name] = value
+    return resolved
 
 
 def _git_toplevel(start: Path) -> Path | None:
