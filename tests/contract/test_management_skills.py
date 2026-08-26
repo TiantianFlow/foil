@@ -134,6 +134,8 @@ def test_skills_do_not_offer_forbidden_control_surfaces() -> None:
 
 def test_controller_covers_lifecycle_mailbox_and_resume_precedence() -> None:
     body = _parse_skill("controller")[1]
+    assert "canonical checkout" in body
+    assert "feature worktree" in body
     assert "foil init" in body
     assert "foil seat spawn" in body
     assert "foil resume" in body
@@ -153,6 +155,8 @@ def test_controller_covers_lifecycle_mailbox_and_resume_precedence() -> None:
 
 def test_manager_documents_current_staffing_and_later_boundaries() -> None:
     body = _parse_skill("manager")[1]
+    assert "canonical checkout" in body
+    assert "feature worktree" in body
     assert "Python adapter" in body
     assert "foil doctor" in body
     assert "--fresh" in body
@@ -183,6 +187,8 @@ def test_poll_status_skill_distinguishes_files_from_live_status() -> None:
 
 def test_worker_skill_covers_mailbox_ack_and_forbids_lifecycle() -> None:
     body = _parse_skill("worker")[1]
+    assert "canonical checkout" in body
+    assert "feature worktree" in body
     assert "foil ack-message" in body
     assert "foil message-status" in body
     assert "FOIL_SEAT_ID" in body

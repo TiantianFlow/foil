@@ -1709,6 +1709,15 @@ def _worker_instructions(payload: dict[str, Any], seat_id: str) -> str:
             "stop, or remove seats; only the lead manages fleet membership. "
             "Return your assigned work and its evidence to the lead.\n"
         )
+    worktree_block = (
+        "Worktree practice: keep a canonical checkout clean and "
+        "fast-forwarded to remote main. Create one dedicated feature "
+        "worktree per fleet. Run the lead and workers from that fleet "
+        "worktree. Never mutate the canonical checkout. If the canonical "
+        "checkout is dirty, fail and notify rather than altering it. An "
+        "explicitly selected alternative base is allowed. This is "
+        "instruction only, not an enforcement gate.\n"
+    )
     return (
         "# Foil seat\n\n"
         f"You are seat `{seat_id}` in fleet `{fleet}`.\n"
@@ -1734,4 +1743,5 @@ def _worker_instructions(payload: dict[str, Any], seat_id: str) -> str:
         "paths, tools, examples, quotas, and workflows unless explicitly "
         "selected.\n"
         f"{team_block}"
+        f"{worktree_block}"
     )

@@ -750,6 +750,35 @@ def test_generated_instructions_define_lead_and_worker_team_responsibilities(
     assert "you are the fleet lead" not in worker
 
 
+def test_generated_instructions_teach_canonical_checkout_worktree_practice(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+    controller.spawn(
+        seat_id="implementer",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+    )
+    lead = _seat_instructions(controller, tmp_path / "state", "lead")
+    worker = _seat_instructions(controller, tmp_path / "state", "implementer")
+
+    for instructions in (lead, worker):
+        assert "keep a canonical checkout clean and fast-forwarded to remote main" in instructions
+        assert "one dedicated feature worktree per fleet" in instructions
+        assert "Run the lead and workers from that fleet worktree" in instructions
+        assert "Never mutate the canonical checkout" in instructions
+        assert "fail and notify rather than altering it" in instructions
+        assert "explicitly selected alternative base is allowed" in instructions
+        assert "instruction only, not an enforcement gate" in instructions
+
+
 def test_spawn_with_a_missing_role_file_fails_closed_before_side_effects(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
