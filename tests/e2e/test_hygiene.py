@@ -43,3 +43,28 @@ def test_spawned_workers_do_not_dirty_git_status(initialized: OperatorFleet) -> 
 
     gitignore = initialized.project / ".gitignore"
     assert not gitignore.exists() or "worktrees" not in gitignore.read_text(encoding="utf-8")
+
+
+def test_isolated_spawn_preserves_a_tracked_foil_md(initialized: OperatorFleet) -> None:
+    tracked = "# Project-owned FOIL.md\n"
+    (initialized.project / "FOIL.md").write_text(tracked, encoding="utf-8")
+    initialized.git("add", "FOIL.md")
+    initialized.git("commit", "--quiet", "-m", "Track project FOIL.md")
+
+    initialized.spawn("lead", "grok", lead=True, role="manager")
+    spawned = initialized.spawn("implementer", "grok", role="implementer")
+    assert spawned.returncode == 0, spawned.stderr
+
+    clone = initialized.project / "worktrees" / "implementer"
+    assert (clone / "FOIL.md").read_text(encoding="utf-8") == tracked
+    assert _git("status", "--short", cwd=clone) == ""
+    canonical = (
+        initialized.state
+        / "v1"
+        / "fleets"
+        / initialized.fleet_id
+        / "adapter-state"
+        / "implementer"
+        / "FOIL.md"
+    )
+    assert canonical.is_file()

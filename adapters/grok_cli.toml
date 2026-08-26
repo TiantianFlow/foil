@@ -19,7 +19,7 @@ argv = ["grok", "--model", "{model}", "--resume", "{native_session_id}"]
 kind = "generated_uuid"
 
 [startup]
-argv = ["Read {bootstrap_path} before beginning."]
+argv = ["Read {bootstrap_path}, its sibling FOIL.md, and the role_path recorded in bootstrap.json before beginning."]
 
 [permissions]
 auto = ["--always-approve"]

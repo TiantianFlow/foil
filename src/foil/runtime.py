@@ -517,7 +517,9 @@ class RuntimeController:
         instructions_text = _worker_instructions(payload, runtime.seat.seat_id)
         instructions = path.with_name("FOIL.md")
         instructions.write_text(instructions_text, encoding="utf-8")
-        if profile.get("isolated"):
+        if profile.get("isolated") and not _git_tracks(
+            runtime.seat.working_directory, "FOIL.md"
+        ):
             (runtime.seat.working_directory / "FOIL.md").write_text(
                 instructions_text,
                 encoding="utf-8",
@@ -1418,6 +1420,22 @@ def _observed_branch(cwd: Path) -> str | None:
         return None
 
 
+def _git_tracks(cwd: Path, name: str) -> bool:
+    """True when Git tracks name under cwd; an unknown answer refuses overwrite."""
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(cwd), "ls-files", "--error-unmatch", "--", name],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    return result.returncode == 0
+
+
 def _worker_instructions(payload: dict[str, Any], seat_id: str) -> str:
     state = payload["state_dir"]
     fleet = payload["fleet_id"]
@@ -1439,5 +1457,13 @@ def _worker_instructions(payload: dict[str, Any], seat_id: str) -> str:
         f"foil ack-message --state-dir {state} --fleet {fleet} "
         f"--seat {seat_id} --message MESSAGE_ID --actor {seat_id}\n"
         "```\n"
+        "A role or persona file is a specialist lens scoped to this seat's "
+        "assigned work: apply its identity, methods, quality bar, and "
+        "deliverable formats only to the assignment; translate \"you must "
+        "deliver X\" into \"produce X for this assignment and return it to "
+        "the lead\"; do not assume ownership of the whole project. User, "
+        "project, and task instructions override persona-specific stacks, "
+        "paths, tools, examples, quotas, and workflows unless explicitly "
+        "selected.\n"
         "Do not spawn, stop, or remove seats unless you are the lead.\n"
     )

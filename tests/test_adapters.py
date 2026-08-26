@@ -15,6 +15,11 @@ from foil.adapters import (
     permission_argv,
 )
 
+STARTUP_INSTRUCTION = (
+    "Read {bootstrap_path}, its sibling FOIL.md, and the role_path "
+    "recorded in bootstrap.json before beginning."
+)
+
 
 def test_builtin_pool_model_pairs_and_cli_contracts_are_exact() -> None:
     grok = load_builtin_adapter("grok_cli")
@@ -38,7 +43,7 @@ def test_builtin_pool_model_pairs_and_cli_contracts_are_exact() -> None:
         "{native_session_id}",
     )
     assert grok.session_capture.kind is CaptureKind.GENERATED_UUID
-    assert grok.startup.argv == ("Read {bootstrap_path} before beginning.",)
+    assert grok.startup.argv == (STARTUP_INSTRUCTION,)
     assert grok.permissions.supervised == ()
     assert grok.permissions.auto == ("--always-approve",)
 
@@ -62,7 +67,7 @@ def test_builtin_pool_model_pairs_and_cli_contracts_are_exact() -> None:
         "--format",
         "json",
     )
-    assert opencode.startup.argv == ("Read {bootstrap_path} before beginning.",)
+    assert opencode.startup.argv == ("--prompt", STARTUP_INSTRUCTION)
     assert opencode.permissions.auto == ("--auto",)
 
 
@@ -148,12 +153,12 @@ supported = false
 kind = "none"
 
 [startup]
-argv = ["Read {bootstrap_path} before beginning."]
-""",
+"""
+        f'argv = ["{STARTUP_INSTRUCTION}"]\n',
         encoding="utf-8",
     )
     record = load_adapter(path)
-    assert record.startup.argv == ("Read {bootstrap_path} before beginning.",)
+    assert record.startup.argv == (STARTUP_INSTRUCTION,)
     expanded = expand_argv(
         record.launch.argv + record.startup.argv,
         {
@@ -161,7 +166,9 @@ argv = ["Read {bootstrap_path} before beginning."]
             "bootstrap_path": "/tmp/state/bootstrap.json",
         },
     )
-    assert expanded[-1] == "Read /tmp/state/bootstrap.json before beginning."
+    assert expanded[-1] == STARTUP_INSTRUCTION.replace(
+        "{bootstrap_path}", "/tmp/state/bootstrap.json"
+    )
 
 
 def test_adapter_declares_permission_profiles(tmp_path: Path) -> None:
@@ -224,6 +231,38 @@ kind = "none"
         permission_argv(bare, "auto")
     with pytest.raises(AdapterError, match="unknown permission"):
         permission_argv(record, "bypass")
+
+
+def test_adapter_rejects_empty_auto_permission_argv(tmp_path: Path) -> None:
+    path = tmp_path / "empty-auto.toml"
+    path.write_text(
+        """
+schema_version = 1
+id = "fixture"
+observed_version = "1"
+models = ["fixture/model"]
+skill = "skills/adapters/fixture/SKILL.md"
+
+[executable]
+candidates = ["fixture"]
+version_argv = ["fixture", "--version"]
+
+[launch]
+argv = ["fixture", "--model", "{model}"]
+
+[resume]
+supported = false
+
+[session_capture]
+kind = "none"
+
+[permissions]
+auto = []
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(AdapterError, match="permissions.auto"):
+        load_adapter(path)
 
 
 def test_repo_adapters_match_packaged_resources() -> None:

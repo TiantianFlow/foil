@@ -225,6 +225,10 @@ def load_adapter(path: Path | str) -> AdapterRecord:
             supervised = _flag_argv(table.get("supervised"), "permissions.supervised")
         if "auto" in table:
             auto = _flag_argv(table.get("auto"), "permissions.auto")
+            if not auto:
+                raise AdapterError(
+                    "permissions.auto must declare a non-empty argv"
+                )
         permissions = PermissionsSpec(supervised=supervised, auto=auto)
 
     return AdapterRecord(

@@ -22,7 +22,7 @@ id_pointer = "/id"
 cwd_pointer = "/directory"
 
 [startup]
-argv = ["Read {bootstrap_path} before beginning."]
+argv = ["--prompt", "Read {bootstrap_path}, its sibling FOIL.md, and the role_path recorded in bootstrap.json before beginning."]
 
 [permissions]
 auto = ["--auto"]

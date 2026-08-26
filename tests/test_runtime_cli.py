@@ -601,6 +601,34 @@ def test_shared_cwd_is_required_for_a_second_project_root_seat(
     ).is_file()
 
 
+def test_generated_instructions_scope_standalone_personas(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+    instructions = (
+        tmp_path
+        / "state"
+        / "v1"
+        / "fleets"
+        / controller.fleet.fleet_id
+        / "adapter-state"
+        / "lead"
+        / "FOIL.md"
+    ).read_text(encoding="utf-8")
+    assert "specialist lens scoped to this seat's assigned work" in instructions
+    assert "produce X for this assignment and return it to the lead" in instructions
+    assert "do not assume ownership of the whole project" in instructions
+    assert "override persona-specific" in instructions
+    assert "Do not spawn, stop, or remove seats unless you are the lead." in instructions
+
+
 def test_failed_registry_write_stops_the_new_window(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
