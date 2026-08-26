@@ -20,3 +20,9 @@ kind = "command_json_list_delta"
 argv = ["opencode", "session", "list", "--format", "json"]
 id_pointer = "/id"
 cwd_pointer = "/directory"
+
+[startup]
+argv = ["Read {bootstrap_path} before beginning."]
+
+[permissions]
+auto = ["--auto"]

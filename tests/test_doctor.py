@@ -71,3 +71,8 @@ def test_doctor_reports_isolated_worktrees_after_apply(tmp_path: Path) -> None:
     applied = doctor_report(state, fleet.fleet_id, apply=True)
     assert applied["worktrees"]["ok"] is True
     assert worktree.is_dir()
+    parent_exclude = (project / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    clone_exclude = (worktree / ".git" / "info" / "exclude").read_text(encoding="utf-8")
+    assert "/worktrees/" in parent_exclude.splitlines()
+    assert "/FOIL.md" in clone_exclude.splitlines()
+    assert not (project / ".gitignore").exists()

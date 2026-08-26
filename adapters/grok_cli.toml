@@ -17,3 +17,9 @@ argv = ["grok", "--model", "{model}", "--resume", "{native_session_id}"]
 
 [session_capture]
 kind = "generated_uuid"
+
+[startup]
+argv = ["Read {bootstrap_path} before beginning."]
+
+[permissions]
+auto = ["--always-approve"]

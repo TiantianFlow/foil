@@ -23,12 +23,16 @@ from foil.adapters import (
     CaptureKind,
     ExecutableSpec,
     LaunchSpec,
+    PERMISSION_PROFILES,
+    PERMISSION_SUPERVISED,
+    PermissionsSpec,
     ResumeSpec,
     SessionCaptureSpec,
     StartupSpec,
     expand_argv,
     load_adapter,
     load_builtin_adapter,
+    permission_argv,
 )
 from foil.doctor import DoctorError, ensure_isolated_worktree
 from foil.fleet import (
@@ -365,9 +369,16 @@ class RuntimeController:
         self,
         runtime: SeatRuntime,
         native_session_id: str | None,
+        *,
+        permission: str,
+        include_startup: bool = True,
     ) -> list[str]:
-        template = runtime.adapter.launch.argv
-        if runtime.adapter.startup.argv:
+        try:
+            extra = permission_argv(runtime.adapter, permission)
+        except AdapterError as exc:
+            raise RuntimeError(str(exc)) from exc
+        template = runtime.adapter.launch.argv + extra
+        if include_startup and runtime.adapter.startup.argv:
             template = template + runtime.adapter.startup.argv
         return self._expanded(runtime, template, native_session_id)
 
@@ -674,6 +685,7 @@ class RuntimeController:
         working_directory: Path | None = None,
         model: str | None = None,
         lead: bool = False,
+        permission: str = PERMISSION_SUPERVISED,
     ) -> list[dict[str, Any]]:
         with self.fleets.operation_lock(self.fleet.fleet_id):
             return self._spawn_locked(
@@ -694,6 +706,7 @@ class RuntimeController:
                 working_directory=working_directory,
                 model=model,
                 lead=lead,
+                permission=permission,
             )
 
     def _spawn_locked(
@@ -716,8 +729,11 @@ class RuntimeController:
         working_directory: Path | None,
         model: str | None,
         lead: bool,
+        permission: str,
     ) -> list[dict[str, Any]]:
         self.fleets.require_lifecycle_actor(self.fleet.fleet_id, actor)
+        if permission not in PERMISSION_PROFILES:
+            raise RuntimeError(f"unknown permission profile {permission}")
         if shutil.which("tmux") is None:
             raise RuntimeError("tmux is unavailable")
         try:
@@ -776,6 +792,7 @@ class RuntimeController:
             "model": model,
             "isolated": isolated,
             "shared_cwd": shared_cwd,
+            "permission": permission,
         }
         seat = SeatConfig(
             seat_id=seat_id,
@@ -791,6 +808,10 @@ class RuntimeController:
         )
         pool = UsagePoolConfig("default", adapter_id, model)
         adapter = _adapter_from_profile(seat, pool, profile)
+        try:
+            permission_argv(adapter, permission)
+        except AdapterError as exc:
+            raise RuntimeError(str(exc)) from exc
         if model is None and adapter.models:
             model = adapter.models[0]
             pool = UsagePoolConfig("default", adapter_id, model)
@@ -813,7 +834,7 @@ class RuntimeController:
             native_session_id = str(uuid.uuid4())
         elif runtime.adapter.session_capture.kind is CaptureKind.COMMAND_JSON_LIST_DELTA:
             baseline = self._session_ids(runtime)
-        argv = self._launch_argv(runtime, native_session_id)
+        argv = self._launch_argv(runtime, native_session_id, permission=permission)
         self.audit.append(
             "spawn_attempt",
             seat_id,
@@ -947,6 +968,9 @@ class RuntimeController:
                     ),
                     "working_directory": record.working_directory,
                     "worktree_path": record.worktree_path,
+                    "permission": (record.extensions.get("profile") or {}).get(
+                        "permission", PERMISSION_SUPERVISED
+                    ),
                 }
                 for record in self.registry.list_seats(self.fleet.fleet_id)
             ],
@@ -1195,11 +1219,17 @@ class RuntimeController:
                 baseline: set[str] = set()
                 native_session_id = record.native_session_id
                 previous_incarnation_id = record.previous_incarnation_id
+                profile = dict(record.extensions.get("profile") or {})
+                permission = str(profile.get("permission") or PERMISSION_SUPERVISED)
                 if decision.action is ResumeAction.RESUME_NATIVE:
                     assert runtime.adapter.resume.argv is not None
+                    try:
+                        extra = permission_argv(runtime.adapter, permission)
+                    except AdapterError as exc:
+                        raise RuntimeError(str(exc)) from exc
                     argv = self._expanded(
                         runtime,
-                        runtime.adapter.resume.argv,
+                        runtime.adapter.resume.argv + extra,
                         native_session_id,
                     )
                     incarnation_id = record.incarnation_id
@@ -1215,10 +1245,13 @@ class RuntimeController:
                     ):
                         baseline = self._session_ids(runtime)
                         native_session_id = None
-                    argv = self._launch_argv(runtime, native_session_id)
+                    argv = self._launch_argv(
+                        runtime,
+                        native_session_id,
+                        permission=permission,
+                    )
                     incarnation_id = str(uuid.uuid4())
                     previous_incarnation_id = record.incarnation_id
-                profile = dict(record.extensions.get("profile") or {})
                 foil = self._bootstrap_env(
                     runtime, incarnation_id=incarnation_id, profile=profile
                 )
@@ -1367,6 +1400,7 @@ def _profile_adapter(
             cwd_pointer=profile.get("session_cwd_pointer"),
         ),
         startup=StartupSpec(),
+        permissions=PermissionsSpec(),
     )
 
 

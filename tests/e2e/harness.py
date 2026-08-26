@@ -201,6 +201,7 @@ class OperatorFleet:
         isolated: bool | None = None,
         shared_cwd: bool = False,
         role: str | None = None,
+        permission: str | None = None,
         extra: tuple[str, ...] = (),
         **kwargs: Any,
     ) -> OperatorResult:
@@ -224,6 +225,8 @@ class OperatorFleet:
             args.append("--shared-cwd")
         if role:
             args.extend(["--role", role])
+        if permission:
+            args.extend(["--permission", permission])
         args.extend(extra)
         return self.foil(*args, **kwargs)
 
@@ -316,6 +319,17 @@ class OperatorFleet:
         if listed.returncode != 0:
             return []
         return [line for line in listed.stdout.splitlines() if line]
+
+    def runner_plan(self, seat_id: str) -> dict[str, Any]:
+        path = (
+            self.state
+            / "v1"
+            / "fleets"
+            / self.fleet_id
+            / "runner-plans"
+            / f"{seat_id}.json"
+        )
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def seat_record_path(self, seat_id: str) -> Path:
         return (

@@ -122,6 +122,15 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
         choices=("none", "generated_uuid", "command_json_list_delta"),
     )
     spawn.add_argument(
+        "--permission",
+        choices=("supervised", "auto"),
+        default="supervised",
+        help=(
+            "Provider permission profile. supervised asks for approvals. "
+            "auto uses adapter-declared flags. Default supervised."
+        ),
+    )
+    spawn.add_argument(
         "launch_argv",
         nargs=argparse.REMAINDER,
         help="CLI arguments after -- . Example: -- --model claude-sonnet-5",
@@ -565,6 +574,7 @@ def _seat_command(args: argparse.Namespace) -> int:
             working_directory=args.cwd,
             model=args.model,
             lead=args.lead,
+            permission=args.permission,
         )
         return _runtime_payload(args.fleet, seats, as_json=args.json)
     if args.seat_command == "list":

@@ -79,19 +79,47 @@ def ensure_isolated_worktree(project_root: Path, destination: Path) -> None:
     _ensure_initial_commit(git_root)
     if destination.resolve() == git_root.resolve():
         return
-    if destination.is_dir():
-        return
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    if not destination.is_dir():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            subprocess.run(
+                ["git", "clone", "--local", "--quiet", str(git_root), str(destination)],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=_git_env(),
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise DoctorError("could not create independent worktree") from exc
+    exclude_git_pattern(git_root, "/worktrees/")
+    exclude_git_pattern(destination, "/FOIL.md")
+
+
+def exclude_git_pattern(repo: Path, pattern: str) -> None:
+    """Append a private exclude without editing a tracked .gitignore."""
+
     try:
-        subprocess.run(
-            ["git", "clone", "--local", "--quiet", str(git_root), str(destination)],
+        listed = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--git-path", "info/exclude"],
             check=True,
             capture_output=True,
             text=True,
             env=_git_env(),
         )
     except (OSError, subprocess.CalledProcessError) as exc:
-        raise DoctorError("could not create independent worktree") from exc
+        raise DoctorError("could not update Git exclude") from exc
+    raw = listed.stdout.strip()
+    if not raw:
+        raise DoctorError("could not update Git exclude")
+    path = Path(raw)
+    if not path.is_absolute():
+        path = repo / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    current = path.read_text(encoding="utf-8") if path.is_file() else ""
+    if pattern in current.splitlines():
+        return
+    prefix = "" if not current or current.endswith("\n") else "\n"
+    path.write_text(f"{current}{prefix}{pattern}\n", encoding="utf-8")
 
 
 def ensure_registered_worktrees(project_root: Path, records) -> None:

@@ -66,6 +66,12 @@ class StartupSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class PermissionsSpec:
+    supervised: tuple[str, ...] = ()
+    auto: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AdapterRecord:
     adapter_id: str
     observed_version: str
@@ -76,6 +82,7 @@ class AdapterRecord:
     resume: ResumeSpec
     session_capture: SessionCaptureSpec
     startup: StartupSpec = field(default_factory=StartupSpec)
+    permissions: PermissionsSpec = field(default_factory=PermissionsSpec)
     schema_version: int = ADAPTER_SCHEMA_VERSION
 
 
@@ -89,6 +96,20 @@ def _string(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value or not _SAFE_VALUE.fullmatch(value):
         raise AdapterError(f"{field} must be a bounded non-empty string")
     return value
+
+
+def _flag_argv(value: Any, field: str) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise AdapterError(f"{field} must be an array of strings")
+    if not value:
+        return ()
+    result = tuple(_string(token, f"{field} token") for token in value)
+    for token in result:
+        if _PLACEHOLDER.search(token):
+            raise AdapterError(f"{field} cannot contain placeholders")
+        if "{" in token or "}" in token:
+            raise AdapterError(f"{field} contains malformed placeholder")
+    return result
 
 
 def _argv(value: Any, field: str, *, required: bool = True) -> tuple[str, ...] | None:
@@ -145,6 +166,7 @@ def load_adapter(path: Path | str) -> AdapterRecord:
             "resume",
             "session_capture",
             "startup",
+            "permissions",
         },
         "adapter",
     )
@@ -193,6 +215,18 @@ def load_adapter(path: Path | str) -> AdapterRecord:
         _only(startup, {"argv"}, "startup")
         startup_argv = _argv(startup.get("argv"), "startup")
 
+    permissions = PermissionsSpec()
+    if "permissions" in payload:
+        table = _object(payload.get("permissions"), "permissions")
+        _only(table, {"supervised", "auto"}, "permissions")
+        supervised = ()
+        auto: tuple[str, ...] | None = None
+        if "supervised" in table:
+            supervised = _flag_argv(table.get("supervised"), "permissions.supervised")
+        if "auto" in table:
+            auto = _flag_argv(table.get("auto"), "permissions.auto")
+        permissions = PermissionsSpec(supervised=supervised, auto=auto)
+
     return AdapterRecord(
         adapter_id=_string(payload.get("id"), "id"),
         observed_version=_string(payload.get("observed_version"), "observed_version"),
@@ -211,6 +245,7 @@ def load_adapter(path: Path | str) -> AdapterRecord:
             cwd_pointer=cwd_pointer,
         ),
         startup=StartupSpec(argv=startup_argv),
+        permissions=permissions,
     )
 
 
@@ -233,6 +268,25 @@ def load_builtin_adapter(adapter_id: str) -> AdapterRecord:
     if record.adapter_id != adapter_id:
         raise AdapterError("built-in adapter identity does not match its file name")
     return record
+
+
+PERMISSION_SUPERVISED = "supervised"
+PERMISSION_AUTO = "auto"
+PERMISSION_PROFILES = (PERMISSION_SUPERVISED, PERMISSION_AUTO)
+
+
+def permission_argv(adapter: AdapterRecord, profile: str) -> tuple[str, ...]:
+    """Return extra launch/resume flags for an explicit permission profile."""
+
+    if profile == PERMISSION_SUPERVISED:
+        return adapter.permissions.supervised
+    if profile == PERMISSION_AUTO:
+        if adapter.permissions.auto is None:
+            raise AdapterError(
+                f"permission profile auto is unsupported for adapter {adapter.adapter_id}"
+            )
+        return adapter.permissions.auto
+    raise AdapterError(f"unknown permission profile {profile}")
 
 
 def expand_argv(template: tuple[str, ...], values: dict[str, str]) -> list[str]:

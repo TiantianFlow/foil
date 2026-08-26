@@ -739,3 +739,20 @@ def test_cli_dead_tmux_status_and_native_resume_survive_transient_adapter_path_l
         assert all(seat["state"] == "working" for seat in resume_payload["seats"])
     finally:
         run_foil("seat", "stop", *flags, "--all", env=launch_env)
+
+
+def test_auto_permission_fails_on_profile_owned_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    with pytest.raises(LifecycleError, match="unsupported"):
+        controller.spawn(
+            seat_id="lead",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+            lead=True,
+            permission="auto",
+        )
+    with pytest.raises(FileNotFoundError):
+        controller.registry.read_seat(controller.fleet.fleet_id, "lead")

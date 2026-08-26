@@ -12,6 +12,7 @@ from foil.adapters import (
     expand_argv,
     load_adapter,
     load_builtin_adapter,
+    permission_argv,
 )
 
 
@@ -37,6 +38,9 @@ def test_builtin_pool_model_pairs_and_cli_contracts_are_exact() -> None:
         "{native_session_id}",
     )
     assert grok.session_capture.kind is CaptureKind.GENERATED_UUID
+    assert grok.startup.argv == ("Read {bootstrap_path} before beginning.",)
+    assert grok.permissions.supervised == ()
+    assert grok.permissions.auto == ("--always-approve",)
 
     assert opencode.observed_version == "1.18.21"
     assert opencode.models == ("xai/grok-4.6",)
@@ -58,6 +62,8 @@ def test_builtin_pool_model_pairs_and_cli_contracts_are_exact() -> None:
         "--format",
         "json",
     )
+    assert opencode.startup.argv == ("Read {bootstrap_path} before beginning.",)
+    assert opencode.permissions.auto == ("--auto",)
 
 
 def test_argv_expansion_is_token_preserving_and_rejects_unknowns() -> None:
@@ -156,6 +162,78 @@ argv = ["Read {bootstrap_path} before beginning."]
         },
     )
     assert expanded[-1] == "Read /tmp/state/bootstrap.json before beginning."
+
+
+def test_adapter_declares_permission_profiles(tmp_path: Path) -> None:
+    path = tmp_path / "permissions.toml"
+    path.write_text(
+        """
+schema_version = 1
+id = "fixture"
+observed_version = "1"
+models = ["fixture/model"]
+skill = "skills/adapters/fixture/SKILL.md"
+
+[executable]
+candidates = ["fixture"]
+version_argv = ["fixture", "--version"]
+
+[launch]
+argv = ["fixture", "--model", "{model}"]
+
+[resume]
+supported = false
+
+[session_capture]
+kind = "none"
+
+[permissions]
+auto = ["--always-approve"]
+""",
+        encoding="utf-8",
+    )
+    record = load_adapter(path)
+    assert permission_argv(record, "supervised") == ()
+    assert permission_argv(record, "auto") == ("--always-approve",)
+    missing = tmp_path / "no-auto.toml"
+    missing.write_text(
+        """
+schema_version = 1
+id = "fixture"
+observed_version = "1"
+models = ["fixture/model"]
+skill = "skills/adapters/fixture/SKILL.md"
+
+[executable]
+candidates = ["fixture"]
+version_argv = ["fixture", "--version"]
+
+[launch]
+argv = ["fixture", "--model", "{model}"]
+
+[resume]
+supported = false
+
+[session_capture]
+kind = "none"
+""",
+        encoding="utf-8",
+    )
+    bare = load_adapter(missing)
+    with pytest.raises(AdapterError, match="unsupported"):
+        permission_argv(bare, "auto")
+    with pytest.raises(AdapterError, match="unknown permission"):
+        permission_argv(record, "bypass")
+
+
+def test_repo_adapters_match_packaged_resources() -> None:
+    root = Path(__file__).parents[1]
+    for name in ("grok_cli.toml", "opencode.toml"):
+        public = (root / "adapters" / name).read_text(encoding="utf-8")
+        packaged = (root / "src" / "foil" / "resources" / "adapters" / name).read_text(
+            encoding="utf-8"
+        )
+        assert public == packaged
 
 
 def test_core_runtime_has_no_known_provider_name_conditionals() -> None:

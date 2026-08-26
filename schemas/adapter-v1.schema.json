@@ -71,6 +71,20 @@
       "additionalProperties": false,
       "required": ["argv"],
       "properties": {"argv": {"$ref": "#/$defs/argv"}}
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "supervised": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "auto": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
     }
   },
   "$defs": {
