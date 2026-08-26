@@ -175,4 +175,3 @@ def test_live_authenticated_lead_to_worker_roundtrip(live_fleet: OperatorFleet) 
         assert removed.returncode == 0, removed.stderr
     assert not fleet.tmux_alive()
     assert fleet.tmux_windows() == []
-
