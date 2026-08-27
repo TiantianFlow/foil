@@ -58,8 +58,11 @@ forward = ["PI_API_KEY"]
 
 ```sh
 foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --json --seat researcher
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat researcher
 ```
+
+Copy `state_root` and `fleet_id` from `foil init` JSON into those flags.
+`--seat` alone is not enough.
 
 `--profile` on spawn remains an ad hoc override of the seat recipe.
 `--cli` is optional when a profile (from the seat file or `--profile`)

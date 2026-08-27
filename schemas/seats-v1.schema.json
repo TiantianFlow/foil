@@ -18,6 +18,20 @@
     "seat": {
       "type": "object",
       "additionalProperties": false,
+      "description": "File recipes require cli or profile, and role XOR role_file. Spawn flags may pass both role (label) and role_file (path).",
+      "allOf": [
+        {
+          "anyOf": [
+            {"required": ["cli"]},
+            {"required": ["profile"]}
+          ]
+        },
+        {
+          "not": {
+            "required": ["role", "role_file"]
+          }
+        }
+      ],
       "properties": {
         "lead": {"type": "boolean"},
         "cli": {"type": "string", "minLength": 1},

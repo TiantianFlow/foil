@@ -176,7 +176,17 @@ def test_initialize_project_scaffolds_role_library_and_empty_fleet(tmp_path: Pat
     assert not (project / ".foil" / "runtime.toml").exists()
     seats_toml = project / ".foil" / "seats.toml"
     assert seats_toml.is_file()
-    assert tomllib.loads(seats_toml.read_text(encoding="utf-8")) == {"schema_version": 1}
+    roster = tomllib.loads(seats_toml.read_text(encoding="utf-8"))
+    assert roster["schema_version"] == 1
+    assert set(roster["seats"]) == {"lead", "implementer", "reviewer-challenger"}
+    assert roster["seats"]["lead"] == {"lead": True, "cli": "grok", "role": "manager"}
+    assert roster["seats"]["implementer"] == {"cli": "grok", "role": "implementer"}
+    assert roster["seats"]["reviewer-challenger"] == {
+        "cli": "opencode",
+        "role": "reviewer-challenger",
+        "permission": "auto",
+    }
+    assert roster["seats"]["lead"]["cli"] != roster["seats"]["reviewer-challenger"]["cli"]
 
     specializations: set[str] = set()
     for role_id in DEFAULT_ROLE_IDS:

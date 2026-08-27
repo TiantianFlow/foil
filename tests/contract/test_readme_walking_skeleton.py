@@ -21,6 +21,7 @@ T1_T6_HEADINGS = {
         "git init -b foil-demo",
     ),
     "T3 — Spawn a lead and complementary seats": (
+        "foil seats set",
         "foil seat spawn",
         "foil status",
         "implementer",
@@ -95,6 +96,7 @@ def test_walking_skeleton_documents_complete_contract() -> None:
         "uv tool install --reinstall .",
         "foil init .",
         "git init -b foil-demo",
+        "foil seats set",
         "foil seat spawn",
         "foil status",
         "foil poll-status",

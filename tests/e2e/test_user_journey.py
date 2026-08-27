@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tomllib
 import uuid
 from pathlib import Path
 
@@ -51,6 +52,7 @@ def test_operator_help_lists_the_commands_a_controller_uses() -> None:
         "set-state",
         "catalog-list",
         "catalog-map",
+        "seats",
     ):
         assert command in result.stdout
     assert "launch" not in result.stdout
@@ -68,6 +70,41 @@ def test_init_emits_the_paths_an_operator_copies_into_later_commands(
     assert (fleet.project / ".foil" / "roles" / "implementer.toml").is_file()
     assert (fleet.project / ".foil" / "roles" / "reviewer-challenger.toml").is_file()
     assert not (fleet.project / ".foil" / "runtime.toml").exists()
+    roster = tomllib.loads(
+        (fleet.project / ".foil" / "seats.toml").read_text(encoding="utf-8")
+    )
+    assert set(roster["seats"]) == {"lead", "implementer", "reviewer-challenger"}
+    assert roster["seats"]["lead"]["cli"] == "grok"
+    assert roster["seats"]["reviewer-challenger"]["cli"] == "opencode"
+
+
+def test_persist_then_spawn_lead_without_adhoc_cli_lead_or_permission(
+    initialized: OperatorFleet,
+) -> None:
+    fleet = initialized
+    written = fleet.foil(
+        "seats",
+        "set",
+        "--project",
+        str(fleet.project),
+        "--json",
+        "--seat",
+        "lead",
+        "--cli",
+        "grok",
+        "--role",
+        "manager",
+    )
+    assert written.returncode == 0, written.stderr
+    spawned = fleet.spawn("lead")
+    payload = spawned.json()
+    seats = _seats(payload)
+    assert set(seats) == {"lead"}
+    assert seats["lead"]["state"] == "working"
+    inspect = fleet.foil("seat", "inspect", *fleet.fleet_flags(), "--seat", "lead").json()
+    assert inspect["profile"]["cli"] == "grok"
+    assert inspect["profile"]["is_lead"] is True
+    assert inspect["profile"]["permission"] == "supervised"
 
 
 def test_t2_through_t6_lead_owned_user_journey(initialized: OperatorFleet) -> None:

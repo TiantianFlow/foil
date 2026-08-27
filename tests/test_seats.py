@@ -16,6 +16,7 @@ from foil.seats import (
     dump_roster,
     load_roster,
     resolve_spawn_staffing,
+    starter_roster_text,
     upsert_seat,
 )
 from tests.test_profiles import (
@@ -320,6 +321,135 @@ def test_seats_cli_set_list_and_show(tmp_path: Path) -> None:
     )
     assert shown.returncode == 0, shown.stderr
     assert json.loads(shown.stdout)["model"] == "grok-4.6"
+
+
+def test_starter_roster_is_a_complementary_editable_default() -> None:
+    roster = load_roster_file_from_text(starter_roster_text())
+    assert set(roster) == {"lead", "implementer", "reviewer-challenger"}
+    assert roster["lead"].resolved_lead() is True
+    assert roster["lead"].cli == "grok"
+    assert roster["implementer"].cli == "grok"
+    assert roster["reviewer-challenger"].cli == "opencode"
+    assert roster["reviewer-challenger"].cli != roster["lead"].cli
+
+
+def load_roster_file_from_text(text: str) -> dict[str, SeatStaffing]:
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory() as raw:
+        root = Path(raw)
+        _write_roster(root, text)
+        return load_roster(root)
+
+
+def test_no_lead_unsets_a_mistaken_lead_row(tmp_path: Path) -> None:
+    upsert_seat(
+        tmp_path,
+        SeatStaffing(seat_id="lead", lead=True, cli="grok", role="manager"),
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "foil",
+            "seats",
+            "set",
+            "--project",
+            str(tmp_path),
+            "--json",
+            "--seat",
+            "lead",
+            "--no-lead",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["seat"]["lead"] is False
+    assert "lead = false" in (tmp_path / ".foil" / "seats.toml").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_seat_id_lead_defaults_to_lead_without_the_lead_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _tmux, _executable = _profile_controller(tmp_path, monkeypatch)
+    project = tmp_path / "project"
+    _write_roster(
+        project,
+        """
+schema_version = 1
+
+[seats.lead]
+cli = "fixture-agent"
+""",
+    )
+
+    spawned = controller.spawn(seat_id="lead", launch_argv=generated_argv())
+
+    assert {seat["seat_id"] for seat in spawned} == {"lead"}
+    record = controller.registry.read_seat(controller.fleet.fleet_id, "lead")
+    assert record.extensions["profile"]["is_lead"] is True
+
+
+def test_first_non_lead_spawn_names_the_fix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, _tmux, _executable = _profile_controller(tmp_path, monkeypatch)
+    project = tmp_path / "project"
+    _write_roster(
+        project,
+        """
+schema_version = 1
+
+[seats.implementer]
+cli = "fixture-agent"
+""",
+    )
+
+    from foil.runtime import RuntimeError as LifecycleError
+
+    with pytest.raises(LifecycleError, match="not marked lead"):
+        controller.spawn(seat_id="implementer", launch_argv=generated_argv())
+
+
+def test_cli_plus_profile_mismatch_is_rejected_at_load(
+    tmp_path: Path,
+) -> None:
+    profile = tmp_path / "profiles" / "spec.toml"
+    profile.parent.mkdir()
+    profile.write_text(COMPLETE_PROFILE, encoding="utf-8")
+    _write_roster(
+        tmp_path,
+        """
+schema_version = 1
+
+[seats.spec]
+cli = "other-agent"
+profile = "profiles/spec.toml"
+""",
+    )
+    with pytest.raises(SeatStaffingError, match="conflicts with the profile cli"):
+        load_roster(tmp_path)
+
+
+def test_seats_schema_requires_launch_source_and_exclusive_role() -> None:
+    schema = json.loads(
+        (Path(__file__).parents[1] / "schemas" / "seats-v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    seat = schema["$defs"]["seat"]
+    assert any("cli" in option.get("required", []) for option in seat["allOf"][0]["anyOf"])
+    assert any(
+        "profile" in option.get("required", []) for option in seat["allOf"][0]["anyOf"]
+    )
+    assert seat["allOf"][1]["not"]["required"] == ["role", "role_file"]
+    assert "Spawn flags may pass both" in seat["description"]
 
 
 def test_seats_set_without_cli_or_profile_fails_closed(tmp_path: Path) -> None:

@@ -123,7 +123,15 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
             "and environment forwarding by variable name."
         ),
     )
-    spawn.add_argument("--lead", action="store_true")
+    spawn.add_argument(
+        "--lead",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Mark this seat as the fleet lead. Seat id lead defaults to lead "
+            "unless --no-lead. The first live seat must be the lead."
+        ),
+    )
     spawn.add_argument("--role", metavar="ROLE_ID")
     spawn.add_argument("--role-file", type=Path)
     spawn.add_argument(
@@ -134,7 +142,8 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
     )
     spawn.add_argument(
         "--shared-cwd",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="Allow this seat to share a working directory with another seat.",
     )
     spawn.add_argument("--cwd", type=Path)
@@ -211,16 +220,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "init",
         help="Scaffold a role library and an empty live fleet.",
         description=(
-            "Write role templates to .foil/roles/, an empty .foil/seats.toml "
-            "roster if missing, and an empty live fleet registry. Accepts an empty "
-            "directory or an existing Git repository; tracked and untracked files "
-            "and Git state are preserved. A non-empty directory outside Git and "
-            "conflicting .foil or fleet-state collisions fail closed. No live seats "
-            "are created. Persist a seat recipe with `foil seats set`, then spawn "
-            "the lead with `foil seat spawn --seat lead`. In a new empty directory, "
-            "create a local Git identity after init with `git init -b foil-demo`. "
-            "State precedence is FOIL_STATE_DIR, the Git common directory, "
-            "XDG_STATE_HOME, then the documented platform fallback."
+            "Write role templates to .foil/roles/, a complementary starter "
+            ".foil/seats.toml roster if missing, and an empty live fleet registry. "
+            "Accepts an empty directory or an existing Git repository; tracked and "
+            "untracked files and Git state are preserved. A non-empty directory "
+            "outside Git and conflicting .foil or fleet-state collisions fail "
+            "closed. No live seats are created. Edit the starter roster with "
+            "`foil seats set` after you discover local CLIs, then spawn with "
+            "`foil seat spawn --state-dir … --fleet … --seat lead`. In a new empty "
+            "directory, create a local Git identity after init with "
+            "`git init -b foil-demo`. State precedence is FOIL_STATE_DIR, the Git "
+            "common directory, XDG_STATE_HOME, then the documented platform "
+            "fallback."
         ),
     )
     init.add_argument(
@@ -424,7 +435,8 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "Project-local spawn recipes. This file is not live membership; the "
             "registry still owns who is running. Persist CLI, model, profile, "
-            "role, and role-file here, then spawn with `foil seat spawn --seat ID`."
+            "role, and role-file here, then spawn with "
+            "`foil seat spawn --state-dir … --fleet … --seat ID`."
         ),
     )
     seats_sub = seats.add_subparsers(dest="seats_command", required=True)
@@ -439,7 +451,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_project_flag(seats_set)
     seats_set.add_argument("--seat", required=True, metavar="SEAT_ID")
-    seats_set.add_argument("--lead", action="store_true")
+    seats_set.add_argument(
+        "--lead",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Persist lead = true, or --no-lead to clear a mistaken lead row.",
+    )
     seats_set.add_argument("--cli")
     seats_set.add_argument("--profile", type=Path, metavar="PATH")
     seats_set.add_argument("--model")
@@ -452,7 +469,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Default isolation for this seat recipe.",
     )
-    seats_set.add_argument("--shared-cwd", action="store_true")
+    seats_set.add_argument(
+        "--shared-cwd",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Persist shared_cwd, or --no-shared-cwd to clear it.",
+    )
     seats_set.add_argument("--permission", choices=("supervised", "auto"))
     seats_set.add_argument("--display-name")
     return parser

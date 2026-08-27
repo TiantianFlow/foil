@@ -2,7 +2,8 @@
 
 This file is a spawn recipe, not live membership. The registry still owns
 who is running. A seat id looks up CLI, model, profile, role, role-file,
-and workdir so `foil seat spawn --seat spec` can run without ad hoc flags.
+and workdir so spawn can omit ad hoc `--cli` / `--model`. Lifecycle
+commands still need `--state-dir` and `--fleet`.
 Flags remain overrides. Personas stay untouched Markdown; this file only
 points at them.
 """
@@ -16,11 +17,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from foil.profiles import ProfileError, load_profile
 from foil.registry import RegistryError, _assert_no_secret, _validate_id
 
 SEATS_SCHEMA_VERSION = 1
 SEATS_RELATIVE_PATH = Path(".foil") / "seats.toml"
-_TRUE_FALSE = frozenset({"true", "false"})
+DEFAULT_LEAD_SEAT_ID = "lead"
 
 
 class SeatStaffingError(ValueError):
@@ -30,7 +32,7 @@ class SeatStaffingError(ValueError):
 @dataclass(frozen=True, slots=True)
 class SeatStaffing:
     seat_id: str
-    lead: bool = False
+    lead: bool | None = None
     cli: str | None = None
     profile: str | None = None
     model: str | None = None
@@ -45,10 +47,15 @@ class SeatStaffing:
     def has_launch_source(self) -> bool:
         return bool(self.cli or self.profile)
 
+    def resolved_lead(self) -> bool:
+        if self.lead is not None:
+            return self.lead
+        return self.seat_id == DEFAULT_LEAD_SEAT_ID
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "seat_id": self.seat_id,
-            "lead": self.lead,
+            "lead": self.resolved_lead(),
             "cli": self.cli,
             "profile": self.profile,
             "model": self.model,
@@ -67,18 +74,48 @@ def seats_path(project_root: Path | str) -> Path:
 
 
 def empty_roster_text() -> str:
-    return "schema_version = 1\n"
+    return starter_roster_text()
+
+
+def starter_roster_text() -> str:
+    return (
+        "# Complementary starter roster. Edit with `foil seats set` after you\n"
+        "# discover local CLIs. The challenger uses a different CLI on purpose.\n"
+        "# This file is a spawn recipe, not live membership.\n"
+        "schema_version = 1\n"
+        "\n"
+        "[seats.lead]\n"
+        "lead = true\n"
+        'cli = "grok"\n'
+        'role = "manager"\n'
+        "\n"
+        "[seats.implementer]\n"
+        'cli = "grok"\n'
+        'role = "implementer"\n'
+        "\n"
+        '[seats.reviewer-challenger]\n'
+        'cli = "opencode"\n'
+        'role = "reviewer-challenger"\n'
+        'permission = "auto"\n'
+    )
 
 
 def load_roster(project_root: Path | str) -> dict[str, SeatStaffing]:
     path = seats_path(project_root)
     if not path.exists():
         return {}
-    return load_roster_file(path)
+    return load_roster_file(path, project_root=project_root)
 
 
-def load_roster_file(path: Path | str) -> dict[str, SeatStaffing]:
+def load_roster_file(
+    path: Path | str, *, project_root: Path | str | None = None
+) -> dict[str, SeatStaffing]:
     roster_path = Path(path)
+    project = (
+        Path(project_root).expanduser().resolve()
+        if project_root is not None
+        else roster_path.expanduser().resolve().parent.parent
+    )
     if roster_path.is_symlink() or not roster_path.is_file():
         raise SeatStaffingError(f"seat config must be a regular non-symlink file: {roster_path}")
     try:
@@ -105,7 +142,7 @@ def load_roster_file(path: Path | str) -> dict[str, SeatStaffing]:
         raise SeatStaffingError("seats must be a table of seat ids")
     seats: dict[str, SeatStaffing] = {}
     for seat_id, raw in raw_seats.items():
-        staffing = _parse_seat(seat_id, raw)
+        staffing = _parse_seat(seat_id, raw, project)
         seats[staffing.seat_id] = staffing
     try:
         _assert_no_secret({"seats": {key: value.to_dict() for key, value in seats.items()}})
@@ -120,11 +157,12 @@ def lookup_seat(project_root: Path | str, seat_id: str) -> SeatStaffing | None:
 
 
 def upsert_seat(project_root: Path | str, staffing: SeatStaffing) -> Path:
-    _validate_staffing(staffing)
-    path = seats_path(project_root)
-    roster = load_roster(project_root) if path.exists() else {}
+    project = Path(project_root).expanduser().resolve()
+    _validate_staffing(staffing, project_root=project)
+    path = seats_path(project)
+    roster = load_roster(project) if path.exists() else {}
     roster[staffing.seat_id] = staffing
-    write_roster(project_root, roster)
+    write_roster(project, roster)
     return path
 
 
@@ -133,7 +171,7 @@ def write_roster(project_root: Path | str, roster: dict[str, SeatStaffing]) -> P
     path = seats_path(project)
     path.parent.mkdir(parents=True, exist_ok=True)
     for staffing in roster.values():
-        _validate_staffing(staffing)
+        _validate_staffing(staffing, project_root=project)
     try:
         _assert_no_secret({"seats": {key: value.to_dict() for key, value in roster.items()}})
     except RegistryError as exc:
@@ -159,8 +197,10 @@ def dump_roster(roster: dict[str, SeatStaffing]) -> str:
     for seat_id in sorted(roster):
         staffing = roster[seat_id]
         lines.append(f"[seats.{_toml_key(staffing.seat_id)}]")
-        if staffing.lead:
+        if staffing.lead is True:
             lines.append("lead = true")
+        elif staffing.lead is False:
+            lines.append("lead = false")
         _emit_optional(lines, "cli", staffing.cli)
         _emit_optional(lines, "profile", staffing.profile)
         _emit_optional(lines, "model", staffing.model)
@@ -181,7 +221,7 @@ def apply_overrides(
     base: SeatStaffing | None,
     *,
     seat_id: str,
-    lead: bool = False,
+    lead: bool | None = None,
     cli: str | None = None,
     profile: str | None = None,
     model: str | None = None,
@@ -189,7 +229,7 @@ def apply_overrides(
     role_file: str | None = None,
     cwd: str | None = None,
     isolated: bool | None = None,
-    shared_cwd: bool = False,
+    shared_cwd: bool | None = None,
     permission: str | None = None,
     display_name: str | None = None,
 ) -> SeatStaffing:
@@ -197,10 +237,17 @@ def apply_overrides(
 
     Each provided flag wins. Passing ``--role`` clears a configured
     ``role_file`` unless ``--role-file`` is also passed, and the reverse.
+    ``lead`` and ``shared_cwd`` are tri-state: ``None`` keeps the file
+    value (or the default lead id), ``True``/``False`` overwrite it.
     """
 
     merged = SeatStaffing(seat_id=seat_id) if base is None else base
-    lead_value = lead or merged.lead
+    if lead is not None:
+        lead_value: bool | None = lead
+    elif merged.lead is not None:
+        lead_value = merged.lead
+    else:
+        lead_value = seat_id == DEFAULT_LEAD_SEAT_ID
     role_value = merged.role
     role_file_value = merged.role_file
     if role is not None:
@@ -222,7 +269,7 @@ def apply_overrides(
         role_file=role_file_value,
         cwd=str(cwd) if cwd is not None else merged.cwd,
         isolated=isolated if isolated is not None else merged.isolated,
-        shared_cwd=shared_cwd or merged.shared_cwd,
+        shared_cwd=merged.shared_cwd if shared_cwd is None else shared_cwd,
         permission=permission if permission is not None else merged.permission,
         display_name=display_name if display_name is not None else merged.display_name,
     )
@@ -238,8 +285,8 @@ def resolve_spawn_staffing(
     base = roster.get(seat_id)
     merged = apply_overrides(base, seat_id=seat_id, **overrides)
     if merged.has_launch_source():
-        _validate_staffing(merged, exclusive_role=False)
-        return merged
+        _validate_staffing(merged, exclusive_role=False, project_root=project_root)
+        return replace(merged, lead=merged.resolved_lead())
     if not path.exists():
         raise SeatStaffingError(
             f"seat {seat_id} has no predefined config and no --cli/--profile override; "
@@ -256,7 +303,7 @@ def resolve_spawn_staffing(
     )
 
 
-def _parse_seat(seat_id: str, raw: Any) -> SeatStaffing:
+def _parse_seat(seat_id: str, raw: Any, project_root: Path | str) -> SeatStaffing:
     if not isinstance(raw, dict):
         raise SeatStaffingError(f"seats.{seat_id} must be a table")
     try:
@@ -282,7 +329,7 @@ def _parse_seat(seat_id: str, raw: Any) -> SeatStaffing:
         )
     staffing = SeatStaffing(
         seat_id=seat_id,
-        lead=_bool(raw.get("lead"), f"seats.{seat_id}.lead", default=False),
+        lead=_optional_bool(raw.get("lead"), f"seats.{seat_id}.lead"),
         cli=_optional_string(raw.get("cli"), f"seats.{seat_id}.cli"),
         profile=_optional_string(raw.get("profile"), f"seats.{seat_id}.profile"),
         model=_optional_string(raw.get("model"), f"seats.{seat_id}.model"),
@@ -296,19 +343,29 @@ def _parse_seat(seat_id: str, raw: Any) -> SeatStaffing:
             raw.get("display_name"), f"seats.{seat_id}.display_name"
         ),
     )
-    _validate_staffing(staffing)
+    _validate_staffing(staffing, project_root=project_root)
     return staffing
 
 
-def _validate_staffing(staffing: SeatStaffing, *, exclusive_role: bool = True) -> None:
+def _validate_staffing(
+    staffing: SeatStaffing,
+    *,
+    exclusive_role: bool = True,
+    project_root: Path | str | None = None,
+) -> None:
     try:
         _validate_id(staffing.seat_id, "seat_id")
     except RegistryError as exc:
         raise SeatStaffingError(str(exc)) from exc
+    if exclusive_role and not staffing.has_launch_source():
+        raise SeatStaffingError(
+            f"seat {staffing.seat_id} config has neither cli nor profile"
+        )
     if exclusive_role and staffing.role and staffing.role_file:
         raise SeatStaffingError(
             f"seat {staffing.seat_id} cannot set both role and role_file"
         )
+    _assert_cli_matches_profile(staffing, project_root)
     if staffing.permission is not None and staffing.permission not in {
         "supervised",
         "auto",
@@ -319,6 +376,32 @@ def _validate_staffing(staffing: SeatStaffing, *, exclusive_role: bool = True) -
     if staffing.shared_cwd and staffing.isolated is True:
         raise SeatStaffingError(
             f"seat {staffing.seat_id} cannot set shared_cwd with isolated = true"
+        )
+
+
+def _assert_cli_matches_profile(
+    staffing: SeatStaffing, project_root: Path | str | None
+) -> None:
+    if not staffing.cli or not staffing.profile:
+        return
+    if project_root is None:
+        raise SeatStaffingError(
+            f"seat {staffing.seat_id} sets both cli and profile but has no project root"
+        )
+    project = Path(project_root).expanduser().resolve()
+    path = Path(staffing.profile).expanduser()
+    if not path.is_absolute():
+        path = (project / path).resolve()
+    try:
+        loaded = load_profile(path)
+    except (ProfileError, OSError) as exc:
+        raise SeatStaffingError(
+            f"seat {staffing.seat_id} profile is unusable: {exc}"
+        ) from exc
+    if staffing.cli != loaded.cli:
+        raise SeatStaffingError(
+            f"seat {staffing.seat_id} cli {staffing.cli} conflicts with "
+            f"the profile cli {loaded.cli}"
         )
 
 

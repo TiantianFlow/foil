@@ -27,12 +27,15 @@ and `skills/poll-status/` for status files versus live tmux.
 
 ## Staffing as it exists today
 
-`foil init` writes eight role files under `.foil/roles/`, an empty
-`.foil/seats.toml` recipe file, and an empty live fleet. Roles are
+`foil init` writes eight role files under `.foil/roles/`, a complementary
+starter `.foil/seats.toml` recipe, and an empty live fleet. Roles are
 templates, not running seats. Do not claim eight seats are running.
 
-Every fleet starts with one lead. Persist CLI, model, persona, and
-permission mappings with `foil seats set`, then spawn from that file.
+Every fleet starts with one lead. Init already persisted a starter
+mapping. Edit CLI, model, persona, and permission with `foil seats set`
+after discovery, then spawn from that file. `--seat` alone is not
+enough: lifecycle commands still need `--state-dir` and `--fleet` from
+the init JSON.
 The operator or the lead then spawns workers. Live membership is
 persisted only so `foil resume` can continue after a crash or tmux
 death. Do not treat the registry as a recipe to replay tomorrow.
@@ -63,8 +66,10 @@ base is allowed. This is operator instruction, not an enforcement gate.
 
 1. Turn the user objective into a testable brief. Put the brief in
    `foil send-message` bodies, not in tmux keystrokes.
-2. Write the mapping with `foil seats set`, then spawn the lead with
-   `foil seat spawn --seat lead --json`. Flags on spawn are overrides.
+2. Edit the starter mapping with `foil seats set` if discovery says so,
+   then spawn the lead with
+   `foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat lead`.
+   Flags on spawn are overrides. `--seat` alone fails argparse.
    Pass `--permission auto` only when the operator wants the provider
    to approve ordinary tool use. Workers isolate by default. Use
    `--shared-cwd` only when two seats must share a directory.
@@ -103,7 +108,8 @@ GitHub URL as exclusive. Do not claim browser or UI features.
 
 A persona file staffs a seat directly, untouched and without an English
 wrapper: persist the mapped `path` with `foil seats set --role-file PATH`,
-then `foil seat spawn --seat ID`. The file must exist and be a regular
+then `foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat ID`.
+The file must exist and be a regular
 file; a missing or invalid role file fails closed before any worktree,
 runner plan, registry record, or tmux window is created. Generated seat
 instructions require the seat to read that validated `role_path` and

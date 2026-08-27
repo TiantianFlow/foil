@@ -36,7 +36,7 @@ flowchart LR
 
 你需要 Python 3.11+、uv、tmux 3.2+ 和 Git。下面的示例还会使用已经完成本地认证的 `grok` 和 `opencode` CLI；运筹不会经手这些登录。更想让本机已经在跑的 Agent 代劳，请直接看 [让 Agent 来装](#让-agent-来装)。
 
-安装当前公开发布线（软件包版本 0.1.0）：
+从这个 Git 地址安装（需要仓库访问权限；仓库可能仍是私有的）。软件包版本 0.1.0：
 
 ```sh
 uv tool install "git+https://github.com/TiantianFlow/foil.git"
@@ -56,20 +56,19 @@ cd your-repo
 foil init .
 
 # 把 foil init 打印的 state_root、fleet_id 填进来，不要原样粘贴这两个单词
-export STATE_ROOT=...
+export STATE_DIR=...
 export FLEET_ID=...
 
-foil seats set --seat lead --lead --cli grok --role manager
-foil seats set --seat implementer --cli grok --role implementer
-foil seats set --seat reviewer-challenger --cli opencode --role reviewer-challenger --permission auto
-foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat lead
-foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat implementer
-foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat reviewer-challenger
-foil send-message --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
-foil status --state-dir "$STATE_ROOT" --fleet "$FLEET_ID"
+# init 已经在 .foil/seats.toml 里写好互补的起步配方
+# 如果 grok/opencode 不是本机该用的 CLI，再用 foil seats set 改
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat lead
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat implementer
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat reviewer-challenger
+foil send-message --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
+foil status --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
 ```
 
-先用 `foil seats set` 把映射写入 `.foil/seats.toml`，再 `foil seat spawn --seat …`。CLI、模型、角色和权限都从这份配方读取；`--cli`、`--model` 和其他启动参数只是临时覆盖。第一个席位必须是主座，工人席位在其后。`foil send-message` 只负责把邮件落盘——想提醒某个席位，请加上 `--wake`，或先检查 tmux 再运行 `foil seat wake`。想确认席位是不是真的活着，先跑 `foil status`。
+不要原样粘贴 `STATE_DIR` 或 `FLEET_ID`。`foil init` 已经写好互补起步配方。发现本机 CLI 之后若要改映射，用 `foil seats set`；不要在 spawn 上临时编造 `--cli`。spawn 仍然需要 init JSON 里的 `--state-dir` 和 `--fleet`。`--cli`、`--model` 和其他启动参数只是临时覆盖。第一个席位必须是主座，工人席位在其后。`foil send-message` 只负责把邮件落盘——想提醒某个席位，请加上 `--wake`，或先检查 tmux 再运行 `foil seat wake`。想确认席位是不是真的活着，先跑 `foil status`。
 
 内置预设只有 `grok` 和 `opencode`。别的交互式 CLI 要走 [声明式档案](#人格角色与其他-cli)，不要假设报个名字就能用。
 
@@ -101,15 +100,15 @@ foil status --state-dir "$STATE_ROOT" --fleet "$FLEET_ID"
    **不要改文件内容**。运筹按原文使用。
 5. 问用户实际在做什么。按这个答案挑一小支互补队伍：至少一名主座、
    一名实现者、一名质疑者。不要因为角色库里有八份模板就拉满八个席位。
-6. 把席位映射到本机现有的 CLI 和模型。重活、长活放到用量还够的那一侧；
-   质疑席位尽量换一条 CLI 或另一个模型家族，避免「自己审自己」。
-   用 `foil seats set` 把映射写进 `.foil/seats.toml`（`--cli`、`--model`、
-   `--role` 或 `--role-file`、`--permission`）。映射有取舍时先说清楚，
-   等用户点头。
-7. 按配方拉起席位：先
-   `foil seat spawn --state-dir … --fleet … --seat lead`，再拉工人。
-   不要在 spawn 上再传 `--cli` 或 `--model`，除非你是在覆盖文件。
-   然后跑 `foil status`。
+6. `foil init` 已经写好互补起步配方（主座和实现者用 `grok`，质疑者用
+   `opencode`）。发现本机 CLI 之后，若要换 CLI、模型或 `--role-file`
+   人设，用 `foil seats set` 改这份文件，不要从零编造 `--cli`。映射有
+   取舍时先说清楚，等用户点头。
+7. 用 init JSON 里的 `--state-dir` 和 `--fleet` 拉起席位：先
+   `foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
+   --seat lead`，再拉工人。这两个参数是必需的。不要在 spawn 上再传
+   `--cli`、`--lead` 或 `--model`，除非你是在覆盖文件。然后跑
+   `foil status`。
 8. 把日常命令交回给用户：`foil status`、`tmux`、
    `foil send-message --wake`、`foil resume`。主座在、互补席位已映射、
    用户能自己查看舰队，你的搭建就结束了。
@@ -133,7 +132,7 @@ git clone https://github.com/jnMetaCode/agency-agents-zh.git ./personas
 foil catalog-list --path ./personas
 foil catalog-map --path ./personas --persona NAME --json
 foil seats set --seat designer --cli grok --role-file ./personas/path/to/designer.md
-foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat designer
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat designer
 ```
 
 `catalog-map` 只返回人设文件的 `path`，不会指定 CLI：`cli` 和 `preset` 始终为空。把配备写进 `foil seats set`。
@@ -144,7 +143,7 @@ Grok 和 OpenCode 是内置预设。其他交互式 CLI 通过声明式席位档
 
 ```sh
 foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
-foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat researcher
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat researcher
 ```
 
 spawn 上的 `--profile` 仍可临时覆盖席位文件。

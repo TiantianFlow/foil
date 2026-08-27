@@ -54,37 +54,38 @@ fleet starts lead-only again.
 ```sh
 foil init .
 git init -b foil-demo
-foil seats set --seat lead --lead --cli grok --role manager
-foil seats set --seat implementer --cli grok --role implementer
-foil seats set --seat reviewer-challenger --cli opencode --role reviewer-challenger --permission auto
+# copy state_root and fleet_id from the init JSON
 foil seats list --json
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --json --seat lead
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --json --seat implementer
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --json --seat reviewer-challenger
-foil seat list --state-dir STATE_ROOT --fleet FLEET_ID --json
-foil status --state-dir STATE_ROOT --fleet FLEET_ID --json
-foil poll-status --state-dir STATE_ROOT --fleet FLEET_ID
-foil send-message --state-dir STATE_ROOT --fleet FLEET_ID --seat reviewer-challenger --sender lead --body "Challenge the current plan."
-foil seat wake --state-dir STATE_ROOT --fleet FLEET_ID --json --seat reviewer-challenger
-foil message-status --state-dir STATE_ROOT --fleet FLEET_ID --seat reviewer-challenger --message MESSAGE_ID
-foil resume --state-dir STATE_ROOT --fleet FLEET_ID --json
-foil resume --state-dir STATE_ROOT --fleet FLEET_ID --json --fresh --seat implementer
-foil seat stop --state-dir STATE_ROOT --fleet FLEET_ID --json --seat implementer
-foil seat stop --state-dir STATE_ROOT --fleet FLEET_ID --json --all
-foil seat remove --state-dir STATE_ROOT --fleet FLEET_ID --json --seat implementer
-foil doctor --state-dir STATE_ROOT --fleet FLEET_ID --json
-foil dispatch --state-dir STATE_ROOT --fleet FLEET_ID --json --capability review
-foil set-state --state-dir STATE_ROOT --fleet FLEET_ID --json --seat implementer --state waiting
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat lead
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat implementer
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat reviewer-challenger
+foil seat list --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json
+foil status --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json
+foil poll-status --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
+foil send-message --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat reviewer-challenger --sender lead --body "Challenge the current plan."
+foil seat wake --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat reviewer-challenger
+foil message-status --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat reviewer-challenger --message MESSAGE_ID
+foil resume --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json
+foil resume --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --fresh --seat implementer
+foil seat stop --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat implementer
+foil seat stop --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --all
+foil seat remove --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat implementer
+foil doctor --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json
+foil dispatch --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --capability review
+foil set-state --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat implementer --state waiting
 foil catalog-list --path ./personas --json
 foil catalog-map --path ./personas --persona "Engineering reviewer" --json
 foil seats set --seat reviewer --cli opencode --role-file ./personas/reviewer.md
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --json --seat reviewer
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat reviewer
 foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --json --seat researcher
+foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat researcher
 ```
 
-Replace `STATE_ROOT`, `FLEET_ID`, and `MESSAGE_ID` with values from command
-JSON. Do not open a Foil UI. Authenticate `grok` and `opencode` themselves.
+Copy `state_root` and `fleet_id` from `foil init` JSON into `$STATE_DIR`
+and `$FLEET_ID`. `--seat` alone is not enough. Replace `MESSAGE_ID` from
+command JSON. Do not open a Foil UI. Authenticate `grok` and `opencode`
+themselves. `foil init` writes a complementary starter roster; `foil seats set`
+edits it after you discover local CLIs.
 Default spawn reads `.foil/seats.toml`. Persist the mapping with
 `foil seats set`; `--cli`, `--model`, `--profile`, `--role`,
 `--role-file`, and `--permission` on `foil seat spawn` are ad hoc
@@ -134,7 +135,7 @@ until the seat (or an operator) writes an acknowledgement with
 acknowledgement.
 
 ```sh
-foil ack-message --state-dir STATE_ROOT --fleet FLEET_ID --seat SEAT --message MESSAGE_ID --actor ACTOR
+foil ack-message --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat SEAT --message MESSAGE_ID --actor ACTOR
 ```
 
 ## Resume precedence

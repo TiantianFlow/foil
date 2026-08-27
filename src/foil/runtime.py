@@ -693,10 +693,10 @@ class RuntimeController:
         role_id: str | None = None,
         role_path: str | None = None,
         isolated: bool | None = None,
-        shared_cwd: bool = False,
+        shared_cwd: bool | None = None,
         working_directory: Path | None = None,
         model: str | None = None,
-        lead: bool = False,
+        lead: bool | None = None,
         permission: str | None = None,
         profile_file: str | None = None,
     ) -> list[dict[str, Any]]:
@@ -739,10 +739,10 @@ class RuntimeController:
         role_id: str | None,
         role_path: str | None,
         isolated: bool | None,
-        shared_cwd: bool,
+        shared_cwd: bool | None,
         working_directory: Path | None,
         model: str | None,
-        lead: bool,
+        lead: bool | None,
         permission: str | None,
         profile_file: str | None,
     ) -> list[dict[str, Any]]:
@@ -776,7 +776,7 @@ class RuntimeController:
             )
         except SeatStaffingError as exc:
             raise RuntimeError(str(exc)) from exc
-        lead = staffing.lead
+        lead = staffing.resolved_lead()
         cli = staffing.cli
         profile_file = (
             _resolve_project_path(project, staffing.profile)
@@ -804,7 +804,11 @@ class RuntimeController:
         if lead and fleet.lead_seat_id is not None:
             raise RuntimeError("fleet already has a lead seat")
         if not lead and fleet.lead_seat_id is None:
-            raise RuntimeError("fleet must start with a lead seat")
+            raise RuntimeError(
+                f"fleet must start with a lead seat; {seat_id} is not marked lead. "
+                "Set lead = true in .foil/seats.toml or pass --lead "
+                "(seat id lead defaults to lead unless --no-lead)"
+            )
         if shared_cwd and isolated is True:
             raise RuntimeError("shared-cwd cannot be combined with isolated")
         # Load and merge the declarative seat profile before any side effect.
