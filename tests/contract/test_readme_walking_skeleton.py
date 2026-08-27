@@ -77,10 +77,7 @@ def test_walking_skeleton_documents_complete_contract() -> None:
         "Python >=3.11",
         "uv",
         "tmux >=3.2",
-        "tmux 3.7b",
         "Git",
-        "grok 1.0.5",
-        "opencode 1.18.21",
         "locally authenticated",
     )
     assert all(prerequisite in text for prerequisite in prerequisites)
@@ -205,7 +202,7 @@ print(json.dumps({
 
     assert result.returncode == 0, result.stderr
     captured = json.loads(capture_path.read_text(encoding="utf-8"))
-    expected_root = real_tmp.resolve() / "foil-generation-2-demo"
+    expected_root = real_tmp.resolve() / "foil-walking-skeleton-demo"
     assert captured == {
         "project": str(expected_root / "project"),
         "state_text": str(expected_root / "state"),

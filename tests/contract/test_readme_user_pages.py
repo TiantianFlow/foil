@@ -32,7 +32,7 @@ LAB_MARKERS = (
     "T1-T6",
     "DEMO_ROOT",
     "BEFORE_STATUS_JSON",
-    "foil-generation-2-demo",
+    "foil-walking-skeleton-demo",
     "tmux kill-session",
 )
 QUICK_START_COMMANDS = (
