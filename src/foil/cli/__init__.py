@@ -160,9 +160,9 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
         "--cwd",
         type=Path,
         help=(
-            "Seat working directory. When this path belongs to a different Git "
-            "repository than the fleet project, isolated spawn treats it as "
-            "--from. Refused when it is another repository's canonical checkout."
+            "Seat working directory (destination). Roster cwd and this flag "
+            "are never a foreign-root source. Refused when the path is another "
+            "repository's canonical checkout."
         ),
     )
     spawn.add_argument("--model")

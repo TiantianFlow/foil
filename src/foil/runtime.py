@@ -1729,33 +1729,31 @@ def _resolve_seat_worktree(
 ) -> tuple[Path, Path | None]:
     if isolate_from is not None and not isolated:
         raise RuntimeError("cannot isolate from a git root without isolation")
-    named = isolate_from if isolate_from is not None else working_directory
-    if named is not None:
-        named = named.expanduser().resolve()
-    if isolated and named is not None:
-        named_git = git_toplevel(named)
-        if named_git is None:
+    source = isolate_from.expanduser().resolve() if isolate_from is not None else None
+    dest_named = (
+        working_directory.expanduser().resolve() if working_directory is not None else None
+    )
+    if isolated and source is not None:
+        source_git = git_toplevel(source)
+        if source_git is None:
             raise RuntimeError("working directory is not a valid Git worktree")
-        if named_git.resolve() != project_git.resolve() and not contained_in(
-            named, project / "worktrees"
-        ):
-            destination = named_git / "worktrees" / seat_id
-            if destination.resolve() == named_git.resolve():
+        if source_git.resolve() != project_git.resolve():
+            destination = source_git / "worktrees" / seat_id
+            if destination.resolve() == source_git.resolve():
                 raise RuntimeError(CANONICAL_CHECKOUT_REFUSAL)
-            return destination, named_git
-        if isolate_from is not None:
-            return project / "worktrees" / seat_id, None
-    destination = named if named is not None else (
+            return destination, source_git
+        return project / "worktrees" / seat_id, None
+    destination = dest_named if dest_named is not None else (
         project / "worktrees" / seat_id if isolated else project
     )
-    if not isolated and named is not None:
-        named_git = git_toplevel(named)
-        if (
-            named_git is not None
-            and named.resolve() == named_git.resolve()
-            and named_git.resolve() != project_git.resolve()
-        ):
-            raise RuntimeError(CANONICAL_CHECKOUT_REFUSAL)
+    dest_git = git_toplevel(destination)
+    if (
+        dest_git is not None
+        and destination.resolve() == dest_git.resolve()
+        and dest_git.resolve() != project_git.resolve()
+        and not contained_in(destination, project / "worktrees")
+    ):
+        raise RuntimeError(CANONICAL_CHECKOUT_REFUSAL)
     return destination, None
 
 
