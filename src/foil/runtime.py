@@ -45,6 +45,7 @@ from foil.fleet import (
 from foil.known_clis import adapter_id_for_cli
 from foil.naming import tmux_session_name, tmux_window_name
 from foil.profiles import ProfileError, SeatProfile, load_profile
+from foil.seats import SeatStaffingError, resolve_spawn_staffing
 from foil.registry import (
     RegistryError,
     RegistryStore,
@@ -696,7 +697,7 @@ class RuntimeController:
         working_directory: Path | None = None,
         model: str | None = None,
         lead: bool = False,
-        permission: str = PERMISSION_SUPERVISED,
+        permission: str | None = None,
         profile_file: str | None = None,
     ) -> list[dict[str, Any]]:
         with self.fleets.operation_lock(self.fleet.fleet_id):
@@ -742,12 +743,10 @@ class RuntimeController:
         working_directory: Path | None,
         model: str | None,
         lead: bool,
-        permission: str,
+        permission: str | None,
         profile_file: str | None,
     ) -> list[dict[str, Any]]:
         self.fleets.require_lifecycle_actor(self.fleet.fleet_id, actor)
-        if permission not in PERMISSION_PROFILES:
-            raise RuntimeError(f"unknown permission profile {permission}")
         if shutil.which("tmux") is None:
             raise RuntimeError("tmux is unavailable")
         try:
@@ -758,6 +757,50 @@ class RuntimeController:
             raise RuntimeError(f"seat {seat_id} is already registered")
         fleet = self.fleets.read(self.fleet.fleet_id)
         self.fleet = fleet
+        project = Path(fleet.project_root)
+        try:
+            staffing = resolve_spawn_staffing(
+                project,
+                seat_id,
+                lead=lead,
+                cli=cli,
+                profile=profile_file,
+                model=model,
+                role=role_id,
+                role_file=role_path,
+                cwd=str(working_directory) if working_directory is not None else None,
+                isolated=isolated,
+                shared_cwd=shared_cwd,
+                permission=permission,
+                display_name=display_name,
+            )
+        except SeatStaffingError as exc:
+            raise RuntimeError(str(exc)) from exc
+        lead = staffing.lead
+        cli = staffing.cli
+        profile_file = (
+            _resolve_project_path(project, staffing.profile)
+            if staffing.profile is not None
+            else None
+        )
+        model = staffing.model
+        role_id = staffing.role
+        role_path = (
+            _resolve_project_path(project, staffing.role_file)
+            if staffing.role_file is not None
+            else None
+        )
+        isolated = staffing.isolated
+        shared_cwd = staffing.shared_cwd
+        permission = staffing.permission or PERMISSION_SUPERVISED
+        display_name = staffing.display_name
+        working_directory = (
+            _resolve_project_path(project, staffing.cwd)
+            if staffing.cwd is not None
+            else None
+        )
+        if permission not in PERMISSION_PROFILES:
+            raise RuntimeError(f"unknown permission profile {permission}")
         if lead and fleet.lead_seat_id is not None:
             raise RuntimeError("fleet already has a lead seat")
         if not lead and fleet.lead_seat_id is None:
@@ -779,7 +822,9 @@ class RuntimeController:
             if isolated is None and seat_profile.isolated is not None:
                 isolated = seat_profile.isolated
         if not cli:
-            raise RuntimeError("seat spawn requires --cli or --profile")
+            raise RuntimeError(
+                "seat spawn requires a predefined seat config or --cli/--profile"
+            )
         launch_argv = _normalize_remainder(launch_argv)
         declarative = seat_profile is not None
         if declarative:
@@ -1745,3 +1790,10 @@ def _worker_instructions(payload: dict[str, Any], seat_id: str) -> str:
         f"{team_block}"
         f"{worktree_block}"
     )
+
+
+def _resolve_project_path(project_root: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    return (project_root / path).resolve()

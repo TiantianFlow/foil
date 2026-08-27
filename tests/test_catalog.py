@@ -49,6 +49,8 @@ def test_catalog_map_returns_the_persona_path_for_role_file_spawns(
     assert mapped["display_name"] == "Engineering reviewer"
     assert mapped["primary_specialization"] == "independent-review"
     assert mapped["usage_pool_id"] == "independent-review"
+    assert mapped["cli"] is None
+    assert mapped["preset"] is None
 
 
 def test_catalog_map_specializes_implementation_personas(tmp_path: Path) -> None:

@@ -100,18 +100,24 @@ foil init .
 export STATE_ROOT=...
 export FLEET_ID=...
 
-foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --lead --seat lead --cli grok --role manager
-foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat implementer --cli grok --role implementer
-foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat reviewer-challenger --cli opencode --role reviewer-challenger --permission auto
+foil seats set --seat lead --lead --cli grok --role manager
+foil seats set --seat implementer --cli grok --role implementer
+foil seats set --seat reviewer-challenger --cli opencode --role reviewer-challenger --permission auto
+foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat lead
+foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat implementer
+foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat reviewer-challenger
 foil send-message --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
 foil status --state-dir "$STATE_ROOT" --fleet "$FLEET_ID"
 ```
 
-Do not paste the words `STATE_ROOT` or `FLEET_ID`. The first seat must
-be the lead; workers come after. `foil send-message` persists mail only
-— pass `--wake`, or run `foil seat wake` after inspecting tmux, to
-nudge a seat. `foil status` is the first thing to run when you want to
-see whether those seats are actually alive.
+Do not paste the words `STATE_ROOT` or `FLEET_ID`. Persist the mapping
+with `foil seats set` first; spawn then fills CLI, model, role, and
+permission from `.foil/seats.toml`. `--cli`, `--model`, and the other
+launch flags remain ad hoc overrides. The first seat must be the lead;
+workers come after. `foil send-message` persists mail only — pass
+`--wake`, or run `foil seat wake` after inspecting tmux, to nudge a
+seat. `foil status` is the first thing to run when you want to see
+whether those seats are actually alive.
 
 Shipped presets are `grok` and `opencode`. Another interactive CLI
 joins through a [declarative profile](#personas-roles-and-other-clis),
@@ -156,10 +162,12 @@ control plane.
    implementation on the CLI and model with enough remaining usage
    for the job. Put the challenger on a *different* CLI or model
    family when possible, so review is not the same voice restated.
-   Tell the user the mapping and wait if the tradeoff is unclear.
-7. Spawn the lead first. Staff workers with `--role-file` pointing at
-   the chosen persona files, or `--role` from `.foil/roles/` when the
-   built-in library is enough. Then `foil status`.
+   Persist that mapping with `foil seats set` (`--cli`, `--model`,
+   `--role` or `--role-file`, `--permission`). Tell the user the
+   mapping and wait if the tradeoff is unclear.
+7. Spawn from the seat file: `foil seat spawn --state-dir … --fleet …
+   --seat lead` first, then the workers. Do not pass `--cli` or
+   `--model` unless you are overriding the file. Then `foil status`.
 8. Hand the user back ordinary commands: `foil status`, `tmux`,
    `foil send-message --wake`, `foil resume`. You are done when a lead
    exists, complementary seats are mapped, and the user can inspect
@@ -189,8 +197,9 @@ tmux; `foil poll-status` reads only the versioned status files.
 **Interruption and resume.** `foil resume` prefers a matching live tmux
 window, then the seat's recorded native session, then a logged fresh
 start. `foil seat stop` keeps the seat record so resume can continue;
-`foil seat remove` deletes it. Spawn is `--permission supervised` by
-default, so the CLI asks for approvals; `--permission auto` uses
+`foil seat remove` deletes it. Permission comes from `.foil/seats.toml`
+when set; otherwise spawn is `supervised`, so the CLI asks for
+approvals. `--permission auto` on spawn or in the seat file uses
 adapter-declared approval flags.
 
 ## Personas, roles, and other CLIs
@@ -207,8 +216,12 @@ does not require a Foil-specific rewrite:
 git clone https://github.com/msitarzewski/agency-agents.git ./personas
 foil catalog-list --path ./personas
 foil catalog-map --path ./personas --persona NAME --json
-foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat designer --role-file ./personas/path/to/designer.md
+foil seats set --seat designer --cli grok --role-file ./personas/path/to/designer.md
+foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat designer
 ```
+
+`catalog-map` returns the persona `path`. It does not assign a CLI:
+`cli` and `preset` stay null. Persist staffing with `foil seats set`.
 
 Grok and OpenCode are shipped presets. Other interactive CLIs join
 through a declarative seat profile — one TOML owning the executable,
@@ -221,8 +234,11 @@ Save or copy the shipped
 the repository you are coordinating, then pass its path per seat:
 
 ```sh
-foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
+foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
+foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat researcher
 ```
+
+`--profile` on spawn remains an ad hoc override of the seat file.
 
 Presets and profiles are the only supported
 paths — if a CLI is not a preset and you have not run it through a
@@ -242,5 +258,6 @@ truth for which model actually launched.
 
 - [docs/walking-skeleton.md](docs/walking-skeleton.md) — the executable end-to-end verification path
 - [docs/design/onboarding.md](docs/design/onboarding.md) — initialization and state-root contract
+- [docs/design/seats.md](docs/design/seats.md) — predefined seat recipes in `.foil/seats.toml`
 - [docs/design/profiles.md](docs/design/profiles.md) — the declarative seat profile contract
 - [skills/controller](skills/controller), [skills/manager](skills/manager), [skills/worker](skills/worker) — portable skills for the CLIs that drive or join a fleet

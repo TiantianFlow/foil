@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foil.local/schemas/seats-v1.schema.json",
+  "title": "Foil predefined seat staffing v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "seats": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/seat"
+      }
+    }
+  },
+  "$defs": {
+    "seat": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lead": {"type": "boolean"},
+        "cli": {"type": "string", "minLength": 1},
+        "profile": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "role": {"type": "string", "minLength": 1},
+        "role_file": {"type": "string", "minLength": 1},
+        "cwd": {"type": "string", "minLength": 1},
+        "isolated": {"type": "boolean"},
+        "shared_cwd": {"type": "boolean"},
+        "permission": {"enum": ["supervised", "auto"]},
+        "display_name": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

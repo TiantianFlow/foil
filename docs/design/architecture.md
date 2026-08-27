@@ -74,7 +74,10 @@ Dependencies point inward: infrastructure and CLI depend on application/domain; 
 
 ## Configuration and state
 
-Desired project configuration is reviewable TOML under `<project>/.foil/`. Runtime state is not kept in a worktree:
+Desired project configuration is reviewable TOML under `<project>/.foil/`:
+role templates in `.foil/roles/`, and spawn recipes in `.foil/seats.toml`.
+The seats file is a recipe, not live membership. Runtime state is not kept
+in a worktree:
 
 1. `FOIL_STATE_DIR`, when explicitly set.
 2. `<git-common-dir>/foil/` for a Git project, shared by its worktrees.

@@ -174,6 +174,9 @@ def test_initialize_project_scaffolds_role_library_and_empty_fleet(tmp_path: Pat
     assert result.roles == DEFAULT_ROLE_IDS
     assert not (project / ".foil" / "fleet.toml").exists()
     assert not (project / ".foil" / "runtime.toml").exists()
+    seats_toml = project / ".foil" / "seats.toml"
+    assert seats_toml.is_file()
+    assert tomllib.loads(seats_toml.read_text(encoding="utf-8")) == {"schema_version": 1}
 
     specializations: set[str] = set()
     for role_id in DEFAULT_ROLE_IDS:
@@ -224,6 +227,7 @@ def test_initialize_project_accepts_an_existing_git_repository(tmp_path: Path) -
     assert result.roles_path == project / ".foil" / "roles"
     assert result.git_branch == branch_before
     assert (result.roles_path / "implementer.toml").is_file()
+    assert (project / ".foil" / "seats.toml").is_file()
     assert (state_root / "v1" / "fleets" / result.fleet_id / "seats").is_dir()
     # Every tracked and untracked user file and the Git state are preserved.
     assert (project / "tracked.txt").read_text(encoding="utf-8") == "tracked\n"
@@ -384,6 +388,30 @@ def test_initialize_project_retry_after_partial_failure_preserves_user_extras(
     assert (extras / "custom.toml").read_text(encoding="utf-8") == "user role\n"
     assert (project / ".foil" / "notes.md").read_text(encoding="utf-8") == "user notes\n"
     assert (project / "untracked.txt").read_text(encoding="utf-8") == "untracked\n"
+
+
+def test_initialize_project_leaves_an_existing_seats_roster_untouched(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    _git_repository_with_user_files(project)
+    seats = project / ".foil" / "seats.toml"
+    seats.parent.mkdir()
+    seats.write_text(
+        'schema_version = 1\n\n[seats.lead]\ncli = "grok"\nrole = "manager"\n',
+        encoding="utf-8",
+    )
+    original = seats.read_bytes()
+
+    initialize_project(
+        project,
+        environ={"FOIL_STATE_DIR": str(tmp_path / "state")},
+        platform="linux",
+        home=tmp_path / "home",
+    )
+
+    assert seats.read_bytes() == original
 
 
 def test_initialize_project_refuses_a_scaffold_path_that_is_a_file(tmp_path: Path) -> None:

@@ -6,7 +6,9 @@ Schema: `schemas/profile-v1.schema.json` (also packaged at
 
 A seat profile is the CLI-agnostic, reusable launch contract. One TOML file
 owns everything a seat needs so the core runtime keeps no provider-named
-branches:
+branches. Per-seat staffing — which seat uses which CLI, model, role, or
+profile — lives in `.foil/seats.toml` (`docs/design/seats.md`). A profile
+does not assign seats:
 
 - **executable / candidates** — `[executable] candidates`, with the profile
   `cli` required among them; optional `version_argv`.
@@ -55,14 +57,15 @@ forward = ["PI_API_KEY"]
 ```
 
 ```sh
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --json \
-  --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
+foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
+foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --json --seat researcher
 ```
 
-`--cli` is optional when `--profile` is given and must match the profile's
-`cli` when both are present. `--role` / `--role-file`, `--model`,
-`--permission`, and the session-capture flags compose with a profile; flags
-beat file values.
+`--profile` on spawn remains an ad hoc override of the seat recipe.
+`--cli` is optional when a profile (from the seat file or `--profile`)
+declares one and must match the profile's `cli` when both are present.
+`--role` / `--role-file`, `--model`, `--permission`, and the
+session-capture flags compose with a profile; flags beat file values.
 
 ## Environment forwarding
 
