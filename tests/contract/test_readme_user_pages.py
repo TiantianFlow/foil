@@ -36,7 +36,7 @@ LAB_MARKERS = (
     "tmux kill-session",
 )
 QUICK_START_COMMANDS = (
-    'uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.1.0"',
+    'uv tool install "git+https://github.com/TiantianFlow/foil.git"',
     "foil init",
     "foil seat spawn",
     "--state-dir",
@@ -213,3 +213,56 @@ def test_readme_is_not_the_t1_t6_lab_script(readme_name: str) -> None:
     for marker in LAB_MARKERS:
         assert marker not in text
     assert "docs/walking-skeleton.md" in text
+
+
+@pytest.mark.parametrize(
+    ("readme_name", "agent_heading", "user_prompt"),
+    [
+        (
+            "README.md",
+            "## If you are an agent setting up Foil",
+            "Install Foil in this project and follow the agent setup instructions",
+        ),
+        (
+            "README.zh-CN.md",
+            "## 如果你是来搭建运筹的 Agent",
+            "在这个项目里安装运筹，并按 README 里给 Agent 的搭建说明做完",
+        ),
+    ],
+)
+def test_readme_has_agent_first_setup_playbook(
+    readme_name: str,
+    agent_heading: str,
+    user_prompt: str,
+) -> None:
+    text = (ROOT / readme_name).read_text(encoding="utf-8")
+    assert agent_heading in text
+    assert user_prompt in text
+    section = text.split(agent_heading, 1)[1]
+    next_heading = re.search(r"\n## ", section)
+    if next_heading:
+        section = section[: next_heading.start()]
+    assert "foil init" in section
+    assert "--role-file" in section
+    assert "foil doctor" in section
+    assert "lead" in section.lower() or "主座" in section
+
+
+@pytest.mark.parametrize(
+    ("readme_name", "untouched"),
+    [
+        ("README.md", "used untouched"),
+        ("README.zh-CN.md", "原样使用"),
+    ],
+)
+def test_readme_imports_off_the_shelf_personas_untouched(
+    readme_name: str,
+    untouched: str,
+) -> None:
+    text = (ROOT / readme_name).read_text(encoding="utf-8")
+    assert "https://github.com/msitarzewski/agency-agents" in text
+    assert "catalog-list" in text
+    assert "--role-file" in text
+    assert untouched in text
+    if readme_name == "README.zh-CN.md":
+        assert "https://github.com/jnMetaCode/agency-agents-zh" in text
