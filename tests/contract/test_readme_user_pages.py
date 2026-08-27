@@ -14,7 +14,7 @@ LICENSE_BADGE = re.compile(
     re.IGNORECASE,
 )
 VERSION_BADGE = re.compile(
-    r"!?\[[^\]]*\]\(https://img\.shields\.io/badge/[^)]*0\.0\.0[^)]*\)",
+    r"!?\[[^\]]*\]\(https://img\.shields\.io/badge/[^)]*0\.1\.0[^)]*\)",
     re.IGNORECASE,
 )
 CI_BADGE = (
@@ -36,7 +36,7 @@ LAB_MARKERS = (
     "tmux kill-session",
 )
 QUICK_START_COMMANDS = (
-    "uv tool install .",
+    'uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.1.0"',
     "foil init",
     "foil seat spawn",
     "--state-dir",
@@ -45,6 +45,7 @@ QUICK_START_COMMANDS = (
     "--seat",
     "--sender",
     "--body",
+    "--wake",
 )
 EXISTING_REPO_MARKERS = {
     "README.md": "existing Git repository",
@@ -90,8 +91,12 @@ def test_readme_ci_badge_matches_real_workflow(readme_name: str) -> None:
     assert CI_WORKFLOW_URL in prefix
     assert WORKFLOW.is_file()
     workflow = WORKFLOW.read_text(encoding="utf-8")
-    assert "uv run --isolated --extra dev pytest" in workflow
-    assert "uv run --isolated --extra dev ruff check" in workflow
+    assert "uv run --no-config --frozen --isolated --extra dev pytest" in workflow
+    assert "uv run --no-config --frozen --isolated --extra dev ruff check" in workflow
+    assert "uv pip install" in workflow
+    assert "dist/foil_orchestrator-*.whl" in workflow
+    assert '"$wheel_env/bin/foil" --version' in workflow
+    assert '"foil 0.1.0"' in workflow
     assert "actions/checkout@" in workflow
     assert "astral-sh/setup-uv@" in workflow
 
@@ -118,6 +123,40 @@ def test_readme_explains_shipped_user_value(
     for claim in UNSUPPORTED_CLAIMS:
         assert claim not in text
         assert claim.lower() not in lowered
+
+
+@pytest.mark.parametrize(
+    ("readme_name", "independent_process", "subagent", "blind_spot"),
+    [
+        ("README.md", "independent CLI processes", "subagents", "correlated blind spots"),
+        ("README.zh-CN.md", "独立的 CLI 进程", "subagent", "相关性盲区"),
+    ],
+)
+def test_readme_explains_why_loyal_opposition_is_useful(
+    readme_name: str,
+    independent_process: str,
+    subagent: str,
+    blind_spot: str,
+) -> None:
+    text = (ROOT / readme_name).read_text(encoding="utf-8")
+    assert independent_process in text
+    assert subagent in text.lower()
+    assert blind_spot in text
+    assert "guarantee correctness" in text or "不保证正确" in text
+
+
+@pytest.mark.parametrize("readme_name", ["README.md", "README.zh-CN.md"])
+def test_readme_profile_example_is_shipped_and_valid(readme_name: str) -> None:
+    text = (ROOT / readme_name).read_text(encoding="utf-8")
+    profile_path = ROOT / "profiles" / "pi-interactive.toml"
+    assert "./profiles/pi-interactive.toml" in text
+    assert profile_path.is_file()
+
+    from foil.profiles import load_profile
+
+    profile = load_profile(profile_path)
+    assert profile.profile_id == "pi-interactive"
+    assert profile.cli == "pi"
 
 
 @pytest.mark.parametrize("readme_name", ["README.md", "README.zh-CN.md"])

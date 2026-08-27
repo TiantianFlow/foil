@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from foil import __version__
 from foil.adapters import AdapterError
 from foil.catalog import CatalogError, list_personas, map_persona
 from foil.delivery import MessageDeliveryService, TmuxWakeService
@@ -185,6 +186,11 @@ def _build_parser() -> argparse.ArgumentParser:
             "complementary CLI-agent fleets. "
             "Management commands read and write structured state on disk."
         ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     _add_runtime_parsers(subparsers)
