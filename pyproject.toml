@@ -1,0 +1,99 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "foil-orchestrator"
+version = "0.1.0"
+description = "Headless, durable coordination for complementary CLI-agent fleets"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+  { name = "TiantianFlow", email = "177855728+TiantianFlow@users.noreply.github.com" },
+]
+keywords = ["agents", "cli", "orchestration", "tmux"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/TiantianFlow/foil"
+Repository = "https://github.com/TiantianFlow/foil"
+Issues = "https://github.com/TiantianFlow/foil/issues"
+Documentation = "https://github.com/TiantianFlow/foil#readme"
+
+[project.scripts]
+foil = "foil.cli:main"
+
+[project.optional-dependencies]
+dev = [
+  "hypothesis",
+  "pytest",
+  "ruff",
+]
+
+# The sdist ships intended project files only. Runtime residue (worktrees/,
+# generated FOIL.md cards, adapter-state, caches, build output) must never
+# reach a release artifact even when it is untracked and Git-excluded.
+[tool.hatch.build.targets.sdist]
+include = [
+  "/adapters",
+  "/docs",
+  "/profiles",
+  "/schemas",
+  "/skills",
+  "/src",
+  "/tests",
+  "/.github",
+  "/LICENSE",
+  "/README.md",
+  "/README.zh-CN.md",
+  "/pyproject.toml",
+  "/uv.lock",
+]
+exclude = [
+  "/worktrees",
+  "/dist",
+  "/.foil",
+  "FOIL.md",
+  "adapter-state",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/foil"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"skills/adapters" = "foil/resources/skills/adapters"
+"skills/controller" = "foil/resources/skills/controller"
+"skills/manager" = "foil/resources/skills/manager"
+"skills/worker" = "foil/resources/skills/worker"
+"skills/memory-update" = "foil/resources/skills/memory-update"
+"skills/poll-status" = "foil/resources/skills/poll-status"
+"skills/shared-notepads" = "foil/resources/skills/shared-notepads"
+"schemas/adapter-v1.schema.json" = "foil/resources/schemas/adapter-v1.schema.json"
+"schemas/profile-v1.schema.json" = "foil/resources/schemas/profile-v1.schema.json"
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+markers = [
+  "e2e: operator end-to-end journeys against the lead-owned live fleet",
+  "e2e_live: live grok/opencode CLIs; skipped unless FOIL_E2E_LIVE=1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
