@@ -35,7 +35,15 @@ from foil.adapters import (
     load_builtin_adapter,
     permission_argv,
 )
-from foil.doctor import DoctorError, ensure_isolated_worktree
+from foil.doctor import (
+    CANONICAL_CHECKOUT_REFUSAL,
+    DoctorError,
+    contained_in,
+    ensure_isolated_worktree,
+    ensure_linked_worktree,
+    git_toplevel,
+    remove_created_worktree,
+)
 from foil.fleet import (
     LEAD_CAPABILITIES,
     WORKER_CAPABILITIES,
@@ -695,6 +703,7 @@ class RuntimeController:
         isolated: bool | None = None,
         shared_cwd: bool | None = None,
         working_directory: Path | None = None,
+        isolate_from: Path | None = None,
         model: str | None = None,
         lead: bool | None = None,
         permission: str | None = None,
@@ -717,6 +726,7 @@ class RuntimeController:
                 isolated=isolated,
                 shared_cwd=shared_cwd,
                 working_directory=working_directory,
+                isolate_from=isolate_from,
                 model=model,
                 lead=lead,
                 permission=permission,
@@ -741,6 +751,7 @@ class RuntimeController:
         isolated: bool | None,
         shared_cwd: bool | None,
         working_directory: Path | None,
+        isolate_from: Path | None,
         model: str | None,
         lead: bool | None,
         permission: str | None,
@@ -862,7 +873,8 @@ class RuntimeController:
         if shared_cwd:
             isolated = False
         project = Path(fleet.project_root)
-        if _git_toplevel(project) is None:
+        project_git = git_toplevel(project)
+        if project_git is None:
             raise RuntimeError("working directory is not a valid Git worktree")
         # Validate and normalize the role file before any side effect: no new
         # worktree, runner plan, registry record, or tmux window may be
@@ -905,14 +917,22 @@ class RuntimeController:
         # Values are resolved from the host environment now; they travel
         # through tmux injection and the runner's exec-time merge only.
         forwarded_environment = _resolve_forwarded_environment(environment_forward)
-        worktree = working_directory or (
-            project / "worktrees" / seat_id if isolated else project
+        worktree, linked_source = _resolve_seat_worktree(
+            project=project,
+            project_git=project_git,
+            seat_id=seat_id,
+            isolated=isolated,
+            working_directory=working_directory,
+            isolate_from=isolate_from,
         )
         self._reject_shared_cwd(worktree, shared_cwd=shared_cwd)
         worktree_preexisting = worktree.exists()
         if isolated:
             try:
-                ensure_isolated_worktree(project, worktree)
+                if linked_source is not None:
+                    ensure_linked_worktree(linked_source, worktree)
+                else:
+                    ensure_isolated_worktree(project, worktree)
             except DoctorError as exc:
                 raise RuntimeError(str(exc)) from exc
         worktree.mkdir(parents=True, exist_ok=True)
@@ -1126,7 +1146,7 @@ class RuntimeController:
                 removed.append("adapter-state")
         if worktree is not None and worktree.exists():
             with suppress(OSError):
-                shutil.rmtree(worktree)
+                remove_created_worktree(worktree)
                 removed.append("worktree")
         fleet = self.fleets.read(self.fleet.fleet_id)
         if fleet.lead_seat_id == seat_id:
@@ -1698,11 +1718,45 @@ def _resolve_forwarded_environment(
     return resolved
 
 
-def _git_toplevel(start: Path) -> Path | None:
-    try:
-        return Path(_git_output(start, "rev-parse", "--show-toplevel")).resolve()
-    except RuntimeError:
-        return None
+def _resolve_seat_worktree(
+    *,
+    project: Path,
+    project_git: Path,
+    seat_id: str,
+    isolated: bool,
+    working_directory: Path | None,
+    isolate_from: Path | None,
+) -> tuple[Path, Path | None]:
+    if isolate_from is not None and not isolated:
+        raise RuntimeError("cannot isolate from a git root without isolation")
+    named = isolate_from if isolate_from is not None else working_directory
+    if named is not None:
+        named = named.expanduser().resolve()
+    if isolated and named is not None:
+        named_git = git_toplevel(named)
+        if named_git is None:
+            raise RuntimeError("working directory is not a valid Git worktree")
+        if named_git.resolve() != project_git.resolve() and not contained_in(
+            named, project / "worktrees"
+        ):
+            destination = named_git / "worktrees" / seat_id
+            if destination.resolve() == named_git.resolve():
+                raise RuntimeError(CANONICAL_CHECKOUT_REFUSAL)
+            return destination, named_git
+        if isolate_from is not None:
+            return project / "worktrees" / seat_id, None
+    destination = named if named is not None else (
+        project / "worktrees" / seat_id if isolated else project
+    )
+    if not isolated and named is not None:
+        named_git = git_toplevel(named)
+        if (
+            named_git is not None
+            and named.resolve() == named_git.resolve()
+            and named_git.resolve() != project_git.resolve()
+        ):
+            raise RuntimeError(CANONICAL_CHECKOUT_REFUSAL)
+    return destination, None
 
 
 def _observed_branch(cwd: Path) -> str | None:
