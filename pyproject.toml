@@ -81,6 +81,7 @@ packages = ["src/foil"]
 "skills/shared-notepads" = "foil/resources/skills/shared-notepads"
 "schemas/adapter-v1.schema.json" = "foil/resources/schemas/adapter-v1.schema.json"
 "schemas/profile-v1.schema.json" = "foil/resources/schemas/profile-v1.schema.json"
+"schemas/seats-v1.schema.json" = "foil/resources/schemas/seats-v1.schema.json"
 
 [tool.pytest.ini_options]
 addopts = "-ra"

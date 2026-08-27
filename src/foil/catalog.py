@@ -43,6 +43,11 @@ def list_personas(path: Path) -> dict[str, Any]:
 
 
 def map_persona(path: Path, persona_name: str) -> dict[str, Any]:
+    """Return display fields for a local persona.
+
+    ``cli`` and ``preset`` stay null: a Markdown persona does not assign a
+    CLI. Persist staffing with ``foil seats set``.
+    """
     listed = list_personas(path)
     for persona in listed["personas"]:
         if persona["name"] == persona_name:

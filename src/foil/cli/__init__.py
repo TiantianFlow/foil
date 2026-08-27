@@ -29,6 +29,13 @@ from foil.onboarding import InitializationError, initialize_project
 from foil.registry import RegistryError, RegistryStore
 from foil.runtime import RuntimeController
 from foil.runtime import RuntimeError as LifecycleError
+from foil.seats import (
+    SeatStaffingError,
+    apply_overrides,
+    load_roster,
+    lookup_seat,
+    upsert_seat,
+)
 from foil.status import PollStatusReader, StatusError, UnsupportedStatusSchemaVersion
 from foil.tmux import TmuxError
 
@@ -92,14 +99,17 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
     seat = subparsers.add_parser("seat", help="Lead-controlled live seat lifecycle.")
     seat_sub = seat.add_subparsers(dest="seat_command", required=True)
 
-    spawn = seat_sub.add_parser("spawn", help="Create one seat in the live fleet.")
+    spawn = seat_sub.add_parser(
+        "spawn",
+        help="Create one seat in the live fleet from a predefined seat config.",
+    )
     _add_fleet_flags(spawn)
     spawn.add_argument("--seat", required=True, metavar="SEAT_ID")
     spawn.add_argument(
         "--cli",
         help=(
-            "Seat CLI name or path. Required unless --profile declares one; "
-            "must match the profile cli when both are given."
+            "Ad hoc CLI override. The default is .foil/seats.toml for this seat. "
+            "Must match the profile cli when both are given."
         ),
     )
     spawn.add_argument(
@@ -107,12 +117,21 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
         type=Path,
         metavar="PATH",
         help=(
-            "Declarative seat profile TOML (schema v1): executable candidates, "
-            "launch/resume/startup argv, session capture, permission flags, "
-            "workdir behavior, and environment forwarding by variable name."
+            "Ad hoc profile override. The default is .foil/seats.toml for this "
+            "seat. A profile TOML owns executable candidates, launch/resume/"
+            "startup argv, session capture, permission flags, workdir behavior, "
+            "and environment forwarding by variable name."
         ),
     )
-    spawn.add_argument("--lead", action="store_true")
+    spawn.add_argument(
+        "--lead",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Mark this seat as the fleet lead. Seat id lead defaults to lead "
+            "unless --no-lead. The first live seat must be the lead."
+        ),
+    )
     spawn.add_argument("--role", metavar="ROLE_ID")
     spawn.add_argument("--role-file", type=Path)
     spawn.add_argument(
@@ -123,7 +142,8 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
     )
     spawn.add_argument(
         "--shared-cwd",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="Allow this seat to share a working directory with another seat.",
     )
     spawn.add_argument("--cwd", type=Path)
@@ -142,10 +162,11 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
     spawn.add_argument(
         "--permission",
         choices=("supervised", "auto"),
-        default="supervised",
+        default=None,
         help=(
-            "Provider permission profile. supervised asks for approvals. "
-            "auto uses adapter-declared flags. Default supervised."
+            "Ad hoc permission override. Flag wins over .foil/seats.toml; "
+            "otherwise supervised. supervised asks for approvals. auto uses "
+            "adapter-declared flags."
         ),
     )
     spawn.add_argument(
@@ -199,15 +220,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "init",
         help="Scaffold a role library and an empty live fleet.",
         description=(
-            "Write role templates to .foil/roles/ and initialize an empty live fleet "
-            "registry. Accepts an empty directory or an existing Git repository; "
-            "tracked and untracked files and Git state are preserved. A non-empty "
-            "directory outside Git and conflicting .foil or fleet-state collisions "
-            "fail closed. No seats are created. Spawn a lead next with "
-            "`foil seat spawn --lead`. In a new empty directory, create a local Git "
-            "identity after init with `git init -b foil-demo`. State precedence is "
-            "FOIL_STATE_DIR, the Git common directory, XDG_STATE_HOME, then the "
-            "documented platform fallback."
+            "Write role templates to .foil/roles/, a complementary starter "
+            ".foil/seats.toml roster if missing, and an empty live fleet registry. "
+            "Accepts an empty directory or an existing Git repository; tracked and "
+            "untracked files and Git state are preserved. A non-empty directory "
+            "outside Git and conflicting .foil or fleet-state collisions fail "
+            "closed. No live seats are created. Edit the starter roster with "
+            "`foil seats set` after you discover local CLIs, then spawn with "
+            "`foil seat spawn --state-dir … --fleet … --seat lead`. In a new empty "
+            "directory, create a local Git identity after init with "
+            "`git init -b foil-demo`. State precedence is FOIL_STATE_DIR, the Git "
+            "common directory, XDG_STATE_HOME, then the documented platform "
+            "fallback."
         ),
     )
     init.add_argument(
@@ -396,12 +420,150 @@ def _build_parser() -> argparse.ArgumentParser:
 
     catalog_map = subparsers.add_parser(
         "catalog-map",
-        help="Map a local Markdown persona onto Foil seat staffing fields.",
+        help=(
+            "Map a local Markdown persona onto display and specialization fields. "
+            "cli and preset stay null; persist CLI staffing with foil seats set."
+        ),
     )
     catalog_map.add_argument("--path", required=True, metavar="PATH", type=Path)
     catalog_map.add_argument("--persona", required=True)
     catalog_map.add_argument("--json", action="store_true")
+
+    seats = subparsers.add_parser(
+        "seats",
+        help="Read and write predefined seat recipes in .foil/seats.toml.",
+        description=(
+            "Project-local spawn recipes. This file is not live membership; the "
+            "registry still owns who is running. Persist CLI, model, profile, "
+            "role, and role-file here, then spawn with "
+            "`foil seat spawn --state-dir … --fleet … --seat ID`."
+        ),
+    )
+    seats_sub = seats.add_subparsers(dest="seats_command", required=True)
+    seats_list = seats_sub.add_parser("list", help="List predefined seat recipes.")
+    _add_project_flag(seats_list)
+    seats_show = seats_sub.add_parser("show", help="Show one predefined seat recipe.")
+    _add_project_flag(seats_show)
+    seats_show.add_argument("--seat", required=True, metavar="SEAT_ID")
+    seats_set = seats_sub.add_parser(
+        "set",
+        help="Write or update one predefined seat recipe.",
+    )
+    _add_project_flag(seats_set)
+    seats_set.add_argument("--seat", required=True, metavar="SEAT_ID")
+    seats_set.add_argument(
+        "--lead",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Persist lead = true, or --no-lead to clear a mistaken lead row.",
+    )
+    seats_set.add_argument("--cli")
+    seats_set.add_argument("--profile", type=Path, metavar="PATH")
+    seats_set.add_argument("--model")
+    seats_set.add_argument("--role", metavar="ROLE_ID")
+    seats_set.add_argument("--role-file", type=Path)
+    seats_set.add_argument("--cwd", type=Path)
+    seats_set.add_argument(
+        "--isolated",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Default isolation for this seat recipe.",
+    )
+    seats_set.add_argument(
+        "--shared-cwd",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Persist shared_cwd, or --no-shared-cwd to clear it.",
+    )
+    seats_set.add_argument("--permission", choices=("supervised", "auto"))
+    seats_set.add_argument("--display-name")
     return parser
+
+
+def _add_project_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--project",
+        type=Path,
+        default=Path("."),
+        metavar="PATH",
+        help="Project root that owns .foil/seats.toml (default: current directory).",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit deterministic machine-readable JSON.",
+    )
+
+
+def _seats_command(args: argparse.Namespace) -> int:
+    project = args.project
+    if args.seats_command == "list":
+        roster = load_roster(project)
+        seats = [roster[key].to_dict() for key in sorted(roster)]
+        if args.json:
+            _emit({"seats": seats})
+        else:
+            for seat in seats:
+                marker = " lead" if seat["lead"] else ""
+                source = seat["cli"] or seat["profile"] or ""
+                print(f"{seat['seat_id']}:{marker} {source}".rstrip())
+        return 0
+    if args.seats_command == "show":
+        staffing = lookup_seat(project, args.seat)
+        if staffing is None:
+            raise SeatStaffingError(
+                f"no predefined seat config for {args.seat} in {project}"
+            )
+        if args.json:
+            _emit(staffing.to_dict())
+        else:
+            payload = staffing.to_dict()
+            for key in (
+                "seat_id",
+                "lead",
+                "cli",
+                "profile",
+                "model",
+                "role",
+                "role_file",
+                "cwd",
+                "isolated",
+                "shared_cwd",
+                "permission",
+                "display_name",
+            ):
+                value = payload[key]
+                if value is None or value is False:
+                    continue
+                print(f"{key}: {value}")
+        return 0
+    if args.seats_command == "set":
+        existing = lookup_seat(project, args.seat)
+        merged = apply_overrides(
+            existing,
+            seat_id=args.seat,
+            lead=args.lead,
+            cli=args.cli,
+            profile=str(args.profile) if args.profile else None,
+            model=args.model,
+            role=args.role,
+            role_file=str(args.role_file) if args.role_file else None,
+            cwd=str(args.cwd) if args.cwd else None,
+            isolated=args.isolated,
+            shared_cwd=args.shared_cwd,
+            permission=args.permission,
+            display_name=args.display_name,
+        )
+        if not merged.has_launch_source():
+            raise SeatStaffingError("foil seats set requires --cli or --profile")
+        path = upsert_seat(project, merged)
+        payload = {"path": str(path), "seat": merged.to_dict()}
+        if args.json:
+            _emit(payload)
+        else:
+            print(path)
+        return 0
+    raise ValueError(f"unsupported seats command: {args.seats_command}")
 
 
 def _init_project(project_directory: Path) -> int:
@@ -584,8 +746,6 @@ def _seat_command(args: argparse.Namespace) -> int:
     controller = _controller(args)
     actor = getattr(args, "actor", None)
     if args.seat_command == "spawn":
-        if not args.cli and not args.profile:
-            raise LifecycleError("seat spawn requires --cli or a --profile file")
         seats = controller.spawn(
             seat_id=args.seat,
             cli=args.cli,
@@ -746,6 +906,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "catalog-map":
             _emit(map_persona(args.path, args.persona))
             return 0
+        if args.command == "seats":
+            return _seats_command(args)
         if args.command == "status":
             controller = _controller(args)
             seats = controller.status()
@@ -772,6 +934,7 @@ def main(argv: list[str] | None = None) -> int:
         InitializationError,
         LifecycleError,
         MailboxError,
+        SeatStaffingError,
         RegistryError,
         StatusError,
         TmuxError,

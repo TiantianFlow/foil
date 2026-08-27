@@ -39,6 +39,7 @@ INTENDED_SDIST_MEMBERS = (
     "docs/walking-skeleton.md",
     "schemas/adapter-v1.schema.json",
     "schemas/profile-v1.schema.json",
+    "schemas/seats-v1.schema.json",
     "skills/controller/SKILL.md",
     "src/foil/__init__.py",
     "src/foil/cli/__init__.py",
@@ -54,6 +55,7 @@ INTENDED_WHEEL_MEMBERS = (
     "foil/resources/adapters/opencode.toml",
     "foil/resources/schemas/adapter-v1.schema.json",
     "foil/resources/schemas/profile-v1.schema.json",
+    "foil/resources/schemas/seats-v1.schema.json",
     "foil/resources/skills/controller/SKILL.md",
     "foil/templates/roles/implementer.toml",
 )

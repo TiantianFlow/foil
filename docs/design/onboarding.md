@@ -7,8 +7,11 @@ Requirements: CAP-003–CAP-004, CAP-016, CAP-025
 
 `foil init [DIRECTORY]` accepts an empty directory or an existing Git
 repository. It writes the eight provider-neutral role profiles to
-`.foil/roles/` and initializes an empty live fleet registry under the
-resolved versioned state root. No seats are created.
+`.foil/roles/`, a complementary starter `.foil/seats.toml` roster when
+that file is missing (lead and implementer on `grok`, challenger on
+`opencode`), and an empty live fleet registry under the resolved
+versioned state root. No live seats are created. An existing
+`seats.toml` is user-owned and is never overwritten.
 
 Existing repositories are onboarded without touching user data: every
 tracked and untracked file and all Git state (no `git add`, no identity
@@ -30,14 +33,20 @@ implementer, test/verifier, reviewer/challenger, researcher, and memory
 curator. Each role file has one singular `primary_specialization`. Roles
 are templates. The lead chooses which ones to spawn, and when.
 
-The first live seat must be created with `foil seat spawn --lead`.
-Workers may be spawned only after a lead exists. Workers isolate by
-default into `worktrees/<seat_id>`. Shared directories require
-`--shared-cwd`. Spawn is `--permission supervised` unless the operator
-or lead selects `auto`. Isolated clones exclude `FOIL.md` and the parent
-excludes `worktrees/` through Git's private exclude file. Membership is
-persisted only so `foil resume` can continue after interruption, not as
-a recipe to replay later.
+Init already persisted a complementary starter roster. Edit it with
+`foil seats set` after you discover local CLIs, then create the first
+live seat with `foil seat spawn --state-dir … --fleet … --seat lead`.
+Copy those two flags from the init JSON; `--seat` alone is not enough.
+Seat id `lead` defaults to lead unless `--no-lead` or `lead = false`.
+Workers may be spawned only after a lead exists.
+Workers isolate by default into `worktrees/<seat_id>`. Shared directories
+require `--shared-cwd`. Permission comes from the seat recipe when set;
+otherwise spawn is `supervised` unless the operator or lead selects
+`auto`. Isolated clones exclude `FOIL.md` and the parent excludes
+`worktrees/` through Git's private exclude file. Live membership is
+persisted only so `foil resume` can continue after interruption.
+`.foil/seats.toml` is the recipe to spawn from, not a roster of who is
+running.
 
 ## State-root precedence
 
