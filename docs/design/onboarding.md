@@ -35,12 +35,15 @@ are templates. The lead chooses which ones to spawn, and when.
 
 Init already persisted a complementary starter roster. Edit it with
 `foil seats set` after you discover local CLIs, then create the first
-live seat with `foil seat spawn --state-dir … --fleet … --seat lead`.
-Copy those two flags from the init JSON; `--seat` alone is not enough.
+live seat with `foil seat spawn --seat lead` from the project.
+`--state-dir` and `--fleet` default to this Git project's Foil state
+and its only live fleet.
 Seat id `lead` defaults to lead unless `--no-lead` or `lead = false`.
 Workers may be spawned only after a lead exists.
-Workers isolate by default into `worktrees/<seat_id>`. Shared directories
-require `--shared-cwd`. Permission comes from the seat recipe when set;
+Workers isolate by default into `worktrees/<seat_id>` via
+`git clone --local`. Isolate from a different Git root with `--from PATH`
+(`git worktree add` at `<PATH>/worktrees/<seat_id>`). Roster `cwd` and
+`--cwd` stay destination. Shared directories require `--shared-cwd`. Permission comes from the seat recipe when set;
 otherwise spawn is `supervised` unless the operator or lead selects
 `auto`. Isolated clones exclude `FOIL.md` and the parent excludes
 `worktrees/` through Git's private exclude file. Live membership is

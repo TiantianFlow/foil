@@ -73,8 +73,7 @@ uses locally authenticated `grok` and `opencode` CLIs; Foil never handles
 those logins. If you would rather have a local agent do the setup, skip
 to [Ask an agent](#ask-an-agent).
 
-Install from this Git URL (requires repository access; the repo may
-still be private). Package version 0.1.0:
+Install Foil 0.1.0 from Git:
 
 ```sh
 uv tool install "git+https://github.com/TiantianFlow/foil.git"
@@ -97,23 +96,19 @@ is not a Git repository. (An empty directory works too — run
 cd your-repo
 foil init .
 
-# copy state_root and fleet_id from the JSON foil init printed
-export STATE_DIR=...
-export FLEET_ID=...
-
 # init wrote a complementary starter roster in .foil/seats.toml
 # edit with foil seats set if grok/opencode are not the right CLIs
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat lead
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat implementer
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat reviewer-challenger
-foil send-message --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
-foil status --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
+foil seat spawn --seat lead
+foil seat spawn --seat implementer
+foil seat spawn --seat reviewer-challenger
+foil send-message --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
+foil status
 ```
 
-Do not paste the words `STATE_DIR` or `FLEET_ID`. `foil init` already
-persisted a complementary starter roster. `foil seats set` edits it after
-you discover local CLIs; do not invent `--cli` on spawn. Spawn still
-needs `--state-dir` and `--fleet` from the init JSON. `--cli`,
+`foil init` already persisted a complementary starter roster. `foil seats set`
+edits it after you discover local CLIs; do not invent `--cli` on spawn.
+Later commands default to this Git project's Foil state and its only live
+fleet. Pass `--state-dir` or `--fleet` only to override. `--cli`,
 `--model`, and the other launch flags remain ad hoc overrides. The first
 seat must be the lead; workers come after. `foil send-message` persists
 mail only — pass `--wake`, or run `foil seat wake` after inspecting
@@ -143,8 +138,9 @@ control plane.
 
 1. Confirm Python 3.11+, uv, tmux 3.2+, and Git. Install Foil with
    `uv tool install "git+https://github.com/TiantianFlow/foil.git"`.
-2. Work in the user's existing Git repository. Run `foil init .` and
-   keep the printed `state_root` and `fleet_id` for every later flag.
+2. Work in the user's existing Git repository. Run `foil init .`.
+   Later commands default to this project; pass `--state-dir` or
+   `--fleet` only to override.
 3. Discover which agent CLIs are on `PATH` (`grok`, `opencode`, and any
    profiled CLI the user already runs). Ask when discovery is
    incomplete. `foil doctor` reports tmux, Git, and known CLIs; it does
@@ -164,11 +160,9 @@ control plane.
    edit that file with `foil seats set` if a different CLI, model, or
    `--role-file` persona is right. Do not invent `--cli` from scratch.
    Tell the user the mapping and wait if the tradeoff is unclear.
-7. Spawn with `--state-dir` and `--fleet` copied from the init JSON:
-   `foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
-   --seat lead` first, then the workers. Those two flags are required.
-   Do not pass `--cli`, `--lead`, or `--model` unless you are overriding
-   the file. Then `foil status`.
+7. Spawn from the project: `foil seat spawn --seat lead` first, then
+   the workers. Do not pass `--cli`, `--lead`, or `--model` unless you
+   are overriding the file. Then `foil status`.
 8. Hand the user back ordinary commands: `foil status`, `tmux`,
    `foil send-message --wake`, `foil resume`. You are done when a lead
    exists, complementary seats are mapped, and the user can inspect
@@ -186,9 +180,13 @@ something Foil enforces.
 
 **Lead-owned membership.** Every fleet starts with one lead. The lead
 (or you) spawns workers from the role library when they are needed.
-Workers are isolated by default: Foil clones `worktrees/<seat_id>` from
-the committed HEAD, so uncommitted files are not copied and later
-commits do not refresh clones; `foil doctor` reports the lag.
+Workers are isolated by default. Same-repository workers get
+`worktrees/<seat_id>` via `git clone --local` from the committed HEAD, so
+uncommitted files are not copied and later commits do not refresh those
+clones; `foil doctor` reports the lag. To isolate from a different Git
+repository, pass `--from PATH`: Foil runs `git worktree add` at
+`<PATH>/worktrees/<seat_id>`. Roster `cwd` and `--cwd` stay destination
+and are refused when they name another repository's canonical checkout.
 `--shared-cwd` is the advanced override.
 
 **Honest status.** `working` means the tmux process is alive — not that
@@ -218,7 +216,7 @@ git clone https://github.com/msitarzewski/agency-agents.git ./personas
 foil catalog-list --path ./personas
 foil catalog-map --path ./personas --persona NAME --json
 foil seats set --seat designer --cli grok --role-file ./personas/path/to/designer.md
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat designer
+foil seat spawn --seat designer
 ```
 
 `catalog-map` returns the persona `path`. It does not assign a CLI:
@@ -236,7 +234,7 @@ the repository you are coordinating, then pass its path per seat:
 
 ```sh
 foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat researcher
+foil seat spawn --seat researcher
 ```
 
 `--profile` on spawn remains an ad hoc override of the seat file.

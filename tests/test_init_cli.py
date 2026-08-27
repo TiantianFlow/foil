@@ -190,3 +190,37 @@ def test_init_second_run_fails_closed_without_mutating_the_scaffold(
     assert second.returncode != 0
     assert "already" in second.stderr.lower()
     assert manager.read_bytes() == original
+
+
+def test_seat_list_defaults_to_the_project_git_state(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    subprocess.run(
+        ["git", "init", "--quiet", "-b", "trunk"],
+        cwd=project,
+        check=True,
+        capture_output=True,
+    )
+    environment = os.environ.copy()
+    environment.pop("FOIL_STATE_DIR", None)
+    initialized = subprocess.run(
+        [sys.executable, "-m", "foil", "init", "."],
+        cwd=project,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    listed = subprocess.run(
+        [sys.executable, "-m", "foil", "seat", "list", "--json"],
+        cwd=project,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert listed.returncode == 0, listed.stderr
+    payload = json.loads(listed.stdout)
+    assert payload["fleet"]["fleet_id"] == json.loads(initialized.stdout)["fleet_id"]
+    assert payload["seats"] == []

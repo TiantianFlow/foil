@@ -155,6 +155,16 @@ class FleetStore:
             / "fleet.lock"
         )
 
+    def list_ids(self) -> list[str]:
+        root = self.state_root / f"v{SCHEMA_VERSION}" / "fleets"
+        if not root.is_dir():
+            return []
+        return sorted(
+            path.name
+            for path in root.iterdir()
+            if path.is_dir() and (path / "fleet.json").is_file()
+        )
+
     def read(self, fleet_id: str) -> FleetRecord:
         return FleetRecord.from_dict(
             _read_json_file(self.path(fleet_id), error_type=FleetError)

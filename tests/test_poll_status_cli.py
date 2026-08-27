@@ -131,11 +131,8 @@ def test_poll_status_ignores_terminal_log_files(tmp_path: Path) -> None:
     assert payload["seats"] == [make_status(state=SeatState.IDLE).to_dict()]
 
 
-def test_poll_status_requires_state_dir_and_fleet() -> None:
-    missing_state_dir = run_foil("poll-status", "--fleet", "fleet-1")
-    missing_fleet = run_foil("poll-status", "--state-dir", "/tmp/unused")
+def test_poll_status_fail_closed_without_a_live_fleet(tmp_path: Path) -> None:
+    result = run_foil("poll-status", "--state-dir", str(tmp_path))
 
-    assert missing_state_dir.returncode != 0
-    assert "state-dir" in missing_state_dir.stderr.lower()
-    assert missing_fleet.returncode != 0
-    assert "fleet" in missing_fleet.stderr.lower()
+    assert result.returncode != 0
+    assert "fleet" in result.stderr.lower()

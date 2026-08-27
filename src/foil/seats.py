@@ -3,7 +3,7 @@
 This file is a spawn recipe, not live membership. The registry still owns
 who is running. A seat id looks up CLI, model, profile, role, role-file,
 and workdir so spawn can omit ad hoc `--cli` / `--model`. Lifecycle
-commands still need `--state-dir` and `--fleet`.
+commands default to this Git project's Foil state and its only live fleet.
 Flags remain overrides. Personas stay untouched Markdown; this file only
 points at them.
 """

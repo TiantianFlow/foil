@@ -25,7 +25,7 @@ from foil.memory import (
     supersede_memory,
 )
 from foil.notepad import ack_notepad, read_notepad, write_notepad
-from foil.onboarding import InitializationError, initialize_project
+from foil.onboarding import InitializationError, initialize_project, resolve_state_root
 from foil.registry import RegistryError, RegistryStore
 from foil.runtime import RuntimeController
 from foil.runtime import RuntimeError as LifecycleError
@@ -40,20 +40,25 @@ from foil.status import PollStatusReader, StatusError, UnsupportedStatusSchemaVe
 from foil.tmux import TmuxError
 
 
-def _add_fleet_flags(parser: argparse.ArgumentParser) -> None:
+def _add_state_and_fleet(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--state-dir",
-        required=True,
         metavar="PATH",
         type=Path,
-        help="Root directory for versioned registry, status, and audit state.",
+        help=(
+            "Root directory for versioned registry, status, and audit state. "
+            "Default: this Git project's Foil state."
+        ),
     )
     parser.add_argument(
         "--fleet",
-        required=True,
         metavar="FLEET_ID",
-        help="Live fleet identity.",
+        help="Live fleet identity. Default: the only live fleet in that state.",
     )
+
+
+def _add_fleet_flags(parser: argparse.ArgumentParser) -> None:
+    _add_state_and_fleet(parser)
     parser.add_argument(
         "--json",
         action="store_true",
@@ -245,7 +250,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "outside Git and conflicting .foil or fleet-state collisions fail "
             "closed. No live seats are created. Edit the starter roster with "
             "`foil seats set` after you discover local CLIs, then spawn with "
-            "`foil seat spawn --state-dir … --fleet … --seat lead`. In a new empty "
+            "`foil seat spawn --seat lead` from the project. In a new empty "
             "directory, create a local Git identity after init with "
             "`git init -b foil-demo`. State precedence is FOIL_STATE_DIR, the Git "
             "common directory, XDG_STATE_HOME, then the documented platform "
@@ -273,19 +278,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "terminal buffers are never inspected (CAP-012–CAP-014)."
         ),
     )
-    poll_status.add_argument(
-        "--state-dir",
-        required=True,
-        metavar="PATH",
-        type=Path,
-        help="Root directory containing versioned Foil runtime state.",
-    )
-    poll_status.add_argument(
-        "--fleet",
-        required=True,
-        metavar="FLEET_ID",
-        help="Fleet identifier whose seat status files should be read.",
-    )
+    _add_state_and_fleet(poll_status)
 
     send_message = subparsers.add_parser(
         "send-message",
@@ -454,7 +447,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Project-local spawn recipes. This file is not live membership; the "
             "registry still owns who is running. Persist CLI, model, profile, "
             "role, and role-file here, then spawn with "
-            "`foil seat spawn --state-dir … --fleet … --seat ID`."
+            "`foil seat spawn --seat ID` from the project."
         ),
     )
     seats_sub = seats.add_subparsers(dest="seats_command", required=True)
@@ -591,14 +584,33 @@ def _init_project(project_directory: Path) -> int:
 
 
 def _add_mailbox_location(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--state-dir", required=True, metavar="PATH", type=Path)
-    parser.add_argument("--fleet", required=True, metavar="FLEET_ID")
+    _add_state_and_fleet(parser)
     parser.add_argument("--seat", required=True, metavar="SEAT_ID")
 
 
 def _add_collaboration_location(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--state-dir", required=True, metavar="PATH", type=Path)
-    parser.add_argument("--fleet", required=True, metavar="FLEET_ID")
+    _add_state_and_fleet(parser)
+
+
+def _bind_lifecycle_target(args: argparse.Namespace) -> None:
+    state_dir = getattr(args, "state_dir", None)
+    fleet_id = getattr(args, "fleet", None)
+    if state_dir is None:
+        state_dir = resolve_state_root(Path.cwd())
+    args.state_dir = Path(state_dir)
+    if fleet_id is None:
+        ids = FleetStore(args.state_dir).list_ids()
+        if len(ids) == 1:
+            fleet_id = ids[0]
+        elif not ids:
+            raise FleetError(
+                "no live fleet in the resolved state directory; pass --fleet"
+            )
+        else:
+            raise FleetError(
+                "multiple fleets in the resolved state directory; pass --fleet"
+            )
+    args.fleet = fleet_id
 
 
 def _now() -> str:
@@ -821,6 +833,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "init":
             return _init_project(args.directory)
+        if args.command not in {"catalog-list", "catalog-map", "seats"}:
+            _bind_lifecycle_target(args)
         if args.command == "poll-status":
             return _poll_status(args.state_dir, args.fleet)
         if args.command == "send-message":
