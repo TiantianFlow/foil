@@ -1177,11 +1177,9 @@ def test_aborted_spawn_preserves_preexisting_worktree_and_adapter_state(
         controller.registry.read_seat(controller.fleet.fleet_id, "worker")
 
 
-@pytest.mark.parametrize("source_kwarg", ["working_directory", "isolate_from"])
 def test_isolated_spawn_from_foreign_git_root_uses_worktree_add(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    source_kwarg: str,
 ) -> None:
     controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
     controller.spawn(
@@ -1202,7 +1200,7 @@ def test_isolated_spawn_from_foreign_git_root_uses_worktree_add(
         seat_id="implementer",
         cli=executable.name,
         launch_argv=generated_argv(),
-        **{source_kwarg: product},
+        isolate_from=product,
     )
 
     dest = product / "worktrees" / "implementer"
@@ -1239,6 +1237,14 @@ def test_spawn_refuses_sitting_on_a_foreign_canonical_checkout(
         lead=True,
     )
     product = make_committed_repo(tmp_path / "product")
+    with pytest.raises(LifecycleError, match="canonical checkout"):
+        controller.spawn(
+            seat_id="implementer",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+            isolated=True,
+            working_directory=product,
+        )
     with pytest.raises(LifecycleError, match="canonical checkout"):
         controller.spawn(
             seat_id="implementer",

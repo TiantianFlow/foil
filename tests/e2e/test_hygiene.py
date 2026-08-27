@@ -115,7 +115,7 @@ def test_isolated_spawn_from_a_foreign_git_root(initialized: OperatorFleet) -> N
         "grok",
         isolated=True,
         role="implementer",
-        extra=("--cwd", str(product)),
+        extra=("--from", str(product)),
     )
     assert spawned.returncode == 0, spawned.stderr
     dest = product / "worktrees" / "implementer"
