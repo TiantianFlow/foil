@@ -10,6 +10,20 @@ import pytest
 from foil.fleet import FleetError, FleetRecord, FleetStore, resolve_caller
 
 
+def test_list_ids_returns_only_recorded_fleets(tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    store = FleetStore(state)
+    assert store.list_ids() == []
+    FleetStore(state).write(
+        FleetRecord(
+            fleet_id="fleet-auth",
+            project_root=str(tmp_path.resolve()),
+            updated_at=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        )
+    )
+    assert store.list_ids() == ["fleet-auth"]
+
+
 def test_operator_and_lead_may_change_membership(tmp_path: Path) -> None:
     state = tmp_path / "state"
     fleet_id = "fleet-auth"

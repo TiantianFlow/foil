@@ -36,14 +36,14 @@ project root. File recipes require `cli` or `profile`, and `role` XOR
 is the path. If both `cli` and `profile` are set, they must match the
 profile's `cli` at load and `seats set`, not only at spawn.
 
-Copy `state_root` and `fleet_id` from `foil init` JSON. Spawn still
-needs those flags; `--seat ID` is not enough.
+Spawn from the project after init: `--state-dir` and `--fleet` default
+to this Git project's Foil state and its only live fleet.
 
 ```sh
 foil seats set --seat lead --cli grok --role manager
 foil seats list
 foil seats show --seat lead
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat lead
+foil seat spawn --seat lead
 ```
 
 Each provided spawn flag wins over the file. `--lead` / `--no-lead` and

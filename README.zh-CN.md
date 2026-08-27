@@ -36,7 +36,7 @@ flowchart LR
 
 你需要 Python 3.11+、uv、tmux 3.2+ 和 Git。下面的示例还会使用已经完成本地认证的 `grok` 和 `opencode` CLI；运筹不会经手这些登录。更想让本机已经在跑的 Agent 代劳，请直接看 [让 Agent 来装](#让-agent-来装)。
 
-从这个 Git 地址安装（需要仓库访问权限；仓库可能仍是私有的）。软件包版本 0.1.0：
+从 Git 安装运筹 0.1.0：
 
 ```sh
 uv tool install "git+https://github.com/TiantianFlow/foil.git"
@@ -55,20 +55,16 @@ uv tool install --reinstall "git+https://github.com/TiantianFlow/foil.git"
 cd your-repo
 foil init .
 
-# 把 foil init 打印的 state_root、fleet_id 填进来，不要原样粘贴这两个单词
-export STATE_DIR=...
-export FLEET_ID=...
-
 # init 已经在 .foil/seats.toml 里写好互补的起步配方
 # 如果 grok/opencode 不是本机该用的 CLI，再用 foil seats set 改
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat lead
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat implementer
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat reviewer-challenger
-foil send-message --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
-foil status --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
+foil seat spawn --seat lead
+foil seat spawn --seat implementer
+foil seat spawn --seat reviewer-challenger
+foil send-message --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
+foil status
 ```
 
-不要原样粘贴 `STATE_DIR` 或 `FLEET_ID`。`foil init` 已经写好互补起步配方。发现本机 CLI 之后若要改映射，用 `foil seats set`；不要在 spawn 上临时编造 `--cli`。spawn 仍然需要 init JSON 里的 `--state-dir` 和 `--fleet`。`--cli`、`--model` 和其他启动参数只是临时覆盖。第一个席位必须是主座，工人席位在其后。`foil send-message` 只负责把邮件落盘——想提醒某个席位，请加上 `--wake`，或先检查 tmux 再运行 `foil seat wake`。想确认席位是不是真的活着，先跑 `foil status`。
+`foil init` 已经写好互补起步配方。发现本机 CLI 之后若要改映射，用 `foil seats set`；不要在 spawn 上临时编造 `--cli`。后续命令默认使用当前 Git 项目的运筹状态和其中唯一的活舰队。只有覆盖时才需要传 `--state-dir` 或 `--fleet`。`--cli`、`--model` 和其他启动参数只是临时覆盖。第一个席位必须是主座，工人席位在其后。`foil send-message` 只负责把邮件落盘——想提醒某个席位，请加上 `--wake`，或先检查 tmux 再运行 `foil seat wake`。想确认席位是不是真的活着，先跑 `foil status`。
 
 内置预设只有 `grok` 和 `opencode`。别的交互式 CLI 要走 [声明式档案](#人格角色与其他-cli)，不要假设报个名字就能用。
 
@@ -87,8 +83,8 @@ foil status --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
 1. 确认 Python 3.11+、uv、tmux 3.2+ 和 Git。用
    `uv tool install "git+https://github.com/TiantianFlow/foil.git"`
    安装运筹。
-2. 在用户已有的 Git 仓库里运行 `foil init .`，把打印出来的
-   `state_root` 和 `fleet_id` 留给后面所有命令。
+2. 在用户已有的 Git 仓库里运行 `foil init .`。后续命令默认针对这个项目；
+   只有覆盖时才传 `--state-dir` 或 `--fleet`。
 3. 先发现本机有哪些 Agent CLI（`grok`、`opencode`，以及用户已经在用、
    并备好档案的其他 CLI）。看不清就问。`foil doctor` 会报告 tmux、Git
    和已知 CLI，但不会去读凭据。再问这些 CLI 能启动哪些模型、各自还剩多少用量。
@@ -104,11 +100,9 @@ foil status --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
    `opencode`）。发现本机 CLI 之后，若要换 CLI、模型或 `--role-file`
    人设，用 `foil seats set` 改这份文件，不要从零编造 `--cli`。映射有
    取舍时先说清楚，等用户点头。
-7. 用 init JSON 里的 `--state-dir` 和 `--fleet` 拉起席位：先
-   `foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
-   --seat lead`，再拉工人。这两个参数是必需的。不要在 spawn 上再传
-   `--cli`、`--lead` 或 `--model`，除非你是在覆盖文件。然后跑
-   `foil status`。
+7. 在项目里拉起席位：先 `foil seat spawn --seat lead`，再拉工人。
+   不要在 spawn 上再传 `--cli`、`--lead` 或 `--model`，除非你是在覆盖文件。
+   然后跑 `foil status`。
 8. 把日常命令交回给用户：`foil status`、`tmux`、
    `foil send-message --wake`、`foil resume`。主座在、互补席位已映射、
    用户能自己查看舰队，你的搭建就结束了。
@@ -117,7 +111,7 @@ foil status --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
 
 **一支舰队对应一个 worktree。** 为项目保留一个干净、与远端 `main` 保持 fast-forward 的基准 checkout；为每支舰队创建一个专用的功能 worktree，并在其中运行主座和工人席位。绝不要让舰队改动基准 checkout；如果它变脏了，应当报错并通知，而不是替它收拾。显式选择其他基准也完全可以——这是给你的操作守则，不是运筹强制的功能。
 
-**由主座决定成员。** 每支舰队从一名主座开始。主座（或你）按需从角色库拉起工人席位。工人默认隔离：Foil 会从已提交的 HEAD 克隆出 `worktrees/<seat_id>`，因此未提交的文件不会被带进去，之后的提交也不会自动刷新这些克隆；`foil doctor` 会报告落后情况。需要共享目录时，使用高级选项 `--shared-cwd`。
+**由主座决定成员。** 每支舰队从一名主座开始。主座（或你）按需从角色库拉起工人席位。工人默认隔离。同一仓库里的工人通过 `git clone --local` 得到 `worktrees/<seat_id>`，因此未提交的文件不会被带进去，之后的提交也不会自动刷新这些克隆；`foil doctor` 会报告落后情况。若要从另一个 Git 仓库隔离，传入 `--from PATH`：运筹会在 `<PATH>/worktrees/<seat_id>` 上执行 `git worktree add`。配方里的 `cwd` 和 `--cwd` 始终是目的地；若它们指向另一个仓库的基准 checkout，会被拒绝。需要共享目录时，使用高级选项 `--shared-cwd`。
 
 **诚实的席位状态。** `working` 只表示 tmux 进程还活着——不代表模型正在思考。`foil status` 会把注册表与活着的 tmux 对账；`foil poll-status` 只读带版本的状态文件。
 
@@ -132,7 +126,7 @@ git clone https://github.com/jnMetaCode/agency-agents-zh.git ./personas
 foil catalog-list --path ./personas
 foil catalog-map --path ./personas --persona NAME --json
 foil seats set --seat designer --cli grok --role-file ./personas/path/to/designer.md
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat designer
+foil seat spawn --seat designer
 ```
 
 `catalog-map` 只返回人设文件的 `path`，不会指定 CLI：`cli` 和 `preset` 始终为空。把配备写进 `foil seats set`。
@@ -143,7 +137,7 @@ Grok 和 OpenCode 是内置预设。其他交互式 CLI 通过声明式席位档
 
 ```sh
 foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat researcher
+foil seat spawn --seat researcher
 ```
 
 spawn 上的 `--profile` 仍可临时覆盖席位文件。
