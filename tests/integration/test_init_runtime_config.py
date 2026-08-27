@@ -37,6 +37,7 @@ def test_init_git_setup_produces_empty_live_fleet(tmp_path: Path) -> None:
     assert payload["lead_seat_id"] is None
     assert not (project / ".foil" / "runtime.toml").exists()
     assert not (project / ".foil" / "fleet.toml").exists()
+    assert (project / ".foil" / "seats.toml").is_file()
 
     subprocess.run(
         ["git", "init", "--quiet", "-b", payload["git_branch"]],

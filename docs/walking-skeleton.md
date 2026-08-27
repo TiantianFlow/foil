@@ -66,8 +66,9 @@ foil --help
 ### T2 — Initialize and scaffold an isolated project
 
 `foil init .` must run before Git initialization because it accepts only an
-empty project. It writes a role library and an empty live fleet. Git is
-initialized immediately afterward with `git init -b foil-demo`.
+empty project. It writes a role library, a complementary starter roster
+in `.foil/seats.toml`, and an empty live fleet. Git is initialized
+immediately afterward with `git init -b foil-demo`.
 
 ```sh
 set -eu
@@ -102,20 +103,24 @@ git init -b foil-demo
 
 ### T3 — Spawn a lead and complementary seats
 
-The first seat must be the lead. The operator then spawns
-`implementer` and `reviewer-challenger` workers. Workers isolate by
-default. Spawn is `--permission supervised` unless you pass `auto`.
-Lifecycle commands use `--state-dir`, `--fleet`, and machine-readable
-`--json`. `working` means the recorded tmux process is alive. The
-unattended Grok-to-OpenCode exam lives in
+The first seat must be the lead. Persist the complementary mapping with
+`foil seats set` (init already wrote a starter roster; this step records
+the intended CLIs), then spawn from that file. Do not pass `--cli`,
+`--lead`, or `--permission` on spawn unless you are overriding the
+file. Workers isolate by default. Lifecycle commands use `--state-dir`,
+`--fleet`, and machine-readable `--json`. `working` means the recorded
+tmux process is alive. The unattended Grok-to-OpenCode exam lives in
 [authenticated-lead-worker-exam.md](authenticated-lead-worker-exam.md).
 
 ```sh
-LEAD_JSON="$(foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --lead --seat lead --cli grok --role manager)"
+foil seats set --seat lead --lead --cli grok --role manager
+foil seats set --seat implementer --cli grok --role implementer
+foil seats set --seat reviewer-challenger --cli opencode --role reviewer-challenger --permission auto
+LEAD_JSON="$(foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat lead)"
 printf '%s\n' "$LEAD_JSON" | python3 -m json.tool
-IMPL_JSON="$(foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat implementer --cli grok --role implementer)"
+IMPL_JSON="$(foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat implementer)"
 printf '%s\n' "$IMPL_JSON" | python3 -m json.tool
-REVIEW_JSON="$(foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat reviewer-challenger --cli opencode --role reviewer-challenger)"
+REVIEW_JSON="$(foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat reviewer-challenger)"
 printf '%s\n' "$REVIEW_JSON" | python3 -m json.tool
 printf '%s\n' "$REVIEW_JSON" | python3 -c '
 import json, sys

@@ -37,6 +37,7 @@ def test_foil_help_lists_init() -> None:
     assert result.returncode == 0
     assert "init" in result.stdout
     assert "seat" in result.stdout
+    assert "seats" in result.stdout
     assert "resume" in result.stdout
     assert "launch" not in result.stdout
 
@@ -87,6 +88,7 @@ def test_init_in_current_empty_directory_emits_resolved_json(tmp_path: Path) -> 
         "memory-curator",
     ]
     assert (project / ".foil" / "roles" / "manager.toml").is_file()
+    assert (project / ".foil" / "seats.toml").is_file()
     assert not (project / ".foil" / "runtime.toml").exists()
     assert (state_root / "v1" / "fleets" / payload["fleet_id"] / "seats").is_dir()
 

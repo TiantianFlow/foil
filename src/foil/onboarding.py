@@ -18,6 +18,7 @@ from typing import Any
 
 from foil.fleet import FleetRecord, FleetStore
 from foil.registry import SCHEMA_VERSION, _ensure_private_directory
+from foil.seats import empty_roster_text
 
 DEFAULT_ROLE_IDS = (
     "manager",
@@ -188,7 +189,8 @@ def _write_role_library(project_root: Path) -> _ScaffoldWrites:
     """Create only missing Foil files after validating every collision first.
 
     Existing role files with identical packaged content are left untouched;
-    conflicting content or unsafe paths fail closed before any write. On a
+    conflicting content or unsafe paths fail closed before any write. An
+    existing `.foil/seats.toml` is user-owned and is never overwritten. On a
     partial failure only artifacts this call created are rolled back, never
     user-owned `.foil` extras or the project tree.
     """
@@ -197,6 +199,7 @@ def _write_role_library(project_root: Path) -> _ScaffoldWrites:
     _validate_role_library(role_templates)
     scaffold = project_root / ".foil"
     roles_directory = scaffold / "roles"
+    seats_file = scaffold / "seats.toml"
     writes = _ScaffoldWrites(roles_path=roles_directory)
 
     scaffold_exists = _existing_directory(scaffold, "Foil scaffold")
@@ -205,6 +208,17 @@ def _write_role_library(project_root: Path) -> _ScaffoldWrites:
         if scaffold_exists
         else False
     )
+    seats_exist = False
+    try:
+        seats_stat = seats_file.lstat()
+    except FileNotFoundError:
+        seats_exist = False
+    else:
+        if stat.S_ISLNK(seats_stat.st_mode) or not stat.S_ISREG(seats_stat.st_mode):
+            raise InitializationError(
+                f"seat config is not a regular file: {seats_file}"
+            )
+        seats_exist = True
     for role_id, role_text in role_templates.items():
         role_path = roles_directory / f"{role_id}.toml"
         try:
@@ -230,6 +244,10 @@ def _write_role_library(project_root: Path) -> _ScaffoldWrites:
         if not roles_exist:
             roles_directory.mkdir(mode=0o755)
             writes.directories.append(roles_directory)
+        if not seats_exist:
+            seats_file.write_text(empty_roster_text(), encoding="utf-8")
+            seats_file.chmod(0o644)
+            writes.files.append(seats_file)
         for role_id, role_text in role_templates.items():
             role_path = roles_directory / f"{role_id}.toml"
             if role_path.exists():

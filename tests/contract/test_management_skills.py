@@ -44,6 +44,7 @@ SHIPPED_COMMANDS = (
     "set-state",
     "catalog-list",
     "catalog-map",
+    "seats",
 )
 FORBIDDEN_CONTROL_SURFACES = (
     "mcp",
