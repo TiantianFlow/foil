@@ -146,7 +146,25 @@ def _add_runtime_parsers(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="Allow this seat to share a working directory with another seat.",
     )
-    spawn.add_argument("--cwd", type=Path)
+    spawn.add_argument(
+        "--from",
+        dest="isolate_from",
+        type=Path,
+        metavar="PATH",
+        help=(
+            "Git root to isolate from. Destination is <root>/worktrees/<seat>. "
+            "A different repository than the fleet project uses git worktree add."
+        ),
+    )
+    spawn.add_argument(
+        "--cwd",
+        type=Path,
+        help=(
+            "Seat working directory. When this path belongs to a different Git "
+            "repository than the fleet project, isolated spawn treats it as "
+            "--from. Refused when it is another repository's canonical checkout."
+        ),
+    )
     spawn.add_argument("--model")
     spawn.add_argument("--display-name")
     spawn.add_argument("--resume-arg", action="append", dest="resume_args")
@@ -764,6 +782,7 @@ def _seat_command(args: argparse.Namespace) -> int:
             isolated=args.isolated,
             shared_cwd=args.shared_cwd,
             working_directory=args.cwd,
+            isolate_from=args.isolate_from,
             model=args.model,
             lead=args.lead,
             permission=args.permission,

@@ -103,6 +103,38 @@ def make_project(tmp_path: Path) -> Path:
     return project
 
 
+def make_committed_repo(path: Path, *, marker: str = "APP.md") -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    git("init", "-b", "main", cwd=path)
+    (path / marker).write_text("product\n", encoding="utf-8")
+    env = os.environ.copy()
+    env.update(
+        {
+            "GIT_AUTHOR_NAME": "Product",
+            "GIT_AUTHOR_EMAIL": "product@localhost",
+            "GIT_COMMITTER_NAME": "Product",
+            "GIT_COMMITTER_EMAIL": "product@localhost",
+        }
+    )
+    subprocess.run(
+        ["git", "add", marker],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    subprocess.run(
+        ["git", "commit", "--quiet", "-m", "product root"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    return path
+
+
 def write_live_fleet(tmp_path: Path, project: Path) -> tuple[Path, str]:
     fleet_id = f"fleet-{uuid.uuid4().hex}"
     state = tmp_path / "state"
@@ -1143,6 +1175,82 @@ def test_aborted_spawn_preserves_preexisting_worktree_and_adapter_state(
     assert len(tmux.launches) == 1
     with pytest.raises(FileNotFoundError):
         controller.registry.read_seat(controller.fleet.fleet_id, "worker")
+
+
+@pytest.mark.parametrize("source_kwarg", ["working_directory", "isolate_from"])
+def test_isolated_spawn_from_foreign_git_root_uses_worktree_add(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_kwarg: str,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+    product = make_committed_repo(tmp_path / "product")
+    project = tmp_path / "project"
+    before_project = {
+        str(path.relative_to(project)): path.read_bytes()
+        for path in sorted(project.rglob("*"))
+        if path.is_file() and ".git" not in path.parts
+    }
+
+    spawned = controller.spawn(
+        seat_id="implementer",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        **{source_kwarg: product},
+    )
+
+    dest = product / "worktrees" / "implementer"
+    record = controller.inspect("implementer")["registry"]
+    assert Path(record["worktree_path"]).resolve() == dest.resolve()
+    assert Path(record["working_directory"]).resolve() == dest.resolve()
+    assert {seat["seat_id"] for seat in spawned} == {"implementer"}
+    assert (dest / ".git").is_file()
+    assert (dest / "APP.md").read_text(encoding="utf-8") == "product\n"
+    assert not (dest / ".foil").exists()
+    listed = git("worktree", "list", "--porcelain", cwd=product)
+    assert str(dest.resolve()) in listed
+    log = git("log", "--format=%s", cwd=product)
+    assert "foil identity" not in log.splitlines()
+    assert not (project / "worktrees").exists()
+    after_project = {
+        str(path.relative_to(project)): path.read_bytes()
+        for path in sorted(project.rglob("*"))
+        if path.is_file() and ".git" not in path.parts
+    }
+    assert after_project == before_project
+    assert len(tmux.launches) == 2
+
+
+def test_spawn_refuses_sitting_on_a_foreign_canonical_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller, tmux, executable = _bare_name_controller(tmp_path, monkeypatch)
+    controller.spawn(
+        seat_id="lead",
+        cli=executable.name,
+        launch_argv=generated_argv(),
+        lead=True,
+    )
+    product = make_committed_repo(tmp_path / "product")
+    with pytest.raises(LifecycleError, match="canonical checkout"):
+        controller.spawn(
+            seat_id="implementer",
+            cli=executable.name,
+            launch_argv=generated_argv(),
+            isolated=False,
+            working_directory=product,
+        )
+    assert not (product / "worktrees").exists()
+    assert len(tmux.launches) == 1
+    with pytest.raises(FileNotFoundError):
+        controller.registry.read_seat(controller.fleet.fleet_id, "implementer")
 
 
 def test_auto_permission_fails_on_profile_owned_cli(

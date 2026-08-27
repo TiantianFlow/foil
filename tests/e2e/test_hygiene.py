@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -68,3 +69,75 @@ def test_isolated_spawn_preserves_a_tracked_foil_md(initialized: OperatorFleet) 
         / "FOIL.md"
     )
     assert canonical.is_file()
+
+
+def _commit_product(path: Path) -> Path:
+    path.mkdir(parents=True)
+    env = os.environ.copy()
+    env.update(
+        {
+            "GIT_AUTHOR_NAME": "Product",
+            "GIT_AUTHOR_EMAIL": "product@localhost",
+            "GIT_COMMITTER_NAME": "Product",
+            "GIT_COMMITTER_EMAIL": "product@localhost",
+        }
+    )
+    subprocess.run(
+        ["git", "init", "--quiet", "-b", "main"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+    (path / "APP.md").write_text("product\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "APP.md"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+    subprocess.run(
+        ["git", "commit", "--quiet", "-m", "product root"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        env=env,
+    )
+    return path
+
+
+def test_isolated_spawn_from_a_foreign_git_root(initialized: OperatorFleet) -> None:
+    product = _commit_product(initialized.root.parent / "product")
+    initialized.spawn("lead", "grok", lead=True, role="manager").json()
+    spawned = initialized.spawn(
+        "implementer",
+        "grok",
+        isolated=True,
+        role="implementer",
+        extra=("--cwd", str(product)),
+    )
+    assert spawned.returncode == 0, spawned.stderr
+    dest = product / "worktrees" / "implementer"
+    record = spawned.json()["seats"][0]["registry"]
+    assert Path(record["worktree_path"]).resolve() == dest.resolve()
+    assert (dest / ".git").is_file()
+    assert (dest / "APP.md").read_text(encoding="utf-8") == "product\n"
+    assert not (dest / ".foil").exists()
+    assert not (initialized.project / "worktrees").exists()
+    listed = _git("worktree", "list", "--porcelain", cwd=product)
+    assert str(dest.resolve()) in listed
+    log = _git("log", "--format=%s", cwd=product)
+    assert "foil identity" not in log.splitlines()
+    assert "worktrees/" not in _git("status", "--short", cwd=initialized.project)
+    doctor = initialized.foil("doctor", *initialized.fleet_flags(), "--json").json()
+    assert doctor["worktrees"]["ok"] is True
+    refused = initialized.spawn(
+        "roommate",
+        "grok",
+        isolated=False,
+        role="implementer",
+        extra=("--cwd", str(product)),
+    )
+    assert refused.returncode != 0
+    assert "canonical checkout" in refused.stderr.lower()

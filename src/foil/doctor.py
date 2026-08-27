@@ -26,6 +26,11 @@ class DoctorError(ValueError):
     """Prerequisite discovery or worktree preparation failed."""
 
 
+CANONICAL_CHECKOUT_REFUSAL = (
+    "refusing to sit on the named repository's canonical checkout"
+)
+
+
 def doctor_report(
     state_root: Path | str,
     fleet_id: str,
@@ -95,6 +100,67 @@ def ensure_isolated_worktree(project_root: Path, destination: Path) -> None:
     exclude_git_pattern(destination, "/FOIL.md")
 
 
+def ensure_linked_worktree(source_root: Path, destination: Path) -> None:
+    """Attach destination as a `git worktree add` of a foreign git root."""
+
+    git_root = git_toplevel(source_root)
+    if git_root is None:
+        raise DoctorError("working directory is not a valid Git worktree")
+    if destination.resolve() == git_root.resolve():
+        raise DoctorError(CANONICAL_CHECKOUT_REFUSAL)
+    if not _has_head(git_root):
+        raise DoctorError("working directory is not a valid Git worktree")
+    if destination.is_dir():
+        if not _is_linked_worktree(destination):
+            raise DoctorError("could not create independent worktree")
+    else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(git_root),
+                    "worktree",
+                    "add",
+                    "--quiet",
+                    "-B",
+                    f"foil/{destination.name}",
+                    str(destination),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                env=_git_env(),
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise DoctorError("could not create independent worktree") from exc
+    exclude_git_pattern(git_root, "/worktrees/")
+    exclude_git_pattern(destination, "/FOIL.md")
+
+
+def remove_created_worktree(destination: Path) -> None:
+    """Remove a spawn-created clone or linked worktree without touching its source."""
+
+    common_dir = None
+    if (destination / ".git").is_file():
+        listed = subprocess.run(
+            ["git", "-C", str(destination), "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if listed.returncode == 0 and listed.stdout.strip():
+            common_dir = listed.stdout.strip()
+    shutil.rmtree(destination)
+    if common_dir:
+        subprocess.run(
+            ["git", "--git-dir", common_dir, "worktree", "prune"],
+            capture_output=True,
+            check=False,
+        )
+
+
 def exclude_git_pattern(repo: Path, pattern: str) -> None:
     """Append a private exclude without editing a tracked .gitignore."""
 
@@ -123,7 +189,7 @@ def exclude_git_pattern(repo: Path, pattern: str) -> None:
 
 
 def ensure_registered_worktrees(project_root: Path, records) -> None:
-    """Create missing isolated clones for registered seats."""
+    """Create missing isolated clones or linked worktrees for registered seats."""
 
     git_root = git_toplevel(project_root)
     if git_root is None:
@@ -133,7 +199,25 @@ def ensure_registered_worktrees(project_root: Path, records) -> None:
         path = Path(record.worktree_path)
         if path.resolve() == git_root.resolve():
             continue
+        dest_git = git_toplevel(path)
+        if (
+            dest_git is not None
+            and dest_git.resolve() != git_root.resolve()
+            and not contained_in(path, Path(project_root) / "worktrees")
+        ):
+            if path.resolve() == dest_git.resolve():
+                raise DoctorError(CANONICAL_CHECKOUT_REFUSAL)
+            ensure_linked_worktree(dest_git, path)
+            continue
         ensure_isolated_worktree(git_root, path)
+
+
+def contained_in(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+    except ValueError:
+        return False
+    return True
 
 
 def git_toplevel(start: Path) -> Path | None:
@@ -252,8 +336,10 @@ def _worktree_status(project_root: Path, records) -> dict[str, Any]:
         same_root = (
             git_root is not None and exists and path.resolve() == git_root.resolve()
         )
+        fleet_clone = exists and contained_in(path, Path(project_root) / "worktrees")
         stale = (
             not same_root
+            and fleet_clone
             and project_head is not None
             and tree_head is not None
             and tree_head != project_head
@@ -290,6 +376,21 @@ def _git_env() -> dict[str, str]:
     environment = os.environ.copy()
     environment.update(GIT_IDENTITY)
     return environment
+
+
+def _has_head(git_root: Path) -> bool:
+    head = subprocess.run(
+        ["git", "-C", str(git_root), "rev-parse", "--verify", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return head.returncode == 0 and bool(head.stdout.strip())
+
+
+def _is_linked_worktree(destination: Path) -> bool:
+    observed = git_toplevel(destination)
+    return (destination / ".git").is_file() and observed == destination.resolve()
 
 
 def _ensure_initial_commit(git_root: Path) -> None:
