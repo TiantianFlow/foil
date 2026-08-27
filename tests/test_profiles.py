@@ -444,7 +444,7 @@ def test_spawn_without_cli_or_profile_fails_closed(
 ) -> None:
     controller, tmux, _executable = _profile_controller(tmp_path, monkeypatch)
 
-    with pytest.raises(LifecycleError, match="predefined seat config"):
+    with pytest.raises(LifecycleError, match="no predefined config"):
         controller.spawn(seat_id="lead", launch_argv=generated_argv(), lead=True)
     assert tmux.launches == []
 

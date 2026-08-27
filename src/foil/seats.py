@@ -199,10 +199,7 @@ def apply_overrides(
     ``role_file`` unless ``--role-file`` is also passed, and the reverse.
     """
 
-    if base is None:
-        merged = SeatStaffing(seat_id=seat_id)
-    else:
-        merged = base
+    merged = SeatStaffing(seat_id=seat_id) if base is None else base
     lead_value = lead or merged.lead
     role_value = merged.role
     role_file_value = merged.role_file
@@ -241,7 +238,7 @@ def resolve_spawn_staffing(
     base = roster.get(seat_id)
     merged = apply_overrides(base, seat_id=seat_id, **overrides)
     if merged.has_launch_source():
-        _validate_staffing(merged)
+        _validate_staffing(merged, exclusive_role=False)
         return merged
     if not path.exists():
         raise SeatStaffingError(
@@ -303,12 +300,12 @@ def _parse_seat(seat_id: str, raw: Any) -> SeatStaffing:
     return staffing
 
 
-def _validate_staffing(staffing: SeatStaffing) -> None:
+def _validate_staffing(staffing: SeatStaffing, *, exclusive_role: bool = True) -> None:
     try:
         _validate_id(staffing.seat_id, "seat_id")
     except RegistryError as exc:
         raise SeatStaffingError(str(exc)) from exc
-    if staffing.role and staffing.role_file:
+    if exclusive_role and staffing.role and staffing.role_file:
         raise SeatStaffingError(
             f"seat {staffing.seat_id} cannot set both role and role_file"
         )

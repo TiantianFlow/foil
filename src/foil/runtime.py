@@ -45,7 +45,6 @@ from foil.fleet import (
 from foil.known_clis import adapter_id_for_cli
 from foil.naming import tmux_session_name, tmux_window_name
 from foil.profiles import ProfileError, SeatProfile, load_profile
-from foil.seats import SeatStaffingError, resolve_spawn_staffing
 from foil.registry import (
     RegistryError,
     RegistryStore,
@@ -57,6 +56,7 @@ from foil.registry import (
 )
 from foil.resume import ResumeAction, ResumeEvidence, TmuxProbeState, resolve_resume
 from foil.runtime_config import SeatConfig, UsagePoolConfig
+from foil.seats import SeatStaffingError, resolve_spawn_staffing
 from foil.status import PollStatusReader, SeatState, StatusSnapshot
 from foil.tmux import ProbeResult, ProbeState, TmuxController
 

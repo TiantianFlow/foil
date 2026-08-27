@@ -163,6 +163,9 @@ def test_spawn_from_predefined_seat_config_without_cli_or_model(
 ) -> None:
     controller, _tmux, _executable = _profile_controller(tmp_path, monkeypatch)
     project = tmp_path / "project"
+    profile_path = project / "profiles" / "spec.toml"
+    profile_path.parent.mkdir(parents=True)
+    profile_path.write_text(COMPLETE_PROFILE, encoding="utf-8")
     _write_roster(
         project,
         """
@@ -170,7 +173,7 @@ schema_version = 1
 
 [seats.lead]
 lead = true
-cli = "fixture-agent"
+profile = "profiles/spec.toml"
 model = "from-file"
 permission = "auto"
 """,
