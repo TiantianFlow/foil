@@ -7,11 +7,11 @@
 [中文](README.zh-CN.md)
 
 **Your agents' loyal opposition.** Foil coordinates a complementary
-fleet of local CLI-agent seats from your shell. One seat implements,
-another challenges the work from its own context, and a lead you control
-staffs and directs them. Mail and status live in durable files on disk;
-seats live in tmux. No hosted control plane, no chat UI, no MCP, and no
-Foil login.
+fleet of local CLI-agent seats from your shell. One seat implements.
+Another challenges the work from a context the first seat does not
+share. A lead you control staffs and directs them. Mail and status live
+in durable files on disk; seats live in tmux. No hosted control plane,
+no chat UI, no MCP, and no Foil login.
 
 The opposition is structural, not theatrical. Foil seats are independent CLI processes,
 not subagents sharing one parent model's context. They can
@@ -24,13 +24,18 @@ If you already run more than one local CLI agent, you know the failure
 modes: every voice blended into one chat, context that evaporates when a
 tmux session dies, no durable handoff between agents, and steady
 pressure to adopt a hosted UI. Foil is the answer that stays in the
-shell.
+shell. Bring the Markdown personas you already trust — Foil does not
+rewrite them.
 
 ## Why Foil
 
 - **Complementary seats, not one blended voice.** Each seat is a
   distinct agent CLI process with its own role, context, and working
   directory.
+- **Your roster, used as written.** Off-the-shelf catalogs such as
+  [Agency Agents](https://github.com/msitarzewski/agency-agents) and its
+  localized copies staff a seat as-is. No wrapper, no translation layer,
+  no Foil-shaped rewrite.
 - **Durable coordination.** Mailbox messages, acknowledgements, and seat
   status are versioned files on disk. A message stays `queued` until the
   recipient acknowledges it — whether or not anyone was watching.
@@ -65,18 +70,19 @@ research→implement→review pipeline.
 
 You need Python 3.11+, uv, tmux 3.2+, and Git. The example below also
 uses locally authenticated `grok` and `opencode` CLIs; Foil never handles
-those logins.
+those logins. If you would rather have a local agent do the setup, skip
+to [Ask an agent](#ask-an-agent).
 
-Install the pinned public release:
+Install the current public tip (package version 0.1.0):
 
 ```sh
-uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.1.0"
+uv tool install "git+https://github.com/TiantianFlow/foil.git"
 ```
 
-To upgrade later, reinstall with the newer release tag:
+To upgrade later, reinstall from the same URL:
 
 ```sh
-uv tool install --reinstall "git+https://github.com/TiantianFlow/foil.git@v0.1.0"
+uv tool install --reinstall "git+https://github.com/TiantianFlow/foil.git"
 ```
 
 Then switch to the repository you want Foil to coordinate. `foil init`
@@ -89,16 +95,75 @@ is not a Git repository. (An empty directory works too — run
 # then in your existing Git repository
 cd your-repo
 foil init .
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --lead --seat lead --cli grok --role manager
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --seat implementer --cli grok --role implementer
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --seat reviewer-challenger --cli opencode --role reviewer-challenger --permission auto
-foil send-message --state-dir STATE_ROOT --fleet FLEET_ID --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
+
+# copy state_root and fleet_id from the JSON foil init printed
+export STATE_ROOT=...
+export FLEET_ID=...
+
+foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --lead --seat lead --cli grok --role manager
+foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat implementer --cli grok --role implementer
+foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat reviewer-challenger --cli opencode --role reviewer-challenger --permission auto
+foil send-message --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
+foil status --state-dir "$STATE_ROOT" --fleet "$FLEET_ID"
 ```
 
-Copy `state_root` and `fleet_id` from the JSON that `foil init` prints.
-The first seat must be the lead; workers come after. `foil send-message`
-persists mail only — pass `--wake`, or run `foil seat wake` after
-inspecting tmux, to nudge a seat.
+Do not paste the words `STATE_ROOT` or `FLEET_ID`. The first seat must
+be the lead; workers come after. `foil send-message` persists mail only
+— pass `--wake`, or run `foil seat wake` after inspecting tmux, to
+nudge a seat. `foil status` is the first thing to run when you want to
+see whether those seats are actually alive.
+
+Shipped presets are `grok` and `opencode`. Another interactive CLI
+joins through a [declarative profile](#personas-roles-and-other-clis),
+not by hoping the name works.
+
+## Ask an agent
+
+If a local CLI agent is already helping in this repository, you do not
+need to paste the commands above. Tell it:
+
+> Install Foil in this project and follow the agent setup instructions
+> in the README.
+
+That is the whole prompt. The playbook it should follow is the next
+section.
+
+## If you are an agent setting up Foil
+
+You are staffing a local fleet, not installing a hosted product. Stay
+in the shell. Do not invent a Foil login, MCP server, or browser
+control plane.
+
+1. Confirm Python 3.11+, uv, tmux 3.2+, and Git. Install Foil with
+   `uv tool install "git+https://github.com/TiantianFlow/foil.git"`.
+2. Work in the user's existing Git repository. Run `foil init .` and
+   keep the printed `state_root` and `fleet_id` for every later flag.
+3. Discover which agent CLIs are on `PATH` (`grok`, `opencode`, and any
+   profiled CLI the user already runs). Ask when discovery is
+   incomplete. `foil doctor` reports tmux, Git, and known CLIs; it does
+   not read credentials. Ask which models those CLIs can launch and
+   how much usage remains on each.
+4. Offer a local Markdown roster. A good default is
+   [Agency Agents](https://github.com/msitarzewski/agency-agents);
+   localized copies of that catalog work the same way. Clone or copy it
+   next to the project — for example `./personas` — and leave every
+   persona file untouched. Foil reads the file as written.
+5. Ask what kind of work the user actually does. Pick a small
+   complementary suite from that answer: one lead, one implementer,
+   one challenger at minimum. Do not staff eight seats because eight
+   role files exist.
+6. Map seats to locally available CLIs and models. Put heavy
+   implementation on the CLI and model with enough remaining usage
+   for the job. Put the challenger on a *different* CLI or model
+   family when possible, so review is not the same voice restated.
+   Tell the user the mapping and wait if the tradeoff is unclear.
+7. Spawn the lead first. Staff workers with `--role-file` pointing at
+   the chosen persona files, or `--role` from `.foil/roles/` when the
+   built-in library is enough. Then `foil status`.
+8. Hand the user back ordinary commands: `foil status`, `tmux`,
+   `foil send-message --wake`, `foil resume`. You are done when a lead
+   exists, complementary seats are mapped, and the user can inspect
+   the fleet without you.
 
 ## Operating a fleet
 
@@ -132,13 +197,17 @@ adapter-declared approval flags.
 
 `foil init` scaffolds a role library — manager, implementer,
 reviewer-challenger, and more — under `.foil/roles/`. You can also staff
-seats directly from your own Markdown persona catalog; the persona file
-is used untouched, with no wrapper:
+seats directly from a Markdown persona catalog; the persona file
+is used untouched, with no wrapper. That includes
+[Agency Agents](https://github.com/msitarzewski/agency-agents) and
+localized copies of the same catalog. Foil does not own the roster and
+does not require a Foil-specific rewrite:
 
 ```sh
+git clone https://github.com/msitarzewski/agency-agents.git ./personas
 foil catalog-list --path ./personas
 foil catalog-map --path ./personas --persona NAME --json
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --seat designer --role-file ./personas/designer.md
+foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat designer --role-file ./personas/path/to/designer.md
 ```
 
 Grok and OpenCode are shipped presets. Other interactive CLIs join
@@ -152,7 +221,7 @@ Save or copy the shipped
 the repository you are coordinating, then pass its path per seat:
 
 ```sh
-foil seat spawn --state-dir STATE_ROOT --fleet FLEET_ID --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
+foil seat spawn --state-dir "$STATE_ROOT" --fleet "$FLEET_ID" --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
 ```
 
 Presets and profiles are the only supported
