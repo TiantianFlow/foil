@@ -29,63 +29,62 @@ Adapter quirks live in `skills/adapters/`.
 ## State and JSON
 
 `foil init` prints JSON with `state_root`, `fleet_id`, `roles_path`,
-`lead_seat_id` (null), and `git_branch`. Copy `state_root` and `fleet_id`
-into later flags. Lifecycle commands take `--state-dir` and `--fleet`.
-Pass `--json` on `status`, `resume`, `seat spawn`, `seat stop`,
-`seat remove`, `seat wake`, `set-state`, `dispatch`, and `doctor`. `init`,
-`poll-status`, mailbox, notepad, and memory commands already emit JSON.
+`lead_seat_id` (null), and `git_branch`. Later commands default to this
+Git project's Foil state and its only live fleet. Pass `--state-dir` or
+`--fleet` only to override. Pass `--json` on `status`, `resume`,
+`seat spawn`, `seat stop`, `seat remove`, `seat wake`, `set-state`,
+`dispatch`, and `doctor`. `init`, `poll-status`, mailbox, notepad, and
+memory commands already emit JSON.
 
-State precedence when `foil init` runs: `FOIL_STATE_DIR`, then the Git common
-directory, then `XDG_STATE_HOME`, then the platform fallback. After init, pass
-the printed `state_root` explicitly with `--state-dir`.
+State precedence: `FOIL_STATE_DIR`, then the Git common directory, then
+`XDG_STATE_HOME`, then the platform fallback.
 
 ## Lead-owned live fleet
 
-`foil init` accepts an empty directory or an existing Git repository. It
-preserves every tracked and untracked file and all Git state, refuses a
-non-empty directory outside Git, and fails closed on conflicting `.foil` or
-fleet-state collisions without mutating user files. It writes a role library
-and an empty live registry. No seats start. The first seat must be the lead.
+`foil init` accepts an empty directory or an existing Git repository. In a
+new empty directory, run `git init` first so later commands can default to
+that project's state. It preserves every tracked and untracked file and all
+Git state, refuses a non-empty directory outside Git, and fails closed on
+conflicting `.foil` or fleet-state collisions without mutating user files.
+It writes a role library and an empty live registry. No seats start. The
+first seat must be the lead.
 The lead or an operator then spawns workers. Membership is live data
 persisted only so `foil resume` can continue after interruption. After an
 intentional full shutdown and `foil seat remove` of every seat, the next
 fleet starts lead-only again.
 
 ```sh
+# in an existing Git repository, or after `git init` in an empty directory
 foil init .
-git init -b foil-demo
-# copy state_root and fleet_id from the init JSON
 foil seats list --json
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat lead
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat implementer
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat reviewer-challenger
-foil seat list --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json
-foil status --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json
-foil poll-status --state-dir "$STATE_DIR" --fleet "$FLEET_ID"
-foil send-message --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat reviewer-challenger --sender lead --body "Challenge the current plan."
-foil seat wake --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat reviewer-challenger
-foil message-status --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat reviewer-challenger --message MESSAGE_ID
-foil resume --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json
-foil resume --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --fresh --seat implementer
-foil seat stop --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat implementer
-foil seat stop --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --all
-foil seat remove --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat implementer
-foil doctor --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json
-foil dispatch --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --capability review
-foil set-state --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat implementer --state waiting
+foil seat spawn --json --seat lead
+foil seat spawn --json --seat implementer
+foil seat spawn --json --seat reviewer-challenger
+foil seat list --json
+foil status --json
+foil poll-status
+foil send-message --seat reviewer-challenger --sender lead --body "Challenge the current plan."
+foil seat wake --json --seat reviewer-challenger
+foil message-status --seat reviewer-challenger --message MESSAGE_ID
+foil resume --json
+foil resume --json --fresh --seat implementer
+foil seat stop --json --seat implementer
+foil seat stop --json --all
+foil seat remove --json --seat implementer
+foil doctor --json
+foil dispatch --json --capability review
+foil set-state --json --seat implementer --state waiting
 foil catalog-list --path ./personas --json
 foil catalog-map --path ./personas --persona "Engineering reviewer" --json
 foil seats set --seat reviewer --cli opencode --role-file ./personas/reviewer.md
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat reviewer
+foil seat spawn --json --seat reviewer
 foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
-foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat researcher
+foil seat spawn --json --seat researcher
 ```
 
-Copy `state_root` and `fleet_id` from `foil init` JSON into `$STATE_DIR`
-and `$FLEET_ID`. `--seat` alone is not enough. Replace `MESSAGE_ID` from
-command JSON. Do not open a Foil UI. Authenticate `grok` and `opencode`
-themselves. `foil init` writes a complementary starter roster; `foil seats set`
-edits it after you discover local CLIs.
+Replace `MESSAGE_ID` from command JSON. Do not open a Foil UI. Authenticate
+`grok` and `opencode` themselves. `foil init` writes a complementary starter
+roster; `foil seats set` edits it after you discover local CLIs.
 Default spawn reads `.foil/seats.toml`. Persist the mapping with
 `foil seats set`; `--cli`, `--model`, `--profile`, `--role`,
 `--role-file`, and `--permission` on `foil seat spawn` are ad hoc
@@ -135,7 +134,7 @@ until the seat (or an operator) writes an acknowledgement with
 acknowledgement.
 
 ```sh
-foil ack-message --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat SEAT --message MESSAGE_ID --actor ACTOR
+foil ack-message --seat SEAT --message MESSAGE_ID --actor ACTOR
 ```
 
 ## Resume precedence
