@@ -251,10 +251,10 @@ def _build_parser() -> argparse.ArgumentParser:
             "closed. No live seats are created. Edit the starter roster with "
             "`foil seats set` after you discover local CLIs, then spawn with "
             "`foil seat spawn --seat lead` from the project. In a new empty "
-            "directory, create a local Git identity after init with "
-            "`git init -b foil-demo`. State precedence is FOIL_STATE_DIR, the Git "
-            "common directory, XDG_STATE_HOME, then the documented platform "
-            "fallback."
+            "directory, create a local Git identity first with "
+            "`git init -b foil-demo`, then run `foil init`. State precedence is "
+            "FOIL_STATE_DIR, the Git common directory, XDG_STATE_HOME, then the "
+            "documented platform fallback."
         ),
     )
     init.add_argument(

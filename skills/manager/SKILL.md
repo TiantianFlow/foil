@@ -33,9 +33,9 @@ templates, not running seats. Do not claim eight seats are running.
 
 Every fleet starts with one lead. Init already persisted a starter
 mapping. Edit CLI, model, persona, and permission with `foil seats set`
-after discovery, then spawn from that file. `--seat` alone is not
-enough: lifecycle commands still need `--state-dir` and `--fleet` from
-the init JSON.
+after discovery, then spawn from that file. Later commands default to
+this Git project's Foil state and its only live fleet. Pass
+`--state-dir` or `--fleet` only to override.
 The operator or the lead then spawns workers. Live membership is
 persisted only so `foil resume` can continue after a crash or tmux
 death. Do not treat the registry as a recipe to replay tomorrow.
@@ -67,9 +67,9 @@ base is allowed. This is operator instruction, not an enforcement gate.
 1. Turn the user objective into a testable brief. Put the brief in
    `foil send-message` bodies, not in tmux keystrokes.
 2. Edit the starter mapping with `foil seats set` if discovery says so,
-   then spawn the lead with
-   `foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --json --seat lead`.
-   Flags on spawn are overrides. `--seat` alone fails argparse.
+   then spawn the lead with `foil seat spawn --seat lead --json`.
+   Flags on spawn are overrides. Pass `--state-dir` or `--fleet` only
+   to override the project default.
    Pass `--permission auto` only when the operator wants the provider
    to approve ordinary tool use. Workers isolate by default. Use
    `--shared-cwd` only when two seats must share a directory.
@@ -108,7 +108,7 @@ GitHub URL as exclusive. Do not claim browser or UI features.
 
 A persona file staffs a seat directly, untouched and without an English
 wrapper: persist the mapped `path` with `foil seats set --role-file PATH`,
-then `foil seat spawn --state-dir "$STATE_DIR" --fleet "$FLEET_ID" --seat ID`.
+then `foil seat spawn --seat ID`.
 The file must exist and be a regular
 file; a missing or invalid role file fails closed before any worktree,
 runner plan, registry record, or tmux window is created. Generated seat

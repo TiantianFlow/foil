@@ -48,7 +48,7 @@ uv tool install "git+https://github.com/TiantianFlow/foil.git"
 uv tool install --reinstall "git+https://github.com/TiantianFlow/foil.git"
 ```
 
-然后切换到你想让运筹协调的仓库。`foil init` 接受已有的 Git 仓库，并完整保留所有已跟踪和未跟踪的文件以及 Git 状态；对不是 Git 仓库的非空目录会直接拒绝。（空目录也可以——init 之后运行 `git init -b foil-demo`，给它一个 Git 身份。）
+然后切换到你想让运筹协调的仓库。`foil init` 接受已有的 Git 仓库，并完整保留所有已跟踪和未跟踪的文件以及 Git 状态；对不是 Git 仓库的非空目录会直接拒绝。（空目录也可以——先运行 `git init -b foil-demo`，再运行 `foil init .`。）
 
 ```sh
 # 然后在你已有的 Git 仓库中
