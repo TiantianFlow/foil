@@ -88,8 +88,8 @@ uv tool install --reinstall "git+https://github.com/TiantianFlow/foil.git"
 Then switch to the repository you want Foil to coordinate. `foil init`
 accepts an existing Git repository and preserves every tracked and
 untracked file and all Git state; it refuses a non-empty directory that
-is not a Git repository. (An empty directory works too — run
-`git init -b foil-demo` after init to give it a Git identity.)
+is not a Git repository. (An empty directory works too — initialize
+Git first with `git init -b foil-demo`, then run `foil init .`.)
 
 ```sh
 # then in your existing Git repository
