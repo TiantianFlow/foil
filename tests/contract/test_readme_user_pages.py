@@ -92,6 +92,8 @@ def test_readme_ci_badge_matches_real_workflow(readme_name: str) -> None:
     assert WORKFLOW.is_file()
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "uv run --no-config --frozen --isolated --extra dev pytest" in workflow
+    assert 'pytest tests/e2e -m "not e2e_live"' in workflow
+    assert "tmux" in workflow
     assert "uv run --no-config --frozen --isolated --extra dev ruff check" in workflow
     assert "uv pip install" in workflow
     assert "dist/foil_orchestrator-*.whl" in workflow

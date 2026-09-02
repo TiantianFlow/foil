@@ -78,6 +78,61 @@ def test_init_emits_the_paths_an_operator_copies_into_later_commands(
     assert roster["seats"]["reviewer-challenger"]["cli"] == "opencode"
 
 
+def test_one_shot_readme_walk_without_state_dir_or_fleet_flags(
+    fleet: OperatorFleet,
+) -> None:
+    """A stranger following README does not copy init JSON into later flags."""
+
+    fleet.git("init", "--quiet", "-b", "main")
+    env = fleet.env()
+    env.pop("FOIL_STATE_DIR", None)
+    initialized = fleet.foil("init", ".", env=env)
+    assert initialized.returncode == 0, initialized.stderr
+    payload = initialized.json()
+    fleet.fleet_id = payload["fleet_id"]
+    fleet.state = Path(payload["state_root"])
+
+    lead = fleet.foil("seat", "spawn", "--json", "--seat", "lead", env=env)
+    assert lead.returncode == 0, lead.stderr
+    implementer = fleet.foil("seat", "spawn", "--json", "--seat", "implementer", env=env)
+    assert implementer.returncode == 0, implementer.stderr
+    reviewer = fleet.foil(
+        "seat", "spawn", "--json", "--seat", "reviewer-challenger", env=env
+    )
+    assert reviewer.returncode == 0, reviewer.stderr
+    status = fleet.foil("status", "--json", env=env).json()
+    assert {seat["seat_id"] for seat in status["seats"]} == {
+        "lead",
+        "implementer",
+        "reviewer-challenger",
+    }
+    assert all(seat["state"] == "working" for seat in status["seats"])
+
+    mailed = fleet.foil(
+        "send-message",
+        "--seat",
+        "reviewer-challenger",
+        "--sender",
+        "lead",
+        "--body",
+        "Please challenge the current plan.",
+        "--wake",
+        env=env,
+    )
+    assert mailed.returncode == 0, mailed.stderr
+    message_id = mailed.json()["message"]["message_id"]
+    fleet.wait_for_ack("reviewer-challenger", message_id)
+    polled = fleet.foil("poll-status", env=env).json()
+    assert {seat["seat_id"] for seat in polled["seats"]} == {
+        "lead",
+        "implementer",
+        "reviewer-challenger",
+    }
+    doctor = fleet.foil("doctor", "--json", env=env).json()
+    assert doctor["git"]["ok"] is True
+    assert doctor["worktrees"]["ok"] is True
+
+
 def test_persist_then_spawn_lead_without_adhoc_cli_lead_or_permission(
     initialized: OperatorFleet,
 ) -> None:

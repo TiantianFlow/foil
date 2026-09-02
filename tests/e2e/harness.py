@@ -141,6 +141,15 @@ class OperatorFleet:
 
     def env(self) -> dict[str, str]:
         environment = os.environ.copy()
+        for key in (
+            "FOIL_SEAT_ID",
+            "FOIL_FLEET_ID",
+            "FOIL_INCARNATION_ID",
+            "FOIL_LEAD_SEAT_ID",
+            "FOIL_BOOTSTRAP",
+            "FOIL_STATE_DIR",
+        ):
+            environment.pop(key, None)
         environment["FOIL_STATE_DIR"] = str(self.state)
         environment["FOIL_E2E_AGENT_HOME"] = str(self.agent_home)
         if not self.live:
