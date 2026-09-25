@@ -111,12 +111,12 @@ persona catalog browsing, the doctor command, the separate seat roster
 
 Modules to delete or collapse: `memory.py`, `notepad.py`, `dispatch.py`,
 `catalog.py`, `doctor.py`, `status.py`, `seats.py`, `onboarding.py` (into
-`init`), `mailbox.py` (rewritten to about 60 lines), `adapters.py` +
-`profiles.py` (merged into one preset loader). Reused: `tmux.py`,
+`init`), `mailbox.py` (rewritten to about 60 lines), `src/foil/adapters.py` +
+`src/foil/profiles.py` (merged into one preset loader). Reused: `tmux.py`,
 `runner.py`, the atomic-write/lock helpers from `registry.py`.
 
 Other deletions: skills `controller`, `manager`, `poll-status`,
-`memory-update`, `shared-notepads`, and `adapters/*`; the `docs/spec`,
+`memory-update`, `shared-notepads`, and the adapter skills; the `docs/spec`,
 `docs/adr`, and `docs/assignments` folders; the walking-skeleton and
 exam docs. These are replaced by one `DESIGN.md`.
 
