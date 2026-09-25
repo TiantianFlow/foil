@@ -1,208 +1,311 @@
-# Lean Foil: workflow, requirements, and plan
+# Foil v0.2.0 specification
 
-Status: proposal for v0.2.0 (v0.1.0 is the current design). This replaces the current requirement set. Anything not
-listed here gets deleted, not kept around "just in case".
+This document defines Foil v0.2.0: what it does, how it is structured,
+and how to verify it. It replaces the v0.1.x requirements, design docs,
+and ADRs. Where this spec is silent, the implementer chooses, **except**
+that no command, flag, or feature beyond those listed here may be added
+(see section 11).
 
-## 1. The intended workflow
+## 1. Summary
+
+Foil is a small command-line tool for running a fleet of CLI coding
+agents in tmux. A human works through their own agent harness (the
+*operator*), which uses Foil to start a *lead* agent. The lead spawns
+and manages worker agents from role templates. Agents talk through short
+messages and shared files. Anyone can glance at an agent's screen, but
+Foil never tries to interpret it.
+
+## 2. Glossary
+
+| Term | Meaning |
+|---|---|
+| Operator | The human's own harness, outside the fleet. Not a seat. Foil sees it only as "a caller outside the fleet". |
+| Fleet | All seats Foil runs for one project. One fleet per project. |
+| Seat | One agent process in its own tmux window. |
+| Lead | The one seat allowed to spawn and kill other seats. |
+| Worker | Any seat that isn't the lead. |
+| Template | A role definition: which harness, model, persona, worktree, and permission mode. |
+| Harness preset | How to launch one agent CLI (claude, codex, ...). |
+| Board | A shared folder of files all seats can read and write. |
+| Mail | A message stored as one file on the board. |
+| Nudge | The one line Foil types into a seat's pane to announce new mail. |
+| Peek | Printing the raw last lines of a seat's pane. |
+| Contract | A board file with an agreed, versioned format. |
+
+## 3. Workflow
 
 ```text
-human ──talks to──▶ operator (the human's own harness, OUTSIDE the fleet)
-                        │  foil init / foil spawn lead / foil send lead / foil status --peek
-                        ▼
-                   ┌──────────── tmux session: one fleet ────────────┐
-                   │  lead  ──foil spawn/kill──▶  implementer-1       │
-                   │   │                          implementer-2       │
-                   │   └──foil send──▶            reviewer            │
-                   └──────────────────────────────────────────────────┘
-                        ▲ all seats read/write the board (.foil/board/)
+human ──▶ operator (outside the fleet)
+             │  foil init · foil spawn lead · foil send lead · foil status --peek
+             ▼
+        ┌──────────── tmux: one fleet ─────────────┐
+        │  lead ──spawn/kill──▶ implementer-1       │
+        │   │                   implementer-2       │
+        │   └──send──▶          reviewer-1          │
+        └───────────────────────────────────────────┘
+             all seats read/write the board
 ```
 
-1. **Human → operator.** The human opens any harness (Claude Code, Codex,
-   ...) with the operator skill, usually on a cheap model. The operator
-   never edits project code. It is not a seat and has no tmux window.
-2. **Operator → Foil.** `foil init` (once per repo), then
-   `foil spawn lead --task "<goal>"`. Foil knows only "a caller outside
-   the fleet"; there is never an operator seat.
-3. **Lead gets the goal.** The goal arrives as the lead's first mail. The
-   lead writes a plan to the board.
-4. **Lead staffs the fleet.** `foil spawn implementer`, `foil spawn reviewer`,
-   ... from templates. Implementation seats get their own git worktree and
-   branch automatically. The lead kills seats it no longer needs.
-5. **Seats talk.** Short messages with `foil send`; anything durable
-   (task briefs, results, review findings, status) as files on the board.
-6. **Operator polls** every few minutes: `foil status --peek`, reads
-   `board/status.md`, relays the lead's questions to the human, and sends
-   the human's answers to the lead with `foil send`. It does no project
-   work itself. The lead doesn't know an operator exists; it behaves as if
-   a human is talking to it, and asks questions in its own pane or in
-   `status.md`.
-7. **Lead integrates.** It merges seat branches, has a reviewer check the
-   result, then writes the final report to `board/status.md`.
-8. **Crash or reboot:** `foil resume` brings dead seats back.
+1. The human asks the operator for something.
+2. The operator runs `foil init` once per project, then
+   `foil spawn lead --task "<goal>"`.
+3. The lead receives the goal as mail and plans the work.
+4. The lead spawns workers from templates and kills them when they're
+   done. Seats whose template asks for a worktree get their own git
+   worktree and branch.
+5. Seats send short messages with `foil send` and put anything durable
+   (task briefs, results, reviews, status) on the board as contract files.
+6. The operator polls: it peeks at seats, reads the lead's status file,
+   passes the lead's questions to the human, and sends the human's
+   answers to the lead. It does no project work. The lead doesn't know an
+   operator exists; it acts as if a human is talking to it.
+7. The lead integrates the workers' branches and reports in its status
+   file.
+8. After a crash or reboot, `foil resume` restarts dead seats.
 
-## 2. Answers to the open questions
+## 4. Requirements
 
-**Mail vs. JSON (Q1).** Agree: mail belongs to the note board. Proposal:
-
-- **Mail is a file on the board**: `.foil/board/mail/<to>/<time>-<from>.md`,
-  Markdown with a small front matter (`from`, `to`, `time`, `re`). Seats
-  read it with `cat`/`ls`. No read or ack commands.
-- **File contracts are board files too**: `board/tasks/<id>.md`,
-  `board/results/<id>.md`, `board/status.md`. Markdown with front matter
-  including `contract: task/v1`, so it's versioned, but agents write
-  Markdown far more reliably than hand-written JSON.
-- **The whole `.foil/` directory is git-ignored** (templates, run state,
-  board), added to `.git/info/exclude` so no tracked file changes.
-- **Versioned JSON stays for Foil's own state** (the seat registry,
-  written only by Foil code). That's where schema versions pay off.
-
-**Peek (Q2).** Agree: peek is a window into a seat, not an interpreter.
-`foil status --peek [N]` prints the raw last N lines of each pane.
-Foil never parses pane text. Seat state = tmux window alive or dead,
-nothing more.
-
-**Command sprawl (Q3).** Agree, and yes, my last suggestion made it
-worse. New rule: **the command count may only go down.** Peek becomes a
-flag on `status`, and the inbox command is not needed because the wake
-nudge carries the mail file's path.
-
-## 3. Requirements (lean)
+### Functional
 
 | ID | Requirement |
 |---|---|
-| R1 | Exactly six commands: `init`, `spawn`, `kill`, `send`, `status`, `resume`. |
-| R2 | `init` writes `.foil/templates/` and git-ignores `.foil/`. It checks for tmux and git and nothing else. |
-| R3 | A **template** is one TOML file: `harness`, `model`, `persona` (inline text or a path to an untouched Markdown file), `worktree` (bool), `permission`. The file name is the role name. |
-| R4 | `spawn TEMPLATE [--name N] [--task TEXT]` creates a tmux window; names auto-number (`implementer-1`, `-2`). The first seat must be the lead. |
-| R5 | Only the lead or a caller outside the fleet (the operator) can `spawn` or `kill`. Identity comes from `FOIL_SEAT` in the seat's environment. This only stops cooperating agents, and the docs say so. |
-| R6 | `worktree = true` runs `git worktree add -b foil/<name> worktrees/<name>` from the lead's HEAD. `kill` keeps the branch so the lead can merge it. |
-| R7 | `send TO TEXT` writes the mail file, then types one line into the recipient's pane: `New mail from <from>: <path>`. Sending from outside the fleet is allowed; the sender shows as `user`. There is no operator mailbox. |
-| R8 | `status [--peek N]` lists seats (name, template, alive/dead, worktree, unread mail count) and optionally the raw pane tail. No parsing. |
-| R9 | `resume` restarts dead seats using the harness's native resume when its preset declares one, and otherwise starts them fresh with a "you were restarted, read your mail" note. |
-| R10 | **Harness presets** (one TOML each, same format for users' own): `claude`, `codex`, `gemini`, `opencode`, `grok`, plus `fake` for tests. |
-| R11 | Every seat gets a generated `FOIL.md`: its name, the lead's name, board path, templates it may spawn (lead only), the exact commands it may run, and the file-contract conventions. |
-| R12 | Three skills: `operator` (outside), `lead`, `worker`. |
-| R13 | Safety kept from today: exact tmux window IDs (never kill by name), atomic state writes, no credentials stored (env forwarded by name only). |
-| R14 | Size budget: at most ~2,000 lines of Python in `src/` (today ~7,900). |
+| F1 | Foil has exactly six commands: `init`, `spawn`, `kill`, `send`, `status`, `resume` (section 6). |
+| F2 | The template named `lead` defines the lead, and its seat is always named `lead`. A fleet has at most one live lead, and the first seat spawned must be the lead. A new lead may be spawned only after the previous one was killed. |
+| F3 | Only the lead or a caller outside the fleet may `spawn` or `kill`. Workers may only `send` and `status`. See the authority table in section 6. |
+| F4 | A seat's identity comes from an environment variable Foil sets when launching it. A seat can't claim another identity through any flag. This only stops cooperating agents, and the docs must say so. |
+| F5 | `spawn` takes a template name. Worker names are auto-numbered from the template name unless `--name` is given. A worker name is never reused within a fleet, including names of killed seats. |
+| F6 | When a template asks for a worktree, `spawn` creates a git worktree on a new branch whose name is unique in the repository. `kill` never deletes that branch, and never silently destroys uncommitted work. |
+| F7 | Foil-created files and worktrees never show up as untracked or modified files in the user's repository. |
+| F8 | `send` stores the message as a mail file, then types one nudge line into the recipient's pane containing the sender and the mail file's absolute path. The message body is never typed into the pane. |
+| F9 | Mail sent from outside the fleet shows the sender as `user`. There is no operator mailbox or seat. |
+| F10 | `status` reports each seat's name, template, state (`alive`, `dead`, or `killed`), and worktree. `--peek N` adds the raw last N lines of each pane. |
+| F11 | `alive` means the seat's exact tmux window exists; `dead` means it doesn't and the seat wasn't killed; `killed` means `foil kill` stopped it. Foil never parses, classifies, or interprets pane contents. |
+| F12 | `resume` restarts `dead` seats (never `killed` ones). It uses the harness's own session resume when the preset supports it; otherwise it starts the seat fresh and tells it that it was restarted and should re-read its mail. |
+| F13 | Each seat gets a generated instruction file (FOIL.md), and its launch prompt tells it to read that file first. The file contains: its name, the lead's name, the board path, the commands it may run (exact syntax), the contract formats, and, for the lead only, the list of available templates. |
+| F14 | `init` creates the templates folder with default templates (at least lead, implementer, reviewer), each with a real persona prompt. It never overwrites existing templates. |
+| F15 | Harness presets ship for `claude`, `codex`, `gemini`, `opencode`, `grok`, and `fake` (test double, section 9). Users can add their own presets in the same format. |
+| F16 | Three skills ship: `operator` (for the human's harness), `lead`, and `worker`. |
 
-**Deleted as requirements:** memory review workflow, notepads, usage-based
-dispatch, manual state setting, the poll-status reader, message acks,
-persona catalog browsing, the doctor command, the separate seat roster
-(`seats.toml`), the 36 numbered CAP requirements, and the 10 ADRs.
+### Non-functional
 
-## 4. Command audit (22 top-level commands + 9 subcommands → 6)
-
-| Today | Fate |
+| ID | Requirement |
 |---|---|
-| `init` | Keep (simplified, R2) |
-| `seat spawn` | Becomes `spawn` |
-| `seat stop`, `seat remove` | Merged into `kill` |
-| `seat wake`, `send-message` | Merged into `send` |
-| `status`, `seat list`, `seat inspect`, `poll-status` | Merged into `status [--peek]` |
-| `resume` | Keep (simplified, R9) |
-| `ack-message`, `message-status` | Delete: mail is a file; reply is the ack |
-| `notepad-write`, `notepad-read`, `notepad-ack` | Delete: board files |
-| `memory-propose/accept/reject/supersede/status` | Delete |
-| `dispatch` | Delete |
-| `set-state` | Delete: status is alive/dead |
-| `doctor` | Delete: `init` checks prerequisites |
-| `catalog-list`, `catalog-map` | Delete: `persona = "path.md"` in a template |
-| `seats list/show/set` | Delete: edit `.foil/templates/*.toml` |
+| N1 | Python 3.11+ with the standard library only; no runtime dependencies. |
+| N2 | External programs are limited to tmux 3.2+, git, and the harness CLIs. |
+| N3 | Supported platforms: Linux and macOS. |
+| N4 | At most about 2,000 lines of Python in the package source. |
+| N5 | Foil never stores, prints, or logs credentials. Environment variables are forwarded to seats by name only. |
+| N6 | Tmux windows are always targeted by exact window ID, never by name. |
+| N7 | Foil's own state is written atomically and carries a schema version. |
+| N8 | Every error is a one-line message on stderr with a non-zero exit code. No Python tracebacks. |
+| N9 | The repository stays safe to publish: no secrets, personal paths, or private hosts in any tracked file. The existing public-safety tests stay and pass. |
+| N10 | Package version is 0.2.0. |
 
-Modules to delete or collapse: `memory.py`, `notepad.py`, `dispatch.py`,
-`catalog.py`, `doctor.py`, `status.py`, `seats.py`, `onboarding.py` (into
-`init`), `mailbox.py` (rewritten to about 60 lines), `src/foil/adapters.py` +
-`src/foil/profiles.py` (merged into one preset loader). Reused: `tmux.py`,
-`runner.py`, the atomic-write/lock helpers from `registry.py`.
+## 5. Architecture
 
-Other deletions: skills `controller`, `manager`, `poll-status`,
-`memory-update`, `shared-notepads`, and the adapter skills; the `docs/spec`,
-`docs/adr`, and `docs/assignments` folders; the walking-skeleton and
-exam docs. These are replaced by one `DESIGN.md`.
-
-## 5. Plan
-
-Each step is one reviewable PR. Tests are re-run from scratch at the end.
-
-0. **Freeze.** Tag current `main` as the v0.1.0 release. Everything below ships as v0.2.0.
-1. **Design contract.** Write `DESIGN.md` (sections 1–3 above, plus the
-   file layout and template format). Delete the spec, ADR, and assignment
-   docs.
-2. **Test harness first.** Build the fake harness and the scenario runner
-   (section 7), with the "fix a failing test" scenario. It fails for now.
-3. **New core.** Implement the six commands on top of `tmux.py`/`runner.py`:
-   templates, presets, worktrees, board mail, generated `FOIL.md`.
-4. **Delete.** Remove the old commands, modules, schemas, and their tests.
-   Check the size budget (R14).
-5. **Skills.** Write the `operator`, `lead`, and `worker` skills.
-6. **Presets.** Add `claude`, `codex`, and `gemini` (check each CLI's model,
-   permission, and resume flags against its current docs).
-7. **README.** Rewrite around "one operator outside, one lead inside, a
-   fleet in tmux", with a terminal recording, a Claude/Codex quick start,
-   and one diagram. Regenerate the Chinese README from it.
-8. **Release.** Live smoke test with real CLIs, make the repo public,
-   publish to PyPI as v0.2.0. History is kept (not squashed); re-run the
-   all-commits sensitivity scan before going public.
-
-## 6. Known bugs (re-check after the plan)
-
-| # | Bug | Likely fate |
+| Component | Responsibility | Source |
 |---|---|---|
-| 1 | A woken seat can't find its mail: `message-status` needs an ID the seat doesn't have; `MailboxStore.pending()` isn't exposed. | Gone (R7: the nudge carries the path) |
-| 2 | `send-message --seat operator` crashes with a raw Python traceback. More generally, some errors aren't caught and print tracebacks. | No operator mailbox by design; add a catch-all error handler so unknown seats get a clear error |
-| 3 | The lead's `FOIL.md` says it owns spawning but never shows the commands or the roster. | Fixed by R11 |
-| 4 | `seats set --profile` on a starter seat fails ("cli grok conflicts with profile cli bash"). | Gone with `seats` |
-| 5 | `seats set` has no permission check: a worker can add a `lead = true` row. | Gone; templates are plain files (still cooperative only) |
-| 6 | Only `grok` and `opencode` presets. | Fixed by R10 |
-| 7 | `docs/design/profiles.md` still says `--seat` alone is not enough. | Doc deleted |
-| 8 | Per-seat isolation is a `git clone --local` on `main`, not a worktree or branch. | Fixed by R6 |
-| 9 | The lead is told "one worktree per fleet", contradicting per-seat isolation. | Fixed by R6/R11 |
-| 10 | The wake text is typed even when the pane isn't at an input prompt (in a plain shell it runs as a command). | Stays; documented: Foil types, the harness decides |
-| 11 | History: 47 of 50 commits don't build (path-filtered), PR refs point to an earlier repo, old name "capstan". | Cosmetic and safe to publish; kept as is |
-| 12 | The repo is private, so the README install command and CI badge don't work for anyone else. | Fixed at release |
-| 13 | The Chinese README is maintained separately by hand. | Regenerated in step 7 |
-| 14 | Internal process notes (`docs/assignments/`, the live exam doc) are in the public tree. | Deleted in step 1 |
+| CLI | Parses the six commands and enforces the authority table. | New |
+| Registry | Foil-owned fleet and seat records (versioned JSON). | Reduce `src/foil/registry.py` |
+| Tmux layer | Launch a marked window, probe by exact ID, kill a verified window, type one line, capture the pane tail. | Reuse `src/foil/tmux.py`, `src/foil/delivery.py` |
+| Launcher | Execs a harness command without a shell, with forwarded env. | Reuse `src/foil/runner.py` |
+| Config loader | Reads templates and harness presets. | Replaces the adapter, profile, and seat-roster modules |
+| Worktrees | Create and clean up per-seat git worktrees. | New (small) |
+| Board | Board folder layout and atomic mail writes. | Replaces the mailbox module |
+| Instructions | Generates each seat's FOIL.md. | New (small) |
+| Skills | Operator, lead, and worker instructions (Markdown). | New |
 
-## 7. Testing Foil truthfully
+Data flow: CLI → config loader → (worktrees) → launcher inside a tmux
+window → registry. `send` → board (mail file) → tmux layer (nudge).
+`status` → registry + tmux probe (+ capture for peek).
 
-Principle: **real Foil, real tmux, real git, a real (tiny) task; only the
-model is mocked.** Assertions check outcomes in the world (tests pass, a
-branch exists, a window is gone), never Foil's own JSON claims about
-itself.
+## 6. Command reference
 
-**The fake harness** (`fake` preset) is the dependency mock. It's a small
-interactive program that:
-- shows a prompt and reads lines from its pane, like a real TUI;
-- on a `New mail ...: <path>` line, reads that file;
-- follows a per-seat script (YAML) of reactions: run a shell command
-  (`foil spawn implementer`, `git commit`, `pytest`), write a board file,
-  or `foil send` a reply;
-- logs what it saw and did to its own file, for debugging only.
+These are the only commands and flags. `--help` and `--version` also exist.
 
-It uses the same launch path as any preset, so spawn, env, `FOIL.md`,
-worktrees, and nudges are exercised exactly as with a real CLI.
+| Command | Flags | Behavior |
+|---|---|---|
+| `foil init [DIR]` | none | Checks that tmux and git exist and DIR (default: current directory) is a git repository. Creates the Foil folder, default templates, and the git ignore entry. Safe to re-run. |
+| `foil spawn TEMPLATE` | `--name NAME`, `--task TEXT` | Creates a seat from the template (F2, F5, F6, F13). `--task` is delivered as the seat's first mail. |
+| `foil kill NAME` | `--all` | Stops the seat's window and marks it `killed` (F6). `--all` stops every seat and is allowed only from outside the fleet. |
+| `foil send TO TEXT` | none (`TEXT` = `-` reads stdin) | Writes mail and nudges the recipient (F8, F9). Unknown recipient → clear error. |
+| `foil status [NAME]` | `--peek N`, `--json` | Reports seats (F10, F11). |
+| `foil resume [NAME]` | none | Restarts `dead` seats (F12). |
 
-**Scenarios** (each is a fixture repo plus seat scripts):
-1. *Happy path.* The repo has one failing test. The test acts as the
-   operator: `init`, `spawn lead --task "make tests pass"`. The fake lead
-   spawns an implementer and a reviewer. The implementer applies the fix
-   on its `foil/implementer-1` branch and mails the lead. The reviewer runs
-   `pytest` on that branch and mails "approve". The lead merges and writes
-   `status.md`. **Assert:** `pytest` passes on main, the branch is merged,
-   `status.md` says done, `kill` leaves no windows.
-2. *Authority.* A worker script runs `foil spawn` and `foil kill lead`.
-   **Assert:** both are refused and the fleet is unchanged.
-3. *Crash.* Kill the tmux server mid-task, run `foil resume`. **Assert:**
-   the scenario still finishes.
-4. *Operator loop.* The test, acting as the operator, sends a goal and
-   polls. The fake lead writes a question to `status.md`; the test answers
-   with `foil send lead`. **Assert:** the lead's final `status.md` reflects
-   the answer; `status --peek` shows raw pane text.
+Authority:
 
-**Live tier.** The same scenarios with real CLIs replacing `fake`
-(opt-in, `FOIL_LIVE=1`), judged only by the same outcome assertions. It
-isn't run in CI; run it before each release.
+| Caller | init | spawn | kill | kill --all | send | status | resume |
+|---|---|---|---|---|---|---|---|
+| Outside the fleet | yes | yes | yes | yes | yes | yes | yes |
+| Lead | no | yes | yes (not itself) | no | yes | yes | yes |
+| Worker | no | no | no | no | yes | yes | no |
 
-**Unit tests** stay only for tmux window identity, atomic writes, and
-template/preset parsing. The other ~9,900 lines of tests go with the
-features they test.
+## 7. Data design
+
+Everything lives in one Foil folder inside the project, which is
+git-ignored (F7). Suggested layout (the implementer may adjust it, but
+the concepts are fixed):
+
+```text
+<foil folder>/
+  templates/<role>.toml        user-editable role templates
+  harnesses/<id>.toml          optional user harness presets
+  board/
+    mail/<seat>/<time>-<from>-<rand>.md
+    status.md                  lead's status (contract status/v1)
+    tasks/<id>.md              contract task/v1
+    results/<id>.md            contract result/v1
+  run/                         Foil-owned state (registry, FOIL.md files)
+```
+
+**Template** (`<role>.toml`; the file name is the role):
+
+| Field | Required | Meaning |
+|---|---|---|
+| `harness` | yes | Preset id. |
+| `model` | no | Passed to the harness's model option. |
+| `persona` | no | Inline text, or a path to a Markdown file used untouched. |
+| `worktree` | no, default `false` | Give each seat its own worktree and branch. |
+| `permission` | no, default `ask` | `ask` or `auto` (maps to the preset's flags). |
+
+**Harness preset:**
+
+| Field | Meaning |
+|---|---|
+| `id` | Preset name. |
+| `command` | Launch argv. Placeholders: `{model}`, `{prompt}`, `{session_id}`. |
+| `permission.ask`, `permission.auto` | Extra argv for each mode. |
+| `resume` | Optional resume argv (uses `{session_id}`). |
+| `session_id` | `generated` (Foil makes a UUID and passes it at launch) or `none`. |
+| `env` | Names of environment variables to forward. |
+
+Built-in presets must use each CLI's documented flags. Any flag that
+couldn't be verified is marked as unverified with a comment in the preset
+file.
+
+**Mail file:** Markdown with front matter `contract: mail/v1`, `from`,
+`to`, `time` (UTC, ISO 8601), optional `re` (the mail file it answers),
+then the body. It's written atomically and file names never collide.
+
+**Contracts** (Markdown with front matter; Foil only defines them, it
+never reads them):
+
+| Contract | Front matter |
+|---|---|
+| `status/v1` | `state: working \| blocked \| done`, `updated`, `questions` (list, may be empty) |
+| `task/v1` | `id`, `owner`, `state: open \| doing \| done`, `acceptance` |
+| `result/v1` | `task`, `author`, `branch` (if any), `outcome: pass \| fail` |
+
+**Registry** (Foil-owned JSON, schema-versioned): fleet id, tmux session,
+lead name, and per seat: name, template, harness, tmux window id, state, worktree path, branch, session id. State from v0.1.x is not
+migrated.
+
+## 8. What to remove
+
+- **Commands:** everything except the six in section 6. That includes
+  `seat` and `seats` with their subcommands, `send-message`,
+  `ack-message`, `message-status`, `notepad-*`, `memory-*`,
+  `poll-status`, `set-state`, `dispatch`, `doctor`, and `catalog-*`.
+- **Modules** with no remaining use: memory, notepad, dispatch, catalog,
+  doctor, status reader, seat roster, onboarding, and the old adapter
+  and profile system, including its JSON schemas.
+- **Skills:** controller, manager, poll-status, memory-update,
+  shared-notepads, and the adapter skills.
+- **Docs:** the spec, ADR, assignments, design, walking-skeleton, and
+  live-exam docs. This specification becomes the single design document.
+- **Tests** for removed features. Keep the tmux-identity, atomic-write,
+  and public-safety tests.
+
+Removal is part of the work, not a follow-up: the finished v0.2.0 must
+not contain the old command surface alongside the new one.
+
+## 9. Test design
+
+Principle: **real Foil, real tmux, real git, a small real task; only the
+agent is replaced.** Assertions check real outcomes (tests pass, a
+branch exists, a window is gone), not Foil's own reports about itself.
+
+**Fake harness** (the `fake` preset) is a test double for an agent CLI:
+
+- It runs interactively in its pane and reads typed lines, like a real TUI.
+- When a nudge line arrives, it reads the mail file it names.
+- It follows a per-seat script, in a format the standard library can
+  parse. Reactions include: run a shell command (e.g. `foil spawn`,
+  `git commit`, the fixture's test runner), write a board file, and
+  `foil send` a reply.
+- It's idempotent across restarts: on start it handles any mail it hasn't
+  handled yet.
+- It keeps a debug log. Tests never assert on that log.
+
+It's launched through the normal preset path, so templates, launch,
+environment, FOIL.md, worktrees, and nudges are exercised exactly as with
+a real CLI.
+
+**Scenarios** (each is a fixture repository plus seat scripts; the test
+plays the operator):
+
+1. **Happy path.** The fixture has one failing test. The test runs `init`
+   and `spawn lead --task "make the tests pass"`. The lead spawns an
+   implementer and a reviewer. The implementer commits a fix on its
+   branch and mails the lead. The reviewer runs the tests on that branch
+   and mails approval. The lead merges and sets `status.md` to done.
+   *Assert:* the tests pass on the merged result, the branch is merged,
+   `status.md` says done, and `kill --all` leaves no Foil windows.
+2. **Authority.** A worker's script tries `spawn` and `kill lead`.
+   *Assert:* both fail, and the fleet is unchanged.
+3. **Crash.** Kill the tmux server mid-scenario and run `resume`.
+   *Assert:* the happy-path outcome is still reached.
+4. **Operator loop.** The lead's script writes a question into
+   `status.md`; the test answers with `foil send lead`. *Assert:* the
+   lead's final status reflects the answer, and `status --peek` shows raw
+   pane text.
+5. **Errors.** Sending to an unknown seat, spawning a missing template,
+   and running outside a git repository each give a one-line error and a
+   non-zero exit, with no traceback.
+
+**Live tier (optional):** the same scenarios with real harness CLIs in
+place of `fake`, judged by the same assertions. It needs authenticated
+CLIs, so it's opt-in and excluded from the default test run.
+
+## 10. Definition of done
+
+- [ ] `foil --help` lists exactly the six commands, with only the flags in section 6.
+- [ ] Every requirement in section 4 is met.
+- [ ] Scenarios 1–5 pass using the `fake` preset.
+- [ ] Public-safety, tmux-identity, and atomic-write tests pass; lint is clean.
+- [ ] Package source is at most about 2,000 lines of Python (N4).
+- [ ] Three skills exist and match the command reference exactly.
+- [ ] The README (English and Chinese) describes the section 3 workflow,
+      shows a quick start with a mainstream harness, and states the
+      cooperative-only authority limit (F4) and the `auto` permission risk.
+- [ ] No removed command, module, skill, or doc remains (section 8).
+- [ ] Package version is 0.2.0.
+
+## 11. Out of scope
+
+- Any command or flag not in section 6. A change requires updating this spec first.
+- Parsing or interpreting pane contents (F11).
+- More than one fleet per project, remote machines, and Windows.
+- A UI, a server, MCP, or a hosted service.
+- Memory curation, notepads, usage-based dispatch, persona catalog tools,
+  and message acknowledgement.
+- Migrating v0.1.x state.
+
+## 12. Known issues in v0.1.1
+
+These are for reference. Each should be gone or re-checked once v0.2.0
+is done.
+
+| # | Issue | Expected after v0.2.0 |
+|---|---|---|
+| 1 | A woken seat can't find its mail: `message-status` needs a message ID the seat doesn't have. | Gone (F8: the nudge carries the path) |
+| 2 | Sending to a non-seat (e.g. `operator`) crashes with a Python traceback. | Clear error (N8) |
+| 3 | The lead's FOIL.md says it owns spawning but gives no commands or roster. | Fixed (F13) |
+| 4 | `seats set --profile` fails on starter seats with a CLI conflict. | Gone (command removed) |
+| 5 | `seats set` has no authority check. | Gone (command removed) |
+| 6 | Only `grok` and `opencode` presets. | Fixed (F15) |
+| 7 | Design docs contradict the README about required flags. | Gone (docs replaced) |
+| 8 | Seat isolation is a `git clone --local` on the main branch, not a worktree on its own branch. | Fixed (F6) |
+| 9 | Seat instructions say "one worktree per fleet", contradicting per-seat isolation. | Fixed (F13) |
+| 10 | The nudge is typed even when the pane isn't at an input prompt. | By design: Foil types, the harness decides; document it |
+| 11 | The Chinese README is maintained separately and drifts. | README requirement in section 10 |
