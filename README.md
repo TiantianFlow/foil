@@ -255,8 +255,6 @@ truth for which model actually launched.
 
 ## Learn more
 
-- [docs/walking-skeleton.md](docs/walking-skeleton.md) — the executable end-to-end verification path
-- [docs/design/onboarding.md](docs/design/onboarding.md) — initialization and state-root contract
-- [docs/design/seats.md](docs/design/seats.md) — predefined seat recipes in `.foil/seats.toml`
-- [docs/design/profiles.md](docs/design/profiles.md) — the declarative seat profile contract
+- [CONTRIBUTING.md](CONTRIBUTING.md) — set up a checkout and run the checks
+- [CHANGELOG.md](CHANGELOG.md) — release history
 - [skills/controller](skills/controller), [skills/manager](skills/manager), [skills/worker](skills/worker) — portable skills for the CLIs that drive or join a fleet

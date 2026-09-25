@@ -36,7 +36,7 @@ INTENDED_SDIST_MEMBERS = (
     "profiles/pi-interactive.toml",
     "adapters/grok_cli.toml",
     "adapters/opencode.toml",
-    "docs/walking-skeleton.md",
+    "docs/requirements.md",
     "schemas/adapter-v1.schema.json",
     "schemas/profile-v1.schema.json",
     "schemas/seats-v1.schema.json",
