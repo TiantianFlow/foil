@@ -24,9 +24,11 @@ Foil never tries to interpret it.
 | Seat | One agent process in its own tmux window. |
 | Lead | The one seat allowed to spawn and kill other seats. |
 | Worker | Any seat that isn't the lead. |
-| Template | A role definition: which harness, model, persona, worktree, and permission mode. |
+| Template | A role definition: which harness, model, persona, worktree, and permission mode. The set of templates is the project's roster. |
 | Harness preset | How to launch one agent CLI (claude, codex, ...). |
-| Board | A shared folder of files all seats can read and write. |
+| Board | A shared folder of files all seats can read and write: mail, notes, and contract files. |
+| Note | An unaddressed shared file on the board (the notepad). Anyone reads or writes it with ordinary file tools. |
+| Memory | Reviewed lessons that outlive a fleet. A seat proposes one; the lead or the operator accepts or rejects it. Accepted lessons go into every new seat's instructions. |
 | Mail | A message stored as one file on the board. |
 | Nudge | The one line Foil types into a seat's pane to announce new mail. |
 | Peek | Printing the raw last lines of a seat's pane. |
@@ -69,22 +71,24 @@ human ──▶ operator (outside the fleet)
 
 | ID | Requirement |
 |---|---|
-| F1 | Foil has exactly six commands: `init`, `spawn`, `kill`, `send`, `status`, `resume` (section 6). |
+| F1 | Foil has exactly seven commands: `init`, `spawn`, `kill`, `send`, `status`, `resume`, `memory` (section 6). |
 | F2 | The template named `lead` defines the lead, and its seat is always named `lead`. A fleet has at most one live lead, and the first seat spawned must be the lead. A new lead may be spawned only after the previous one was killed. |
-| F3 | Only the lead or a caller outside the fleet may `spawn` or `kill`. Workers may only `send` and `status`. See the authority table in section 6. |
+| F3 | Only the lead or a caller outside the fleet may `spawn`, `kill`, or review memory. Workers may only `send`, `status`, and propose or list memory. See the authority table in section 6. |
 | F4 | A seat's identity comes from an environment variable Foil sets when launching it. A seat can't claim another identity through any flag. This only stops cooperating agents, and the docs must say so. |
 | F5 | `spawn` takes a template name. Worker names are auto-numbered from the template name unless `--name` is given. A worker name is never reused within a fleet, including names of killed seats. |
 | F6 | When a template asks for a worktree, `spawn` creates a git worktree on a new branch whose name is unique in the repository. `kill` never deletes that branch, and never silently destroys uncommitted work. |
 | F7 | Foil-created files and worktrees never show up as untracked or modified files in the user's repository. |
 | F8 | `send` stores the message as a mail file, then types one nudge line into the recipient's pane containing the sender and the mail file's absolute path. The message body is never typed into the pane. |
 | F9 | Mail sent from outside the fleet shows the sender as `user`. There is no operator mailbox or seat. |
-| F10 | `status` reports each seat's name, template, state (`alive`, `dead`, or `killed`), and worktree. `--peek N` adds the raw last N lines of each pane. |
+| F10 | `status` reports only facts Foil owns: each seat's name, template, state (`alive`, `dead`, or `killed`), and worktree, from Foil's registry plus a tmux check that the seat's window exists. `--peek N` adds the raw last N lines of each pane, printed as-is. Whether an agent is busy, idle, blocked, or done is never reported by Foil; agents state that themselves in board files (e.g. the lead's `status.md`). |
 | F11 | `alive` means the seat's exact tmux window exists; `dead` means it doesn't and the seat wasn't killed; `killed` means `foil kill` stopped it. Foil never parses, classifies, or interprets pane contents. |
 | F12 | `resume` restarts `dead` seats (never `killed` ones). It uses the harness's own session resume when the preset supports it; otherwise it starts the seat fresh and tells it that it was restarted and should re-read its mail. |
-| F13 | Each seat gets a generated instruction file (FOIL.md), and its launch prompt tells it to read that file first. The file contains: its name, the lead's name, the board path, the commands it may run (exact syntax), the contract formats, and, for the lead only, the list of available templates. |
-| F14 | `init` creates the templates folder with default templates (at least lead, implementer, reviewer), each with a real persona prompt. It never overwrites existing templates. |
+| F13 | Each seat gets a generated instruction file (FOIL.md), and its launch prompt tells it to read that file first. The file contains: its name, the lead's name, the board path, the commands it may run (exact syntax), the board and contract conventions, all accepted memory lessons, and, for the lead only, the list of available templates. |
+| F14 | Templates are per project (the workspace), not system-wide. `init` creates the templates folder with default templates (at least lead, implementer, reviewer), each with a real persona prompt, using a harness CLI it finds installed. It never overwrites existing templates. The roster is managed by editing template files; there are no roster commands. |
 | F15 | Harness presets ship for `claude`, `codex`, `gemini`, `opencode`, `grok`, and `fake` (test double, section 9). Users can add their own presets in the same format. |
-| F16 | Three skills ship: `operator` (for the human's harness), `lead`, and `worker`. |
+| F16 | Three skills ship: `operator`, `lead`, and `worker` (section 6a). |
+| F17 | The board has a notes area for unaddressed shared files (the notepad). Notes need no Foil command: seats use ordinary file tools. `send` is only for addressed messages that should wake the recipient. |
+| F18 | `memory` stores reviewed lessons per project, surviving fleets. Any seat or the operator may propose a lesson or list lessons. Only the lead or the operator may accept or reject. A proposal may name a lesson it replaces; accepting it marks the old one superseded. |
 
 ### Non-functional
 
@@ -105,13 +109,14 @@ human ──▶ operator (outside the fleet)
 
 | Component | Responsibility | Source |
 |---|---|---|
-| CLI | Parses the six commands and enforces the authority table. | New |
+| CLI | Parses the seven commands and enforces the authority table. | New |
 | Registry | Foil-owned fleet and seat records (versioned JSON). | Reduce `src/foil/registry.py` |
 | Tmux layer | Launch a marked window, probe by exact ID, kill a verified window, type one line, capture the pane tail. | Reuse `src/foil/tmux.py`, `src/foil/delivery.py` |
 | Launcher | Execs a harness command without a shell, with forwarded env. | Reuse `src/foil/runner.py` |
 | Config loader | Reads templates and harness presets. | Replaces the adapter, profile, and seat-roster modules |
 | Worktrees | Create and clean up per-seat git worktrees. | New (small) |
-| Board | Board folder layout and atomic mail writes. | Replaces the mailbox module |
+| Board | Board folder layout and atomic mail writes. | Replaces the mailbox and notepad modules |
+| Memory | Lesson storage and review states (proposed, accepted, rejected, superseded). | Reduce `src/foil/memory.py` |
 | Instructions | Generates each seat's FOIL.md. | New (small) |
 | Skills | Operator, lead, and worker instructions (Markdown). | New |
 
@@ -121,7 +126,7 @@ window → registry. `send` → board (mail file) → tmux layer (nudge).
 
 ## 6. Command reference
 
-These are the only commands and flags. `--help` and `--version` also exist.
+These are the only commands, subcommands, and flags. `--help` and `--version` also exist.
 
 | Command | Flags | Behavior |
 |---|---|---|
@@ -131,14 +136,29 @@ These are the only commands and flags. `--help` and `--version` also exist.
 | `foil send TO TEXT` | none (`TEXT` = `-` reads stdin) | Writes mail and nudges the recipient (F8, F9). Unknown recipient → clear error. |
 | `foil status [NAME]` | `--peek N`, `--json` | Reports seats (F10, F11). |
 | `foil resume [NAME]` | none | Restarts `dead` seats (F12). |
+| `foil memory add TEXT` | `--replaces ID` (`TEXT` = `-` reads stdin) | Proposes a lesson and prints its ID (F18). |
+| `foil memory accept ID` | none | Accepts a proposal (F18). |
+| `foil memory reject ID` | none | Rejects a proposal (F18). |
+| `foil memory list` | `--all`, `--json` | Lists accepted lessons, or every lesson with its state with `--all`. |
 
 Authority:
 
-| Caller | init | spawn | kill | kill --all | send | status | resume |
-|---|---|---|---|---|---|---|---|
-| Outside the fleet | yes | yes | yes | yes | yes | yes | yes |
-| Lead | no | yes | yes (not itself) | no | yes | yes | yes |
-| Worker | no | no | no | no | yes | yes | no |
+| Caller | init | spawn | kill | kill --all | send | status | resume | memory add/list | memory accept/reject |
+|---|---|---|---|---|---|---|---|---|---|
+| Outside the fleet | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Lead | no | yes | yes (not itself) | no | yes | yes | yes | yes | yes |
+| Worker | no | no | no | no | yes | yes | no | yes | no |
+
+## 6a. Skills
+
+Skills are plain Markdown instructions and must match the command
+reference exactly.
+
+| Skill | Reader | Must cover |
+|---|---|---|
+| `operator` | The human's harness, outside the fleet | The high-level workflow: `init`, `spawn lead --task` with the human's goal, then let the fleet work. Polling with `status --peek` and reading the lead's `status.md`. Relaying questions and answers between the human and the lead with `send`. Reviewing memory proposals when asked. Teardown with `kill --all`. The rule that the operator never does project work itself. |
+| `lead` | The lead seat | Its responsibilities: plan the goal, staff the fleet, delegate, integrate workers' branches, keep `status.md` current, and review memory proposals. How to `spawn` and `kill`. How to manage the roster by adding or editing template files. Board and contract conventions. |
+| `worker` | Every non-lead seat | Its responsibilities: do the assigned task, report results to the lead, stay in its own worktree. The commands it may use: `send`, `status`, `memory add`, `memory list`. Board and contract conventions. That it may not spawn or kill. |
 
 ## 7. Data design
 
@@ -152,9 +172,11 @@ the concepts are fixed):
   harnesses/<id>.toml          optional user harness presets
   board/
     mail/<seat>/<time>-<from>-<rand>.md
+    notes/                     free-form shared notes (the notepad)
     status.md                  lead's status (contract status/v1)
     tasks/<id>.md              contract task/v1
     results/<id>.md            contract result/v1
+  memory/                      Foil-owned lessons; survives fleets
   run/                         Foil-owned state (registry, FOIL.md files)
 ```
 
@@ -196,21 +218,40 @@ never reads them):
 | `task/v1` | `id`, `owner`, `state: open \| doing \| done`, `acceptance` |
 | `result/v1` | `task`, `author`, `branch` (if any), `outcome: pass \| fail` |
 
+**Memory lesson** (Foil-owned, schema-versioned): id, text, proposer,
+time, state (`proposed`, `accepted`, `rejected`, `superseded`), reviewer,
+and `replaces` (optional). Lesson text is checked for credential-shaped
+content and refused if found (N5).
+
 **Registry** (Foil-owned JSON, schema-versioned): fleet id, tmux session,
 lead name, and per seat: name, template, harness, tmux window id, state, worktree path, branch, session id. State from v0.1.x is not
 migrated.
 
 ## 8. What to remove
 
-- **Commands:** everything except the six in section 6. That includes
-  `seat` and `seats` with their subcommands, `send-message`,
-  `ack-message`, `message-status`, `notepad-*`, `memory-*`,
-  `poll-status`, `set-state`, `dispatch`, `doctor`, and `catalog-*`.
-- **Modules** with no remaining use: memory, notepad, dispatch, catalog,
+- **Commands** (mapping from v0.1.1):
+
+  | v0.1.1 | v0.2.0 |
+  |---|---|
+  | `init` | `init` |
+  | `seat spawn` | `spawn` |
+  | `seat stop`, `seat remove` | `kill` |
+  | `seat wake`, `send-message` | `send` |
+  | `status`, `seat list`, `seat inspect`, `poll-status` | `status` |
+  | `resume` | `resume` |
+  | `memory-propose`, `-accept`, `-reject`, `-supersede`, `-status` | `memory add`, `accept`, `reject`, `list` (`add --replaces` covers supersede) |
+  | `notepad-write`, `-read`, `-ack` | Removed: notes are board files (F17) |
+  | `ack-message`, `message-status` | Removed: mail is a file; a reply is the acknowledgement |
+  | `set-state` | Removed: agents report their own state in board files (F10) |
+  | `seats list`, `show`, `set` | Removed: edit template files; the lead skill explains how (F14) |
+  | `catalog-list`, `catalog-map` | Removed: point a template's `persona` at a Markdown file |
+  | `dispatch`, `doctor` | Removed; `init` checks prerequisites |
+
+- **Modules** with no remaining use: notepad, dispatch, catalog,
   doctor, status reader, seat roster, onboarding, and the old adapter
   and profile system, including its JSON schemas.
 - **Skills:** controller, manager, poll-status, memory-update,
-  shared-notepads, and the adapter skills.
+  shared-notepads, and the adapter skills (replaced by section 6a).
 - **Docs:** the spec, ADR, assignments, design, walking-skeleton, and
   live-exam docs. This specification becomes the single design document.
 - **Tests** for removed features. Keep the tmux-identity, atomic-write,
@@ -259,7 +300,10 @@ plays the operator):
    `status.md`; the test answers with `foil send lead`. *Assert:* the
    lead's final status reflects the answer, and `status --peek` shows raw
    pane text.
-5. **Errors.** Sending to an unknown seat, spawning a missing template,
+5. **Memory.** A worker proposes a lesson; its attempt to accept it
+   fails; the lead accepts it. *Assert:* a seat spawned afterwards has the
+   lesson in its FOIL.md, and `memory list` shows it as accepted.
+6. **Errors.** Sending to an unknown seat, spawning a missing template,
    and running outside a git repository each give a one-line error and a
    non-zero exit, with no traceback.
 
@@ -269,12 +313,12 @@ CLIs, so it's opt-in and excluded from the default test run.
 
 ## 10. Definition of done
 
-- [ ] `foil --help` lists exactly the six commands, with only the flags in section 6.
+- [ ] `foil --help` lists exactly the seven commands, with only the subcommands and flags in section 6.
 - [ ] Every requirement in section 4 is met.
-- [ ] Scenarios 1–5 pass using the `fake` preset.
+- [ ] Scenarios 1–6 pass using the `fake` preset.
 - [ ] Public-safety, tmux-identity, and atomic-write tests pass; lint is clean.
 - [ ] Package source is at most about 2,000 lines of Python (N4).
-- [ ] Three skills exist and match the command reference exactly.
+- [ ] The three skills exist, cover everything in section 6a, and match the command reference exactly.
 - [ ] The README (English and Chinese) describes the section 3 workflow,
       shows a quick start with a mainstream harness, and states the
       cooperative-only authority limit (F4) and the `auto` permission risk.
@@ -287,8 +331,8 @@ CLIs, so it's opt-in and excluded from the default test run.
 - Parsing or interpreting pane contents (F11).
 - More than one fleet per project, remote machines, and Windows.
 - A UI, a server, MCP, or a hosted service.
-- Memory curation, notepads, usage-based dispatch, persona catalog tools,
-  and message acknowledgement.
+- Notepad commands, usage-based dispatch, persona catalog tools, and
+  message acknowledgement.
 - Migrating v0.1.x state.
 
 ## 12. Known issues in v0.1.1
