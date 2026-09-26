@@ -122,7 +122,15 @@ def test_send_from_seat_nudges_only_when_a_window_exists(
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     nudged: list[tuple[str, str, Path]] = []
 
-    def record(window_id: str, sender: str, mail_path: Path) -> None:
+    def record(
+        fleet_id: str,
+        seat: str,
+        session: str,
+        window_id: str,
+        sender: str,
+        mail_path: Path,
+    ) -> None:
+        del fleet_id, seat, session
         nudged.append((window_id, sender, mail_path))
 
     monkeypatch.setattr("foil.board.nudge", record)

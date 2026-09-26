@@ -245,6 +245,25 @@ class TmuxController:
         )
         return ProbeResult(ProbeState.ALIVE, matches, observed)
 
+    def matches_window(
+        self, fleet_id: str, seat_id: str, session_name: str, window_id: str
+    ) -> bool:
+        """True only when this window still carries this fleet and this seat."""
+
+        if not window_id.startswith("@"):
+            return False
+        probe = self.probe(
+            fleet_id,
+            seat_id,
+            TmuxTarget(
+                session_name=session_name,
+                window_name=seat_id,
+                session_id=None,
+                window_id=window_id,
+            ),
+        )
+        return probe.state is ProbeState.ALIVE and bool(probe.identity_matches)
+
     def window_exists(self, window_id: str) -> bool:
         if not window_id.startswith("@"):
             return False

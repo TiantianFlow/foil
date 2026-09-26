@@ -17,11 +17,17 @@ from tests.test_spawn import _commit, _launch, _repo
 
 
 def _alive(monkeypatch: pytest.MonkeyPatch, windows: set[str]) -> None:
-    def window_exists(self: TmuxController, window_id: str) -> bool:
-        del self
+    def matches_window(
+        self: TmuxController,
+        fleet_id: str,
+        seat_id: str,
+        session_name: str,
+        window_id: str,
+    ) -> bool:
+        del self, fleet_id, seat_id, session_name
         return window_id in windows
 
-    monkeypatch.setattr("foil.lifecycle.TmuxController.window_exists", window_exists)
+    monkeypatch.setattr("foil.lifecycle.TmuxController.matches_window", matches_window)
 
 
 def _stop(monkeypatch: pytest.MonkeyPatch) -> list[str]:

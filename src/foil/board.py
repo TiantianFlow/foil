@@ -8,7 +8,15 @@ from pathlib import Path
 
 from foil.errors import FoilError
 from foil.project import foil_root
-from foil.store import SAFE_ID, actor, create_exclusive, find_seat, private_dir, scan
+from foil.store import (
+    SAFE_ID,
+    actor,
+    create_exclusive,
+    find_seat,
+    load_registry,
+    private_dir,
+    scan,
+)
 from foil.tmux import TmuxController, TmuxError
 
 
@@ -22,9 +30,18 @@ def ensure_board(toplevel: Path) -> None:
         private_dir(root / name)
 
 
-def nudge(window_id: str, sender: str, mail_path: Path) -> None:
+def nudge(
+    fleet_id: str,
+    seat: str,
+    session: str,
+    window_id: str,
+    sender: str,
+    mail_path: Path,
+) -> None:
     try:
-        TmuxController().nudge(window_id, f"{sender} {mail_path}")
+        controller = TmuxController()
+        if controller.matches_window(fleet_id, seat, session, window_id):
+            controller.nudge(window_id, f"{sender} {mail_path}")
     except TmuxError:
         return
 
@@ -68,6 +85,14 @@ def send_mail(toplevel: Path, to: str, text: str) -> None:
         except FileExistsError:
             continue
         if seat["window_id"]:
-            nudge(seat["window_id"], sender, path.resolve())
+            registry = load_registry(toplevel)
+            nudge(
+                str(registry["fleet_id"]),
+                to,
+                str(registry.get("tmux_session") or ""),
+                seat["window_id"],
+                sender,
+                path.resolve(),
+            )
         return
     raise FoilError("foil: could not write mail")
