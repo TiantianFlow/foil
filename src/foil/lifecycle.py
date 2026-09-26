@@ -100,9 +100,19 @@ def _git(toplevel: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _refused_worktree(project: Path, destination: Path) -> bool:
+    foil = foil_root(project)
+    top = project / "worktrees"
+    if destination == top or top in destination.parents:
+        return True
+    inside = destination == project or project in destination.parents
+    under_foil = destination == foil or foil in destination.parents
+    return inside and not under_foil
+
+
 def _worktree(toplevel: Path, seat: str) -> tuple[str, str]:
     project = toplevel.resolve()
-    parent = toplevel.parent / f"{toplevel.name}.foil"
+    parent = foil_root(project) / "worktrees"
     for number in range(1, 10001):
         label = seat if number == 1 else f"{seat}-{number}"
         branch = f"foil/{label}"
@@ -110,8 +120,7 @@ def _worktree(toplevel: Path, seat: str) -> tuple[str, str]:
         if taken.returncode == 0:
             continue
         destination = (parent / label).resolve()
-        inside = destination == project or project in destination.parents
-        if inside or (project / "worktrees") in destination.parents:
+        if _refused_worktree(project, destination):
             raise FoilError("foil: refusing worktree inside the project")
         if destination.exists() or destination.is_symlink():
             continue
