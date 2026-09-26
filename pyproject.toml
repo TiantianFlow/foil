@@ -47,6 +47,7 @@ dev = [
 [tool.hatch.build.targets.sdist]
 include = [
   "/docs",
+  "/skills",
   "/src",
   "/tests",
   "/.github",
