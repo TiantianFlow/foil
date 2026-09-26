@@ -44,6 +44,9 @@ INTENDED_WHEEL_MEMBERS = (
     "foil/lifecycle.py",
     "foil/runner.py",
     "foil/tmux.py",
+    "foil/defaults/harnesses/grok.toml",
+    "foil/defaults/harnesses/fake.toml",
+    "foil/defaults/personas/lead.md",
 )
 WHEEL_ONLY_LAYOUT = ("tests/", "docs/", "skills/", "adapters/")
 

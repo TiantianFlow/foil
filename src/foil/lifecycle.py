@@ -6,6 +6,7 @@ from pathlib import Path
 
 from foil.board import ensure_board
 from foil.errors import FoilError
+from foil.presets import installed_harness, write_default_templates
 from foil.project import (
     SKELETON,
     ensure_exclude,
@@ -23,6 +24,11 @@ def init_project(directory: str | None) -> None:
         raise FoilError("foil: not a git repository")
     toplevel = git_toplevel(start)
     root = foil_root(toplevel)
+    if any(
+        not ((root / "templates" / f"{role}.toml").exists())
+        for role in ("lead", "implementer", "reviewer")
+    ):
+        installed_harness()
     root.mkdir(mode=0o700, exist_ok=True)
     root.chmod(0o700)
     for relative in SKELETON:
@@ -32,6 +38,7 @@ def init_project(directory: str | None) -> None:
     ensure_exclude(toplevel)
     ensure_board(toplevel)
     ensure_registry(toplevel)
+    write_default_templates(toplevel)
 
 
 def spawn_seat(

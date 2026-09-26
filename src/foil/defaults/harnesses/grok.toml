@@ -1,0 +1,9 @@
+id = "grok"
+command = ["grok", "--model", "{model}", "--session-id", "{session_id}", "{prompt}"]
+resume = ["grok", "--model", "{model}", "--resume", "{session_id}"]
+session_id = "generated"
+env = []
+
+[permission]
+ask = []
+auto = ["--always-approve"]

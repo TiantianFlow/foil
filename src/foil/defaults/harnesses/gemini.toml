@@ -1,0 +1,11 @@
+# Flags are from published docs. The gemini binary was not installed here.
+id = "gemini"
+unverified = ["all-flags-docs-only"]
+command = ["gemini", "--model", "{model}", "{prompt}"]
+resume = ["gemini", "--resume"]
+session_id = "none"
+env = []
+
+[permission]
+ask = []
+auto = ["--approval-mode=yolo"]

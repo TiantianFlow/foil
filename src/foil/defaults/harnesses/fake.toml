@@ -1,0 +1,9 @@
+id = "fake"
+command = ["foil-fake", "--session", "{session_id}", "--prompt", "{prompt}"]
+resume = ["foil-fake", "--session", "{session_id}", "--prompt", "{prompt}"]
+session_id = "generated"
+env = []
+
+[permission]
+ask = []
+auto = []

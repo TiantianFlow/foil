@@ -1,0 +1,11 @@
+# Resume is the `codex resume` subcommand. No launch --session-id was verified.
+id = "codex"
+unverified = ["resume-session-id"]
+command = ["codex", "--model", "{model}", "{prompt}"]
+resume = ["codex", "resume", "--last", "{prompt}"]
+session_id = "none"
+env = []
+
+[permission]
+ask = ["--ask-for-approval", "on-request"]
+auto = ["--ask-for-approval", "never"]
