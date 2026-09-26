@@ -101,21 +101,26 @@ def _git(toplevel: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _worktree(toplevel: Path, seat: str) -> tuple[str, str]:
-    branch = f"foil/{seat}"
-    if _git(toplevel, ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"]).returncode == 0:
-        raise FoilError(f"foil: branch '{branch}' already exists")
-    destination = (toplevel.parent / f"{toplevel.name}.foil" / seat).resolve()
     project = toplevel.resolve()
-    inside = destination == project or project in destination.parents
-    if inside or (project / "worktrees") in destination.parents:
-        raise FoilError("foil: refusing worktree inside the project")
-    if destination.exists() or destination.is_symlink():
-        raise FoilError("foil: worktree path already exists")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    created = _git(toplevel, ["worktree", "add", "-b", branch, str(destination)])
-    if created.returncode != 0:
-        raise FoilError("foil: could not create worktree")
-    return str(destination), branch
+    parent = toplevel.parent / f"{toplevel.name}.foil"
+    for number in range(1, 10001):
+        label = seat if number == 1 else f"{seat}-{number}"
+        branch = f"foil/{label}"
+        taken = _git(toplevel, ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"])
+        if taken.returncode == 0:
+            continue
+        destination = (parent / label).resolve()
+        inside = destination == project or project in destination.parents
+        if inside or (project / "worktrees") in destination.parents:
+            raise FoilError("foil: refusing worktree inside the project")
+        if destination.exists() or destination.is_symlink():
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        created = _git(toplevel, ["worktree", "add", "-b", branch, str(destination)])
+        if created.returncode != 0:
+            raise FoilError("foil: could not create worktree")
+        return str(destination), branch
+    raise FoilError("foil: could not name worktree")
 
 
 def _session_name(toplevel: Path) -> str:
