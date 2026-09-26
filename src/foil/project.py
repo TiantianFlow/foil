@@ -46,7 +46,32 @@ def git_toplevel(start: Path | None = None) -> Path:
         raise FoilError("foil: git is not installed") from exc
     if result.returncode != 0:
         raise FoilError("foil: not a git repository")
-    return Path(result.stdout.strip())
+    toplevel = Path(result.stdout.strip())
+    if (toplevel / FOIL_DIRNAME).is_dir():
+        return toplevel
+    common = _common_dir(cwd)
+    if common is not None and (common.parent / FOIL_DIRNAME).is_dir():
+        return common.parent
+    return toplevel
+
+
+def _common_dir(cwd: Path) -> Path | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(cwd), "rev-parse", "--git-common-dir"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    raw = result.stdout.strip()
+    if result.returncode != 0 or not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        path = (cwd / path).resolve()
+    return path
 
 
 def foil_root(toplevel: Path) -> Path:

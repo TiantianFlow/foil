@@ -1,0 +1,10 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "propose a lesson"},
+      "do": [
+        {"sh": "sh propose.sh"}
+      ]
+    }
+  ]
+}

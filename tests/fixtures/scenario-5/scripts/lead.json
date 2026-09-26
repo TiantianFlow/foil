@@ -1,0 +1,16 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "staff a worker"},
+      "do": [
+        {"sh": "foil seat list | grep -q implementer-1 || foil seat spawn implementer --task 'propose a lesson'"}
+      ]
+    },
+    {
+      "when": {"mail_contains": "proposed "},
+      "do": [
+        {"sh": "sh accept.sh"}
+      ]
+    }
+  ]
+}

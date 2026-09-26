@@ -1,0 +1,10 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "review the fix"},
+      "do": [
+        {"sh": "sh review.sh"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "make the tests pass"},
+      "do": [
+        {"sh": "foil seat list | grep -q implementer-1 || foil seat spawn implementer --task 'fix the failing test'"}
+      ]
+    },
+    {
+      "when": {"mail_contains": "fixed on foil/implementer-1"},
+      "do": [
+        {"sh": "foil seat list | grep -q reviewer-1 || foil seat spawn reviewer --task 'review the fix'"}
+      ]
+    },
+    {
+      "when": {"mail_contains": "approved"},
+      "do": [
+        {"sh": "git merge --no-edit -m 'merge the fix' foil/implementer-1"},
+        {"write": "board/status.md", "text": "---\ncontract: status/v1\nstate: done\nupdated: 2026-09-26T00:00:00Z\nquestions: []\n---\n\nThe tests pass.\n"}
+      ]
+    }
+  ]
+}
