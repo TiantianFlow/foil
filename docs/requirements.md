@@ -118,7 +118,7 @@ human ──▶ operator (outside the fleet)
 
 | ID | Requirement |
 |---|---|
-| F25 | Three skills ship in the package, as plain Markdown, matching the command reference exactly (section 8). `init` writes them into the project's Foil folder, and each seat's instruction file points at that seat's role skill. |
+| F25 | Three skills ship in the package, as plain Markdown, matching the command reference exactly (section 8). Each skill file starts with YAML front matter that gives its `name` and `description`. `init` writes them into the project's Foil folder, and each seat's instruction file points at that seat's role skill. The lead skill and the worker skill are that seat's role guidance. A default persona adds only specialization the skill does not already state. |
 
 ## 5. Non-functional requirements
 

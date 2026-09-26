@@ -189,6 +189,16 @@ def test_wheel_contains_only_the_package_and_packaged_resources(built: Built) ->
             assert not name.startswith(layout), f"wheel must not contain {layout}: {name}"
 
 
+def test_wheel_skills_have_name_and_description(built: Built) -> None:
+    _sdist, wheel, _marker, _stage = built
+    for name in ("operator.md", "lead.md", "worker.md"):
+        text = wheel[f"foil/defaults/skills/{name}"].decode()
+        assert text.startswith("---\n")
+        header = text.split("---", 2)[1]
+        assert "name:" in header
+        assert "description:" in header
+
+
 def test_wheel_metadata_has_public_release_identity(built: Built) -> None:
     _sdist, wheel, _marker, _stage = built
     metadata_name = next(name for name in wheel if name.endswith(".dist-info/METADATA"))
