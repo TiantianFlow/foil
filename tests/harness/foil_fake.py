@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -73,6 +74,10 @@ def _run_action(foil: Path, action: dict, log_path: Path) -> bool:
         )
         _log(log_path, f"send {result.returncode} {action['send']}")
         return result.returncode == 0
+    if "wait" in action:
+        time.sleep(float(action["wait"]))
+        _log(log_path, f"wait {action['wait']}")
+        return True
     _log(log_path, f"unknown action {action}")
     return False
 
