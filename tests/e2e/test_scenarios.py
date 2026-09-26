@@ -33,7 +33,9 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _prepare(tmp_path: Path, fixture: str, monkeypatch: pytest.MonkeyPatch) -> Path:
+def _prepare(
+    tmp_path: Path, fixture: str, monkeypatch: pytest.MonkeyPatch, *, fake: bool = True
+) -> Path:
     repo = tmp_path / "project"
     repo.mkdir()
     source = FIXTURES / fixture
@@ -50,6 +52,8 @@ def _prepare(tmp_path: Path, fixture: str, monkeypatch: pytest.MonkeyPatch) -> P
     assert _git(repo, "commit", "--allow-empty", "-m", "base").returncode == 0
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
+    if not fake:
+        return repo
     templates = foil_root(repo) / "templates"
     for role in ("lead", "implementer", "reviewer"):
         path = templates / f"{role}.toml"
@@ -110,8 +114,8 @@ def _no_windows(session: str) -> None:
     assert listed.returncode != 0
 
 
-def _finish_scenario_1(repo: Path) -> None:
-    _wait(repo, lambda: "state: done" in _status(repo))
+def _finish_scenario_1(repo: Path, timeout: float = 90) -> None:
+    _wait(repo, lambda: "state: done" in _status(repo), timeout)
     assert "done" in _status(repo)
     merged = _git(repo, "merge-base", "--is-ancestor", "foil/implementer-1", "HEAD")
     assert merged.returncode == 0

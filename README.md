@@ -1,258 +1,84 @@
-# Foil · 运筹
+# Foil
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.2.0-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 
 [中文](README.zh-CN.md)
 
-**Your agents' loyal opposition.** Foil coordinates a complementary
-fleet of local CLI-agent seats from your shell. One seat implements.
-Another challenges the work from a context the first seat does not
-share. A lead you control staffs and directs them. Mail and status live
-in durable files on disk; seats live in tmux. No hosted control plane,
-no chat UI, no MCP, and no Foil login.
+Foil runs local CLI agents as separate seats in tmux, and keeps their mail and status in files, so one seat can do the work and another can check it from a context the first seat does not share.
 
-The opposition is structural, not theatrical. Foil seats are independent CLI processes,
-not subagents sharing one parent model's context. They can
-use different CLIs, models, personas, contexts, and worktrees, so a reviewer
-can expose correlated blind spots that one agent family might reproduce.
-That diversity does not guarantee correctness; it makes disagreement and
-independent verification real rather than another voice in the same chat.
-
-If you already run more than one local CLI agent, you know the failure
-modes: every voice blended into one chat, context that evaporates when a
-tmux session dies, no durable handoff between agents, and steady
-pressure to adopt a hosted UI. Foil is the answer that stays in the
-shell. Bring the Markdown personas you already trust — Foil does not
-rewrite them.
-
-## Why Foil
-
-- **Complementary seats, not one blended voice.** Each seat is a
-  distinct agent CLI process with its own role, context, and working
-  directory.
-- **Your roster, used as written.** Off-the-shelf catalogs such as
-  [Agency Agents](https://github.com/msitarzewski/agency-agents) and its
-  localized copies staff a seat as-is. No wrapper, no translation layer,
-  no Foil-shaped rewrite.
-- **Durable coordination.** Mailbox messages, acknowledgements, and seat
-  status are versioned files on disk. A message stays `queued` until the
-  recipient acknowledges it — whether or not anyone was watching.
-- **Resumable after interruption.** Kill tmux, reboot, come back:
-  `foil resume` revives seats, preferring live tmux, then the CLI's
-  native session, then a logged fresh start.
-- **Local-first and credential-free.** Seats run on your machine as the
-  agent CLIs you have already authenticated locally. Foil never
-  requests, stores, or prints provider credentials, and there is no
-  Foil account.
-
-## How it works
+## Workflow
 
 ```mermaid
 flowchart LR
-  operator[You or a controller CLI] --> foil[Foil]
-  foil --> lead[Lead seat]
+  you[You] --> foil[Foil]
+  foil --> lead[Lead seat in tmux]
   lead --> workers[Worker seats in tmux]
-  foil --> files[Durable mailbox and status files]
+  workers --> trees[Git worktrees]
+  lead --> board[Board mail and status.md]
+  you --> board
 ```
 
-A typical session: you point Foil at your repository and spawn a lead.
-The lead staffs complementary specialists — an implementer to write the
-code, a reviewer-challenger to attack the plan from a separate context.
-The lead sends tasks as durable mailbox messages, asks for revisions
-directly when output falls short, and integrates the evidence that
-survives challenge. You inspect everything with ordinary CLI commands
-and tmux. Foil is flexible coordination, not a fixed
-research→implement→review pipeline.
+You initialize the project and spawn the lead with the goal. The lead spawns workers, sends them mail, and writes `status.md`. You check the seat list, the lead's pane, and that status file. When the work is finished, you stop every seat. Foil does not do the project work.
 
-## Quick Start
+## Demo
 
-You need Python 3.11+, uv, tmux 3.2+, and Git. The example below also
-uses locally authenticated `grok` and `opencode` CLIs; Foil never handles
-those logins. If you would rather have a local agent do the setup, skip
-to [Ask an agent](#ask-an-agent).
+This repository has no demo recording. [docs/demo.md](docs/demo.md) walks through the quick start below, command by command.
 
-Install Foil 0.1.0 from Git:
+## Quick start
+
+You need Python 3.11+, Git, tmux 3.2+, and the Claude CLI, already logged in on this machine. Foil does not handle that login.
+
+Install Foil 0.2.0:
 
 ```sh
 uv tool install "git+https://github.com/TiantianFlow/foil.git"
 ```
 
-To upgrade later, reinstall from the same URL:
+In a Git repository:
 
 ```sh
-uv tool install --reinstall "git+https://github.com/TiantianFlow/foil.git"
-```
-
-Then switch to the repository you want Foil to coordinate. `foil init`
-accepts an existing Git repository and preserves every tracked and
-untracked file and all Git state; it refuses a non-empty directory that
-is not a Git repository. (An empty directory works too — initialize
-Git first with `git init -b foil-demo`, then run `foil init .`.)
-
-```sh
-# then in your existing Git repository
 cd your-repo
 foil init .
-
-# init wrote a complementary starter roster in .foil/seats.toml
-# edit with foil seats set if grok/opencode are not the right CLIs
-foil seat spawn --seat lead
-foil seat spawn --seat implementer
-foil seat spawn --seat reviewer-challenger
-foil send-message --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
-foil status
 ```
 
-`foil init` already persisted a complementary starter roster. `foil seats set`
-edits it after you discover local CLIs; do not invent `--cli` on spawn.
-Later commands default to this Git project's Foil state and its only live
-fleet. Pass `--state-dir` or `--fleet` only to override. `--cli`,
-`--model`, and the other launch flags remain ad hoc overrides. The first
-seat must be the lead; workers come after. `foil send-message` persists
-mail only — pass `--wake`, or run `foil seat wake` after inspecting
-tmux, to nudge a seat. `foil status` is the first thing to run when you
-want to see whether those seats are actually alive.
-
-Shipped presets are `grok` and `opencode`. Another interactive CLI
-joins through a [declarative profile](#personas-roles-and-other-clis),
-not by hoping the name works.
-
-## Ask an agent
-
-If a local CLI agent is already helping in this repository, you do not
-need to paste the commands above. Tell it:
-
-> Install Foil in this project and follow the agent setup instructions
-> in the README.
-
-That is the whole prompt. The playbook it should follow is the next
-section.
-
-## If you are an agent setting up Foil
-
-You are staffing a local fleet, not installing a hosted product. Stay
-in the shell. Do not invent a Foil login, MCP server, or browser
-control plane.
-
-1. Confirm Python 3.11+, uv, tmux 3.2+, and Git. Install Foil with
-   `uv tool install "git+https://github.com/TiantianFlow/foil.git"`.
-2. Work in the user's existing Git repository. Run `foil init .`.
-   Later commands default to this project; pass `--state-dir` or
-   `--fleet` only to override.
-3. Discover which agent CLIs are on `PATH` (`grok`, `opencode`, and any
-   profiled CLI the user already runs). Ask when discovery is
-   incomplete. `foil doctor` reports tmux, Git, and known CLIs; it does
-   not read credentials. Ask which models those CLIs can launch and
-   how much usage remains on each.
-4. Offer a local Markdown roster. A good default is
-   [Agency Agents](https://github.com/msitarzewski/agency-agents);
-   localized copies of that catalog work the same way. Clone or copy it
-   next to the project — for example `./personas` — and leave every
-   persona file untouched. Foil reads the file as written.
-5. Ask what kind of work the user actually does. Pick a small
-   complementary suite from that answer: one lead, one implementer,
-   one challenger at minimum. Do not staff eight seats because eight
-   role files exist.
-6. `foil init` already wrote a complementary starter roster (lead and
-   implementer on `grok`, challenger on `opencode`). After discovery,
-   edit that file with `foil seats set` if a different CLI, model, or
-   `--role-file` persona is right. Do not invent `--cli` from scratch.
-   Tell the user the mapping and wait if the tradeoff is unclear.
-7. Spawn from the project: `foil seat spawn --seat lead` first, then
-   the workers. Do not pass `--cli`, `--lead`, or `--model` unless you
-   are overriding the file. Then `foil status`.
-8. Hand the user back ordinary commands: `foil status`, `tmux`,
-   `foil send-message --wake`, `foil resume`. You are done when a lead
-   exists, complementary seats are mapped, and the user can inspect
-   the fleet without you.
-
-## Operating a fleet
-
-**One worktree per fleet.** Keep a canonical checkout of your project
-clean and fast-forwarded to the remote `main`. Create one dedicated
-feature worktree per fleet, and run the lead and workers from that
-worktree. Never let a fleet mutate the canonical checkout; if it is
-dirty, fail and notify rather than altering it. An explicitly selected
-alternative base is fine — this is an operating rule for you, not
-something Foil enforces.
-
-**Lead-owned membership.** Every fleet starts with one lead. The lead
-(or you) spawns workers from the role library when they are needed.
-Workers are isolated by default. Same-repository workers get
-`worktrees/<seat_id>` via `git clone --local` from the committed HEAD, so
-uncommitted files are not copied and later commits do not refresh those
-clones; `foil doctor` reports the lag. To isolate from a different Git
-repository, pass `--from PATH`: Foil runs `git worktree add` at
-`<PATH>/worktrees/<seat_id>`. Roster `cwd` and `--cwd` stay destination
-and are refused when they name another repository's canonical checkout.
-`--shared-cwd` is the advanced override.
-
-**Honest status.** `working` means the tmux process is alive — not that
-a model is thinking. `foil status` reconciles the registry against live
-tmux; `foil poll-status` reads only the versioned status files.
-
-**Interruption and resume.** `foil resume` prefers a matching live tmux
-window, then the seat's recorded native session, then a logged fresh
-start. `foil seat stop` keeps the seat record so resume can continue;
-`foil seat remove` deletes it. Permission comes from `.foil/seats.toml`
-when set; otherwise spawn is `supervised`, so the CLI asks for
-approvals. `--permission auto` on spawn or in the seat file uses
-adapter-declared approval flags.
-
-## Personas, roles, and other CLIs
-
-`foil init` scaffolds a role library — manager, implementer,
-reviewer-challenger, and more — under `.foil/roles/`. You can also staff
-seats directly from a Markdown persona catalog; the persona file
-is used untouched, with no wrapper. That includes
-[Agency Agents](https://github.com/msitarzewski/agency-agents) and
-localized copies of the same catalog. Foil does not own the roster and
-does not require a Foil-specific rewrite:
+`foil init` writes templates for `lead`, `implementer`, and `reviewer`. It sets `harness` to the first installed CLI among `grok`, `claude`, `codex`, `opencode`, and `gemini`. This walkthrough uses Claude. If init chose another harness, set `harness = "claude"` in `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Leave `permission = "ask"`.
 
 ```sh
-git clone https://github.com/msitarzewski/agency-agents.git ./personas
-foil catalog-list --path ./personas
-foil catalog-map --path ./personas --persona NAME --json
-foil seats set --seat designer --cli grok --role-file ./personas/path/to/designer.md
-foil seat spawn --seat designer
+foil seat spawn lead --task "Summarize this repository in board/status.md"
+foil seat list
+foil seat peek lead
 ```
 
-`catalog-map` returns the persona `path`. It does not assign a CLI:
-`cli` and `preset` stay null. Persist staffing with `foil seats set`.
-
-Grok and OpenCode are shipped presets. Other interactive CLIs join
-through a declarative seat profile — one TOML owning the executable,
-launch/resume/startup argv, session capture, permission flags, working
-directory behavior, and environment forwarding by variable name (values
-are never persisted):
-
-Save a declarative seat profile into the repository you are coordinating,
-then pass its path per seat:
+Read `.foil/board/status.md` for the lead's own report. When you are done:
 
 ```sh
-foil seats set --seat researcher --profile ./researcher.toml --role researcher
-foil seat spawn --seat researcher
+foil seat kill --all
 ```
 
-`--profile` on spawn remains an ad hoc override of the seat file.
+That stops every seat. It does not delete branches or worktrees.
 
-Presets and profiles are the only supported
-paths — if a CLI is not a preset and you have not run it through a
-profile yourself, do not assume it works. When you pass `--model`, Foil
-forwards your choice to the CLI; the CLI's own screen is the source of
-truth for which model actually launched.
+## Compared with one session
 
-## Security and limitations
+One agent session is one process, one context, and one working directory. The same model proposes the change and checks it. If the session ends, what remains is whatever that CLI saved.
 
-- Foil is cooperative same-user protection, not hostile isolation. Seats
-  run as you, with your CLI credentials, on your machine.
-- Foil never stores provider credentials and never prints environment
-  variables or terminal buffers.
-- There is no MCP server, no hosted service, and nothing to log in to.
+Foil seats are separate CLI processes. The implementer works in its own Git worktree and branch. The reviewer does not share that context. Mail is a file the recipient reads. The status you trust is `status.md`, which the lead writes. Stopping tmux does not delete the branch. `foil seat resume` restarts seats whose windows are gone.
+
+## Limits
+
+Foil is cooperative protection for seats that follow instructions. It is not isolation from a hostile process. A seat's identity is the `FOIL_SEAT_ID` environment variable Foil sets when it launches that seat. There is no flag a seat can pass to claim another seat. Anything you can do on this machine, a process running as you can do too.
+
+Templates default to `permission = "ask"`, so the harness asks before it acts. Setting `permission = "auto"` inserts that preset's auto flags. For Claude, those flags are `--permission-mode` and `auto`, and the harness can edit files and run commands without asking. That seat is still you.
+
+Foil never interprets a pane. `foil seat peek` prints the raw tmux capture. `foil seat list` reports `alive`, `dead`, or `killed` from whether the stored window still exists, not from what the text on the screen means. Agents say whether they are blocked or done in board files.
+
+A nudge is typed even when the pane is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path, then Enter. The message body is never typed. If the agent is not waiting for input, those keystrokes still go into the pane. Foil does not look at the pane to decide.
 
 ## Learn more
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — set up a checkout and run the checks
+- [docs/demo.md](docs/demo.md) — the same quick start, with what each step is for
+- [docs/architecture.md](docs/architecture.md) — components, data flow, and module boundaries
+- [skills/operator.md](skills/operator.md), [skills/lead.md](skills/lead.md), and [skills/worker.md](skills/worker.md) — what each role runs
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup and checks
 - [CHANGELOG.md](CHANGELOG.md) — release history
