@@ -228,12 +228,11 @@ launch/resume/startup argv, session capture, permission flags, working
 directory behavior, and environment forwarding by variable name (values
 are never persisted):
 
-Save or copy the shipped
-[`profiles/pi-interactive.toml`](profiles/pi-interactive.toml) example into
-the repository you are coordinating, then pass its path per seat:
+Save a declarative seat profile into the repository you are coordinating,
+then pass its path per seat:
 
 ```sh
-foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
+foil seats set --seat researcher --profile ./researcher.toml --role researcher
 foil seat spawn --seat researcher
 ```
 
@@ -257,4 +256,3 @@ truth for which model actually launched.
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) — set up a checkout and run the checks
 - [CHANGELOG.md](CHANGELOG.md) — release history
-- [skills/controller](skills/controller), [skills/manager](skills/manager), [skills/worker](skills/worker) — portable skills for the CLIs that drive or join a fleet

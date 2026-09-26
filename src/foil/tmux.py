@@ -1,4 +1,4 @@
-"""Verified tmux lifecycle boundary (CAP-017, CAP-019, CAP-029–CAP-031)."""
+"""Verified tmux window identity and lifecycle."""
 
 from __future__ import annotations
 
@@ -7,7 +7,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from foil.registry import TmuxTarget
+
+@dataclass(frozen=True, slots=True)
+class TmuxTarget:
+    session_name: str
+    window_name: str
+    session_id: str | None
+    window_id: str | None
 
 _PROBE_FORMAT = (
     "#{session_id}\t#{window_id}\t"
@@ -237,41 +243,6 @@ class TmuxController:
             and window_id == target.window_id
         )
         return ProbeResult(ProbeState.ALIVE, matches, observed)
-
-    def list_marked_windows(self, fleet_id: str) -> list[dict[str, str]]:
-        """Return Foil-marked windows that claim this fleet."""
-
-        result = self._run(
-            [
-                "list-windows",
-                "-a",
-                "-F",
-                "#{session_name}\t#{window_name}\t#{@foil-fleet-id}\t"
-                "#{@foil-seat-id}\t#{session_id}\t#{window_id}",
-            ]
-        )
-        if result.returncode != 0:
-            return []
-        marked: list[dict[str, str]] = []
-        for line in result.stdout.splitlines():
-            parts = line.split("\t")
-            if len(parts) != 6:
-                continue
-            session_name, window_name, observed_fleet, seat_id, session_id, window_id = (
-                parts
-            )
-            if observed_fleet != fleet_id or not seat_id:
-                continue
-            marked.append(
-                {
-                    "session_name": session_name,
-                    "window_name": window_name,
-                    "seat_id": seat_id,
-                    "session_id": session_id,
-                    "window_id": window_id,
-                }
-            )
-        return marked
 
     def stop_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
         probe = self.probe(fleet_id, seat_id, target)

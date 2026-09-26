@@ -13,8 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from foil.registry import TmuxTarget
-from foil.tmux import ProbeState, TmuxController
+from foil.tmux import ProbeState, TmuxController, TmuxTarget
 
 FAKE_TMUX = """#!/usr/bin/env python3
 import json
