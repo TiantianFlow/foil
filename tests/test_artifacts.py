@@ -34,6 +34,7 @@ INTENDED_SDIST_MEMBERS = (
     "LICENSE",
     "uv.lock",
     "docs/requirements.md",
+    "skills/operator.md",
     "src/foil/__init__.py",
     "src/foil/cli.py",
     "tests/test_init.py",
