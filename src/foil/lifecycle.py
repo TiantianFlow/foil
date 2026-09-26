@@ -186,6 +186,7 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
     if lessons:
         learned = "\n".join(f"- {item}: {text}" for item, text in lessons)
     lead = template["name"] == "lead"
+    skill = foil_root(root) / "skills" / ("lead.md" if lead else "worker.md")
     work = (
         "Stay in your worktree. Do not modify the project toplevel. "
         "Killing you will not delete your branch."
@@ -207,6 +208,7 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
         "result/v1 (task, author, branch, outcome pass|fail).",
         f"Worktree: {work}",
         f"Persona: {_persona_line(template)}",
+        f"Skill: `{skill.resolve()}`.",
         f"Accepted lessons: {learned}",
     ]
     if restarted:

@@ -118,7 +118,7 @@ human ──▶ operator (outside the fleet)
 
 | ID | Requirement |
 |---|---|
-| F25 | Three skills ship, as plain Markdown, matching the command reference exactly (section 8). |
+| F25 | Three skills ship in the package, as plain Markdown, matching the command reference exactly (section 8). `init` writes them into the project's Foil folder, and each seat's instruction file points at that seat's role skill. |
 
 ## 5. Non-functional requirements
 
@@ -143,7 +143,7 @@ accepts `--help`, and `foil --version` prints the version.
 
 | Command | Flags | Behavior |
 |---|---|---|
-| `foil init [DIR]` | none | Checks that tmux and git exist and that DIR (default: current directory) is a git repository. Creates the Foil folder, default templates, and the git ignore entry. Safe to re-run. |
+| `foil init [DIR]` | none | Checks that tmux and git exist and that DIR (default: current directory) is a git repository. Creates the Foil folder, default templates, the three skills, and the git ignore entry. Safe to re-run. |
 | `foil seat spawn TEMPLATE` | `--name NAME`, `--task TEXT` | Creates a seat from a template (F2, F3, F6, F24). `--task` is delivered as the seat's first mail. |
 | `foil seat kill NAME` | `--all` (no NAME) | Stops the seat's window and marks it `killed` (F6). `--all` stops every seat. |
 | `foil seat resume [NAME]` | none | Restarts `dead` seats (F9). |
@@ -185,6 +185,7 @@ git-ignored (F7). The concepts below are fixed; exact names may vary.
     tasks/<id>.md              task/v1
     results/<id>.md            result/v1
   run/                         registry and generated instruction files
+  skills/<role>.md             operator, lead, and worker skills
   worktrees/<label>            one directory per seat worktree
 ```
 

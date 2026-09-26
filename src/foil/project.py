@@ -21,6 +21,7 @@ SKELETON = (
     "run/instructions",
     "run/plans",
     "run/fake",
+    "skills",
 )
 
 

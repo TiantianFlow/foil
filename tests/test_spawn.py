@@ -299,3 +299,18 @@ def test_overlong_auto_name_leaves_the_registry_loadable(
     instructions = foil_root(repo) / "run" / "instructions"
     assert all(name not in path.name for path in plans.glob("*"))
     assert all(name not in path.name for path in instructions.glob("*"))
+
+
+def test_instruction_points_at_the_role_skill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["seat", "spawn", "reviewer", "--name", "reader"]) == 0
+    root = foil_root(repo)
+    lead = (root / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
+    reader = (root / "run" / "instructions" / "reader.md").read_text(encoding="utf-8")
+    assert f"Skill: `{(root / 'skills' / 'lead.md').resolve()}`." in lead
+    assert f"Skill: `{(root / 'skills' / 'worker.md').resolve()}`." in reader

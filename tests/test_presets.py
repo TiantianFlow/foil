@@ -272,6 +272,24 @@ def test_init_rerun_with_no_harness_keeps_templates(
     assert after == before
 
 
+def test_init_writes_skills_and_leaves_edits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    assert main(["init"]) == 0
+    root = foil_root(repo) / "skills"
+    for name in ("operator.md", "lead.md", "worker.md"):
+        packaged = files("foil").joinpath("defaults", "skills", name).read_bytes()
+        assert (root / name).read_bytes() == packaged
+    edited = root / "operator.md"
+    edited.write_text("edited operator\n", encoding="utf-8")
+    assert main(["init"]) == 0
+    assert edited.read_text(encoding="utf-8") == "edited operator\n"
+
+
 def test_lead_persona_does_not_take_the_operator_role() -> None:
     root = Path(__file__).resolve().parents[1]
     personas = root / "src" / "foil" / "defaults" / "personas"
