@@ -26,13 +26,13 @@ Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foi
 `foil init` creates `.foil` in the Git toplevel and adds `/.foil/` to that repository's exclude file, so Foil's files stay out of `git status`. The directory holds:
 
 - `templates/<role>.toml` — the roster. The file name is the role. Fields used by the loader are `harness`, `model`, `persona`, `worktree`, and `permission`.
-- `templates/personas/<role>.md` — the default persona, copied once. A template may instead point `persona` at another Markdown file, which is left untouched, or it may hold inline text.
+- `templates/personas/<role>.md` — the default persona, copied once. It adds only specialization the role skill does not already state. A template may instead point `persona` at another Markdown file, which is left untouched, or it may hold inline text.
 - `harnesses/` — optional project presets.
 - `memory/<id>.json` — lessons. They belong to the project and stay when seats are killed.
 - `board/mail/<seat>/` — mail files. `board/notes/`, `board/tasks/`, and `board/results/` are directories seats use with ordinary file tools. Foil does not read task, result, note, or status files.
 - `run/registry.json` — fleet id, tmux session name, lead name, and one record per seat: name, template, harness, window id, state, worktree, branch, and session id.
 - `run/instructions/<seat>.md` — generated when that seat is spawned or resumed. It points at that seat's role skill by absolute path.
-- `skills/operator.md`, `skills/lead.md`, and `skills/worker.md` — copied once from the package. Init does not overwrite a file that is already there.
+- `skills/operator.md`, `skills/lead.md`, and `skills/worker.md` — copied once from the package. Each file starts with a name and description. Init does not overwrite a file that is already there. The lead and worker skills are the role guidance for those seats.
 - `run/plans/<seat>.json` — the argv, working directory, and environment for the runner.
 
 A linked worktree does not contain `.foil`. From that worktree, discovery walks to the Git common directory and uses the parent that contains `.foil`, so a seat can run `foil send` and `foil memory` against the project.

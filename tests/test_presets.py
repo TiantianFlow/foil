@@ -211,7 +211,7 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
             encoding="utf-8"
         )
         assert persona_text(template) == packaged
-        assert len(packaged) > 200
+        assert len(packaged) > 50
         argv = launch_command(repo, role, prompt=prompt, session_id="abc")
         assert argv[0] == "grok"
         assert argv[-1] == prompt
@@ -283,7 +283,12 @@ def test_init_writes_skills_and_leaves_edits(
     root = foil_root(repo) / "skills"
     for name in ("operator.md", "lead.md", "worker.md"):
         packaged = files("foil").joinpath("defaults", "skills", name).read_bytes()
-        assert (root / name).read_bytes() == packaged
+        written = (root / name).read_bytes()
+        assert written == packaged
+        for copy in (packaged.decode(), written.decode()):
+            header = copy.split("---", 2)[1]
+            assert "name:" in header
+            assert "description:" in header
     edited = root / "operator.md"
     edited.write_text("edited operator\n", encoding="utf-8")
     assert main(["init"]) == 0
@@ -301,5 +306,9 @@ def test_lead_persona_does_not_take_the_operator_role() -> None:
     lead = (personas / "lead.md").read_text(encoding="utf-8").lower()
     assert "foil init" not in lead
     assert "kill --all" not in lead
-    assert "spawn" in lead
-    assert "status.md" in lead
+    for word in ("spawn", "status", "roster", "memory", "board", "foil"):
+        assert word not in lead
+    for name in ("implementer.md", "reviewer.md"):
+        text = (personas / name).read_text(encoding="utf-8").lower()
+        for word in ("foil send", "foil seat", "foil memory", "board/mail", "board/notes"):
+            assert word not in text
