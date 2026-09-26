@@ -17,7 +17,7 @@ The command surface is `foil init`, `foil seat`, `foil send`, and
 - A Git worktree and `foil/<seat>` branch for seats whose template asks for one. Killing a seat leaves the branch and the worktree in place.
 - Board mail. `foil send` writes the file, then types one nudge line: the sender and the mail path. The body is never typed.
 - Generated instruction files, project memory, and the operator, lead, and worker skills.
-- Operator scenarios that run against the fake harness. The same scenarios run against a real harness CLI when `FOIL_E2E_LIVE=1`; the default test run skips that tier.
+- Operator scenarios that run against the fake harness. The same scenarios run against a real harness CLI when `FOIL_E2E_LIVE=1`; the default test run skips that tier. One live run used grok, the harness `foil init` selects when grok is on `PATH`. `FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live` reported 4 failed, 2 passed, 10 deselected in 2401.76s. Scenarios 2 and 6 passed. Scenarios 1, 3, 4, and 5 timed out after 600 seconds waiting for the seat to write the expected board file.
 - [docs/architecture.md](docs/architecture.md) and a text walkthrough in [docs/demo.md](docs/demo.md). This changelog, the contributor guide, and the documentation index.
 
 ### Removed
