@@ -270,3 +270,18 @@ def test_init_rerun_with_no_harness_keeps_templates(
         if path.is_file()
     }
     assert after == before
+
+
+def test_lead_persona_does_not_take_the_operator_role() -> None:
+    root = Path(__file__).resolve().parents[1]
+    personas = root / "src" / "foil" / "defaults" / "personas"
+    texts = [path.read_text(encoding="utf-8") for path in sorted(personas.glob("*.md"))]
+    texts.append((root / "skills" / "lead.md").read_text(encoding="utf-8"))
+    texts.append((root / "skills" / "worker.md").read_text(encoding="utf-8"))
+    for text in texts:
+        assert "operator" not in text.lower()
+    lead = (personas / "lead.md").read_text(encoding="utf-8").lower()
+    assert "foil init" not in lead
+    assert "kill --all" not in lead
+    assert "spawn" in lead
+    assert "status.md" in lead
