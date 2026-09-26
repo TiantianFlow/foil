@@ -1,6 +1,6 @@
 """Full operator journey against the lead-owned live fleet.
 
-These cases follow `docs/walking-skeleton.md` T2–T6 using the shipped
+These cases walk init, spawn, mail, resume, and stop using the shipped
 `grok` and `opencode` contracts. Real CLIs are replaced by PATH shims.
 """
 

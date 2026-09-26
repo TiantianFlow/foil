@@ -252,7 +252,11 @@ path, branch, and session id.
 | D1 | The README sells the product: a one-line value proposition, the workflow in a diagram, a demo recording, a quick start with a mainstream harness that works in under a minute, and a short comparison with doing the same work in one agent session. |
 | D2 | The README states the limits plainly: cooperative-only authority (F5), the risk of `auto` permission, and that Foil never interprets agent screens. |
 | D3 | A Chinese README carries the same content as the English one. |
-| D4 | This document is the single design document. |
+| D4 | This is the only requirements document. Other documents describe design, plans, or how to contribute, and never add requirements. |
+| D5 | An architecture document describes Foil's components, data flow, and module boundaries as implemented. |
+| D6 | Each release has a plan named `plan-vX.Y.Z.md` and an entry in the changelog. |
+| D7 | A contributor guide explains setup, the checks CI runs, and the rules every change keeps: the command surface (section 6), the size limit (N4), and publishing safety (N9). |
+| D8 | A documentation index lists every document in the docs folder, and an automated test checks that none is missing. Documents describe the current state; earlier versions live in git history and at release tags. |
 
 ## 10. Verification
 
@@ -288,7 +292,8 @@ the test plays the operator):
 
 **Standing checks:** the command surface matches section 6 exactly; the
 package source is within the N4 limit; tmux window identity, atomic
-writes, and public-safety checks (N9) pass.
+writes, public-safety checks (N9), and the documentation index check (D8)
+pass.
 
 **Live tier (optional):** the same scenarios with real harness CLIs in
 place of `fake`, judged by the same assertions. It needs authenticated

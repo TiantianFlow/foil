@@ -12,7 +12,7 @@ close them. Requirement IDs (F, N, D) refer to the requirements document.
 | Distinct actions | 29 | 11 |
 | Python in the package source | 7,339 lines | at most 2,000 |
 | Skills | 7 skills, including 2 adapter skills (541 lines) | 3 |
-| Design docs | 1 spec, 11 ADRs, 6 design docs, 3 other docs | 1 (requirements.md) |
+| Design docs | 1 spec, 11 ADRs, 6 design docs, 3 other docs | Requirements, architecture, one plan per release, and an index (D4–D8) |
 | Tests | 9,892 lines | Scenarios plus standing checks |
 
 ## 2. Command mapping
@@ -39,7 +39,7 @@ close them. Requirement IDs (F, N, D) refer to the requirements document.
 
 ## 3. Gaps
 
-| Area | v0.1.1 today | Requirement | Actions |
+| Area | Today | Requirement | Actions |
 |---|---|---|---|
 | Size | 7,339 lines; `runtime.py` alone is 1,855 and the CLI is 981 | N4: at most 2,000, enforced by a test | L1–L8 |
 | Command surface | 29 flat and grouped actions; nothing stops new ones being added | Section 6, enforced by a test | L1, L3 |
@@ -60,6 +60,8 @@ close them. Requirement IDs (F, N, D) refer to the requirements document.
 | README | Pitches "loyal opposition"; quick start needs `grok` and `opencode`; no demo | D1–D3 | R1, R2 |
 | Version | 0.1.1 | 0.2.0 | R4 |
 | Publishing safety | Clean at v0.1.1 | N9 on every commit | P1 |
+| Documentation | No architecture document for the new design; the changelog and contributor guide describe 0.1.x | D5–D7 | R3, R5 |
+| Stale references | Code docstrings, tests, and `foil poll-status --help` cite 0.1 requirement IDs (`CAP-…`) whose documents no longer exist | D4 | L9 |
 
 ## 4. Action items
 
@@ -77,6 +79,7 @@ Each item lists what to do and how to tell it's done.
 | L6 | Rewrite `src/foil/runtime.py` (1,855 lines) as a seat lifecycle module, and `src/foil/cli/__init__.py` (981 lines) as a thin CLI. Replace `src/foil/mailbox.py` (402 lines) with a small board module. | Lifecycle at most about 600 lines, CLI at most about 300, board at most about 120. |
 | L7 | Trim what's kept: `src/foil/registry.py` (406), `src/foil/memory.py` (333), `src/foil/fleet.py` (230), and `src/foil/delivery.py` (169), keeping only what the requirements use. Keep `src/foil/tmux.py`, `src/foil/runner.py`, and `src/foil/naming.py` mostly as they are. | L2 passes. |
 | L8 | Delete non-code that has no remaining use: the `schemas`, `adapters`, and `profiles` folders; `src/foil/resources`; `src/foil/templates` (replaced by the new defaults); and the tests for removed features. | Only files the requirements need remain. |
+| L9 | Remove 0.1 requirement and decision IDs (`CAP-…`, `ADR-…`) from code, tests, and CLI help. | A search of the package and tests finds none. |
 
 Size budget (a guide for L4–L7, not a requirement):
 
@@ -132,8 +135,9 @@ Size budget (a guide for L4–L7, not a requirement):
 |---|---|---|
 | R1 | Rewrite the README to D1 and D2. | Value line, diagram, demo recording, one-minute quick start with a mainstream harness, comparison, and limits are all present. |
 | R2 | Rewrite the Chinese README to match (D3). | Same sections and commands as the English README. |
-| R3 | Delete the old docs: `docs/spec`, `docs/adr`, `docs/design`, `docs/assignments`, `docs/walking-skeleton.md`, and `docs/authenticated-lead-worker-exam.md`. | `requirements.md` is the only design document (D4). |
+| R3 | Write the architecture document (D5): components, data flow, and module boundaries. Start once C1–C11 exist and revise it as the code settles. List it in the docs index. | It describes the implemented components and agrees with the code. |
 | R4 | Set the version to 0.2.0 in the package and CLI. | `foil --version` prints 0.2.0. |
+| R5 | Add the 0.2.0 entry to `CHANGELOG.md`, and update `CONTRIBUTING.md` with the new test commands and the live-tier switch (D6, D7). | Both match the release. |
 | P1 | Before publishing, scan every commit (not just the current tree) for secrets, personal paths, private hosts, and personal emails. | The scan is clean (N9). |
 
 ## 5. Known issues in v0.1.1
@@ -146,7 +150,7 @@ Size budget (a guide for L4–L7, not a requirement):
 | 4 | `seats set --profile` fails on starter seats with a CLI conflict. | L3 (command removed) |
 | 5 | `seats set` has no authority check, so a worker can add a lead row. | L3 (command removed) |
 | 6 | Only `grok` and `opencode` presets. | C1 |
-| 7 | Design docs contradict the README about required flags. | R3 |
+| 7 | Design docs contradict the README about required flags. | Closed: the 0.1 design docs are gone |
 | 8 | Seat isolation is a `git clone --local` on the main branch. | C3 |
 | 9 | Seat instructions say "one worktree per fleet", contradicting per-seat isolation. | C9 |
 | 10 | The nudge is typed even when the pane isn't at an input prompt. | By design; document it in R1 |
@@ -160,6 +164,8 @@ Size budget (a guide for L4–L7, not a requirement):
 - V1 before V2; V2 needs C2–C11.
 - S1–S3 after the command surface is final (L3).
 - R1 and R2 after S1–S3.
+- R3 after C1–C11.
+- R5 last: it describes the finished release.
 
 ## 7. Definition of done
 

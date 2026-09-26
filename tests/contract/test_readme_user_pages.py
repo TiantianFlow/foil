@@ -214,7 +214,6 @@ def test_readme_is_not_the_t1_t6_lab_script(readme_name: str) -> None:
     assert not re.search(r"\bT[1-6]\b", text)
     for marker in LAB_MARKERS:
         assert marker not in text
-    assert "docs/walking-skeleton.md" in text
 
 
 @pytest.mark.parametrize(

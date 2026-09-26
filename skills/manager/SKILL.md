@@ -129,5 +129,5 @@ names only — values resolve from the host environment at launch and are
 never persisted or printed). Credential-shaped argv is rejected before any
 artifact is written. Remainder argv after `--` still wins over the file's
 launch argv. Interactive CLI profiles omit one-shot print flags such as
-Pi's `-p`. The full contract, migration notes, and limitations live in
-docs/design/profiles.md.
+Pi's `-p`. The profile schema is `schemas/profile-v1.schema.json`, and
+`profiles/pi-interactive.toml` is a working example.
