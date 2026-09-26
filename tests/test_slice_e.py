@@ -277,3 +277,29 @@ def test_list_and_peek_report_owned_facts_only(
     assert capsys.readouterr().err == "foil: seat 'lead' is killed\n"
     assert main(["seat", "peek", "lead", "--lines", "0"]) == 1
     assert capsys.readouterr().err == "foil: invalid lines\n"
+
+
+def test_resume_uses_the_edited_template_harness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    _alive(monkeypatch, set())
+    template = foil_root(repo) / "templates" / "worker.toml"
+    template.write_text('harness = "claude"\nworktree = false\n', encoding="utf-8")
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "worker", "--name", "worker"]) == 0
+    previous = load_registry(repo)["seats"]["worker"]["session_id"]
+    assert previous
+    template.write_text('harness = "gemini"\nworktree = false\n', encoding="utf-8")
+    assert main(["seat", "resume", "worker"]) == 0
+    assert capsys.readouterr().err == ""
+    seat = load_registry(repo)["seats"]["worker"]
+    plan = json.loads(
+        (foil_root(repo) / "run" / "plans" / "worker.json").read_text(encoding="utf-8")
+    )
+    assert seat["harness"] == "gemini"
+    assert seat["session_id"] == ""
+    assert plan["argv"][0] == "gemini"
+    assert "--resume" not in plan["argv"]
+    assert previous not in plan["argv"]
