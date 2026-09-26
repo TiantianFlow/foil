@@ -33,6 +33,23 @@ pytestmark = [
 
 _REAL_PATH = os.environ.get("PATH", "")
 _TIMEOUT = 600.0
+_TASK_1 = (
+    "make the tests pass. Follow TASK.md. "
+    "Spawn implementer-1 to run sh fix.sh, then reviewer-1 to run sh review.sh. "
+    "Merge foil/implementer-1 and write board/status.md containing the line state: done."
+)
+_TASK_4 = (
+    "ask the operator. Follow TASK.md. "
+    "Write board/status.md containing the line: Which color should the status use? "
+    "After mail that says use blue, write board/status.md containing the line: The answer is blue."
+)
+_TASK_5 = (
+    "staff a worker. Follow TASK.md. "
+    "Spawn implementer-1 to run sh propose.sh. "
+    "That script writes refused to board/notes/accept.txt and proposes the lesson "
+    "check the merged tests. Then run sh accept.sh, which accepts it and spawns "
+    "reviewer --name reader."
+)
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +62,7 @@ def _use_real_harness_path(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_scenario_1_live(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _prepare(tmp_path, "scenario-1", monkeypatch, fake=False)
     try:
-        assert main(["seat", "spawn", "lead", "--task", "make the tests pass"]) == 0
+        assert main(["seat", "spawn", "lead", "--task", _TASK_1]) == 0
         _finish_scenario_1(repo, _TIMEOUT)
     finally:
         _close(repo)
@@ -74,7 +91,7 @@ def test_scenario_2_live(
 def test_scenario_3_live(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _prepare(tmp_path, "scenario-1", monkeypatch, fake=False)
     try:
-        assert main(["seat", "spawn", "lead", "--task", "make the tests pass"]) == 0
+        assert main(["seat", "spawn", "lead", "--task", _TASK_1]) == 0
         _wait(repo, lambda: "implementer-1" in load_registry(repo)["seats"], _TIMEOUT)
         session = str(load_registry(repo)["tmux_session"])
         killed = subprocess.run(
@@ -95,7 +112,7 @@ def test_scenario_4_live(
 ) -> None:
     repo = _prepare(tmp_path, "scenario-4", monkeypatch, fake=False)
     try:
-        assert main(["seat", "spawn", "lead", "--task", "ask the operator"]) == 0
+        assert main(["seat", "spawn", "lead", "--task", _TASK_4]) == 0
         _wait(repo, lambda: "Which color" in _status(repo), _TIMEOUT)
         assert main(["send", "lead", "use blue"]) == 0
         _wait(repo, lambda: "The answer is blue." in _status(repo), _TIMEOUT)
@@ -117,7 +134,7 @@ def test_scenario_5_live(
 ) -> None:
     repo = _prepare(tmp_path, "scenario-5", monkeypatch, fake=False)
     try:
-        assert main(["seat", "spawn", "lead", "--task", "staff a worker"]) == 0
+        assert main(["seat", "spawn", "lead", "--task", _TASK_5]) == 0
         note = foil_root(repo) / "board" / "notes" / "accept.txt"
         _wait(repo, note.is_file, _TIMEOUT)
         assert note.read_text(encoding="utf-8").strip() == "refused"
