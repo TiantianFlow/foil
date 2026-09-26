@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
-from foil.lifecycle import _git
+from foil.lifecycle import _git, _refused_worktree
 from foil.project import foil_root
 from foil.store import load_registry, save_registry
 from foil.tmux import TmuxController, TmuxError, TmuxTarget
@@ -129,7 +129,7 @@ def test_spawn_writes_plan_identity_and_window_id(
     assert "bootstrap.json" not in text
 
 
-def test_worktree_names_stay_outside_the_repository(
+def test_worktree_names_stay_inside_the_foil_folder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
@@ -151,15 +151,16 @@ def test_worktree_names_stay_outside_the_repository(
     assert capsys.readouterr().err == ""
 
     registry = load_registry(repo)
-    first = repo.parent / "project.foil" / "implementer-1"
-    second = repo.parent / "project.foil" / "implementer-2"
+    first = repo / ".foil" / "worktrees" / "implementer-1"
+    second = repo / ".foil" / "worktrees" / "implementer-2"
     assert Path(registry["seats"]["implementer-1"]["worktree"]) == first.resolve()
     assert registry["seats"]["implementer-1"]["branch"] == "foil/implementer-1"
     assert registry["seats"]["implementer-2"]["branch"] == "foil/implementer-2"
     assert registry["seats"]["helper"]["worktree"] == ""
     assert first.is_dir() and second.is_dir()
-    assert repo.resolve() not in first.resolve().parents
-    assert "worktrees" not in first.resolve().relative_to(repo.parent).parts
+    assert foil_root(repo).resolve() in first.resolve().parents
+    assert not (repo / "worktrees").exists()
+    assert not (repo.parent / "project.foil").exists()
     assert calls[1]["working_directory"] == first.resolve()
     assert calls[2]["session_name"] == calls[0]["session_name"]
     assert all("-B" not in command for command in git_args)
@@ -230,14 +231,16 @@ def test_existing_worktree_directory_uses_the_same_suffix(
     _commit(repo)
     _launch(monkeypatch)
     assert main(["seat", "spawn", "lead"]) == 0
-    natural = repo.parent / "project.foil" / "implementer-1"
+    natural = repo / ".foil" / "worktrees" / "implementer-1"
     natural.mkdir(parents=True)
     assert main(["seat", "spawn", "implementer"]) == 0
     assert capsys.readouterr().err == ""
     seat = load_registry(repo)["seats"]["implementer-1"]
     assert seat["branch"] == "foil/implementer-1-2"
-    assert Path(seat["worktree"]) == (repo.parent / "project.foil" / "implementer-1-2").resolve()
+    worktree = repo / ".foil" / "worktrees" / "implementer-1-2"
+    assert Path(seat["worktree"]) == worktree.resolve()
     assert natural.is_dir()
+    assert not (repo.parent / "project.foil").exists()
 
 
 def test_launch_failure_is_one_line(
@@ -259,7 +262,16 @@ def test_launch_failure_is_one_line(
     assert "Traceback" not in captured.err
     assert "hidden" not in captured.err
     assert "implementer-1" not in load_registry(repo)["seats"]
-    assert (repo.parent / "project.foil" / "implementer-1").is_dir()
+    assert (repo / ".foil" / "worktrees" / "implementer-1").is_dir()
+    assert not (repo.parent / "project.foil").exists()
+
+
+def test_worktree_paths_outside_the_foil_folder_are_refused(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    allowed = project / ".foil" / "worktrees" / "implementer-1"
+    assert not _refused_worktree(project, allowed)
+    assert _refused_worktree(project, project / "worktrees" / "implementer-1")
+    assert _refused_worktree(project, project / "src" / "implementer-1")
 
 
 def test_overlong_auto_name_leaves_the_registry_loadable(

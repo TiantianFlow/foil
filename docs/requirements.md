@@ -185,6 +185,7 @@ git-ignored (F7). The concepts below are fixed; exact names may vary.
     tasks/<id>.md              task/v1
     results/<id>.md            result/v1
   run/                         registry and generated instruction files
+  worktrees/<label>            one directory per seat worktree
 ```
 
 ### 7.2 Template
