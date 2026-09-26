@@ -173,3 +173,101 @@ Size budget (a guide for L4–L7, not a requirement):
 - [ ] Every action item above is done.
 - [ ] Scenarios 1–6 and all standing checks pass.
 - [ ] The package source is at most 2,000 lines of Python.
+
+## 8. Acceptance review (2026-09-26)
+
+Reviewed at commit `e4a014f`: the full test suite, lint, build, a hand run
+of the CLI, every requirement, and the definition of done above.
+
+**Verdict: not accepted yet.** One blocker (A1). Everything else in
+sections 4–7 is done or nearly done.
+
+### 8.1 Checks
+
+| Check | Result |
+|---|---|
+| Command surface (section 6) | Pass, enforced by `tests/test_command_surface.py` |
+| Package size | Pass: 1,922 of 2,000 lines |
+| Lint and build | Pass; the wheel builds as 0.2.0 |
+| Tests | 85 pass, 6 live tests skip as designed, **scenario 3 fails every run** |
+| Publishing safety | Pass: every commit uses the noreply identity; no personal paths, private hosts, or secrets |
+
+### 8.2 v0.1.1 known issues (section 5)
+
+All eleven are closed:
+
+| # | Status |
+|---|---|
+| 1 | Closed: the nudge carries the mail file's path, and the fake harness exercises it. |
+| 2 | Closed: an unknown recipient gets `foil: unknown seat`; other failures print one line. |
+| 3 | Closed: the lead's instruction file lists its commands and the templates. |
+| 4, 5 | Closed: the roster commands are gone. |
+| 6 | Closed: six presets. The `codex` and `gemini` flags are marked unverified. |
+| 7 | Closed: the 0.1 design docs are gone. |
+| 8 | Closed: each worktree seat gets a git worktree on its own `foil/<seat>` branch. |
+| 9 | Closed: seats are told to stay in their own worktree. |
+| 10 | Closed: the README, skills, and demo say the nudge is typed even when the pane is not at a prompt. |
+| 11 | Closed: both READMEs have the same sections. |
+
+### 8.3 New defects
+
+| # | Defect | Effect |
+|---|---|---|
+| B1 | Seat state, nudges, and peek use the bare tmux window ID. Window IDs restart at `@0` when the tmux server restarts, so after a crash or reboot one seat's stored ID can name another seat's window. | Scenario 3 fails: after `seat resume` the implementer gets `@0`, the lead's stale `@0` looks alive, and the lead is never restarted. Until fixed, `send` and `peek` can hit the wrong seat after any restart. Breaks F8, F9, and N6. |
+| B2 | The `opencode`, `codex`, and `gemini` presets resume with "continue the last session here" flags. The lead has no worktree, so it runs in the project folder, which is where the operator's harness usually runs too. | Resuming the lead can pick up the operator's own conversation. |
+| B3 | Spawn refuses when the `foil/<seat>` branch already exists instead of choosing another name. | Spawning fails in a repository that still has a branch from an earlier fleet. F6 asks for a unique name. |
+| B4 | Worktrees are created in a sibling folder, `<project>.foil/<seat>`. | Contradicts section 7.1 of the requirements ("everything lives in one Foil folder inside the project"), and creates folders next to the user's repository. |
+| B5 | The default lead persona says "The operator owns the goal". | The workflow says the lead doesn't know an operator exists. |
+
+### 8.4 README and skills: bootstrapping a harness
+
+The requirements ask the README to sell the product (D1) and the skills to
+cover each role (F25, section 8). They don't say how a skill reaches the
+harness that reads it. The branch shows the gap:
+
+- **The operator skill is hard to get.** It isn't in the installed
+  package, so after `uv tool install` the user has no copy. It is a plain
+  Markdown file with no name or description header, so harnesses that load
+  skills from a folder (for example Claude Code) won't pick it up.
+- **The README skips the operator.** The quick start has the human run
+  `foil` commands directly. It never shows the core workflow: load the
+  operator skill into your harness and ask it for the goal. The skills are
+  linked only as "what each role runs".
+- **The lead and worker skills never reach seats.** At runtime a seat
+  reads its generated instruction file and its template's persona. The
+  default lead persona repeats most of the lead skill, so the same guidance
+  lives in two places that can drift.
+- **No demo recording** (D1). The README says so, which reads as a
+  weakness on a page meant to sell the product.
+
+### 8.5 Test suite
+
+The fake-harness scenarios are the right design. Nudges really go through
+the pane, and the assertions check real outcomes. Scenario 3 caught B1.
+Gaps:
+
+- No scenario checks that each seat points at its own window after a
+  restart; B1 surfaced only as a timeout.
+- The fake answers instantly. Real agents are often busy when a nudge
+  arrives.
+- No scenario sends to a killed or dead seat.
+- The operator side calls the CLI in-process, never through the installed
+  `foil` command.
+- Only the live tier can show that real agents follow the instruction
+  files and skills, and nothing requires running it before a release.
+
+### 8.6 Action items
+
+Requirement changes come first, per the contributor guide.
+
+| ID | Action | Done when |
+|---|---|---|
+| A1 | Fix B1: check each window's fleet and seat markers (the tmux layer already sets and verifies them for kill) before treating a seat as alive, and before nudging or peeking. | Scenario 3 passes, and A7's first check passes. |
+| A2 | Fix B2: resume with "continue the last session" flags only for seats with their own worktree; other seats restart fresh. | A test shows the lead restarting fresh under those presets. |
+| A3 | Fix B3: when `foil/<seat>` exists, pick the next free branch name. | Spawning succeeds with a leftover branch present. |
+| A4 | Resolve B4: either move worktrees inside the Foil folder (it is already git-ignored) or change section 7.1 of the requirements to allow the sibling folder. | Code and requirements agree. |
+| A5 | Fix B5: remove the operator from the lead persona. | No mention of the operator in any seat-facing text. |
+| A6 | Requirements: add that the README shows how to load the operator skill into a harness (D1), and that skills reach their readers: `foil init` writes all three into the Foil folder with a name and description header, and each seat's instruction file points to its skill (F25). Then implement: package the skills, have `init` write them, point instruction files at them, and make the lead and worker skills the single source for role guidance. | After a fresh `uv tool install` and `foil init`, the operator skill is on disk in a loadable form, and the instruction files reference the seat skills. |
+| A7 | Add scenarios: after a restart, each seat's peek shows its own window and a nudge to the lead reaches the lead; a busy fake (it waits before answering) receives two nudges; `send` to a killed seat does not type into any window; one scenario drives the operator through the installed `foil` command. | All pass. |
+| A8 | Rewrite the README quick start around the operator: install Foil, run `foil init`, load the operator skill into your harness, give it the goal. Keep the direct commands as a secondary path. Replace the "no demo recording" line with a recording, or drop the line until one exists. | The quick start starts from the operator skill; the Chinese README matches. |
+| A9 | Run the live tier with at least one real harness before tagging 0.2.0, and record the result in the changelog entry. | The 0.2.0 entry names the harness and the scenarios that passed. |
