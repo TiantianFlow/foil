@@ -124,7 +124,9 @@ def test_spawn_writes_plan_identity_and_window_id(
     assert plan["argv"][0] == "grok"
     instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
     assert plan["argv"][-1] == f"Read {instruction.resolve()} first."
-    assert instruction.read_text(encoding="utf-8") == "# lead\n"
+    text = instruction.read_text(encoding="utf-8")
+    assert "You are seat `lead`." in text
+    assert "bootstrap.json" not in text
 
 
 def test_worktree_names_stay_outside_the_repository(

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from foil.tmux import ProbeState, TmuxController, TmuxTarget
+from foil.tmux import ProbeState, TmuxController, TmuxError, TmuxTarget
 
 FAKE_TMUX = """#!/usr/bin/env python3
 import json
@@ -59,6 +59,14 @@ if args[0] == "display-message":
     ):
         out = out.replace(token, window.get(key) or "")
     print(out)
+elif args[0] == "capture-pane":
+    target = args[args.index("-t") + 1]
+    start = args[args.index("-S") + 1]
+    window = resolve_window(target)
+    if window is None or "-p" not in args:
+        print("can't find window", file=sys.stderr)
+        sys.exit(1)
+    print(f"{window['seat']}:{start}")
 elif args[0] == "kill-window":
     target = args[args.index("-t") + 1]
     window = resolve_window(target)
@@ -151,6 +159,27 @@ def test_probe_by_window_id_verifies_a_live_window(
     assert probe.state is ProbeState.ALIVE
     assert probe.identity_matches is True
     assert probe.observed is not None and probe.observed.window_id == "@1"
+
+
+def test_stop_without_a_stored_session_id_still_checks_markers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    executable = _install_fake_tmux(tmp_path, monkeypatch)
+    tmux = TmuxController(executable=str(executable))
+    target = TmuxTarget(
+        session_name="foil-demo",
+        window_name="worker",
+        session_id=None,
+        window_id="@1",
+    )
+
+    assert tmux.window_exists("@1") is True
+    assert tmux.window_exists("@9") is False
+    assert tmux.stop_verified("fleet-1", "worker", target) is True
+    assert _kills(tmp_path) == ["@1"]
+    assert tmux.capture_pane("@0", 40) == "lead:-40\n"
+    with pytest.raises(TmuxError):
+        tmux.capture_pane("@1", 40)
 
 
 def test_probe_with_a_wrong_recorded_window_id_is_not_verified(
