@@ -76,6 +76,8 @@ def test_expansion_drops_missing_values_and_their_flags(tmp_path: Path) -> None:
     assert expand_argv(codex, prompt=prompt, permission="auto", resume=True) == [
         "codex",
         "resume",
+        "--ask-for-approval",
+        "never",
         "--last",
         prompt,
     ]
@@ -114,6 +116,35 @@ def test_expansion_drops_missing_values_and_their_flags(tmp_path: Path) -> None:
     assert fake["session_id"] == "generated"
     launched = expand_argv(fake, prompt=prompt, session_id="abc")
     assert launched == ["foil-fake", "--session", "abc", "--prompt", prompt]
+
+
+def test_resume_keeps_permission_flags(tmp_path: Path) -> None:
+    prompt = "Read /tmp/instructions.md first."
+    assert expand_argv(
+        load_preset(tmp_path, "codex"), prompt=prompt, permission="ask", resume=True
+    ) == ["codex", "resume", "--ask-for-approval", "on-request", "--last", prompt]
+    assert expand_argv(
+        load_preset(tmp_path, "opencode"), model="m", prompt=prompt, permission="auto", resume=True
+    ) == ["opencode", ".", "--continue", "--auto", "--prompt", prompt]
+    assert expand_argv(
+        load_preset(tmp_path, "claude"),
+        model="sonnet",
+        prompt=prompt,
+        session_id="abc",
+        permission="auto",
+        resume=True,
+    ) == ["claude", "--resume", "abc", "--permission-mode", "auto"]
+    assert expand_argv(
+        load_preset(tmp_path, "grok"),
+        model="grok-4",
+        prompt=prompt,
+        session_id="abc",
+        permission="auto",
+        resume=True,
+    ) == ["grok", "--model", "grok-4", "--resume", "abc", "--always-approve"]
+    assert expand_argv(
+        load_preset(tmp_path, "gemini"), prompt=prompt, permission="auto", resume=True
+    ) == ["gemini", "--resume", "--approval-mode=yolo"]
 
 
 def test_generated_session_id_is_filled_when_omitted(tmp_path: Path) -> None:

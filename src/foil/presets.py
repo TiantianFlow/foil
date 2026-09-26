@@ -133,7 +133,7 @@ def expand_argv(
     bound = None if preset["session_id"] == "none" else session_id or str(uuid.uuid4())
     values = {"model": model or None, "prompt": prompt or None, "session_id": bound}
     filled = _fill(argv, values)
-    extra = [] if resume else preset["permission"][permission]
+    extra = preset["permission"][permission]
     text = values["prompt"]
     if not extra or not text or text not in filled:
         return filled + extra
