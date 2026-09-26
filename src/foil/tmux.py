@@ -264,6 +264,13 @@ class TmuxController:
             "capture-pane",
         )
 
+    def nudge(self, window_id: str, line: str) -> None:
+        if not window_id.startswith("@"):
+            return
+        typed = self._run(["send-keys", "-l", "-t", window_id, "--", line])
+        if typed.returncode == 0:
+            self._run(["send-keys", "-t", window_id, "Enter"])
+
     def stop_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
         probe = self.probe(fleet_id, seat_id, target)
         if probe.state is ProbeState.DEAD:

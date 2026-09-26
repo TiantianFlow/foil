@@ -9,6 +9,7 @@ from pathlib import Path
 from foil.errors import FoilError
 from foil.project import foil_root
 from foil.store import SAFE_ID, actor, create_exclusive, find_seat, private_dir, scan
+from foil.tmux import TmuxController, TmuxError
 
 
 def notes_dir(toplevel: Path) -> Path:
@@ -22,7 +23,10 @@ def ensure_board(toplevel: Path) -> None:
 
 
 def nudge(window_id: str, sender: str, mail_path: Path) -> None:
-    del window_id, sender, mail_path
+    try:
+        TmuxController().nudge(window_id, f"{sender} {mail_path}")
+    except TmuxError:
+        return
 
 
 def _message(sender: str, to: str, when: str, text: str) -> str:
