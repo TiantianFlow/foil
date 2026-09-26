@@ -20,11 +20,11 @@ flowchart LR
   you --> board
 ```
 
-你初始化项目，并用目标拉起主座。主座拉起工人席位、给他们发邮件，并写 `status.md`。你查看席位列表、主座窗格和那份状态文件。工作结束后，你停掉所有席位。运筹不做项目本身的工作。
+你加载操作员技能，并把目标交给它。主座从那里接管舰队，并写 `status.md`。你查看席位列表、主座窗格和那份状态文件。工作结束后，你停掉所有席位。运筹不做项目本身的工作。
 
 ## 演示
 
-本仓库没有演示录像。[docs/demo.md](docs/demo.md) 按命令逐步走一遍下面的快速开始。
+[docs/demo.md](docs/demo.md) 按命令逐步走一遍下面的快速开始。
 
 ## 快速开始
 
@@ -43,9 +43,11 @@ cd your-repo
 foil init .
 ```
 
-`foil init` 会写好 `lead`、`implementer` 和 `reviewer` 的模板。它把 `harness` 设成 `grok`、`claude`、`codex`、`opencode`、`gemini` 里本机第一个已安装的 CLI。这篇说明用 Claude。如果 init 选了别的 harness，把 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里的值改成 `harness = "claude"`。保留 `permission = "ask"`。
+`foil init` 会写好 `.foil`，包括模板和 `.foil/skills/operator.md`。它把 `harness` 设成 `grok`、`claude`、`codex`、`opencode`、`gemini` 里本机第一个已安装的 CLI。这篇说明用 Claude。如果 init 选了别的 harness，把 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里的值改成 `harness = "claude"`。保留 `permission = "ask"`。
 
-把操作员技能从 `.foil/skills/operator.md` 加载到你的 harness。这个文件是操作员的工作流程。主座技能和工人技能写在同一目录。
+把 `.foil/skills/operator.md` 加载到你的 harness，并按这个技能去做。把目标告诉这个 harness。技能会启动舰队、查看进展、转达你说的话，并在结束时拆掉舰队。
+
+同一组命令，如果你自己来跑：
 
 ```sh
 foil seat spawn lead --task "Summarize this repository in board/status.md"
@@ -53,7 +55,13 @@ foil seat list
 foil seat peek lead
 ```
 
-主座自己的报告在 `.foil/board/status.md`。结束时：
+主座自己的报告在 `.foil/board/status.md`。要把一个回答交给主座：
+
+```sh
+foil send lead "the answer"
+```
+
+结束时：
 
 ```sh
 foil seat kill --all

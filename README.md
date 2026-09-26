@@ -20,11 +20,11 @@ flowchart LR
   you --> board
 ```
 
-You initialize the project and spawn the lead with the goal. The lead spawns workers, sends them mail, and writes `status.md`. You check the seat list, the lead's pane, and that status file. When the work is finished, you stop every seat. Foil does not do the project work.
+You load the operator skill and give it the goal. The lead runs the fleet from there and writes `status.md`. You check the seat list, the lead's pane, and that status file. When the work is finished, you stop every seat. Foil does not do the project work.
 
 ## Demo
 
-This repository has no demo recording. [docs/demo.md](docs/demo.md) walks through the quick start below, command by command.
+[docs/demo.md](docs/demo.md) walks through the quick start below, command by command.
 
 ## Quick start
 
@@ -43,9 +43,11 @@ cd your-repo
 foil init .
 ```
 
-`foil init` writes templates for `lead`, `implementer`, and `reviewer`. It sets `harness` to the first installed CLI among `grok`, `claude`, `codex`, `opencode`, and `gemini`. This walkthrough uses Claude. If init chose another harness, set `harness = "claude"` in `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Leave `permission = "ask"`.
+`foil init` writes `.foil`, including the templates and `.foil/skills/operator.md`. It sets `harness` to the first installed CLI among `grok`, `claude`, `codex`, `opencode`, and `gemini`. This walkthrough uses Claude. If init chose another harness, set `harness = "claude"` in `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Leave `permission = "ask"`.
 
-Load the operator skill into your harness from `.foil/skills/operator.md`. That file is the operator's workflow. The lead and worker skills are written beside it.
+Load `.foil/skills/operator.md` into your harness and follow that skill. Tell the harness the goal. The skill starts the fleet, checks in, relays what you say, and tears the fleet down.
+
+The same commands, if you run them yourself:
 
 ```sh
 foil seat spawn lead --task "Summarize this repository in board/status.md"
@@ -53,7 +55,13 @@ foil seat list
 foil seat peek lead
 ```
 
-Read `.foil/board/status.md` for the lead's own report. When you are done:
+Read `.foil/board/status.md` for the lead's own report. To pass an answer to the lead:
+
+```sh
+foil send lead "the answer"
+```
+
+When you are done:
 
 ```sh
 foil seat kill --all
