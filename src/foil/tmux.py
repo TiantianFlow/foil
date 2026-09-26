@@ -236,13 +236,33 @@ class TmuxController:
             session_id=session_id,
             window_id=window_id,
         )
+        session_ok = target.session_id is None or session_id == target.session_id
         matches = (
             observed_fleet == fleet_id
             and observed_seat == seat_id
-            and session_id == target.session_id
+            and session_ok
             and window_id == target.window_id
         )
         return ProbeResult(ProbeState.ALIVE, matches, observed)
+
+    def window_exists(self, window_id: str) -> bool:
+        if not window_id.startswith("@"):
+            return False
+        try:
+            result = self._run(
+                ["display-message", "-p", "-t", window_id, "#{window_id}"]
+            )
+        except TmuxError:
+            return False
+        return result.returncode == 0 and result.stdout.strip() == window_id
+
+    def capture_pane(self, window_id: str, lines: int) -> str:
+        if not window_id.startswith("@") or lines < 1:
+            raise TmuxError("tmux capture-pane failed")
+        return self._required(
+            ["capture-pane", "-p", "-t", window_id, "-S", f"-{lines}"],
+            "capture-pane",
+        )
 
     def stop_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
         probe = self.probe(fleet_id, seat_id, target)
