@@ -228,12 +228,17 @@ def _write_instruction(root: Path, seat: str, template: dict, *, restarted: bool
     return path
 
 
-def _native_resume(preset: dict, session_id: str) -> bool:
+def _native_resume(preset: dict, session_id: str, *, worktree: str) -> bool:
     argv = preset.get("resume") or []
     if not argv:
         return False
     if preset["session_id"] == "generated" and session_id:
         return True
+    # `--continue` / `--last` mean "the last session in this directory".
+    # A seat with no worktree runs in the project directory, so those flags
+    # would resume someone else's session. Start that seat fresh instead.
+    if not worktree:
+        return False
     return preset["session_id"] == "none" and bool({"--continue", "--last"} & set(argv))
 
 
@@ -397,7 +402,7 @@ def _restart(root: Path, registry: dict, name: str) -> None:
     loaded = load_template(root, record["template"])
     preset = load_preset(root, loaded["harness"])
     stored = "" if loaded["harness"] != record["harness"] else record["session_id"]
-    native = _native_resume(preset, stored)
+    native = _native_resume(preset, stored, worktree=record.get("worktree") or "")
     if native:
         session = stored
     elif preset["session_id"] == "generated":

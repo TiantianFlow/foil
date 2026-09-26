@@ -133,11 +133,12 @@ def test_resume_uses_last_or_continue_and_restarts_otherwise(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
     calls = _launch(monkeypatch)
     _alive(monkeypatch, set())
     templates = foil_root(repo) / "templates"
     templates.joinpath("codex-role.toml").write_text(
-        'harness = "codex"\npermission = "auto"\nworktree = false\n',
+        'harness = "codex"\npermission = "auto"\nworktree = true\n',
         encoding="utf-8",
     )
     templates.joinpath("fresh.toml").write_text(
@@ -167,7 +168,45 @@ def test_resume_uses_last_or_continue_and_restarts_otherwise(
     mail = foil_root(repo) / "board" / "mail" / "reader"
     assert "You were restarted." in reader_text
     assert f"Re-read `{mail.resolve()}/`." in reader_text
+    assert Path(reader["cwd"]) == repo.resolve()
     assert len(calls) == 6
+    assert Path(coder["cwd"]) == Path(load_registry(repo)["seats"]["coder"]["worktree"])
+
+
+def test_resume_without_a_worktree_starts_in_the_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    _alive(monkeypatch, set())
+    templates = foil_root(repo) / "templates"
+    lead = templates / "lead.toml"
+    text = lead.read_text(encoding="utf-8").replace('harness = "grok"', 'harness = "codex"')
+    lead.write_text(text)
+    templates.joinpath("plain.toml").write_text(
+        'harness = "opencode"\nworktree = false\n',
+        encoding="utf-8",
+    )
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "plain", "--name", "clerk"]) == 0
+    assert main(["seat", "resume"]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "Traceback" not in captured.out
+
+    project = str(repo.resolve())
+    for name in ("lead", "clerk"):
+        plan = json.loads(
+            (foil_root(repo) / "run" / "plans" / f"{name}.json").read_text(encoding="utf-8")
+        )
+        text = (foil_root(repo) / "run" / "instructions" / f"{name}.md").read_text(
+            encoding="utf-8"
+        )
+        assert plan["cwd"] == project
+        assert "--last" not in plan["argv"]
+        assert "--continue" not in plan["argv"]
+        assert "You were restarted." in text
+        assert load_registry(repo)["seats"][name]["worktree"] == ""
 
 
 def test_alive_resume_does_not_relaunch(

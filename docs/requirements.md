@@ -77,7 +77,7 @@ human ──▶ operator (outside the fleet)
 | F6 | When a template asks for a worktree, spawning creates a git worktree on a new branch whose name is unique in the repository. Killing a seat never deletes its branch and never silently destroys uncommitted work. |
 | F7 | Files and worktrees Foil creates never appear as untracked or modified files in the user's repository. |
 | F8 | Seat state is `alive` (its exact tmux window exists), `dead` (the window is gone and the seat wasn't killed), or `killed` (stopped with `foil seat kill`). |
-| F9 | `seat resume` restarts `dead` seats, never `killed` ones. It uses the harness's own session resume when the preset supports it; otherwise it starts the seat fresh and tells it that it was restarted and should re-read its mail. |
+| F9 | `seat resume` restarts `dead` seats, never `killed` ones. It uses the harness's own session resume when the preset supports it; otherwise it starts the seat fresh and tells it that it was restarted and should re-read its mail. A seat with no worktree resumes in the project directory. |
 
 ### Visibility
 
