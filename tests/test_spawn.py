@@ -222,3 +222,30 @@ def test_existing_branch_and_launch_failure_are_one_line(
     assert "hidden" not in captured.err
     assert "implementer-1" not in load_registry(repo)["seats"]
     assert (repo.parent / "project.foil" / "implementer-1").is_dir()
+
+
+def test_overlong_auto_name_leaves_the_registry_loadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    calls = _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    name = "a" * 128
+    template = foil_root(repo) / "templates" / f"{name}.toml"
+    template.write_text('harness = "grok"\nworktree = true\n', encoding="utf-8")
+
+    assert main(["seat", "spawn", name]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == "foil: could not name seat\n"
+    assert "Traceback" not in captured.err
+
+    reloaded = load_registry(repo)
+    assert set(reloaded["seats"]) == {"lead"}
+    assert name not in reloaded["seats"]
+    assert len(calls) == 1
+    assert not (repo.parent / "project.foil").exists()
+    plans = foil_root(repo) / "run" / "plans"
+    instructions = foil_root(repo) / "run" / "instructions"
+    assert all(name not in path.name for path in plans.glob("*"))
+    assert all(name not in path.name for path in instructions.glob("*"))

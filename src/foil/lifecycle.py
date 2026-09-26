@@ -85,7 +85,7 @@ def _seat_name(registry: dict, template_name: str, requested: str | None) -> str
         return requested
     for number in range(1, 10001):
         candidate = f"{template_name}-{number}"
-        if candidate not in seats:
+        if candidate not in seats and SAFE_ID.fullmatch(candidate):
             return candidate
     raise FoilError("foil: could not name seat")
 
