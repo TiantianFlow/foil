@@ -291,13 +291,19 @@ def _open(
     return target.window_id
 
 
-def _state(record: dict[str, str]) -> str:
+def _state(registry: dict, name: str, record: dict[str, str]) -> str:
     if record.get("state") == "killed":
         return "killed"
-    window = record.get("window_id") or ""
-    if window and TmuxController().window_exists(window):
-        return "alive"
-    return "dead"
+    try:
+        owned = TmuxController().matches_window(
+            str(registry["fleet_id"]),
+            name,
+            str(registry.get("tmux_session") or ""),
+            record.get("window_id") or "",
+        )
+    except TmuxError:
+        return "dead"
+    return "alive" if owned else "dead"
 
 
 def spawn_seat(
@@ -431,7 +437,7 @@ def resume_seats(root: Path, name: str | None) -> None:
     registry = load_registry(root)
     if name is not None:
         _known(registry, name)
-        state = _state(registry["seats"][name])
+        state = _state(registry, name, registry["seats"][name])
         if state == "killed":
             raise FoilError(f"foil: seat '{name}' is killed")
         if state == "alive":
@@ -440,7 +446,7 @@ def resume_seats(root: Path, name: str | None) -> None:
         _restart(root, registry, name)
         return
     for seat_name in sorted(registry["seats"]):
-        if _state(registry["seats"][seat_name]) == "dead":
+        if _state(registry, seat_name, registry["seats"][seat_name]) == "dead":
             _restart(root, registry, seat_name)
 
 
@@ -450,7 +456,7 @@ def list_seats(root: Path, *, as_json: bool = False) -> None:
         {
             "name": seat_name,
             "template": record["template"],
-            "state": _state(record),
+            "state": _state(registry, seat_name, record),
             "worktree": record["worktree"],
         }
         for seat_name, record in sorted(registry["seats"].items())
@@ -467,7 +473,7 @@ def peek_seat(root: Path, name: str, *, lines: int) -> None:
         raise FoilError("foil: invalid lines")
     registry = load_registry(root)
     record = _known(registry, name)
-    state = _state(record)
+    state = _state(registry, name, record)
     if state != "alive":
         raise FoilError(f"foil: seat '{name}' is {state}")
     try:

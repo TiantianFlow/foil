@@ -202,6 +202,58 @@ def test_scenario_3_resumes_after_the_session_dies(
         _close(repo)
 
 
+def test_restart_peek_and_nudge_stay_on_the_same_seat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _prepare(tmp_path, "scenario-2", monkeypatch)
+
+    def pane(name: str) -> str:
+        if main(["seat", "peek", name]) != 0:
+            capsys.readouterr()
+            return ""
+        return capsys.readouterr().out
+
+    try:
+        assert main(["seat", "spawn", "lead"]) == 0
+        assert main(["seat", "spawn", "implementer"]) == 0
+        session = str(load_registry(repo)["tmux_session"])
+        killed = subprocess.run(
+            ["tmux", "kill-session", "-t", session],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert killed.returncode == 0
+        assert main(["seat", "resume"]) == 0
+        _wait(
+            repo,
+            lambda: (
+                "foil-fake lead ready" in pane("lead")
+                and "foil-fake implementer-1 ready" in pane("implementer-1")
+            ),
+        )
+        for record in load_registry(repo)["seats"].values():
+            subprocess.run(
+                ["tmux", "resize-window", "-t", record["window_id"], "-x", "400"],
+                check=False,
+                capture_output=True,
+            )
+        assert main(["send", "lead", "ping the lead"]) == 0
+        mail = next((foil_root(repo) / "board" / "mail" / "lead").glob("*.md"))
+        path = str(mail.resolve())
+        _wait(repo, lambda: path in pane("lead"))
+        lead = pane("lead")
+        worker = pane("implementer-1")
+        assert "foil-fake lead ready" in lead
+        assert path in lead
+        assert "foil-fake implementer-1 ready" not in lead
+        assert "foil-fake implementer-1 ready" in worker
+        assert "foil-fake lead ready" not in worker
+        assert path not in worker
+    finally:
+        _close(repo)
+
+
 def test_scenario_4_operator_answer_is_raw_on_the_pane(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
