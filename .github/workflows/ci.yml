@@ -36,4 +36,4 @@ jobs:
           wheel_env="$RUNNER_TEMP/foil-wheel-smoke"
           uv venv --no-config "$wheel_env"
           uv pip install --no-config --python "$wheel_env/bin/python" dist/foil_orchestrator-*.whl
-          test "$("$wheel_env/bin/foil" --version)" = "foil 0.1.0"
+          test "$("$wheel_env/bin/foil" --version)" = "foil 0.2.0"
