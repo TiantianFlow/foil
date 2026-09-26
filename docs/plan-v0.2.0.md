@@ -74,11 +74,11 @@ Each item lists what to do and how to tell it's done.
 | L1 | Add a **command-surface test**. It walks the CLI's parser and compares every command, subcommand, and flag to section 6 of the requirements. | The test fails if any command or flag is added, removed, or renamed. |
 | L2 | Add a **size test** that counts lines of Python in the package source. | The test fails above 2,000 lines. |
 | L3 | Remove every command not in section 6 (see the mapping in section 2). | L1 passes. |
-| L4 | Delete modules with no remaining use: `src/foil/dispatch.py` (105 lines), `src/foil/catalog.py` (73), `src/foil/doctor.py` (423), `src/foil/status.py` (162), `src/foil/notepad.py` (198), `src/foil/seats.py` (438), `src/foil/onboarding.py` (363), `src/foil/known_clis.py` (15), `src/foil/runtime_config.py` (30), `src/foil/resume.py` (96). | The files are gone and nothing imports them. |
-| L5 | Replace `src/foil/adapters.py` and `src/foil/profiles.py` (593 lines together) with one template-and-preset loader. | One loader of about 200 lines. |
-| L6 | Rewrite `src/foil/runtime.py` (1,855 lines) as a seat lifecycle module, and `src/foil/cli/__init__.py` (981 lines) as a thin CLI. Replace `src/foil/mailbox.py` (402 lines) with a small board module. | Lifecycle at most about 600 lines, CLI at most about 300, board at most about 120. |
-| L7 | Trim what's kept: `src/foil/registry.py` (406), `src/foil/memory.py` (333), `src/foil/fleet.py` (230), and `src/foil/delivery.py` (169), keeping only what the requirements use. Keep `src/foil/tmux.py`, `src/foil/runner.py`, and `src/foil/naming.py` mostly as they are. | L2 passes. |
-| L8 | Delete non-code that has no remaining use: the `schemas`, `adapters`, and `profiles` folders; `src/foil/resources`; `src/foil/templates` (replaced by the new defaults); and the tests for removed features. | Only files the requirements need remain. |
+| L4 | Delete modules with no remaining use: dispatch.py (105 lines), catalog.py (73), doctor.py (423), status.py (162), notepad.py (198), seats.py (438), onboarding.py (363), known_clis.py (15), runtime_config.py (30), resume.py (96). | The files are gone and nothing imports them. |
+| L5 | Replace adapters.py and profiles.py (593 lines together) with one template-and-preset loader. | One loader of about 200 lines. |
+| L6 | Rewrite runtime.py (1,855 lines) as a seat lifecycle module, and the old cli package (981 lines) as a thin CLI. Replace mailbox.py (402 lines) with a small board module. | Lifecycle at most about 600 lines, CLI at most about 300, board at most about 120. |
+| L7 | Trim what's kept: registry.py (406), memory.py (333), fleet.py (230), and delivery.py (169), keeping only what the requirements use. Keep tmux.py, runner.py, and fold naming.py into tmux. | L2 passes. |
+| L8 | Delete non-code that has no remaining use: the schemas, adapters, and profiles folders; packaged resources; packaged role templates (replaced by the new defaults); and the tests for removed features. | Only files the requirements need remain. |
 | L9 | Remove 0.1 requirement and decision IDs (`CAP-…`, `ADR-…`) from code, tests, and CLI help. | A search of the package and tests finds none. |
 
 Size budget (a guide for L4–L7, not a requirement):
@@ -124,7 +124,7 @@ Size budget (a guide for L4–L7, not a requirement):
 
 | ID | Action | Done when |
 |---|---|---|
-| V1 | Build the fake harness (section 10), replacing `tests/e2e/fake_cli.py`. | It launches through the normal preset path and follows a script. |
+| V1 | Build the fake harness (section 10), replacing the old e2e fake CLI shim. | It launches through the normal preset path and follows a script. |
 | V2 | Write scenarios 1–6 with their fixture repositories and seat scripts. | All six pass. |
 | V3 | Keep the standing checks: L1, L2, tmux window identity, atomic writes, and the public-safety tests (`tests/test_docs_hygiene.py`, `tests/test_artifacts.py`). Update the version test for 0.2.0. | All pass. |
 | V4 | Make the live tier runnable by opt-in with real harness CLIs. | The scenarios run against real CLIs when enabled, and are skipped otherwise. |

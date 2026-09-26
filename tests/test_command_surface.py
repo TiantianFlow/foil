@@ -70,7 +70,7 @@ SECTION_6 = CommandSpec(
                     flags=(FlagSpec("--all"),),
                     positionals=(PositionalSpec("NAME", "?"),),
                 ),
-                "resume": CommandSpec(positionals=(PositionalSpec("NAME", "?"))),
+                "resume": CommandSpec(positionals=(PositionalSpec("NAME", "?"),)),
                 "list": CommandSpec(flags=(FlagSpec("--json"),)),
                 "peek": CommandSpec(
                     flags=(FlagSpec("--lines", metavar="N", default=40),),

@@ -33,33 +33,19 @@ INTENDED_SDIST_MEMBERS = (
     "README.zh-CN.md",
     "LICENSE",
     "uv.lock",
-    "profiles/pi-interactive.toml",
-    "adapters/grok_cli.toml",
-    "adapters/opencode.toml",
     "docs/requirements.md",
-    "schemas/adapter-v1.schema.json",
-    "schemas/profile-v1.schema.json",
-    "schemas/seats-v1.schema.json",
-    "skills/controller/SKILL.md",
     "src/foil/__init__.py",
-    "src/foil/cli/__init__.py",
-    "src/foil/resources/adapters/grok_cli.toml",
-    "src/foil/templates/roles/implementer.toml",
+    "src/foil/cli.py",
     "tests/test_init.py",
 )
 INTENDED_WHEEL_MEMBERS = (
     "foil/__init__.py",
-    "foil/cli/__init__.py",
-    "foil/runtime.py",
-    "foil/resources/adapters/grok_cli.toml",
-    "foil/resources/adapters/opencode.toml",
-    "foil/resources/schemas/adapter-v1.schema.json",
-    "foil/resources/schemas/profile-v1.schema.json",
-    "foil/resources/schemas/seats-v1.schema.json",
-    "foil/resources/skills/controller/SKILL.md",
-    "foil/templates/roles/implementer.toml",
+    "foil/cli.py",
+    "foil/lifecycle.py",
+    "foil/runner.py",
+    "foil/tmux.py",
 )
-WHEEL_ONLY_LAYOUT = ("tests/", "docs/", "skills/controller", "adapters/")
+WHEEL_ONLY_LAYOUT = ("tests/", "docs/", "skills/", "adapters/")
 
 
 def _stage_checkout(tmp_path: Path) -> tuple[Path, str]:
@@ -83,28 +69,23 @@ def _stage_checkout(tmp_path: Path) -> tuple[Path, str]:
     marker = f"residue-{uuid.uuid4().hex}"
     state_root = stage / "state-root-with-absolute-path"
 
-    # A generated seat card carrying absolute machine paths, like a live checkout.
     (stage / "FOIL.md").write_text(
         f"# Foil seat\n\nState dir: `{state_root}` marker {marker}\n",
         encoding="utf-8",
     )
-    # Isolated worker checkout left behind by a live fleet.
     worker = stage / "worktrees" / "developer"
     worker.mkdir(parents=True)
     (worker / "NOTES.md").write_text(f"worker checkout {marker}", encoding="utf-8")
-    # Generated bootstrap/adapter state.
     adapter_state = stage / "adapter-state" / "developer"
     adapter_state.mkdir(parents=True)
     (adapter_state / "bootstrap.json").write_text(
         f'{{"marker": "{marker}"}}', encoding="utf-8"
     )
-    # Runtime state files.
     runtime_state = stage / "state" / "v1" / "fleets" / "fleet-x"
     runtime_state.mkdir(parents=True)
     (runtime_state / "fleet.json").write_text(
         f'{{"marker": "{marker}"}}', encoding="utf-8"
     )
-    # Caches, virtualenvs, and prior build output.
     for cache in (".venv", ".pytest_cache", ".ruff_cache"):
         directory = stage / cache
         directory.mkdir()
@@ -174,31 +155,23 @@ def _assert_no_residue(members: dict[str, bytes], marker: str, stage: Path) -> N
         assert str(stage).encode() not in content, f"absolute machine path in {name}"
 
 
-def test_sdist_never_contains_runtime_residue(
-    built: Built,
-) -> None:
+def test_sdist_never_contains_runtime_residue(built: Built) -> None:
     sdist, _wheel, marker, stage = built
     _assert_no_residue(sdist, marker, stage)
 
 
-def test_wheel_never_contains_runtime_residue(
-    built: Built,
-) -> None:
+def test_wheel_never_contains_runtime_residue(built: Built) -> None:
     _sdist, wheel, marker, stage = built
     _assert_no_residue(wheel, marker, stage)
 
 
-def test_sdist_contains_only_intended_project_files(
-    built: Built,
-) -> None:
+def test_sdist_contains_only_intended_project_files(built: Built) -> None:
     sdist, _wheel, _marker, _stage = built
     for member in INTENDED_SDIST_MEMBERS:
         assert member in sdist, f"sdist is missing {member}"
 
 
-def test_wheel_contains_only_the_package_and_packaged_resources(
-    built: Built,
-) -> None:
+def test_wheel_contains_only_the_package_and_packaged_resources(built: Built) -> None:
     _sdist, wheel, _marker, _stage = built
     for member in INTENDED_WHEEL_MEMBERS:
         assert member in wheel, f"wheel is missing {member}"

@@ -133,10 +133,10 @@ foil seat spawn --seat designer
 
 Grok 和 OpenCode 是内置预设。其他交互式 CLI 通过声明式席位档案接入——一个 TOML 文件掌管可执行文件、启动/恢复/初始化参数、会话捕获、权限标志、工作目录行为，以及按变量名声明的环境转发（值永不落盘）：
 
-先把随仓库发布的 [`profiles/pi-interactive.toml`](profiles/pi-interactive.toml) 示例保存或复制到你要协调的仓库，再为相应席位传入它的路径：
+先把一份声明式席位档案保存到你要协调的仓库，再为相应席位传入它的路径：
 
 ```sh
-foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
+foil seats set --seat researcher --profile ./researcher.toml --role researcher
 foil seat spawn --seat researcher
 ```
 
@@ -154,4 +154,3 @@ spawn 上的 `--profile` 仍可临时覆盖席位文件。
 
 - [CONTRIBUTING.md](CONTRIBUTING.md)——搭建开发环境并运行检查
 - [CHANGELOG.md](CHANGELOG.md)——版本历史
-- [skills/controller](skills/controller)、[skills/manager](skills/manager)、[skills/worker](skills/worker)——给驱动或加入舰队的 CLI 使用的可移植 skill
