@@ -1,0 +1,9 @@
+id = "opencode"
+command = ["opencode", ".", "--model", "{model}", "--prompt", "{prompt}"]
+resume = ["opencode", ".", "--continue", "--prompt", "{prompt}"]
+session_id = "none"
+env = []
+
+[permission]
+ask = []
+auto = ["--auto"]
