@@ -49,6 +49,9 @@ INTENDED_WHEEL_MEMBERS = (
     "foil/defaults/harnesses/grok.toml",
     "foil/defaults/harnesses/fake.toml",
     "foil/defaults/personas/lead.md",
+    "foil/defaults/skills/operator.md",
+    "foil/defaults/skills/lead.md",
+    "foil/defaults/skills/worker.md",
 )
 WHEEL_ONLY_LAYOUT = ("tests/", "docs/", "skills/", "adapters/")
 

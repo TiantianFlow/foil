@@ -210,6 +210,11 @@ def installed_harness() -> str:
 
 
 def write_default_templates(toplevel: Path) -> None:
+    for name in ("operator.md", "lead.md", "worker.md"):
+        target = foil_root(toplevel) / "skills" / name
+        if not target.exists() and not target.is_symlink():
+            with suppress(FileExistsError):
+                create_exclusive(target, _builtin("skills", name).encode())
     directory = foil_root(toplevel) / "templates"
     missing = [
         role

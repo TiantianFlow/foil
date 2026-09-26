@@ -45,6 +45,8 @@ foil init .
 
 `foil init` writes templates for `lead`, `implementer`, and `reviewer`. It sets `harness` to the first installed CLI among `grok`, `claude`, `codex`, `opencode`, and `gemini`. This walkthrough uses Claude. If init chose another harness, set `harness = "claude"` in `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Leave `permission = "ask"`.
 
+Load the operator skill into your harness from `.foil/skills/operator.md`. That file is the operator's workflow. The lead and worker skills are written beside it.
+
 ```sh
 foil seat spawn lead --task "Summarize this repository in board/status.md"
 foil seat list

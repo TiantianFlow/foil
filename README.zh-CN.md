@@ -45,6 +45,8 @@ foil init .
 
 `foil init` 会写好 `lead`、`implementer` 和 `reviewer` 的模板。它把 `harness` 设成 `grok`、`claude`、`codex`、`opencode`、`gemini` 里本机第一个已安装的 CLI。这篇说明用 Claude。如果 init 选了别的 harness，把 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里的值改成 `harness = "claude"`。保留 `permission = "ask"`。
 
+把操作员技能从 `.foil/skills/operator.md` 加载到你的 harness。这个文件是操作员的工作流程。主座技能和工人技能写在同一目录。
+
 ```sh
 foil seat spawn lead --task "Summarize this repository in board/status.md"
 foil seat list
