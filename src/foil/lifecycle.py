@@ -242,13 +242,13 @@ def _open(
     registry: dict,
     seat: str,
     template: dict,
+    preset: dict,
     *,
     worktree: str,
     session_id: str,
     native: bool,
     restarted: bool,
 ) -> str:
-    preset = load_preset(root, template["harness"])
     cwd = Path(worktree) if worktree else root
     instruction = _write_instruction(root, seat, template, restarted=restarted)
     prompt = f"Read {instruction} first."
@@ -320,6 +320,7 @@ def spawn_seat(
         registry,
         seat,
         loaded,
+        preset,
         worktree=worktree,
         session_id=native,
         native=False,
@@ -388,10 +389,11 @@ def kill_seats(
 def _restart(root: Path, registry: dict, name: str) -> None:
     record = registry["seats"][name]
     loaded = load_template(root, record["template"])
-    preset = load_preset(root, record["harness"])
-    native = _native_resume(preset, record["session_id"])
+    preset = load_preset(root, loaded["harness"])
+    stored = "" if loaded["harness"] != record["harness"] else record["session_id"]
+    native = _native_resume(preset, stored)
     if native:
-        session = record["session_id"]
+        session = stored
     elif preset["session_id"] == "generated":
         session = str(uuid.uuid4())
     else:
@@ -401,6 +403,7 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         registry,
         name,
         loaded,
+        preset,
         worktree=record["worktree"],
         session_id=session,
         native=native,
@@ -409,6 +412,7 @@ def _restart(root: Path, registry: dict, name: str) -> None:
     record["window_id"] = window
     record["state"] = ""
     record["session_id"] = session
+    record["harness"] = loaded["harness"]
     try:
         save_registry(root, registry)
     except Exception:
