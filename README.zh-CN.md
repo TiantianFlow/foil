@@ -152,8 +152,6 @@ spawn 上的 `--profile` 仍可临时覆盖席位文件。
 
 ## 进一步了解
 
-- [docs/walking-skeleton.md](docs/walking-skeleton.md)——可执行的端到端验证路径
-- [docs/design/onboarding.md](docs/design/onboarding.md)——初始化与状态根契约
-- [docs/design/seats.md](docs/design/seats.md)——`.foil/seats.toml` 里的预定义席位配方
-- [docs/design/profiles.md](docs/design/profiles.md)——声明式席位档案契约
+- [CONTRIBUTING.md](CONTRIBUTING.md)——搭建开发环境并运行检查
+- [CHANGELOG.md](CHANGELOG.md)——版本历史
 - [skills/controller](skills/controller)、[skills/manager](skills/manager)、[skills/worker](skills/worker)——给驱动或加入舰队的 CLI 使用的可移植 skill

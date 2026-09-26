@@ -219,3 +219,18 @@ def test_tracked_markdown_paths_and_links_exist() -> None:
                     missing.append(f"{relative}:{line_number}:`{candidate}`")
 
     assert missing == []
+
+
+def test_docs_index_lists_every_document() -> None:
+    docs = ROOT / "docs"
+    index = (docs / "README.md").read_text(encoding="utf-8")
+    linked = {
+        unquote(match.group(1).split("#", 1)[0])
+        for match in MARKDOWN_LINK.finditer(index)
+    }
+    documents = {
+        path.relative_to(docs).as_posix()
+        for path in docs.rglob("*.md")
+        if path.relative_to(docs).as_posix() != "README.md"
+    }
+    assert sorted(documents - linked) == []
