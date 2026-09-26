@@ -207,6 +207,37 @@ def test_memory_add_accept_reject_list_and_replaces(
     assert f"{dropped}\trejected\t" in text
 
 
+def test_memory_add_refuses_symlinked_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    victim = tmp_path / "victim"
+    victim.write_text("keep\n", encoding="utf-8")
+    victim.chmod(0o644)
+    lock = foil_root(repo) / "run" / "memory.lock"
+    lock.symlink_to(victim)
+
+    assert main(["memory", "add", "prefer small diffs"]) == 1
+    assert capsys.readouterr().err == "foil: refusing symlink\n"
+    assert lock.is_symlink()
+    assert stat.S_IMODE(victim.stat().st_mode) == 0o644
+    assert list((foil_root(repo) / "memory").glob("*.json")) == []
+
+
+def test_memory_id_errors_stay_one_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _repo(tmp_path, monkeypatch)
+    for bad in ("bad\nid", "bad\rid"):
+        shown = bad.replace("\n", "").replace("\r", "")
+        assert main(["memory", "accept", bad]) == 1
+        assert capsys.readouterr().err == f"foil: unknown lesson '{shown}'\n"
+        assert main(["memory", "reject", bad]) == 1
+        assert capsys.readouterr().err == f"foil: unknown lesson '{shown}'\n"
+        assert main(["memory", "add", "newer rule", "--replaces", bad]) == 1
+        assert capsys.readouterr().err == f"foil: unknown lesson '{shown}'\n"
+
+
 def test_memory_refuses_credentials_and_reads_stdin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

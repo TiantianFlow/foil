@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import json
 import os
@@ -80,13 +81,24 @@ def private_dir(path: Path) -> None:
 @contextmanager
 def exclusive_lock(path: Path) -> Iterator[None]:
     private_dir(path.parent)
-    descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
     try:
+        descriptor = os.open(path, flags, 0o600)
+    except OSError as exc:
+        if exc.errno in {errno.ELOOP, errno.EISDIR}:
+            raise FoilError("foil: refusing symlink") from exc
+        raise
+    locked = False
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise FoilError("foil: refusing symlink")
         os.fchmod(descriptor, 0o600)
         fcntl.flock(descriptor, fcntl.LOCK_EX)
+        locked = True
         yield
     finally:
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        if locked:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
 
 

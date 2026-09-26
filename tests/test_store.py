@@ -12,7 +12,14 @@ from pathlib import Path
 import pytest
 
 from foil.errors import FoilError
-from foil.store import SCHEMA_VERSION, exclusive_lock, read_json, write_json
+from foil.store import (
+    SCHEMA_VERSION,
+    empty_registry,
+    exclusive_lock,
+    read_json,
+    save_registry,
+    write_json,
+)
 
 
 def test_write_is_private_and_leaves_no_partial_file(tmp_path: Path) -> None:
@@ -69,6 +76,47 @@ def test_secret_shaped_json_is_refused(tmp_path: Path) -> None:
     with pytest.raises(FoilError, match="credential-shaped text refused"):
         write_json(path, {"schema_version": SCHEMA_VERSION, "token": "sk-secret"})
     assert not path.exists()
+
+
+def test_exclusive_lock_refuses_symlink_before_chmod(tmp_path: Path) -> None:
+    victim = tmp_path / "victim"
+    victim.write_text("keep\n", encoding="utf-8")
+    victim.chmod(0o644)
+    lock = tmp_path / "locks" / "memory.lock"
+    lock.parent.mkdir()
+    lock.symlink_to(victim)
+
+    with pytest.raises(FoilError, match="refusing symlink"), exclusive_lock(lock):
+        pass
+    assert lock.is_symlink()
+    assert stat.S_IMODE(victim.stat().st_mode) == 0o644
+    assert victim.read_text(encoding="utf-8") == "keep\n"
+
+
+def test_registry_lock_symlink_is_refused(tmp_path: Path) -> None:
+    victim = tmp_path / "victim"
+    victim.write_text("keep\n", encoding="utf-8")
+    victim.chmod(0o644)
+    lock = tmp_path / ".foil" / "run" / "registry.lock"
+    lock.parent.mkdir(parents=True)
+    lock.symlink_to(victim)
+
+    with pytest.raises(FoilError, match="refusing symlink"):
+        save_registry(tmp_path, empty_registry())
+    assert lock.is_symlink()
+    assert stat.S_IMODE(victim.stat().st_mode) == 0o644
+    assert not (tmp_path / ".foil" / "run" / "registry.json").exists()
+
+
+def test_exclusive_lock_refuses_non_regular_file(tmp_path: Path) -> None:
+    lock = tmp_path / "locks" / "registry.lock"
+    lock.parent.mkdir()
+    os.mkfifo(lock, 0o644)
+
+    with pytest.raises(FoilError, match="refusing symlink"), exclusive_lock(lock):
+        pass
+    assert stat.S_ISFIFO(lock.lstat().st_mode)
+    assert stat.S_IMODE(lock.lstat().st_mode) == 0o644
 
 
 def test_exclusive_lock_blocks_other_waiters(tmp_path: Path) -> None:
