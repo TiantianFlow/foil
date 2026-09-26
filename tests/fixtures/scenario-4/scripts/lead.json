@@ -1,0 +1,22 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "ask the operator"},
+      "do": [
+        {
+          "write": "board/status.md",
+          "text": "---\ncontract: status/v1\nstate: blocked\nupdated: 2026-09-26T00:00:00Z\nquestions:\n  - Which color should the status use?\n---\n\nWaiting for the operator.\n"
+        }
+      ]
+    },
+    {
+      "when": {"mail_contains": "blue"},
+      "do": [
+        {
+          "write": "board/status.md",
+          "text": "---\ncontract: status/v1\nstate: done\nupdated: 2026-09-26T00:00:00Z\nquestions: []\n---\n\nThe answer is blue.\n"
+        }
+      ]
+    }
+  ]
+}

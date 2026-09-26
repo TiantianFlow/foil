@@ -37,6 +37,7 @@ INTENDED_SDIST_MEMBERS = (
     "src/foil/__init__.py",
     "src/foil/cli.py",
     "tests/test_init.py",
+    "tests/harness/foil_fake.py",
 )
 INTENDED_WHEEL_MEMBERS = (
     "foil/__init__.py",
