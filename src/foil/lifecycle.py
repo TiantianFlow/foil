@@ -1,9 +1,10 @@
-"""Seat lifecycle. Slice A ships init plus stubs for later slices."""
+"""Seat lifecycle. Init creates the folder; spawn still does not launch."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from foil.board import ensure_board
 from foil.errors import FoilError
 from foil.project import (
     SKELETON,
@@ -12,6 +13,7 @@ from foil.project import (
     git_toplevel,
     require_host_tools,
 )
+from foil.store import ensure_registry
 
 
 def init_project(directory: str | None) -> None:
@@ -28,6 +30,8 @@ def init_project(directory: str | None) -> None:
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
     ensure_exclude(toplevel)
+    ensure_board(toplevel)
+    ensure_registry(toplevel)
 
 
 def spawn_seat(
