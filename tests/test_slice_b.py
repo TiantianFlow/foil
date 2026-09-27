@@ -169,7 +169,7 @@ def test_memory_add_accept_reject_list_and_replaces(
     repo = _repo(tmp_path, monkeypatch)
     monkeypatch.setenv("FOIL_SEAT_ID", "implementer")
     assert main(["memory", "add", "prefer small diffs"]) == 0
-    lesson_id = capsys.readouterr().out.strip()
+    lesson_id = capsys.readouterr().out.strip().splitlines()[-1]
     path = foil_root(repo) / "memory" / f"{lesson_id}.json"
     assert path.is_file()
     assert stat.S_IMODE(path.stat().st_mode) == 0o600

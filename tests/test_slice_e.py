@@ -56,7 +56,7 @@ def _pane(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, int]]:
 
 def _lesson(capsys: pytest.CaptureFixture[str], text: str) -> str:
     assert main(["memory", "add", text]) == 0
-    lesson_id = capsys.readouterr().out.strip()
+    lesson_id = capsys.readouterr().out.strip().splitlines()[-1]
     assert main(["memory", "accept", lesson_id]) == 0
     capsys.readouterr()
     return lesson_id
@@ -220,7 +220,7 @@ def test_alive_resume_does_not_relaunch(
     before = (foil_root(repo) / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
     assert main(["seat", "resume", "lead"]) == 0
     captured = capsys.readouterr()
-    assert captured.out == "foil: seat 'lead' is alive\n"
+    assert captured.out.endswith("foil: seat 'lead' is alive\n")
     assert captured.err == ""
     assert len(calls) == 1
     after = (foil_root(repo) / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")

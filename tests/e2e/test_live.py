@@ -123,6 +123,7 @@ def test_scenario_4_live(
             capture_output=True,
             text=True,
         )
+        capsys.readouterr()
         assert main(["seat", "peek", "lead"]) == 0
         assert capsys.readouterr().out == captured.stdout
     finally:

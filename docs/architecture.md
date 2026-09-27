@@ -23,7 +23,7 @@ Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foi
 
 ## Where state lives
 
-`foil init` creates `.foil` in the Git toplevel and adds `/.foil/` to that repository's exclude file, so Foil's files stay out of `git status`. The directory holds:
+`foil init` creates `.foil` in the Git toplevel and adds `/.foil/` to that repository's exclude file, so Foil's files stay out of `git status`. It prints the operator pointer line and the lead template's permission, and a re-run prints them again without overwriting existing files. The directory holds:
 
 - `templates/<role>.toml` — the roster. The file name is the role. Fields used by the loader are `harness`, `model`, `persona`, `worktree`, and `permission`.
 - `templates/personas/<role>.md` — the default persona, copied once. It adds only specialization the role skill does not already state. A template may instead point `persona` at another Markdown file, which is left untouched, or it may hold inline text.

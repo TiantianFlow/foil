@@ -80,6 +80,36 @@ def test_init_creates_foil_folder_and_exclude(
     assert EXCLUDE_PATTERN in _exclude_text(repo).splitlines()
 
 
+def test_init_prints_the_pointer_and_the_lead_permission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    pointer = "Read .foil/skills/operator.md and follow it. My goal: <goal>.\n"
+
+    assert main(["init"]) == 0
+    first = capsys.readouterr()
+    assert first.err == ""
+    assert first.out == pointer + 'permission = "ask"\n'
+    lead = foil_root(repo) / "templates" / "lead.toml"
+    original = lead.read_text(encoding="utf-8")
+    assert 'permission = "ask"\n' in original
+
+    assert main(["init"]) == 0
+    second = capsys.readouterr()
+    assert second.out == first.out
+    assert lead.read_text(encoding="utf-8") == original
+
+    edited = original.replace('permission = "ask"', 'permission = "auto"')
+    lead.write_text(edited, encoding="utf-8")
+    assert main(["init"]) == 0
+    third = capsys.readouterr()
+    assert third.out == pointer + 'permission = "auto"\n'
+    assert lead.read_text(encoding="utf-8") == edited
+
+
 def test_init_fails_outside_a_git_repository(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
