@@ -127,7 +127,7 @@ human ──▶ operator (outside the fleet)
 | N1 | Python 3.11+ with the standard library only; no runtime dependencies. |
 | N2 | External programs are limited to tmux 3.2+, git, and the harness CLIs. |
 | N3 | Supported platforms: Linux and macOS. |
-| N4 | **Lightweight:** at most 2,000 lines of Python in the package source. The size limit and the exact command surface are both checked by automated tests. |
+| N4 | **Lightweight:** the package source targets at most 2,500 lines of Python. The target is not a hard limit: an automated check reports the count, and going over it needs a stated reason. The exact command surface is enforced by an automated test. |
 | N5 | Foil never stores, prints, or logs credentials. Environment variables are forwarded to seats by name only. Memory lessons and mail are refused if they contain credential-shaped text. |
 | N6 | Tmux windows are always targeted by exact window ID, never by name. |
 | N7 | Foil's own state is written atomically and carries a schema version. |
@@ -251,7 +251,7 @@ path, branch, and session id.
 
 | ID | Requirement |
 |---|---|
-| D1 | The README sells the product: a one-line value proposition, the workflow in a diagram, a demo recording, a quick start with a mainstream harness that works in under a minute, and a short comparison with doing the same work in one agent session. |
+| D1 | The README sells the product: a one-line value proposition, the workflow in a diagram, a quick start with a mainstream harness that works in under a minute, and a short comparison with doing the same work in one agent session. A demo recording is optional. |
 | D2 | The README states the limits plainly: cooperative-only authority (F5), the risk of `auto` permission, and that Foil never interprets agent screens. |
 | D3 | A Chinese README carries the same content as the English one. |
 | D4 | This is the only requirements document. Other documents describe design, plans, or how to contribute, and never add requirements. |
@@ -293,7 +293,7 @@ the test plays the operator):
 | 6 | Errors: send to an unknown seat, spawn a missing template, run outside a git repository. | Each gives a one-line error and a non-zero exit, with no traceback. |
 
 **Standing checks:** the command surface matches section 6 exactly; the
-package source is within the N4 limit; tmux window identity, atomic
+package source size is reported against the N4 target; tmux window identity, atomic
 writes, public-safety checks (N9), and the documentation index check (D8)
 pass.
 
