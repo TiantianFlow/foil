@@ -7,6 +7,7 @@ Notable changes to Foil, newest first.
 ### Added
 
 - An onboarding section in both READMEs and the operator skill: install, `foil init`, the pointer line, each template's permission, the lead's first prompt, and a check that the lead is working. After that check, the human's goal is sent to the existing lead. Persistent harness install paths are marked unverified.
+- A second live run used grok, the harness `foil init` selects when grok is on `PATH`. The live templates were `permission = "auto"`. `FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live` reported 1 failed, 5 passed, 11 deselected in 1644.66s (0:27:24). Scenarios 1, 2, 4, 5, and 6 passed. Scenario 3 timed out after resume, waiting for `state: done`. The recorded lead pane was Grok 4.6 (high) with `always-approve`, stopped on "Help improve Grok" with `[Opt out]` and `[Opt in]`: "Off by default. Opt-in to allow SpaceXAI to retain coding data, e.g., prompts, traces, & metrics, for training and debugging purposes." The inlined instruction had started (`You are seat lead`). This was not a tool-approval prompt.
 
 ## [0.2.0] - 2026-09-26
 
