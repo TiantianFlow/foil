@@ -10,6 +10,7 @@ import pytest
 
 from foil.cli import main
 from foil.lifecycle import _git, _refused_worktree
+from foil.presets import BUILTIN_IDS, load_preset
 from foil.project import foil_root
 from foil.store import load_registry, save_registry
 from foil.tmux import TmuxController, TmuxError, TmuxTarget
@@ -123,8 +124,8 @@ def test_spawn_writes_plan_identity_and_window_id(
     assert "PATH" in plan["env_forward"]
     assert plan["argv"][0] == "grok"
     instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
-    assert plan["argv"][-1] == f"Read {instruction.resolve()} first."
     text = instruction.read_text(encoding="utf-8")
+    assert text in plan["argv"]
     assert "You are seat `lead`." in text
     assert "bootstrap.json" not in text
 
@@ -314,3 +315,64 @@ def test_instruction_points_at_the_role_skill(
     reader = (root / "run" / "instructions" / "reader.md").read_text(encoding="utf-8")
     assert f"Skill: `{(root / 'skills' / 'lead.md').resolve()}`." in lead
     assert f"Skill: `{(root / 'skills' / 'worker.md').resolve()}`." in reader
+    assert "You plan the goal, staff the fleet" in lead
+    assert "You do the assigned task, stay in your own worktree" in reader
+    assert "whenever you are woken." in lead
+    assert "whenever you are woken." in reader
+
+
+def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    templates = foil_root(repo) / "templates"
+    for harness in BUILTIN_IDS:
+        if harness == "grok":
+            continue
+        templates.joinpath(f"via-{harness}.toml").write_text(
+            f'harness = "{harness}"\nworktree = false\n',
+            encoding="utf-8",
+        )
+        task = ["--task", "only the goal"] if harness == "fake" else []
+        assert main(["seat", "spawn", f"via-{harness}", "--name", f"seat-{harness}", *task]) == 0
+    assert capsys.readouterr().err == ""
+
+    seats = {"lead": "grok"}
+    seats.update({f"seat-{name}": name for name in BUILTIN_IDS if name != "grok"})
+    assert len(calls) == len(seats)
+    for seat, harness in seats.items():
+        plan = json.loads(
+            (foil_root(repo) / "run" / "plans" / f"{seat}.json").read_text(encoding="utf-8")
+        )
+        text = (foil_root(repo) / "run" / "instructions" / f"{seat}.md").read_text(encoding="utf-8")
+        assert text in plan["argv"]
+        skill = "lead.md" if seat == "lead" else "worker.md"
+        skill_text = (foil_root(repo) / "skills" / skill).read_text(encoding="utf-8").strip()
+        assert skill_text in text
+        reread = (foil_root(repo) / "run" / "instructions" / f"{seat}.md").resolve()
+        assert f"Re-read `{reread}`" in text
+        assert "whenever you are woken." in text
+        preset = load_preset(repo, harness)
+        allowed = {
+            token
+            for token in (
+                *preset["command"],
+                *preset["permission"]["ask"],
+                *preset["permission"]["auto"],
+            )
+            if token.startswith("-")
+        }
+        assert {token for token in plan["argv"] if token.startswith("-")} <= allowed
+        assert not any("system-prompt" in token for token in plan["argv"])
+    mail = _mail(repo, "seat-fake")
+    assert len(mail) == 1
+    assert mail[0].read_text(encoding="utf-8").endswith("only the goal\n")
+    fake = (foil_root(repo) / "run" / "instructions" / "seat-fake.md").read_text(encoding="utf-8")
+    assert "only the goal" not in fake
+    fake_plan = json.loads(
+        (foil_root(repo) / "run" / "plans" / "seat-fake.json").read_text(encoding="utf-8")
+    )
+    assert fake_plan["argv"][fake_plan["argv"].index("--prompt") + 1] == fake

@@ -14,9 +14,15 @@ from pathlib import Path
 
 def _foil_root(prompt: str) -> Path:
     marker = ".foil/run/instructions/"
-    if marker in prompt:
-        raw = prompt.split("Read ", 1)[-1].split(" first.", 1)[0].strip()
-        return Path(raw).parents[2]
+    index = prompt.find(marker)
+    if index >= 0:
+        left = index
+        while left > 0 and prompt[left - 1] not in " \n\t`\"'":
+            left -= 1
+        right = index + len(marker)
+        while right < len(prompt) and prompt[right] not in " \n\t`\"'":
+            right += 1
+        return Path(prompt[left:right]).parents[2]
     for parent in (Path.cwd(), *Path.cwd().parents):
         candidate = parent / ".foil"
         if candidate.is_dir():
