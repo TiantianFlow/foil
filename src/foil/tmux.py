@@ -1,4 +1,4 @@
-"""Verified tmux lifecycle boundary (CAP-017, CAP-019, CAP-029–CAP-031)."""
+"""Verified tmux window identity and lifecycle."""
 
 from __future__ import annotations
 
@@ -7,7 +7,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from foil.registry import TmuxTarget
+
+@dataclass(frozen=True, slots=True)
+class TmuxTarget:
+    session_name: str
+    window_name: str
+    session_id: str | None
+    window_id: str | None
 
 _PROBE_FORMAT = (
     "#{session_id}\t#{window_id}\t"
@@ -230,48 +236,59 @@ class TmuxController:
             session_id=session_id,
             window_id=window_id,
         )
+        session_ok = target.session_id is None or session_id == target.session_id
         matches = (
             observed_fleet == fleet_id
             and observed_seat == seat_id
-            and session_id == target.session_id
+            and session_ok
             and window_id == target.window_id
         )
         return ProbeResult(ProbeState.ALIVE, matches, observed)
 
-    def list_marked_windows(self, fleet_id: str) -> list[dict[str, str]]:
-        """Return Foil-marked windows that claim this fleet."""
+    def matches_window(
+        self, fleet_id: str, seat_id: str, session_name: str, window_id: str
+    ) -> bool:
+        """True only when this window still carries this fleet and this seat."""
 
-        result = self._run(
-            [
-                "list-windows",
-                "-a",
-                "-F",
-                "#{session_name}\t#{window_name}\t#{@foil-fleet-id}\t"
-                "#{@foil-seat-id}\t#{session_id}\t#{window_id}",
-            ]
+        if not window_id.startswith("@"):
+            return False
+        probe = self.probe(
+            fleet_id,
+            seat_id,
+            TmuxTarget(
+                session_name=session_name,
+                window_name=seat_id,
+                session_id=None,
+                window_id=window_id,
+            ),
         )
-        if result.returncode != 0:
-            return []
-        marked: list[dict[str, str]] = []
-        for line in result.stdout.splitlines():
-            parts = line.split("\t")
-            if len(parts) != 6:
-                continue
-            session_name, window_name, observed_fleet, seat_id, session_id, window_id = (
-                parts
+        return probe.state is ProbeState.ALIVE and bool(probe.identity_matches)
+
+    def window_exists(self, window_id: str) -> bool:
+        if not window_id.startswith("@"):
+            return False
+        try:
+            result = self._run(
+                ["display-message", "-p", "-t", window_id, "#{window_id}"]
             )
-            if observed_fleet != fleet_id or not seat_id:
-                continue
-            marked.append(
-                {
-                    "session_name": session_name,
-                    "window_name": window_name,
-                    "seat_id": seat_id,
-                    "session_id": session_id,
-                    "window_id": window_id,
-                }
-            )
-        return marked
+        except TmuxError:
+            return False
+        return result.returncode == 0 and result.stdout.strip() == window_id
+
+    def capture_pane(self, window_id: str, lines: int) -> str:
+        if not window_id.startswith("@") or lines < 1:
+            raise TmuxError("tmux capture-pane failed")
+        return self._required(
+            ["capture-pane", "-p", "-t", window_id, "-S", f"-{lines}"],
+            "capture-pane",
+        )
+
+    def nudge(self, window_id: str, line: str) -> None:
+        if not window_id.startswith("@"):
+            return
+        typed = self._run(["send-keys", "-l", "-t", window_id, "--", line])
+        if typed.returncode == 0:
+            self._run(["send-keys", "-t", window_id, "Enter"])
 
     def stop_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
         probe = self.probe(fleet_id, seat_id, target)

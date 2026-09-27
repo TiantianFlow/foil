@@ -3,7 +3,9 @@
 | Document | What it is |
 |---|---|
 | [requirements.md](requirements.md) | What Foil must do. The only requirements document. |
-| [plan-v0.2.0.md](plan-v0.2.0.md) | The plan for 0.2.0: the gaps between the current code and the requirements, and the action items that close them. |
+| [plan-v0.2.0.md](plan-v0.2.0.md) | The plan for 0.2.0: the gaps between the previous code and the requirements, and the action items that close them. |
+| [architecture.md](architecture.md) | Components, data flow, and module boundaries of the implementation. |
+| [demo.md](demo.md) | The README quick start, walked through without a recording. |
 
 Outside this folder: [README.md](../README.md) for users,
 [CONTRIBUTING.md](../CONTRIBUTING.md) for contributors, and
