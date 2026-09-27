@@ -61,6 +61,9 @@ def init_project(directory: str | None) -> None:
     ensure_board(toplevel)
     ensure_registry(toplevel)
     write_default_templates(toplevel)
+    permission = load_template(toplevel, "lead")["permission"]
+    print("Read .foil/skills/operator.md and follow it. My goal: <goal>.")
+    print(f'permission = "{permission}"')
 
 
 def _shown(value: str) -> str:

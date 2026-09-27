@@ -271,6 +271,7 @@ def test_scenario_4_operator_answer_is_raw_on_the_pane(
             capture_output=True,
             text=True,
         )
+        capsys.readouterr()
         assert main(["seat", "peek", "lead"]) == 0
         assert capsys.readouterr().out == captured.stdout
         assert "foil-fake lead ready" in captured.stdout
