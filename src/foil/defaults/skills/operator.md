@@ -34,9 +34,9 @@ A persistent copy is optional and stays at user level, out of `git status`. Thes
 | Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | no |
 | grok, codex, opencode, gemini | none published | no |
 
-4. Before you spawn the lead, choose `ask` or `auto` in `.foil/templates/lead.toml`. `permission = "ask"` is the default: the seat stops at its first approval prompt. `permission = "auto"` lets the fleet run unattended. With `ask`, peek a new seat for an approval prompt.
+4. Before you spawn the lead, set `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `ask` is the default: that seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With `ask`, peek a new seat for an approval prompt.
 5. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`. Do not copy skill text into the task.
-6. Check that the lead is working. Spawn the lead with this task, then wait a few minutes:
+6. Check that the lead is working. Spawn the lead once, with this task, then wait a few minutes:
 
 ```text
 foil seat spawn lead --task "Write board/status.md with state: done"
@@ -48,16 +48,17 @@ If `board/status.md` does not appear, peek the lead and tell the human whether t
 foil seat peek lead
 ```
 
+When the file shows `state: done`, send the human's goal to that lead. Do not spawn the lead again.
+
 ## Start
 
-In the project repository:
+The first-run check already spawned the lead. Do not spawn the lead again. Send the human's goal to that lead:
 
 ```text
-foil init
-foil seat spawn lead --task "the human's goal"
+foil send lead "the human's goal"
 ```
 
-`foil init` creates the Foil folder and the default templates. It is safe to run again. Put only the goal in `--task`. The lead's task is the human's goal, delivered as the lead's first mail. Then let the fleet work.
+`foil init` creates the Foil folder and the default templates. It is safe to run again. Put only the goal in `--task` on that one spawn. Then let the fleet work.
 
 ## Check in
 

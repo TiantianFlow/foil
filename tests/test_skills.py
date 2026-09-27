@@ -110,6 +110,35 @@ def test_skill_links_point_at_the_packaged_files() -> None:
         assert link.resolve() == (packaged / name).resolve()
 
 
+def test_operator_spawns_the_lead_once_then_sends_the_goal() -> None:
+    text = (SKILLS / "operator.md").read_text(encoding="utf-8")
+    spawns = []
+    sends = []
+    for invocation in _invocations(text):
+        tokens = shlex.split(invocation)
+        if tokens[:3] == ["foil", "seat", "spawn"] and "lead" in tokens:
+            spawns.append(invocation)
+        if tokens[:3] == ["foil", "send", "lead"]:
+            sends.append(invocation)
+    assert spawns == [
+        'foil seat spawn lead --task "Write board/status.md with state: done"'
+    ]
+    assert 'foil send lead "the human\'s goal"' in sends
+    assert "Do not spawn the lead again." in text
+
+
+def test_permission_is_per_template_in_the_onboarding_docs() -> None:
+    for relative in ("README.md", "README.zh-CN.md", "skills/operator.md"):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        for name in ("lead.toml", "implementer.toml", "reviewer.toml"):
+            assert name in text, relative
+    for relative in ("README.md", "skills/operator.md"):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        assert "on the lead alone does not" in text
+    chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+    assert "不会让工人席位无人值守" in chinese
+
+
 def test_skill_commands_exist_in_section_6() -> None:
     for name, allowed in ROLE_COMMANDS.items():
         text = (SKILLS / name).read_text(encoding="utf-8")

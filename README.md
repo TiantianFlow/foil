@@ -45,7 +45,7 @@ foil init .
 
 `foil init` writes `.foil`, including the templates and `.foil/skills/operator.md`. It sets `harness` to the first installed CLI among `grok`, `claude`, `codex`, `opencode`, and `gemini`. This walkthrough uses Claude. If init chose another harness, set `harness = "claude"` in `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Leave `permission = "ask"`.
 
-Load `.foil/skills/operator.md` into your harness and follow that skill. Tell the harness the goal. The skill starts the fleet, checks in, relays what you say, and tears the fleet down.
+Load `.foil/skills/operator.md` into your harness and follow that skill. Tell the harness the goal. The skill starts the fleet, checks in, relays what you say, and tears the fleet down. It spawns the lead once. If that lead is already running, it sends the goal with `foil send` instead of spawning the lead again.
 
 The same commands, if you run them yourself:
 
@@ -100,17 +100,21 @@ A persistent install is optional. Copy the skill where that harness discovers sk
 | Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | no |
 | grok, codex, opencode, gemini | none published | no |
 
-4. Before you spawn the lead, choose `ask` or `auto` in `.foil/templates/lead.toml`. `permission = "ask"` is the default: a seat stops at its first approval prompt and waits in that pane. `permission = "auto"` lets the fleet run unattended. With `ask`, peek a new seat for an approval prompt.
+4. Before you spawn the lead, set `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `permission = "ask"` is the default: that seat stops at its first approval prompt and waits in that pane. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With `ask`, peek a new seat for an approval prompt.
 
 5. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`.
 
-6. Check that the lead is working. Spawn the lead with a task to write `board/status.md` containing `state: done`, then wait a few minutes.
+6. Check that the lead is working. Spawn the lead once, with a task to write `board/status.md` containing `state: done`, then wait a few minutes. If the quick start already started the lead, skip this spawn.
 
 ```sh
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-If `.foil/board/status.md` does not appear, `foil seat peek lead` shows a login prompt, an approval prompt, or an error.
+If `.foil/board/status.md` does not appear, `foil seat peek lead` shows a login prompt, an approval prompt, or an error. When the file shows `state: done`, send the human's goal to that lead. Do not spawn the lead again.
+
+```sh
+foil send lead "the goal"
+```
 
 ## Compared with one session
 
