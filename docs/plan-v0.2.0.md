@@ -65,6 +65,8 @@ close them. Requirement IDs (F, N, D) refer to the requirements document.
 
 ## 4. Action items
 
+Status: all items in this section are done as of `107b22f`.
+
 Each item lists what to do and how to tell it's done.
 
 ### Lightweight (L)
@@ -169,10 +171,13 @@ Size budget (a guide for L4–L7, not a requirement):
 
 ## 7. Definition of done
 
-- [ ] Every requirement in requirements.md is met.
-- [ ] Every action item above is done.
-- [ ] Scenarios 1–6 and all standing checks pass.
-- [ ] The package source is at most 2,000 lines of Python.
+Status at `107b22f`:
+
+- [ ] Every requirement in requirements.md is met. Open: section 9.
+- [x] Every action item in sections 4 and 8 is done.
+- [x] Scenarios 1–6 and all standing checks pass with the fake harness.
+- [ ] Scenarios 1–6 pass with a real harness. Open: section 9 (G1).
+- [x] The package source is within the N4 target (1,999 lines).
 
 ## 8. Acceptance review (2026-09-26)
 
@@ -258,6 +263,8 @@ Gaps:
 
 ### 8.6 Action items
 
+Status: A1–A8 are done as of `107b22f`. A9 is done: the run is recorded in the changelog, but its result is open in section 9 (G1).
+
 Requirement changes come first, per the contributor guide.
 
 | ID | Action | Done when |
@@ -271,3 +278,101 @@ Requirement changes come first, per the contributor guide.
 | A7 | Add scenarios: after a restart, each seat's peek shows its own window and a nudge to the lead reaches the lead; a busy fake (it waits before answering) receives two nudges; `send` to a killed seat does not type into any window; one scenario drives the operator through the installed `foil` command. | All pass. |
 | A8 | Rewrite the README quick start around the operator: install Foil, run `foil init`, load the operator skill into your harness, give it the goal. Keep the direct commands as a secondary path. Replace the "no demo recording" line with a recording, or drop the line until one exists. | The quick start starts from the operator skill; the Chinese README matches. |
 | A9 | Run the live tier with at least one real harness before tagging 0.2.0, and record the result in the changelog entry. | The 0.2.0 entry names the harness and the scenarios that passed. |
+
+## 9. Second acceptance review (2026-09-27)
+
+Reviewed at commit `107b22f`. The fake-harness suite passes (99 passed,
+6 live tests skipped), lint is clean, every commit uses the noreply
+identity, and no commit adds personal paths, emails, or secrets.
+Requirements N4 (now a 2,500-line target, not a hard limit) and D1 (a demo
+recording is optional) changed in this review.
+
+### 9.1 Gaps
+
+| # | Gap | Why it matters |
+|---|---|---|
+| G1 | The only live run (grok) is inconclusive: 4 of 6 scenarios timed out, and the 2 that passed need no agent work. The run left no logs. Two causes look identical from outside: the harness was not logged in, or a seat stopped at an approval prompt because the live tier keeps the default `permission = "ask"`. | Nothing yet shows that a real agent can complete the happy path. |
+| G2 | There is no working onboarding procedure. The operator skill has no install steps for any harness. Seats reach their instructions only through a chain of file pointers, and nothing verifies that a real agent can follow it. | A new user cannot get from install to a working fleet, and the operator and seats may never see their skills. |
+| G3 | Two copies of each skill, one in the top-level `skills` folder and one in `src/foil/defaults/skills`, with no check that they match. | The copies will drift. |
+| G4 | `tests/test_package_size.py` still fails above 2,000 lines, but N4 is now a 2,500-line target. | The next change over 2,000 lines turns CI red for a limit the requirements no longer set. |
+
+### 9.2 Onboarding flow (design)
+
+Three readers need their instructions: the **operator** (the human's
+harness), the **lead**, and the **workers**. Foil launches the seats, so it
+controls how their instructions arrive. It does not launch the operator, so
+the operator's skill has to be installed by the human or by the harness.
+
+**Step 1: prerequisites.** Python, Git, tmux, and at least one harness CLI
+that is **already logged in**. Foil never handles logins. The check is
+running the harness once by hand. Seats run as the same user, so they
+inherit that login.
+
+**Step 2: install and initialize.**
+
+```sh
+uv tool install "git+https://github.com/TiantianFlow/foil.git"
+cd your-repo
+foil init
+```
+
+`foil init` writes `.foil/` (templates, skills, board) and picks an
+installed harness. Its output should end with the next steps: the exact
+pointer line for step 3 and the permission choice from step 4.
+
+**Step 3: give the operator its skill.** Two paths, in this order:
+
+1. **Pointer (works in every harness, nothing to install).** In the
+   harness, in the repo:
+   `Read .foil/skills/operator.md and follow it. My goal: <goal>.`
+2. **Persistent install (optional).** Copy the skill where the harness
+   discovers skills or always-on instructions, so later sessions load it
+   without the pointer. The README and the operator skill carry one row per
+   harness, with the exact path for the operator's CLI. For example, for
+   Claude Code: `~/.claude/skills/foil-operator/SKILL.md`. Paths for the
+   other harnesses must be checked against each CLI's documentation before
+   they are published, the same way preset flags are. Install to the user
+   level, not the repository, so nothing appears in `git status` (F7).
+
+**Step 4: choose how seats get permission.** With `permission = "ask"`
+(the default), every seat stops at its first approval prompt and waits
+for the human in that pane. That is safe but not unattended. With
+`permission = "auto"`, the fleet runs on its own. The README and the
+operator skill state this choice plainly, and the operator skill tells the
+operator to check a new seat for an approval prompt with `foil seat peek`.
+
+**Step 5: seats get their skills from Foil (no install).** Foil launches
+each seat, so it delivers the instructions itself, in this order of
+preference:
+
+1. **Native system prompt.** Where a harness has a flag for extra system
+   instructions, the preset passes the instruction file's text through it.
+   This is the most reliable; the model sees it without reading a file.
+2. **First prompt.** Otherwise, the launch prompt carries the instruction
+   text itself, not only a path.
+3. **Pointer (fallback).** The launch prompt says "Read `<instruction
+   file>` first", as today.
+
+The instruction file stays the single source. It inlines the seat's role
+skill (lead or worker) and its persona, instead of pointing to more files.
+Each extra file a seat must open is another place a real agent can stall,
+for example on a permission prompt to read outside its working directory.
+
+**Step 6: first-run check.** The operator skill's first task is a smoke
+test: spawn the lead with "Write `board/status.md` with `state: done`",
+then wait a few minutes. If the file doesn't appear, `foil seat peek lead`
+shows why: a login prompt, an approval prompt, or an error. The operator
+reports that to the human instead of waiting.
+
+### 9.3 Action items
+
+| ID | Action | Done when |
+|---|---|---|
+| B1 | Requirements: describe the onboarding flow (9.2), including the pointer line `init` prints, instruction delivery through a system-prompt flag, first prompt, or pointer, and the first-run check. Mark which harness flags and skill paths are verified. | Requirements and the plan agree. No new command or flag. |
+| B2 | Presets: add an optional instruction-delivery field (system-prompt flag, or first prompt) and fill it in for each harness whose CLI documents one. The instruction file inlines the role skill and persona. | A test shows each preset's launch argv carrying the instruction text, or the pointer when the preset has no field. |
+| B3 | `foil init` prints the next steps: the operator pointer line and the permission choice. | A test checks the printed pointer line. |
+| B4 | README and operator skill: a short onboarding section following 9.2, with the per-harness install table. Unverified paths are marked. | A new user can follow it from install to a first `status.md` without other docs. |
+| B5 | Live tier (G1): a preflight scenario first (the step 6 smoke test, with a 3-minute limit); throwaway repos use `permission = "auto"`; on any timeout, the failure message includes `foil seat peek` output for every seat. | A failed live run says whether it hit a login prompt, an approval prompt, or something else. |
+| B6 | Re-run the live tier with at least one logged-in harness (and a second if available), and record the result in the changelog. | Scenarios 1–6 pass live, or each failure is explained by its captured pane. |
+| B7 | G3: keep one copy of each skill (the packaged one) and link the README to it, or add a test that the copies are identical. | One source, or a failing test when copies differ. |
+| B8 | G4: turn the size test into a report against the 2,500-line target (N4). It prints the count and does not fail CI. | CI shows the count; exceeding it does not fail the build. |

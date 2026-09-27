@@ -53,7 +53,7 @@ FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live
    docs/requirements.md in the same pull request. The command surface is
    fixed by section 6 there: don't add a command, subcommand, or flag
    that isn't listed.
-2. **Stay small.** Foil's package source must stay within 2,000 lines of
+2. **Stay small.** Foil's package source targets at most 2,500 lines of
    Python (requirement N4). Prefer deleting code to adding it.
 3. **Everything you commit is public**, including commit messages and every
    intermediate commit. Never commit secrets, tokens, personal paths,
