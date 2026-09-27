@@ -69,6 +69,49 @@ foil seat kill --all
 
 这会停掉每个席位。它不删除分支，也不删除 worktree。
 
+## 入门
+
+这是从安装到主座开始工作的路径。
+
+1. 安装运筹。你需要 Python 3.11+、Git、tmux，以及至少一个已经登录的 harness CLI。运筹不经手这次登录。
+
+```sh
+uv tool install "git+https://github.com/TiantianFlow/foil.git"
+```
+
+2. 在仓库里运行 `foil init`。它会写好 `.foil/`，并选一个已安装的 harness。输出的末尾是指针那一行，以及主座模板的 permission。
+
+```sh
+cd your-repo
+foil init
+```
+
+3. 在仓库里的 harness 中粘贴下面这一行。把 `<goal>` 换成目标。这不需要在 harness 里安装任何东西。
+
+```text
+Read .foil/skills/operator.md and follow it. My goal: <goal>.
+```
+
+持久安装是可选的。把技能复制到该 harness 发现技能的位置，放在用户级，这样它不会出现在 `git status` 里。下面的路径都没有对照该 harness 的当前文档核对过。
+
+| Harness | 安装路径 | 已核对 |
+|---|---|---|
+| 任意 | 上面的指针行 | 必需；不是按 harness 安装 |
+| Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | 否 |
+| grok、codex、opencode、gemini | 没有公布的路径 | 否 |
+
+4. 在启动主座之前，在 `.foil/templates/lead.toml` 里选择 `ask` 或 `auto`。默认是 `permission = "ask"`：席位会停在第一次批准提示，并在那个窗格里等待。`permission = "auto"` 让舰队无人值守地运行。用 `ask` 时，查看新席位的窗格里有没有批准提示。
+
+5. 主座的第一次提示已经带上说明：角色技能、persona、命令和看板约定。它告诉主座，每次被唤醒都要重读自己的说明文件。`--task` 里只放目标。
+
+6. 确认主座在工作。用一个任务启动主座，让它写下包含 `state: done` 的 `board/status.md`，然后等几分钟。
+
+```sh
+foil seat spawn lead --task "Write board/status.md with state: done"
+```
+
+如果 `.foil/board/status.md` 没有出现，`foil seat peek lead` 会显示登录提示、批准提示或一条错误。
+
 ## 和一次会话相比
 
 一次 Agent 会话是一个进程、一份上下文、一个工作目录。同一个模型既提出改动，又检查改动。会话结束后，留下的是那个 CLI 自己保存的东西。

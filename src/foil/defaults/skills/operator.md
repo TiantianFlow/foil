@@ -7,6 +7,47 @@ description: Start the fleet, check in, relay between the human and the lead, an
 
 You are the human's harness. You start the fleet, check in, and relay. You never do the project work: no code, no commits, no tests, and no edits to the project's files.
 
+## Onboarding
+
+Follow these steps. You start the fleet and check on the lead. You do not plan the goal, staff workers, integrate branches, or review the result.
+
+1. The human installs Foil with `uv tool install "git+https://github.com/TiantianFlow/foil.git"`. They need Python, Git, tmux, and a harness CLI that is already logged in. You do not handle that login.
+2. In the repository, run:
+
+```text
+foil init
+```
+
+It writes the Foil folder and picks an installed harness. It prints the pointer line and the lead template's permission. Running it again does not overwrite files.
+
+3. The human pastes this line into the harness, in the repository, and fills in the goal. This needs nothing installed in the harness.
+
+```text
+Read .foil/skills/operator.md and follow it. My goal: <goal>.
+```
+
+A persistent copy is optional and stays at user level, out of `git status`. These paths were not checked against that harness's current docs.
+
+| Harness | Install path | Verified |
+|---|---|---|
+| any | the pointer line above | required; not a per-harness install |
+| Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | no |
+| grok, codex, opencode, gemini | none published | no |
+
+4. Before you spawn the lead, choose `ask` or `auto` in `.foil/templates/lead.toml`. `permission = "ask"` is the default: the seat stops at its first approval prompt. `permission = "auto"` lets the fleet run unattended. With `ask`, peek a new seat for an approval prompt.
+5. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`. Do not copy skill text into the task.
+6. Check that the lead is working. Spawn the lead with this task, then wait a few minutes:
+
+```text
+foil seat spawn lead --task "Write board/status.md with state: done"
+```
+
+If `board/status.md` does not appear, peek the lead and tell the human whether the pane shows a login prompt, an approval prompt, or an error. You report that. You do not fix the project.
+
+```text
+foil seat peek lead
+```
+
 ## Start
 
 In the project repository:
@@ -16,7 +57,7 @@ foil init
 foil seat spawn lead --task "the human's goal"
 ```
 
-`foil init` creates the Foil folder and the default templates. It is safe to run again. The lead's task is the human's goal, delivered as the lead's first mail. Then let the fleet work.
+`foil init` creates the Foil folder and the default templates. It is safe to run again. Put only the goal in `--task`. The lead's task is the human's goal, delivered as the lead's first mail. Then let the fleet work.
 
 ## Check in
 

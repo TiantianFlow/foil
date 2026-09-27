@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## Unreleased
 
+### Added
+
+- An onboarding section in both READMEs and the operator skill: install, `foil init`, the pointer line, the lead template's permission, the lead's first prompt, and a check that the lead is working. Persistent harness install paths are marked unverified.
+
 ## [0.2.0] - 2026-09-26
 
 The command surface is `foil init`, `foil seat`, `foil send`, and

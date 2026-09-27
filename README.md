@@ -69,6 +69,49 @@ foil seat kill --all
 
 That stops every seat. It does not delete branches or worktrees.
 
+## Onboarding
+
+This is the path from install to a lead that is working.
+
+1. Install Foil. You need Python 3.11+, Git, tmux, and at least one harness CLI that is already logged in. Foil does not handle that login.
+
+```sh
+uv tool install "git+https://github.com/TiantianFlow/foil.git"
+```
+
+2. In the repository, run `foil init`. It writes `.foil/` and picks an installed harness. Its output ends with the pointer line and the lead template's permission.
+
+```sh
+cd your-repo
+foil init
+```
+
+3. In the harness, in the repository, paste this line. Replace `<goal>` with the goal. This needs nothing installed in the harness.
+
+```text
+Read .foil/skills/operator.md and follow it. My goal: <goal>.
+```
+
+A persistent install is optional. Copy the skill where that harness discovers skills, at user level, so it stays out of `git status`. No path below was checked against that harness's current docs.
+
+| Harness | Install path | Verified |
+|---|---|---|
+| any | the pointer line above | required; not a per-harness install |
+| Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | no |
+| grok, codex, opencode, gemini | none published | no |
+
+4. Before you spawn the lead, choose `ask` or `auto` in `.foil/templates/lead.toml`. `permission = "ask"` is the default: a seat stops at its first approval prompt and waits in that pane. `permission = "auto"` lets the fleet run unattended. With `ask`, peek a new seat for an approval prompt.
+
+5. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`.
+
+6. Check that the lead is working. Spawn the lead with a task to write `board/status.md` containing `state: done`, then wait a few minutes.
+
+```sh
+foil seat spawn lead --task "Write board/status.md with state: done"
+```
+
+If `.foil/board/status.md` does not appear, `foil seat peek lead` shows a login prompt, an approval prompt, or an error.
+
 ## Compared with one session
 
 One agent session is one process, one context, and one working directory. The same model proposes the change and checks it. If the session ends, what remains is whatever that CLI saved.
