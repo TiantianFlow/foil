@@ -187,6 +187,7 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
         learned = "\n".join(f"- {item}: {text}" for item, text in lessons)
     lead = template["name"] == "lead"
     skill = foil_root(root) / "skills" / ("lead.md" if lead else "worker.md")
+    skill_text = skill.read_text(encoding="utf-8").strip() if skill.is_file() else ""
     work = (
         "Stay in your worktree. Do not modify the project toplevel. "
         "Killing you will not delete your branch."
@@ -209,6 +210,7 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
         f"Worktree: {work}",
         f"Persona: {_persona_line(template)}",
         f"Skill: `{skill.resolve()}`.",
+        *([skill_text] if skill_text else []),
         f"Accepted lessons: {learned}",
     ]
     if restarted:
@@ -238,7 +240,8 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
 
 def _write_instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> Path:
     path = (foil_root(root) / "run" / "instructions" / f"{seat}.md").resolve()
-    text = _instruction(root, seat, template, restarted=restarted)
+    body = _instruction(root, seat, template, restarted=restarted).rstrip("\n")
+    text = f"{body}\nRe-read `{path}` whenever you are woken.\n"
     scan(text)
     write_bytes(path, text.encode())
     return path
@@ -272,7 +275,7 @@ def _open(
 ) -> str:
     cwd = Path(worktree) if worktree else root
     instruction = _write_instruction(root, seat, template, restarted=restarted)
-    prompt = f"Read {instruction} first."
+    prompt = instruction.read_text(encoding="utf-8")
     argv = expand_argv(
         preset,
         model=template["model"] or None,
