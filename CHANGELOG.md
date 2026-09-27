@@ -6,7 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Added
 
-- An onboarding section in both READMEs and the operator skill: install, `foil init`, the pointer line, the lead template's permission, the lead's first prompt, and a check that the lead is working. Persistent harness install paths are marked unverified.
+- An onboarding section in both READMEs and the operator skill: install, `foil init`, the pointer line, each template's permission, the lead's first prompt, and a check that the lead is working. After that check, the human's goal is sent to the existing lead. Persistent harness install paths are marked unverified.
 
 ## [0.2.0] - 2026-09-26
 

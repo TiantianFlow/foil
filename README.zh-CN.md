@@ -45,7 +45,7 @@ foil init .
 
 `foil init` 会写好 `.foil`，包括模板和 `.foil/skills/operator.md`。它把 `harness` 设成 `grok`、`claude`、`codex`、`opencode`、`gemini` 里本机第一个已安装的 CLI。这篇说明用 Claude。如果 init 选了别的 harness，把 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里的值改成 `harness = "claude"`。保留 `permission = "ask"`。
 
-把 `.foil/skills/operator.md` 加载到你的 harness，并按这个技能去做。把目标告诉这个 harness。技能会启动舰队、查看进展、转达你说的话，并在结束时拆掉舰队。
+把 `.foil/skills/operator.md` 加载到你的 harness，并按这个技能去做。把目标告诉这个 harness。技能会启动舰队、查看进展、转达你说的话，并在结束时拆掉舰队。它只启动一次主座。如果主座已经在运行，它用 `foil send` 把目标送出去，而不是再启动一次主座。
 
 同一组命令，如果你自己来跑：
 
@@ -100,17 +100,21 @@ Read .foil/skills/operator.md and follow it. My goal: <goal>.
 | Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | 否 |
 | grok、codex、opencode、gemini | 没有公布的路径 | 否 |
 
-4. 在启动主座之前，在 `.foil/templates/lead.toml` 里选择 `ask` 或 `auto`。默认是 `permission = "ask"`：席位会停在第一次批准提示，并在那个窗格里等待。`permission = "auto"` 让舰队无人值守地运行。用 `ask` 时，查看新席位的窗格里有没有批准提示。
+4. 在启动主座之前，给舰队会用到的每个模板设置 `permission`：`.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml`。每个模板有自己的 permission。默认是 `permission = "ask"`：该席位会停在第一次批准提示，并在那个窗格里等待。只把主座改成 `auto` 不会让工人席位无人值守。要让哪个席位无人值守，就把它的模板设成 `auto`。用 `ask` 时，查看新席位的窗格里有没有批准提示。
 
 5. 主座的第一次提示已经带上说明：角色技能、persona、命令和看板约定。它告诉主座，每次被唤醒都要重读自己的说明文件。`--task` 里只放目标。
 
-6. 确认主座在工作。用一个任务启动主座，让它写下包含 `state: done` 的 `board/status.md`，然后等几分钟。
+6. 确认主座在工作。只启动一次主座，让它写下包含 `state: done` 的 `board/status.md`，然后等几分钟。如果快速开始已经启动了主座，就跳过这次启动。
 
 ```sh
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-如果 `.foil/board/status.md` 没有出现，`foil seat peek lead` 会显示登录提示、批准提示或一条错误。
+如果 `.foil/board/status.md` 没有出现，`foil seat peek lead` 会显示登录提示、批准提示或一条错误。当文件里出现 `state: done` 时，把人的目标发给这个主座。不要再启动一次主座。
+
+```sh
+foil send lead "the goal"
+```
 
 ## 和一次会话相比
 
