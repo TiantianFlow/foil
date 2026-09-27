@@ -9,7 +9,7 @@ You plan the goal, staff the fleet, delegate, integrate branches, and get the re
 
 ## Spawn, kill, and resume
 
-Spawn a worker from a template. The task becomes that seat's first mail:
+Spawn a worker from a template. Put only the goal in `--task`. Foil delivers the role instructions in the first prompt. The task becomes that seat's first mail:
 
 ```text
 foil seat spawn implementer --task "do the task"
