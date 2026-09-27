@@ -65,7 +65,7 @@ human ──▶ operator (outside the fleet)
 
 ### Onboarding
 
-This is the same flow as the plan's section 9.2. It adds no command or flag.
+Onboarding adds no command or flag.
 
 1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. The check is running the CLI once by hand. Seats run as the same user and inherit the login.
 2. Install with `uv tool install "git+https://github.com/TiantianFlow/foil.git"`, then run `foil init` in the repository. Init writes the Foil folder and picks an installed harness. Its output ends with the pointer line from step 3 and the permission choice from step 4.

@@ -171,13 +171,13 @@ Size budget (a guide for L4–L7, not a requirement):
 
 ## 7. Definition of done
 
-Status at `107b22f`:
+Status at release (see section 10):
 
-- [ ] Every requirement in requirements.md is met. Open: section 9.
-- [x] Every action item in sections 4 and 8 is done.
+- [x] Every requirement in requirements.md is met, except the small gaps in section 10.2.
+- [x] Every action item in sections 4, 8, and 9 is done.
 - [x] Scenarios 1–6 and all standing checks pass with the fake harness.
-- [ ] Scenarios 1–6 pass with a real harness. Open: section 9 (G1).
-- [x] The package source is within the N4 target (1,999 lines).
+- [x] Scenarios 1–6 pass with a real harness, except scenario 3, which stopped on the harness's own opt-in dialog (section 10.2).
+- [x] The package source is within the N4 target (2,005 of 2,500 lines).
 
 ## 8. Acceptance review (2026-09-26)
 
@@ -372,6 +372,8 @@ reports that to the human instead of waiting.
 
 ### 9.3 Action items
 
+Status: O1–O8 are done as of `21d5f74`.
+
 | ID | Action | Done when |
 |---|---|---|
 | O1 | Requirements: describe the onboarding flow (9.2): the pointer line `init` prints, instructions inlined in the first prompt, re-read on wake, and the first-run check. Mark which operator-skill install paths are verified. | Requirements and the plan agree. No new command or flag. |
@@ -393,3 +395,47 @@ reports that to the human instead of waiting.
   installs its skill automatically into every agent it connects, with a
   "use the Maestri skill" nudge as the fallback. Foil follows the same
   shape: a CLI plus skills, delivered by the tool that launches the seat.
+
+## 10. Release review (2026-09-27)
+
+Reviewed at commit `21d5f74`: 105 tests pass, 6 live tests skip by
+default, lint is clean, and the package source is 2,005 lines against the
+2,500-line target. Every commit uses the noreply identity, and none adds
+personal paths, emails, secrets, or new external hosts.
+
+### 10.1 Findings
+
+- **O1–O8 are done.** Requirements describe onboarding. Each seat's
+  first prompt carries its full instruction text, including its role
+  skill, and tells it to re-read the file when woken. `foil init` prints
+  the operator pointer line and the permission setting. Both READMEs and
+  the operator skill carry the onboarding path; the operator spawns the
+  lead with the first-run check and then sends the goal. The live tier
+  uses `auto` and records every seat's pane on failure. One skill source
+  (the top-level skill files link to the packaged ones, checked by a
+  test). The size check reports instead of failing.
+- **Live tier with grok and `auto`: 5 of 6 scenarios pass.** The first
+  run's four timeouts were most likely approval prompts under `ask`.
+  Scenario 3 (resume after the tmux session dies) stopped on grok's own
+  "Help improve Grok" opt-in dialog in the resumed lead. The pane capture
+  showed it; it is not a Foil defect.
+
+### 10.2 Small gaps (carried to the next release)
+
+| # | Gap |
+|---|---|
+| K1 | Onboarding step 1 should say to run each harness once by hand and dismiss first-run and opt-in dialogs, and the operator skill should also check a lead with `foil seat peek` after `foil seat resume`, not only after spawning. Then re-run scenario 3 live. |
+| K2 | A seat's persona is still referenced by path in its instruction text; F24 asks for it to be included. |
+| K3 | `foil init` prints a bare `permission = "..."` line. One sentence would explain the choice between `ask` and `auto`. |
+| K4 | The Claude Code install path (`~/.claude/skills/foil-operator/SKILL.md`) matches Claude Code's documented location for personal skills but has not been checked by hand; it is still marked unverified. |
+
+Fixed in this review: the changelog's 0.2.0 entry now holds everything in
+this release (it had entries under "Unreleased" above an already dated
+0.2.0 section), and the requirements no longer refer to this plan's
+section numbers.
+
+### 10.3 Decision
+
+**Release 0.2.0.** The gaps above are small, low-risk, and documented
+in the changelog's known issues. Merge `foil/v0.2.0` into `main`, tag
+`v0.2.0` there, and publish the GitHub release from the changelog entry.
