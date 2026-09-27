@@ -63,6 +63,24 @@ human ──▶ operator (outside the fleet)
    and reports completion in its status file.
 8. After a crash or reboot, `foil seat resume` restarts dead seats.
 
+### Onboarding
+
+This is the same flow as the plan's section 9.2. It adds no command or flag.
+
+1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. The check is running the CLI once by hand. Seats run as the same user and inherit the login.
+2. Install with `uv tool install "git+https://github.com/TiantianFlow/foil.git"`, then run `foil init` in the repository. Init writes the Foil folder and picks an installed harness. Its output ends with the pointer line from step 3 and the permission choice from step 4.
+3. The operator gets its skill from the pointer line, typed in the harness in the repository: `Read .foil/skills/operator.md and follow it. My goal: <goal>.` That needs nothing installed in the harness. A persistent install is optional: copy the skill where that harness discovers skills, at user level, so it stays out of `git status` (F7).
+
+| Harness | Install path | Verified |
+|---|---|---|
+| any | the pointer line above | required; not a per-harness install |
+| Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | no |
+| grok, codex, opencode, gemini | none published | no |
+
+4. `permission = "ask"` is the default. A seat then stops at its first approval prompt and waits for the human in that pane. `permission = "auto"` lets the fleet run unattended. The operator checks a new seat for an approval prompt with `foil seat peek`.
+5. Foil launches each seat and delivers instructions with no harness-specific flags. The first launch prompt inlines the instruction file: the role skill, persona, commands, and board conventions. That text tells the seat to re-read the instruction file whenever it is woken. The operator and the lead put only the goal in `--task`. The instruction file stays the single source. Harness system-prompt flags are not used.
+6. The operator's first task is the first-run check: spawn the lead with `Write board/status.md with state: done`, then wait a few minutes. If the file does not appear, `foil seat peek lead` shows a login prompt, an approval prompt, or an error, and the operator reports that to the human.
+
 ## 4. Functional requirements
 
 ### Fleet and seats
@@ -112,7 +130,7 @@ human ──▶ operator (outside the fleet)
 | F21 | The roster is managed by editing template files. There are no roster commands. |
 | F22 | A template's persona may be inline text or a path to a Markdown file, which is used untouched. |
 | F23 | Harness presets ship for `claude`, `codex`, `gemini`, `opencode`, `grok`, and `fake` (a test double, section 10). Users can add their own presets in the same format. |
-| F24 | Each seat gets a generated instruction file at launch, and its launch prompt tells it to read that file first. The file contains the seat's name, the lead's name, the board path, the exact commands the seat may run, the board and contract conventions, all accepted memory lessons, and, for the lead only, the available templates. |
+| F24 | Each seat gets a generated instruction file at launch. That file is the single source of the seat's instructions. The first launch prompt inlines the file's full text, including the role skill, persona, commands, and board conventions, and tells the seat to re-read the instruction file whenever it is woken. The file contains the seat's name, the lead's name, the board path, the exact commands the seat may run, the board and contract conventions, all accepted memory lessons, and, for the lead only, the available templates. |
 
 ### Skills
 
@@ -143,7 +161,7 @@ accepts `--help`, and `foil --version` prints the version.
 
 | Command | Flags | Behavior |
 |---|---|---|
-| `foil init [DIR]` | none | Checks that tmux and git exist and that DIR (default: current directory) is a git repository. Creates the Foil folder, default templates, the three skills, and the git ignore entry. Safe to re-run. |
+| `foil init [DIR]` | none | Checks that tmux and git exist and that DIR (default: current directory) is a git repository. Creates the Foil folder, default templates, the three skills, and the git ignore entry. Safe to re-run. Its output ends with the operator pointer line and the permission choice (Onboarding). |
 | `foil seat spawn TEMPLATE` | `--name NAME`, `--task TEXT` | Creates a seat from a template (F2, F3, F6, F24). `--task` is delivered as the seat's first mail. |
 | `foil seat kill NAME` | `--all` (no NAME) | Stops the seat's window and marks it `killed` (F6). `--all` stops every seat. |
 | `foil seat resume [NAME]` | none | Restarts `dead` seats (F9). |
@@ -243,8 +261,8 @@ path, branch, and session id.
 
 | Skill | Reader | Must cover |
 |---|---|---|
-| `operator` | The human's harness | The workflow: `init`, spawn the lead with the human's goal, then let the fleet work. Checking in every few minutes with `seat list`, `seat peek lead`, and the lead's `status.md`. Relaying between the human and the lead with `send`, and nudging a lead that looks stuck. Reviewing memory proposals when asked. Teardown with `seat kill --all`. The rule that the operator never does project work. |
-| `lead` | The lead seat | Its responsibilities: plan the goal, staff the fleet, delegate, integrate workers' branches, get the result reviewed, keep `status.md` current, and review memory proposals. How to spawn, kill, and resume seats. That implementation work belongs in seats with worktrees. How to manage the roster by editing template files. Board and contract conventions. |
+| `operator` | The human's harness | The workflow: `init`, spawn the lead with the human's goal, then let the fleet work. The pointer line and the first-run check (Onboarding). Checking in every few minutes with `seat list`, `seat peek lead`, and the lead's `status.md`. Relaying between the human and the lead with `send`, and nudging a lead that looks stuck. Reviewing memory proposals when asked. Teardown with `seat kill --all`. The rule that the operator never does project work. `--task` carries only the goal. |
+| `lead` | The lead seat | Its responsibilities: plan the goal, staff the fleet, delegate, integrate workers' branches, get the result reviewed, keep `status.md` current, and review memory proposals. How to spawn, kill, and resume seats. That implementation work belongs in seats with worktrees. How to manage the roster by editing template files. Board and contract conventions. `--task` carries only the goal. |
 | `worker` | Every non-lead seat | Its responsibilities: do the assigned task, stay in its own worktree, report results to the lead. Its commands: `send`, `seat list`, `seat peek`, `memory add`, `memory list`. Board and contract conventions. That it may not spawn or kill. |
 
 ## 9. Documentation
@@ -257,7 +275,7 @@ path, branch, and session id.
 | D4 | This is the only requirements document. Other documents describe design, plans, or how to contribute, and never add requirements. |
 | D5 | An architecture document describes Foil's components, data flow, and module boundaries as implemented. |
 | D6 | Each release has a plan named `plan-vX.Y.Z.md` and an entry in the changelog. |
-| D7 | A contributor guide explains setup, the checks CI runs, and the rules every change keeps: the command surface (section 6), the size limit (N4), and publishing safety (N9). |
+| D7 | A contributor guide explains setup, the checks CI runs, and the rules every change keeps: the command surface (section 6), the size target (N4), and publishing safety (N9). |
 | D8 | A documentation index lists every document in the docs folder, and an automated test checks that none is missing. Documents describe the current state; earlier versions live in git history and at release tags. |
 
 ## 10. Verification
