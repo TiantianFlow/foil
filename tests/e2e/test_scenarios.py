@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import re
 import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -89,6 +92,56 @@ def _wait(repo: Path, predicate, timeout: float = 90) -> None:
             return
         time.sleep(0.2)
     raise AssertionError(f"timed out\n{_logs(repo)}")
+
+
+def _set_auto(repo: Path) -> None:
+    """Live tier only: every default template runs unattended."""
+
+    templates = foil_root(repo) / "templates"
+    for role in ("lead", "implementer", "reviewer"):
+        path = templates / f"{role}.toml"
+        text = re.sub(
+            r'(?m)^permission = ".*"$',
+            'permission = "auto"',
+            path.read_text(encoding="utf-8"),
+            count=1,
+        )
+        path.write_text(text, encoding="utf-8")
+
+
+def _peek_report(repo: Path) -> str:
+    """Pane text for the lead and every other living seat."""
+
+    previous = Path.cwd()
+    os.chdir(repo)
+    try:
+        listed = io.StringIO()
+        with contextlib.redirect_stdout(listed):
+            main(["seat", "list"])
+        names = ["lead"]
+        for line in listed.getvalue().splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 3 and parts[2] == "alive" and parts[0] not in names:
+                names.append(parts[0])
+        chunks = []
+        for name in names:
+            out = io.StringIO()
+            err = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                code = main(["seat", "peek", name])
+            pane = f"foil seat peek {name} ({code})\n{out.getvalue()}{err.getvalue()}"
+            chunks.append(pane)
+        return "\n".join(chunks)
+    finally:
+        os.chdir(previous)
+
+
+@contextlib.contextmanager
+def _live_failure_panes(repo: Path) -> Iterator[None]:
+    try:
+        yield
+    except Exception as exc:
+        raise AssertionError(f"{exc}\n{_peek_report(repo)}") from exc
 
 
 def _close(repo: Path) -> None:
@@ -524,3 +577,35 @@ def test_scenario_6_errors_are_one_line(
     assert captured.err.count("\n") == 1
     assert "Traceback" not in captured.err
     assert repo.is_dir()
+
+
+def test_unattended_templates_and_peek_on_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert os.environ.get("FOIL_E2E_LIVE") != "1"
+    repo = _prepare(tmp_path, "scenario-2", monkeypatch)
+    _set_auto(repo)
+    try:
+        for role in ("lead", "implementer", "reviewer"):
+            text = (foil_root(repo) / "templates" / f"{role}.toml").read_text(encoding="utf-8")
+            assert 'permission = "auto"\n' in text
+            assert 'harness = "fake"\n' in text
+        assert main(["seat", "spawn", "lead"]) == 0
+        deadline = time.monotonic() + 20
+        ready = ""
+        while time.monotonic() < deadline:
+            ready = _peek_report(repo)
+            if "foil-fake lead ready" in ready:
+                break
+            time.sleep(0.2)
+        assert "foil-fake lead ready" in ready
+        with (
+            pytest.raises(AssertionError, match="timed out") as caught,
+            _live_failure_panes(repo),
+        ):
+            _wait(repo, lambda: False, 0)
+        message = str(caught.value)
+        assert "foil seat peek lead" in message
+        assert "foil-fake lead ready" in message
+    finally:
+        _close(repo)
