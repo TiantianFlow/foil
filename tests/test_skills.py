@@ -102,6 +102,14 @@ def test_only_the_three_skills_remain() -> None:
     ]
 
 
+def test_skill_links_point_at_the_packaged_files() -> None:
+    packaged = ROOT / "src" / "foil" / "defaults" / "skills"
+    for name in ("operator.md", "lead.md", "worker.md"):
+        link = SKILLS / name
+        assert link.is_symlink()
+        assert link.resolve() == (packaged / name).resolve()
+
+
 def test_skill_commands_exist_in_section_6() -> None:
     for name, allowed in ROLE_COMMANDS.items():
         text = (SKILLS / name).read_text(encoding="utf-8")

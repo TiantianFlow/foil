@@ -298,6 +298,7 @@ recording is optional) changed in this review.
 
 ### 9.2 Onboarding flow (design)
 
+The requirements state this same flow under Workflow, Onboarding.
 Three readers need their instructions: the **operator** (the human's
 harness), the **lead**, and the **workers**. Foil launches the seats, so it
 controls how their instructions arrive. It does not launch the operator, so
