@@ -342,21 +342,26 @@ operator skill state this choice plainly, and the operator skill tells the
 operator to check a new seat for an approval prompt with `foil seat peek`.
 
 **Step 5: seats get their skills from Foil (no install).** Foil launches
-each seat, so it delivers the instructions itself, in this order of
-preference:
+each seat, so it delivers the instructions itself, deterministically and
+without harness-specific flags:
 
-1. **Native system prompt.** Where a harness has a flag for extra system
-   instructions, the preset passes the instruction file's text through it.
-   This is the most reliable; the model sees it without reading a file.
-2. **First prompt.** Otherwise, the launch prompt carries the instruction
-   text itself, not only a path.
-3. **Pointer (fallback).** The launch prompt says "Read `<instruction
-   file>` first", as today.
+1. **Inline in the first prompt.** The launch prompt carries the full
+   instruction text (the seat's role skill, persona, commands, and board
+   conventions) instead of only a path. Every preset already passes a
+   prompt argument, so this adds no coupling to any CLI.
+2. **Re-read on wake.** The instruction text tells the seat to re-read its
+   instruction file whenever it is woken, so the role survives a harness
+   compacting a long conversation.
+3. **Spawners pass only the goal.** The operator and lead skills each say,
+   in one line, to put only the goal in `--task`, because Foil delivers the
+   role instructions. Agents never copy skill text themselves.
 
-The instruction file stays the single source. It inlines the seat's role
-skill (lead or worker) and its persona, instead of pointing to more files.
-Each extra file a seat must open is another place a real agent can stall,
-for example on a permission prompt to read outside its working directory.
+The instruction file stays the single source and is what gets inlined.
+Harness system-prompt flags (for example Claude Code's
+`--append-system-prompt-file`) are not used. Revisit them only if live
+runs show seats losing their role in long sessions. They would then be an
+optional preset field with the first prompt as the fallback, which keeps
+presets data-only.
 
 **Step 6: first-run check.** The operator skill's first task is a smoke
 test: spawn the lead with "Write `board/status.md` with `state: done`",
@@ -368,11 +373,22 @@ reports that to the human instead of waiting.
 
 | ID | Action | Done when |
 |---|---|---|
-| B1 | Requirements: describe the onboarding flow (9.2), including the pointer line `init` prints, instruction delivery through a system-prompt flag, first prompt, or pointer, and the first-run check. Mark which harness flags and skill paths are verified. | Requirements and the plan agree. No new command or flag. |
-| B2 | Presets: add an optional instruction-delivery field (system-prompt flag, or first prompt) and fill it in for each harness whose CLI documents one. The instruction file inlines the role skill and persona. | A test shows each preset's launch argv carrying the instruction text, or the pointer when the preset has no field. |
-| B3 | `foil init` prints the next steps: the operator pointer line and the permission choice. | A test checks the printed pointer line. |
-| B4 | README and operator skill: a short onboarding section following 9.2, with the per-harness install table. Unverified paths are marked. | A new user can follow it from install to a first `status.md` without other docs. |
-| B5 | Live tier (G1): a preflight scenario first (the step 6 smoke test, with a 3-minute limit); throwaway repos use `permission = "auto"`; on any timeout, the failure message includes `foil seat peek` output for every seat. | A failed live run says whether it hit a login prompt, an approval prompt, or something else. |
-| B6 | Re-run the live tier with at least one logged-in harness (and a second if available), and record the result in the changelog. | Scenarios 1–6 pass live, or each failure is explained by its captured pane. |
-| B7 | G3: keep one copy of each skill (the packaged one) and link the README to it, or add a test that the copies are identical. | One source, or a failing test when copies differ. |
-| B8 | G4: turn the size test into a report against the 2,500-line target (N4). It prints the count and does not fail CI. | CI shows the count; exceeding it does not fail the build. |
+| O1 | Requirements: describe the onboarding flow (9.2): the pointer line `init` prints, instructions inlined in the first prompt, re-read on wake, and the first-run check. Mark which operator-skill install paths are verified. | Requirements and the plan agree. No new command or flag. |
+| O2 | Inline the instruction text in each seat's first prompt: the role skill, persona, commands, and board conventions, plus the line to re-read the instruction file on every wake. No preset changes. | A test shows every preset's launch argv carrying the full instruction text, and the fake harness receives it. |
+| O3 | `foil init` prints the next steps: the operator pointer line and the permission choice. | A test checks the printed pointer line. |
+| O4 | README and operator skill: a short onboarding section following 9.2, with the per-harness install table. Unverified paths are marked. The operator and lead skills say to pass only the goal in `--task`. | A new user can follow it from install to a first `status.md` without other docs. |
+| O5 | Live tier (G1): a preflight scenario first (the step 6 smoke test, with a 3-minute limit); throwaway repos use `permission = "auto"`; on any timeout, the failure message includes `foil seat peek` output for every seat. | A failed live run says whether it hit a login prompt, an approval prompt, or something else. |
+| O6 | Re-run the live tier with at least one logged-in harness (and a second if available), and record the result in the changelog. | Scenarios 1–6 pass live, or each failure is explained by its captured pane. |
+| O7 | G3: keep one copy of each skill (the packaged one) and link the README to it, or add a test that the copies are identical. | One source, or a failing test when copies differ. |
+| O8 | G4: turn the size test into a report against the 2,500-line target (N4). It prints the count and does not fail CI. | CI shows the count; exceeding it does not fail the build. |
+
+### 9.4 Notes from similar tools
+
+- **CLI Agent Orchestrator (CAO)** passes each role prompt through the
+  harness's own system-prompt flag, gives agents tools through an MCP
+  server, and delivers messages only when it reads the pane as idle. The
+  pane reading is the fragile part Foil avoids.
+- **Maestri** gives agents a CLI (`maestri ask`, `maestri list`) and
+  installs its skill automatically into every agent it connects, with a
+  "use the Maestri skill" nudge as the fallback. Foil follows the same
+  shape: a CLI plus skills, delivered by the tool that launches the seat.
