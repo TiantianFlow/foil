@@ -1,34 +1,20 @@
-"""Shared end-to-end fixtures. These tests require tmux like the product does."""
+"""Put the fake harness on PATH for operator scenarios."""
 
 from __future__ import annotations
 
-import shutil
-from collections.abc import Iterator
+import os
 from pathlib import Path
 
 import pytest
 
-from tests.e2e.harness import OperatorFleet
+_FAKE = Path(__file__).resolve().parents[1] / "harness" / "foil_fake.py"
 
 
-def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    for item in items:
-        item.add_marker(pytest.mark.e2e)
-
-
-@pytest.fixture
-def fleet(tmp_path: Path) -> Iterator[OperatorFleet]:
-    if shutil.which("tmux") is None:
-        pytest.skip("tmux is unavailable")
-    session = OperatorFleet(tmp_path)
-    session.bootstrap()
-    try:
-        yield session
-    finally:
-        session.cleanup()
-
-
-@pytest.fixture
-def initialized(fleet: OperatorFleet) -> OperatorFleet:
-    fleet.init_project()
-    return fleet
+@pytest.fixture(autouse=True)
+def _foil_fake_on_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    bindir = tmp_path_factory.mktemp("foil-fake")
+    binary = bindir / "foil-fake"
+    binary.symlink_to(_FAKE)
+    monkeypatch.setenv("PATH", os.pathsep.join((str(bindir), os.environ.get("PATH", ""))))

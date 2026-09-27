@@ -1,0 +1,10 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "fix the failing test"},
+      "do": [
+        {"sh": "sh fix.sh"}
+      ]
+    }
+  ]
+}

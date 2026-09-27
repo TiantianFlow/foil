@@ -1,7 +1,0 @@
-schema_version = 1
-id = "researcher"
-display_name = "Researcher"
-primary_specialization = "evidence-gathering"
-description = "Gather bounded evidence and separate verified facts from unknowns."
-required_output = "Sourced digest with verified, inferred, and unknown claims distinguished."
-challenge_focus = "Requirements-owner relevance and source quality."

@@ -1,7 +1,0 @@
-schema_version = 1
-id = "memory-curator"
-display_name = "Memory curator"
-primary_specialization = "durable-lessons"
-description = "Distill reviewed, scoped lessons without retaining raw transcripts or secrets."
-required_output = "Concise accepted, superseded, or rejected lessons with evidence links."
-challenge_focus = "Manager review for durable signal quality."

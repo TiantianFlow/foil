@@ -1,0 +1,1 @@
+../src/foil/defaults/skills/lead.md

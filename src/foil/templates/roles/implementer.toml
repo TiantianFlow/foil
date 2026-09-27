@@ -1,7 +1,0 @@
-schema_version = 1
-id = "implementer"
-display_name = "Implementer"
-primary_specialization = "working-production-change"
-description = "Deliver the smallest scoped production change that satisfies the task contract."
-required_output = "Working code, implementation notes, and focused self-verification."
-challenge_focus = "Designer assumptions, test evidence, and review findings."

@@ -1,333 +1,113 @@
-"""Reviewed memory lessons (CAP-021)."""
+"""Project-scoped lessons."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+import secrets
 from datetime import UTC, datetime
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from foil.mailbox import MailboxError
-from foil.registry import (
-    SCHEMA_VERSION,
-    _assert_no_secret,
-    _atomic_write_json,
-    _ensure_private_directory,
-    _exclusive_lock,
-    _read_json_file,
-    _validate_id,
-    _validate_timestamp,
-)
-
-MAX_BODY_BYTES = 8 * 1024
+from foil.errors import FoilError
+from foil.project import foil_root
+from foil.store import SAFE_ID, actor, exclusive_lock, private_dir, read_json, scan, write_json
 
 
-class MemoryError(MailboxError):
-    """Memory lesson input or storage is unsafe or malformed."""
+def _lock(toplevel: Path) -> Path:
+    return foil_root(toplevel) / "run" / "memory.lock"
 
 
-class LessonState(StrEnum):
-    PROPOSED = "proposed"
-    ACCEPTED = "accepted"
-    SUPERSEDED = "superseded"
-    REJECTED = "rejected"
+def _shown(lesson_id: str) -> str:
+    return lesson_id.replace("\n", "").replace("\r", "")
 
 
-def _now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+def _path(toplevel: Path, lesson_id: str) -> Path:
+    if not SAFE_ID.fullmatch(lesson_id):
+        raise FoilError(f"foil: unknown lesson '{_shown(lesson_id)}'")
+    return foil_root(toplevel) / "memory" / f"{lesson_id}.json"
 
 
-@dataclass(frozen=True, slots=True)
-class MemoryLesson:
-    fleet_id: str
-    lesson_id: str
-    body: str
-    proposed_by: str
-    source_task_id: str
-    state: LessonState = LessonState.PROPOSED
-    proposed_at: str = ""
-    reviewed_by: str | None = None
-    source_event_id: str | None = None
-    previous_lesson_id: str | None = None
-    replacement_lesson_id: str | None = None
-    extensions: dict[str, Any] = field(default_factory=dict)
-    schema_version: int = field(default=SCHEMA_VERSION, init=False)
+def _load(path: Path, lesson_id: str) -> dict[str, Any]:
+    if path.is_symlink() or not path.is_file():
+        raise FoilError(f"foil: unknown lesson '{_shown(lesson_id)}'")
+    lesson = read_json(path)
+    if lesson.get("id") != lesson_id:
+        raise FoilError(f"foil: unknown lesson '{_shown(lesson_id)}'")
+    return lesson
 
-    def __post_init__(self) -> None:
-        _validate_id(self.fleet_id, "fleet_id")
-        _validate_id(self.lesson_id, "lesson_id")
-        _validate_id(self.proposed_by, "proposed_by")
-        _validate_id(self.source_task_id, "source_task_id")
-        if self.reviewed_by is not None:
-            _validate_id(self.reviewed_by, "reviewed_by")
-        if self.source_event_id is not None:
-            _validate_id(self.source_event_id, "source_event_id")
-        if self.previous_lesson_id is not None:
-            _validate_id(self.previous_lesson_id, "previous_lesson_id")
-        if self.replacement_lesson_id is not None:
-            _validate_id(self.replacement_lesson_id, "replacement_lesson_id")
-        if not isinstance(self.body, str) or not self.body.strip():
-            raise MemoryError("body must be a non-empty string")
-        if len(self.body.encode("utf-8")) > MAX_BODY_BYTES:
-            raise MemoryError(f"body exceeds {MAX_BODY_BYTES} bytes")
-        try:
-            _assert_no_secret(self.body, path="body")
-        except ValueError as exc:
-            raise MemoryError(str(exc)) from exc
-        object.__setattr__(self, "state", LessonState(self.state))
-        proposed_at = self.proposed_at or _now()
-        object.__setattr__(self, "proposed_at", proposed_at)
-        _validate_timestamp(self.proposed_at)
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "schema_version": self.schema_version,
-            "fleet_id": self.fleet_id,
-            "lesson_id": self.lesson_id,
-            "body": self.body,
-            "proposed_by": self.proposed_by,
-            "proposed_at": self.proposed_at,
-            "source_task_id": self.source_task_id,
-            "source_event_id": self.source_event_id,
-            "state": self.state.value,
-            "reviewed_by": self.reviewed_by,
-            "previous_lesson_id": self.previous_lesson_id,
-            "replacement_lesson_id": self.replacement_lesson_id,
-            "extensions": self.extensions,
-        }
-
-    @classmethod
-    def from_dict(cls, payload: Any) -> MemoryLesson:
-        if not isinstance(payload, dict):
-            raise MemoryError("lesson must be an object")
-        return cls(
-            fleet_id=payload["fleet_id"],
-            lesson_id=payload["lesson_id"],
-            body=payload["body"],
-            proposed_by=payload["proposed_by"],
-            source_task_id=payload["source_task_id"],
-            state=LessonState(payload.get("state", "proposed")),
-            proposed_at=payload.get("proposed_at") or _now(),
-            reviewed_by=payload.get("reviewed_by"),
-            source_event_id=payload.get("source_event_id"),
-            previous_lesson_id=payload.get("previous_lesson_id"),
-            replacement_lesson_id=payload.get("replacement_lesson_id"),
-            extensions=payload.get("extensions") or {},
+def add_lesson(toplevel: Path, text: str, *, replaces: str | None = None) -> None:
+    scan(text)
+    if not text.strip():
+        raise FoilError("foil: lesson text is empty")
+    private_dir(foil_root(toplevel) / "memory")
+    with exclusive_lock(_lock(toplevel)):
+        if replaces:
+            _load(_path(toplevel, replaces), replaces)
+        lesson_id = secrets.token_hex(4)
+        while _path(toplevel, lesson_id).exists():
+            lesson_id = secrets.token_hex(4)
+        write_json(
+            _path(toplevel, lesson_id),
+            {
+                "schema_version": 1,
+                "id": lesson_id,
+                "text": text,
+                "proposer": actor(),
+                "time": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "state": "proposed",
+                "reviewer": "",
+                "replaces": replaces or "",
+            },
         )
+    print(lesson_id)
 
 
-class MemoryStore:
-    def __init__(self, state_root: Path | str):
-        self.state_root = Path(state_root)
-
-    def path(self, fleet_id: str, lesson_id: str) -> Path:
-        _validate_id(fleet_id, "fleet_id")
-        _validate_id(lesson_id, "lesson_id")
-        return (
-            self.state_root
-            / f"v{SCHEMA_VERSION}"
-            / "fleets"
-            / fleet_id
-            / "memory"
-            / f"{lesson_id}.json"
-        )
-
-    def _lock(self, fleet_id: str, lesson_id: str) -> Path:
-        return (
-            self.state_root
-            / f"v{SCHEMA_VERSION}"
-            / "fleets"
-            / fleet_id
-            / "locks"
-            / f"memory-{lesson_id}.lock"
-        )
-
-    def _write(self, lesson: MemoryLesson) -> MemoryLesson:
-        path = self.path(lesson.fleet_id, lesson.lesson_id)
-        _ensure_private_directory(path.parent)
-        _atomic_write_json(path, lesson.to_dict())
-        return lesson
-
-    def read(self, fleet_id: str, lesson_id: str) -> MemoryLesson:
-        return MemoryLesson.from_dict(
-            _read_json_file(self.path(fleet_id, lesson_id), error_type=MemoryError)
-        )
-
-    def propose(self, lesson: MemoryLesson) -> MemoryLesson:
-        path = self.path(lesson.fleet_id, lesson.lesson_id)
-        with _exclusive_lock(self._lock(lesson.fleet_id, lesson.lesson_id)):
-            if path.is_file():
-                existing = self.read(lesson.fleet_id, lesson.lesson_id)
-                if existing.to_dict() == lesson.to_dict():
-                    return existing
-                raise MemoryError("lesson already exists")
-            return self._write(lesson)
-
-    def accept(self, fleet_id: str, lesson_id: str, actor: str) -> MemoryLesson:
-        _validate_id(actor, "actor")
-        with _exclusive_lock(self._lock(fleet_id, lesson_id)):
-            current = self.read(fleet_id, lesson_id)
-            if current.state is LessonState.ACCEPTED and current.reviewed_by == actor:
-                return current
-            if current.state is not LessonState.PROPOSED:
-                raise MemoryError("only proposed lessons can be accepted")
-            return self._write(
-                MemoryLesson(
-                    fleet_id=current.fleet_id,
-                    lesson_id=current.lesson_id,
-                    body=current.body,
-                    proposed_by=current.proposed_by,
-                    source_task_id=current.source_task_id,
-                    state=LessonState.ACCEPTED,
-                    proposed_at=current.proposed_at,
-                    reviewed_by=actor,
-                    source_event_id=current.source_event_id,
-                    previous_lesson_id=current.previous_lesson_id,
-                    replacement_lesson_id=current.replacement_lesson_id,
-                    extensions=current.extensions,
-                )
-            )
-
-    def reject(self, fleet_id: str, lesson_id: str, actor: str) -> MemoryLesson:
-        _validate_id(actor, "actor")
-        with _exclusive_lock(self._lock(fleet_id, lesson_id)):
-            current = self.read(fleet_id, lesson_id)
-            if current.state is LessonState.REJECTED and current.reviewed_by == actor:
-                return current
-            if current.state not in {LessonState.PROPOSED, LessonState.ACCEPTED}:
-                raise MemoryError("lesson cannot be rejected")
-            return self._write(
-                MemoryLesson(
-                    fleet_id=current.fleet_id,
-                    lesson_id=current.lesson_id,
-                    body=current.body,
-                    proposed_by=current.proposed_by,
-                    source_task_id=current.source_task_id,
-                    state=LessonState.REJECTED,
-                    proposed_at=current.proposed_at,
-                    reviewed_by=actor,
-                    source_event_id=current.source_event_id,
-                    previous_lesson_id=current.previous_lesson_id,
-                    replacement_lesson_id=current.replacement_lesson_id,
-                    extensions=current.extensions,
-                )
-            )
-
-    def supersede(
-        self,
-        fleet_id: str,
-        lesson_id: str,
-        *,
-        author: str,
-        replacement_id: str,
-        body: str,
-        task_id: str,
-    ) -> MemoryLesson:
-        if lesson_id == replacement_id:
-            raise MemoryError("replacement lesson must be a new identity")
-        first, second = sorted((lesson_id, replacement_id))
-        with (
-            _exclusive_lock(self._lock(fleet_id, first)),
-            _exclusive_lock(self._lock(fleet_id, second)),
-        ):
-            current = self.read(fleet_id, lesson_id)
-            replacement_path = self.path(fleet_id, replacement_id)
-            if (
-                current.state is LessonState.SUPERSEDED
-                and current.replacement_lesson_id == replacement_id
-                and replacement_path.is_file()
-            ):
-                existing = self.read(fleet_id, replacement_id)
-                if (
-                    existing.previous_lesson_id == lesson_id
-                    and existing.body == body
-                    and existing.proposed_by == author
-                    and existing.source_task_id == task_id
-                ):
-                    return current
-            if current.state not in {LessonState.PROPOSED, LessonState.ACCEPTED}:
-                raise MemoryError("lesson cannot be superseded")
-            if replacement_path.is_file():
-                raise MemoryError("replacement lesson already exists")
-            replacement = MemoryLesson(
-                fleet_id=fleet_id,
-                lesson_id=replacement_id,
-                body=body,
-                proposed_by=author,
-                source_task_id=task_id,
-                state=LessonState.PROPOSED,
-                previous_lesson_id=lesson_id,
-            )
-            self._write(replacement)
-            updated = MemoryLesson(
-                fleet_id=current.fleet_id,
-                lesson_id=current.lesson_id,
-                body=current.body,
-                proposed_by=current.proposed_by,
-                source_task_id=current.source_task_id,
-                state=LessonState.SUPERSEDED,
-                proposed_at=current.proposed_at,
-                reviewed_by=author,
-                source_event_id=current.source_event_id,
-                previous_lesson_id=current.previous_lesson_id,
-                replacement_lesson_id=replacement_id,
-                extensions=current.extensions,
-            )
-            return self._write(updated)
+def _review(toplevel: Path, lesson_id: str, state: str) -> None:
+    path = _path(toplevel, lesson_id)
+    with exclusive_lock(_lock(toplevel)):
+        lesson = _load(path, lesson_id)
+        if lesson.get("state") != "proposed":
+            raise FoilError(f"foil: lesson '{_shown(lesson_id)}' is not proposed")
+        replaces = lesson.get("replaces") or ""
+        target_path = None
+        target = None
+        if state == "accepted" and replaces:
+            target_path = _path(toplevel, replaces)
+            target = _load(target_path, replaces)
+            target["state"] = "superseded"
+        lesson["state"] = state
+        lesson["reviewer"] = actor()
+        if target is not None and target_path is not None:
+            write_json(target_path, target)
+        write_json(path, lesson)
 
 
-def propose_memory(
-    state_root: Path | str,
-    fleet_id: str,
-    lesson_id: str,
-    *,
-    author: str,
-    body: str,
-    task_id: str,
-) -> dict[str, Any]:
-    return MemoryStore(state_root).propose(
-        MemoryLesson(
-            fleet_id=fleet_id,
-            lesson_id=lesson_id,
-            body=body,
-            proposed_by=author,
-            source_task_id=task_id,
-        )
-    ).to_dict()
+def accept_lesson(toplevel: Path, lesson_id: str) -> None:
+    _review(toplevel, lesson_id, "accepted")
 
 
-def accept_memory(
-    state_root: Path | str, fleet_id: str, lesson_id: str, *, actor: str
-) -> dict[str, Any]:
-    return MemoryStore(state_root).accept(fleet_id, lesson_id, actor).to_dict()
+def reject_lesson(toplevel: Path, lesson_id: str) -> None:
+    _review(toplevel, lesson_id, "rejected")
 
 
-def reject_memory(
-    state_root: Path | str, fleet_id: str, lesson_id: str, *, actor: str
-) -> dict[str, Any]:
-    return MemoryStore(state_root).reject(fleet_id, lesson_id, actor).to_dict()
-
-
-def supersede_memory(
-    state_root: Path | str,
-    fleet_id: str,
-    lesson_id: str,
-    *,
-    author: str,
-    replacement_id: str,
-    body: str,
-    task_id: str,
-) -> dict[str, Any]:
-    return MemoryStore(state_root).supersede(
-        fleet_id,
-        lesson_id,
-        author=author,
-        replacement_id=replacement_id,
-        body=body,
-        task_id=task_id,
-    ).to_dict()
-
-
-def status_memory(state_root: Path | str, fleet_id: str, lesson_id: str) -> dict[str, Any]:
-    return MemoryStore(state_root).read(fleet_id, lesson_id).to_dict()
+def list_lessons(toplevel: Path, *, all_lessons: bool = False, as_json: bool = False) -> None:
+    directory = foil_root(toplevel) / "memory"
+    if directory.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    lessons: list[dict[str, Any]] = []
+    if directory.is_dir():
+        for path in sorted(directory.glob("*.json")):
+            lessons.append(read_json(path))
+    if not all_lessons:
+        lessons = [item for item in lessons if item.get("state") == "accepted"]
+    lessons.sort(key=lambda item: (str(item.get("time", "")), str(item.get("id", ""))))
+    if as_json:
+        print(json.dumps(lessons, ensure_ascii=False, sort_keys=True))
+        return
+    for item in lessons:
+        text = " ".join(str(item.get("text", "")).split())
+        if all_lessons:
+            print(f"{item['id']}\t{item.get('state', '')}\t{text}")
+        else:
+            print(f"{item['id']}\t{text}")

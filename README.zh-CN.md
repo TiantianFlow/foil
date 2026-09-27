@@ -1,157 +1,141 @@
 # 运筹 · Foil
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.2.0-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 
 [English](README.md)
 
-**你的 Agent 们的忠诚反对派。** 运筹在你自己的终端里协调一组互补的本地 CLI Agent 席位。一个席位动手实现，另一个席位待在它看不见的上下文里找茬，由你掌控的主座负责配备人手和下达指令。邮件和状态落在磁盘上的持久文件里，席位跑在 tmux 中。没有托管控制面，没有聊天界面，没有 MCP，也没有需要登录的运筹账号。
+运筹把本机 CLI Agent 作为独立席位放进 tmux，并把邮件和状态留在文件里，这样一个席位可以干活，另一个席位可以在它看不见的上下文里检查结果。
 
-这种反对不是角色扮演，而是结构上的独立。运筹中的席位是独立的 CLI 进程，不是共享同一个母模型上下文的 subagent。不同席位可以使用不同的 CLI、模型、人格、上下文和 worktree，让 reviewer 有机会发现同一类 Agent 容易共同复制的相关性盲区。这种多样性并不保证正确，但能让分歧和独立验证真实存在，而不只是同一段对话里的另一种语气。
-
-如果你已经在本机同时跑着不止一个 CLI Agent，这些失败模式你一定不陌生：所有声音揉进同一段对话、tmux 会话被杀后上下文烟消云散、Agent 之间没有可持久交接的载体，以及不断有人劝你换上某个托管界面。运筹给出的答案是：继续留在终端里。你手头那套 Markdown 人设——包括 Agency Agents 和它的各种本地化副本——可以直接拿来用，运筹不会改写它们。
-
-## 为什么选择运筹
-
-- **互补席位，而不是一把混杂的声音。** 每个席位都是独立的 Agent CLI 进程，有自己的角色、上下文和工作目录。
-- **现成人设，原样上岗。** [Agency Agents](https://github.com/msitarzewski/agency-agents) 以及中文等本地化副本（例如 [agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh)）都按原文件配备席位：不加包装，不翻译成运筹专用格式。
-- **可持久化的协同。** 邮件、确认回执和席位状态都是磁盘上带版本的文件。在接收方确认之前，消息一直保持 `queued`——无论当时有没有人盯着屏幕。
-- **中断后可恢复。** 杀掉 tmux、重启机器、再回来：`foil resume` 会按固定优先级复活席位——先找活着的 tmux 窗口，再用 CLI 原生的会话记录，最后才是记录在案的全新启动。
-- **本地优先，不碰凭据。** 席位以你已经在本地完成认证的 Agent CLI 运行在你自己的机器上。运筹从不索取、保存或打印任何服务商凭据，也没有运筹账号。
-
-## 它如何运转
+## 工作流程
 
 ```mermaid
 flowchart LR
-  operator[你或控制器 CLI] --> foil[Foil]
-  foil --> lead[主座]
+  you[你] --> foil[Foil]
+  foil --> lead[tmux 中的主座]
   lead --> workers[tmux 中的工人席位]
-  foil --> files[持久的邮箱与状态文件]
+  workers --> trees[Git worktree]
+  lead --> board[看板邮件与 status.md]
+  you --> board
 ```
 
-一次典型的协作是这样的：你把运筹指向自己的仓库，拉起一名主座。主座按需配备互补的专家席位——一个实现者负责写代码，一个 reviewer-challenger 从独立上下文向方案发起挑战。主座把任务作为持久的邮箱消息发出去，产出不达标时直接要求返工，最后把经受住质疑的证据整合起来。你可以用普通的 CLI 命令和 tmux 检查一切。运筹是灵活的协同，而不是一条固定的「研究→实现→评审」流水线。
+你加载操作员技能，并把目标交给它。主座从那里接管舰队，并写 `status.md`。你查看席位列表、主座窗格和那份状态文件。工作结束后，你停掉所有席位。运筹不做项目本身的工作。
+
+## 演示
+
+[docs/demo.md](docs/demo.md) 按命令逐步走一遍下面的快速开始。
 
 ## 快速开始
 
-你需要 Python 3.11+、uv、tmux 3.2+ 和 Git。下面的示例还会使用已经完成本地认证的 `grok` 和 `opencode` CLI；运筹不会经手这些登录。更想让本机已经在跑的 Agent 代劳，请直接看 [让 Agent 来装](#让-agent-来装)。
+你需要 Python 3.11+、Git、tmux 3.2+，以及已经在本机登录的 Claude CLI。运筹不经手这次登录。
 
-从 Git 安装运筹 0.1.0：
+安装运筹 0.2.0：
 
 ```sh
 uv tool install "git+https://github.com/TiantianFlow/foil.git"
 ```
 
-以后升级时，用同一地址重新安装：
+在一个 Git 仓库里：
 
 ```sh
-uv tool install --reinstall "git+https://github.com/TiantianFlow/foil.git"
-```
-
-然后切换到你想让运筹协调的仓库。`foil init` 接受已有的 Git 仓库，并完整保留所有已跟踪和未跟踪的文件以及 Git 状态；对不是 Git 仓库的非空目录会直接拒绝。（空目录也可以——先运行 `git init -b foil-demo`，再运行 `foil init .`。）
-
-```sh
-# 然后在你已有的 Git 仓库中
 cd your-repo
 foil init .
-
-# init 已经在 .foil/seats.toml 里写好互补的起步配方
-# 如果 grok/opencode 不是本机该用的 CLI，再用 foil seats set 改
-foil seat spawn --seat lead
-foil seat spawn --seat implementer
-foil seat spawn --seat reviewer-challenger
-foil send-message --seat reviewer-challenger --sender lead --body "Please challenge the current plan." --wake
-foil status
 ```
 
-`foil init` 已经写好互补起步配方。发现本机 CLI 之后若要改映射，用 `foil seats set`；不要在 spawn 上临时编造 `--cli`。后续命令默认使用当前 Git 项目的运筹状态和其中唯一的活舰队。只有覆盖时才需要传 `--state-dir` 或 `--fleet`。`--cli`、`--model` 和其他启动参数只是临时覆盖。第一个席位必须是主座，工人席位在其后。`foil send-message` 只负责把邮件落盘——想提醒某个席位，请加上 `--wake`，或先检查 tmux 再运行 `foil seat wake`。想确认席位是不是真的活着，先跑 `foil status`。
+`foil init` 会写好 `.foil`，包括模板和 `.foil/skills/operator.md`。它把 `harness` 设成 `grok`、`claude`、`codex`、`opencode`、`gemini` 里本机第一个已安装的 CLI。这篇说明用 Claude。如果 init 选了别的 harness，把 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里的值改成 `harness = "claude"`。保留 `permission = "ask"`。
 
-内置预设只有 `grok` 和 `opencode`。别的交互式 CLI 要走 [声明式档案](#人格角色与其他-cli)，不要假设报个名字就能用。
+把 `.foil/skills/operator.md` 加载到你的 harness，并按这个技能去做。把目标告诉这个 harness。技能会启动舰队、查看进展、转达你说的话，并在结束时拆掉舰队。它只启动一次主座。如果主座已经在运行，它用 `foil send` 把目标送出去，而不是再启动一次主座。
 
-## 让 Agent 来装
-
-如果这个仓库里已经有本机 CLI Agent 在帮忙，你不必自己敲上面那些命令。对它说：
-
-> 在这个项目里安装运筹，并按 README 里给 Agent 的搭建说明做完。
-
-这一句就够了。它该执行的步骤在下一节。
-
-## 如果你是来搭建运筹的 Agent
-
-你是在本机配备一支舰队，不是在装一个托管产品。留在终端里。不要发明运筹账号、MCP 服务器，或浏览器控制面。
-
-1. 确认 Python 3.11+、uv、tmux 3.2+ 和 Git。用
-   `uv tool install "git+https://github.com/TiantianFlow/foil.git"`
-   安装运筹。
-2. 在用户已有的 Git 仓库里运行 `foil init .`。后续命令默认针对这个项目；
-   只有覆盖时才传 `--state-dir` 或 `--fleet`。
-3. 先发现本机有哪些 Agent CLI（`grok`、`opencode`，以及用户已经在用、
-   并备好档案的其他 CLI）。看不清就问。`foil doctor` 会报告 tmux、Git
-   和已知 CLI，但不会去读凭据。再问这些 CLI 能启动哪些模型、各自还剩多少用量。
-4. 建议拉一份本地 Markdown 人设目录。中文场景优先
-   [agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh)，
-   英文原版是
-   [Agency Agents](https://github.com/msitarzewski/agency-agents)；
-   其他本地化副本同样适用。克隆或复制到项目旁边（例如 `./personas`），
-   **不要改文件内容**。运筹按原文使用。
-5. 问用户实际在做什么。按这个答案挑一小支互补队伍：至少一名主座、
-   一名实现者、一名质疑者。不要因为角色库里有八份模板就拉满八个席位。
-6. `foil init` 已经写好互补起步配方（主座和实现者用 `grok`，质疑者用
-   `opencode`）。发现本机 CLI 之后，若要换 CLI、模型或 `--role-file`
-   人设，用 `foil seats set` 改这份文件，不要从零编造 `--cli`。映射有
-   取舍时先说清楚，等用户点头。
-7. 在项目里拉起席位：先 `foil seat spawn --seat lead`，再拉工人。
-   不要在 spawn 上再传 `--cli`、`--lead` 或 `--model`，除非你是在覆盖文件。
-   然后跑 `foil status`。
-8. 把日常命令交回给用户：`foil status`、`tmux`、
-   `foil send-message --wake`、`foil resume`。主座在、互补席位已映射、
-   用户能自己查看舰队，你的搭建就结束了。
-
-## 运营一支舰队
-
-**一支舰队对应一个 worktree。** 为项目保留一个干净、与远端 `main` 保持 fast-forward 的基准 checkout；为每支舰队创建一个专用的功能 worktree，并在其中运行主座和工人席位。绝不要让舰队改动基准 checkout；如果它变脏了，应当报错并通知，而不是替它收拾。显式选择其他基准也完全可以——这是给你的操作守则，不是运筹强制的功能。
-
-**由主座决定成员。** 每支舰队从一名主座开始。主座（或你）按需从角色库拉起工人席位。工人默认隔离。同一仓库里的工人通过 `git clone --local` 得到 `worktrees/<seat_id>`，因此未提交的文件不会被带进去，之后的提交也不会自动刷新这些克隆；`foil doctor` 会报告落后情况。若要从另一个 Git 仓库隔离，传入 `--from PATH`：运筹会在 `<PATH>/worktrees/<seat_id>` 上执行 `git worktree add`。配方里的 `cwd` 和 `--cwd` 始终是目的地；若它们指向另一个仓库的基准 checkout，会被拒绝。需要共享目录时，使用高级选项 `--shared-cwd`。
-
-**诚实的席位状态。** `working` 只表示 tmux 进程还活着——不代表模型正在思考。`foil status` 会把注册表与活着的 tmux 对账；`foil poll-status` 只读带版本的状态文件。
-
-**中断与恢复。** `foil resume` 优先复用匹配的存活 tmux 窗口，其次是席位记录的原生会话，最后是记录在案的全新启动。`foil seat stop` 会保留席位记录，供 `foil resume` 在中断后继续；`foil seat remove` 才会删除记录。权限先看 `.foil/seats.toml`；文件没写时 spawn 才默认 `supervised`（CLI 会逐个请求批准）。在文件里或 spawn 上写 `--permission auto`，才会使用适配器声明的自动批准参数。
-
-## 人格、角色与其他 CLI
-
-`foil init` 会在 `.foil/roles/` 下生成角色库（manager、implementer、reviewer-challenger 等）。你也可以直接用本地 Markdown 人格目录来配备席位——人格文件原样使用，不加包装。这包括 [Agency Agents](https://github.com/msitarzewski/agency-agents) 和它的本地化副本（中文可用 [agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh)）。运筹不拥有这些人设，也不要求改成运筹格式：
+同一组命令，如果你自己来跑：
 
 ```sh
-git clone https://github.com/jnMetaCode/agency-agents-zh.git ./personas
-foil catalog-list --path ./personas
-foil catalog-map --path ./personas --persona NAME --json
-foil seats set --seat designer --cli grok --role-file ./personas/path/to/designer.md
-foil seat spawn --seat designer
+foil seat spawn lead --task "Summarize this repository in board/status.md"
+foil seat list
+foil seat peek lead
 ```
 
-`catalog-map` 只返回人设文件的 `path`，不会指定 CLI：`cli` 和 `preset` 始终为空。把配备写进 `foil seats set`。
-
-Grok 和 OpenCode 是内置预设。其他交互式 CLI 通过声明式席位档案接入——一个 TOML 文件掌管可执行文件、启动/恢复/初始化参数、会话捕获、权限标志、工作目录行为，以及按变量名声明的环境转发（值永不落盘）：
-
-先把随仓库发布的 [`profiles/pi-interactive.toml`](profiles/pi-interactive.toml) 示例保存或复制到你要协调的仓库，再为相应席位传入它的路径：
+主座自己的报告在 `.foil/board/status.md`。要把一个回答交给主座：
 
 ```sh
-foil seats set --seat researcher --profile ./profiles/pi-interactive.toml --role researcher
-foil seat spawn --seat researcher
+foil send lead "the answer"
 ```
 
-spawn 上的 `--profile` 仍可临时覆盖席位文件。
+结束时：
 
-内置预设与档案是仅有的两条受支持路径——如果某个 CLI 既不是预设、你也没有用档案跑通过，就不要假设它可用。当你传入 `--model` 时，运筹会把你的选择转交给 CLI；CLI 自己的界面才是实际启动了哪个模型的最终依据。
+```sh
+foil seat kill --all
+```
 
-## 安全与限制
+这会停掉每个席位。它不删除分支，也不删除 worktree。
 
-- 运筹提供的是同一用户下的协作式保护，不是针对恶意行为的隔离。席位以你的身份、使用你的 CLI 凭据、在你的机器上运行。
-- 运筹从不保存服务商凭据，也从不打印环境变量或终端缓冲区内容。
-- 没有 MCP 服务器，没有托管服务，也没有任何需要登录的东西。
+## 入门
+
+这是从安装到主座开始工作的路径。
+
+1. 安装运筹。你需要 Python 3.11+、Git、tmux，以及至少一个已经登录的 harness CLI。运筹不经手这次登录。
+
+```sh
+uv tool install "git+https://github.com/TiantianFlow/foil.git"
+```
+
+2. 在仓库里运行 `foil init`。它会写好 `.foil/`，并选一个已安装的 harness。输出的末尾是指针那一行，以及主座模板的 permission。
+
+```sh
+cd your-repo
+foil init
+```
+
+3. 在仓库里的 harness 中粘贴下面这一行。把 `<goal>` 换成目标。这不需要在 harness 里安装任何东西。
+
+```text
+Read .foil/skills/operator.md and follow it. My goal: <goal>.
+```
+
+持久安装是可选的。把技能复制到该 harness 发现技能的位置，放在用户级，这样它不会出现在 `git status` 里。下面的路径都没有对照该 harness 的当前文档核对过。
+
+| Harness | 安装路径 | 已核对 |
+|---|---|---|
+| 任意 | 上面的指针行 | 必需；不是按 harness 安装 |
+| Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | 否 |
+| grok、codex、opencode、gemini | 没有公布的路径 | 否 |
+
+4. 在启动主座之前，给舰队会用到的每个模板设置 `permission`：`.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml`。每个模板有自己的 permission。默认是 `permission = "ask"`：该席位会停在第一次批准提示，并在那个窗格里等待。只把主座改成 `auto` 不会让工人席位无人值守。要让哪个席位无人值守，就把它的模板设成 `auto`。用 `ask` 时，查看新席位的窗格里有没有批准提示。
+
+5. 主座的第一次提示已经带上说明：角色技能、persona、命令和看板约定。它告诉主座，每次被唤醒都要重读自己的说明文件。`--task` 里只放目标。
+
+6. 确认主座在工作。只启动一次主座，让它写下包含 `state: done` 的 `board/status.md`，然后等几分钟。如果快速开始已经启动了主座，就跳过这次启动。
+
+```sh
+foil seat spawn lead --task "Write board/status.md with state: done"
+```
+
+如果 `.foil/board/status.md` 没有出现，`foil seat peek lead` 会显示登录提示、批准提示或一条错误。当文件里出现 `state: done` 时，把人的目标发给这个主座。不要再启动一次主座。
+
+```sh
+foil send lead "the goal"
+```
+
+## 和一次会话相比
+
+一次 Agent 会话是一个进程、一份上下文、一个工作目录。同一个模型既提出改动，又检查改动。会话结束后，留下的是那个 CLI 自己保存的东西。
+
+运筹的席位是各自独立的 CLI 进程。实现者在自己的 Git worktree 和分支上工作。评审者不共享那份上下文。邮件是接收方去读的文件。你相信的状态是主座写下的 `status.md`。停掉 tmux 不会删除分支。`foil seat resume` 会重新启动窗口已经消失的席位。
+
+## 限制
+
+运筹保护的是遵守说明的席位，不是把恶意进程隔离开。席位身份来自运筹启动它时设置的环境变量 `FOIL_SEAT_ID`。没有哪个参数能让一个席位自称是另一个席位。在这台机器上你能做的事，以你的身份运行的进程也能做。
+
+模板默认是 `permission = "ask"`，harness 在行动前会询问。把 `permission` 设成 `auto` 会插入该预设的自动批准参数。对 Claude，这些参数是 `--permission-mode` 和 `auto`，harness 可以不经询问就改文件、跑命令。那个席位仍然是你。
+
+运筹从不解读窗格。`foil seat peek` 打印 tmux 原样捕获的文本。`foil seat list` 报告 `alive`、`dead` 或 `killed`，依据是保存的窗口还在不在，而不是屏幕上的文字意味着什么。Agent 是否卡住、是否做完，由它们自己写在看板文件里。
+
+即使窗格不在输入提示符，nudge 也会被打进去。`foil send` 先把邮件写成文件，再往接收方窗口打一行：发送者、一个空格、邮件文件的绝对路径，然后是 Enter。消息正文从不被打进窗格。如果 Agent 并不在等输入，这些按键仍然会进入窗格。运筹不会先看窗格再决定打不打。
 
 ## 进一步了解
 
-- [CONTRIBUTING.md](CONTRIBUTING.md)——搭建开发环境并运行检查
-- [CHANGELOG.md](CHANGELOG.md)——版本历史
-- [skills/controller](skills/controller)、[skills/manager](skills/manager)、[skills/worker](skills/worker)——给驱动或加入舰队的 CLI 使用的可移植 skill
+- [docs/demo.md](docs/demo.md) — 同一套快速开始，以及每一步做什么
+- [docs/architecture.md](docs/architecture.md) — 组件、数据流和模块边界
+- [skills/operator.md](skills/operator.md)、[skills/lead.md](skills/lead.md)、[skills/worker.md](skills/worker.md) — 每个角色运行哪些命令
+- [CONTRIBUTING.md](CONTRIBUTING.md) — 搭建与检查
+- [CHANGELOG.md](CHANGELOG.md) — 版本历史

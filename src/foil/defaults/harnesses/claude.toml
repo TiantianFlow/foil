@@ -1,0 +1,9 @@
+id = "claude"
+command = ["claude", "--model", "{model}", "--session-id", "{session_id}", "{prompt}"]
+resume = ["claude", "--resume", "{session_id}"]
+session_id = "generated"
+env = []
+
+[permission]
+ask = []
+auto = ["--permission-mode", "auto"]
