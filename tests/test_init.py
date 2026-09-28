@@ -155,9 +155,46 @@ def test_init_rerun_reports_the_harness_stored_after_an_edit(
     assert main(["init"]) == 0
     report = capsys.readouterr().out
     assert "reviewer: claude (left alone)" in report
-    assert "The three default templates use one harness id." in report
+    assert (
+        "The three default templates use one harness id, "
+        "not one program and not one model."
+    ) in report
+    assert "not two programs" not in report
     assert "guarantees two harness ids" not in report
     assert reviewer.read_text(encoding="utf-8") == edited
+
+
+def test_init_report_uses_three_for_three_stored_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    templates = foil_root(repo) / "templates"
+    implementer = templates / "implementer.toml"
+    reviewer = templates / "reviewer.toml"
+    implementer.write_text(
+        implementer.read_text(encoding="utf-8").replace(
+            'harness = "claude"', 'harness = "codex"', 1
+        ),
+        encoding="utf-8",
+    )
+    reviewer.write_text(
+        reviewer.read_text(encoding="utf-8").replace(
+            'harness = "codex"', 'harness = "gemini"', 1
+        ),
+        encoding="utf-8",
+    )
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert (
+        "The three default templates use three harness ids, "
+        "not three programs and not three models."
+    ) in report
+    assert "not two programs" not in report
 
 
 def test_init_fails_outside_a_git_repository(
