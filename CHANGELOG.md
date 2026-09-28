@@ -6,7 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Documentation
 
-- Both READMEs: the product's two names in each title, the "loyal opposition" tagline, the problems Foil solves with a comparison to a single agent session, a diagram that labels what each box is, a short section on how Foil is built, a quick start for any supported agent CLI rather than Claude only, and badges for Python, platforms, and runtime dependencies.
+- Both READMEs: the product's two names in each title, the "loyal opposition" tagline, three problems Foil solves compared with a single agent session, a diagram that labels what each box is, a short section on how Foil is built, one getting-started path (replacing the separate quick start and onboarding) for any supported agent CLI rather than Claude only, with what to check when a seat makes no progress, and badges for Python, platforms, and runtime dependencies.
 - A demo per language ([docs/demo.md](docs/demo.md), [docs/demo.zh-CN.md](docs/demo.zh-CN.md)), rebuilt from a hand replay of end-to-end scenario 1.
 - Module and spawn/send diagrams in [docs/architecture.md](docs/architecture.md), and corrections where it had fallen behind the code: seat state and nudges check the window's markers, and instruction files include the role skill's text.
 
