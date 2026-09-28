@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes Foil 0.2.0 as implemented. It does not add requirements. The command list and the data layout are specified in [requirements.md](requirements.md).
+This document describes Foil 0.2.1 as implemented. It does not add requirements. The command list and the data layout are specified in [requirements.md](requirements.md).
 
 ## Components
 
@@ -11,7 +11,7 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/cli.py` | Parses the command line, decides who the caller is, and dispatches. It does not talk to tmux. |
 | `src/foil/project.py` | Finds the Git toplevel and the `.foil` directory. |
 | `src/foil/store.py` | Writes JSON atomically, loads the registry, and rejects credential-shaped text. |
-| `src/foil/presets.py` | Loads harness presets and role templates, and expands launch argv. It does not start a process. |
+| `src/foil/presets.py` | Loads harness presets and role templates, scans which eligible presets are installed, and expands launch argv. It does not start a process. |
 | `src/foil/lifecycle.py` | Initializes a project and spawns, kills, resumes, lists, and peeks seats. It writes instruction files. |
 | `src/foil/tmux.py` | Creates, stops, and reads tmux windows by exact window id. |
 | `src/foil/board.py` | Writes mail files, then asks tmux to type the nudge line. |
@@ -98,14 +98,14 @@ sequenceDiagram
   H->>B: the seat reads the mail file itself
 ```
 
-Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foil/defaults/personas`. A project file `.foil/harnesses/<id>.toml` overrides the preset with the same id. `init` never writes the `fake` preset into a template. Tests put `foil-fake` on `PATH` and point templates at it themselves.
+Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foil/defaults/personas`, including the candidate roles. A project file `.foil/harnesses/<id>.toml` overrides the preset with the same id, so that id is counted once. `init` scans every eligible preset whose own `command[0]` is on `PATH`, skips `fake`, and sorts the ids by Unicode code point with case preserved. That order is a tiebreak, not a ranking. `lead` and `implementer` get the first installed id. `reviewer` gets the second when one exists, and the first otherwise. The result is two harness ids when two are installed, not two programs and not two models. Tests put `foil-fake` on `PATH` and point templates at it themselves.
 
 ## Where state lives
 
-`foil init` creates `.foil` in the Git toplevel and adds `/.foil/` to that repository's exclude file, so Foil's files stay out of `git status`. It prints the operator pointer line and the lead template's permission, and a re-run prints them again without overwriting existing files. The directory holds:
+`foil init` creates `.foil` in the Git toplevel and adds `/.foil/` to that repository's exclude file, so Foil's files stay out of `git status`. It prints a report: every installed eligible harness in id order, the id each default template was given and why, which templates and personas it wrote and which it left alone, a sentence about the permission setting, and the operator pointer line. A re-run prints the report again and overwrites nothing. The directory holds:
 
 - `templates/<role>.toml` — the roster. The file name is the role. Fields used by the loader are `harness`, `model`, `persona`, `worktree`, and `permission`.
-- `templates/personas/<role>.md` — the default persona, copied once. It adds only specialization the role skill does not already state. A template may instead point `persona` at another Markdown file, which is left untouched, or it may hold inline text.
+- `templates/personas/<role>.md` — every packaged persona, copied once, including candidate roles that have no template yet. A persona adds only specialization the role skill does not already state. A template may instead point `persona` at another Markdown file, which is left untouched, or it may hold inline text.
 - `harnesses/` — optional project presets.
 - `memory/<id>.json` — lessons. They belong to the project and stay when seats are killed.
 - `board/mail/<seat>/` — mail files. `board/notes/`, `board/tasks/`, and `board/results/` are directories seats use with ordinary file tools. Foil does not read task, result, note, or status files.
@@ -126,15 +126,15 @@ The caller is outside the fleet when `FOIL_SEAT_ID` is unset. The lead is the pr
 
 When the template sets `worktree` true, spawn runs `git worktree add -b` on `foil/<seat>` in `.foil/worktrees/<label>`. If that branch or its directory is taken, it uses `foil/<seat>-2`, then `foil/<seat>-3`, and so on, and the directory uses the same suffix. The branch is new. Spawn does not use `-B` and does not reset an existing branch. A path under the repository's top-level `worktrees/` directory, or anywhere else inside the project outside the Foil folder, is refused. On a later failure it does not remove that worktree or delete the branch. Killing a seat does not either.
 
-Spawn writes the instruction file, then a plan, then a tmux window. The window runs `python -m foil.runner` on the plan. The runner changes to the plan's directory and execs the harness. The plan's own environment sets `FOIL_SEAT_ID` to the seat name. Other variables are listed by name in `env_forward` and copied from the launch environment at exec time, so their values are not stored in the plan. `PATH` is always forwarded. The first launch prompt is the instruction file's full text. Placeholders in the preset are `{model}`, `{prompt}`, and `{session_id}`. A missing value drops that token and a flag that only introduced it. Permission extras are inserted for both a fresh start and a resume.
+Spawn writes the instruction file, then a plan, then a tmux window. The window runs `python -m foil.runner` on the plan. The runner changes to the plan's directory and execs the harness. The plan's own environment sets `FOIL_SEAT_ID` to the seat name. Other variables are listed by name in `env_forward` and copied from the launch environment at exec time, so their values are not stored in the plan. `PATH` and `HOME` are always forwarded, and a preset's `env` names any further variables. The first launch prompt is the instruction file's full text. Placeholders in the preset are `{model}`, `{prompt}`, and `{session_id}`. A missing value drops that token and a flag that only introduced it. Permission extras are inserted for both a fresh start and a resume.
 
-The launch prompt does not include the persona body. The instruction tells the seat to read the persona file when the template uses a path.
+The instruction file includes the persona's text. When the template points at a Markdown file, that file is read and inlined; the file itself is left unchanged.
 
 `--task` is mail sent after the registry is saved. It uses the same write-then-nudge path as `foil send`.
 
 ## Instruction file
 
-The file is regenerated on spawn and on resume, not when a lesson is accepted later. It names the seat, the lead (`lead`), the absolute board path, and the commands that role may run. It includes the role skill's text, not only a path to it, and its last line tells the seat to re-read this file whenever it is woken. It states that mail is a file, that the nudge line is the sender and the mail path, and that notes wake nobody. It names the `status/v1`, `task/v1`, and `result/v1` contracts. It tells a worktree seat to stay in its worktree. Accepted lessons are copied in, or the file says none yet. The lead's file also lists each template's harness and whether it asks for a worktree. If this launch is a fresh start after a restart, the file says the seat was restarted and should re-read its mail.
+The file is regenerated on spawn and on resume, not when a lesson is accepted later. It names the seat, the lead (`lead`), the absolute board path, and the commands that role may run. It includes the role skill's text and the persona's text, not only a path to either, and its last line tells the seat to re-read this file whenever it is woken. It states that mail is a file, that the nudge line is the sender and the mail path, and that notes wake nobody. It names the `status/v1`, `task/v1`, and `result/v1` contracts. It tells a worktree seat to stay in its worktree. Accepted lessons are copied in, or the file says none yet. The lead's file also lists each template's harness and whether it asks for a worktree. If this launch is a fresh start after a restart, the file says the seat was restarted and should re-read its mail.
 
 ## Mail and nudge
 
