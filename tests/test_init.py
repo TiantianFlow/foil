@@ -87,26 +87,44 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     repo.mkdir()
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
-    pointer = "Read .foil/skills/operator.md and follow it. My goal: <goal>.\n"
+    pointer = "Read .foil/skills/operator.md and follow it. My goal: <goal>."
+    ask = (
+        'permission = "ask". ask stops the seat at its first approval prompt; '
+        "auto lets it run unattended. Edit .foil/templates/lead.toml."
+    )
+    auto = ask.replace('permission = "ask"', 'permission = "auto"', 1)
 
     assert main(["init"]) == 0
     first = capsys.readouterr()
     assert first.err == ""
-    assert first.out == pointer + 'permission = "ask"\n'
+    assert pointer in first.out
+    assert ask in first.out
+    assert "Installed harnesses, in id order (a tiebreak, not a ranking):" in first.out
+    for name in ("claude", "codex", "gemini", "grok", "opencode"):
+        assert name in first.out
+    assert "lead: claude (first installed id)" in first.out
+    assert "implementer: claude (first installed id)" in first.out
+    assert "reviewer: codex (second installed id)" in first.out
+    assert "two harness ids, not two programs and not two models" in first.out
+    assert "Wrote templates: lead, implementer, reviewer" in first.out
+    assert "documentation-writer" in first.out
     lead = foil_root(repo) / "templates" / "lead.toml"
     original = lead.read_text(encoding="utf-8")
     assert 'permission = "ask"\n' in original
 
     assert main(["init"]) == 0
     second = capsys.readouterr()
-    assert second.out == first.out
+    assert "Left templates: lead, implementer, reviewer" in second.out
+    assert "Wrote templates: none" in second.out
+    assert ask in second.out
     assert lead.read_text(encoding="utf-8") == original
 
     edited = original.replace('permission = "ask"', 'permission = "auto"')
     lead.write_text(edited, encoding="utf-8")
     assert main(["init"]) == 0
     third = capsys.readouterr()
-    assert third.out == pointer + 'permission = "auto"\n'
+    assert auto in third.out
+    assert ask not in third.out
     assert lead.read_text(encoding="utf-8") == edited
 
 

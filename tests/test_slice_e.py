@@ -89,7 +89,7 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert "Templates:" in text
     assert "- implementer: harness claude, worktree yes" in text
     assert "- reviewer: harness codex, worktree no" in text
-    assert "untouched." in text
+    assert "You are the lead seat of this fleet." in text
     assert "none yet" not in text
 
     second = _lesson(capsys, "re-read the diff")

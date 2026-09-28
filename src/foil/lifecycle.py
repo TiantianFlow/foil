@@ -15,8 +15,10 @@ from foil.errors import FoilError
 from foil.presets import (
     expand_argv,
     installed_harness,
+    installed_presets,
     load_preset,
     load_template,
+    persona_text,
     write_default_templates,
 )
 from foil.project import (
@@ -37,6 +39,51 @@ from foil.store import (
     write_bytes,
 )
 from foil.tmux import TmuxController, TmuxError, TmuxTarget
+
+
+def _names(items: list[str]) -> str:
+    return ", ".join(items) if items else "none"
+
+
+def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: set[str]) -> None:
+    found = [item["id"] for item in installed_presets(toplevel)]
+    first = found[0] if found else ""
+    second = found[1] if len(found) > 1 else first
+    print(f"Installed harnesses, in id order (a tiebreak, not a ranking): {_names(found)}")
+    roles = ("lead", "implementer", "reviewer")
+    for role in roles:
+        chosen = load_template(toplevel, role)["harness"]
+        fresh = role not in had_templates
+        second_reviewer = role == "reviewer" and chosen == second and second != first
+        if fresh and second_reviewer:
+            why = "second installed id"
+        elif fresh and chosen == first:
+            why = "first installed id"
+        else:
+            why = "left alone"
+        print(f"{role}: {chosen} ({why})")
+    if not found:
+        print("No eligible harness is installed.")
+    elif second == first:
+        print("One harness id is installed, so every default template uses it.")
+    else:
+        print("The roster guarantees two harness ids, not two programs and not two models.")
+    persona_dir = foil_root(toplevel) / "templates" / "personas"
+    personas = sorted(
+        path.stem
+        for path in persona_dir.glob("*.md")
+        if path.is_file() and not path.is_symlink()
+    )
+    print("Wrote templates: " + _names([role for role in roles if role not in had_templates]))
+    print("Left templates: " + _names([role for role in roles if role in had_templates]))
+    print("Wrote personas: " + _names([name for name in personas if name not in had_personas]))
+    print("Left personas: " + _names([name for name in personas if name in had_personas]))
+    permission = load_template(toplevel, "lead")["permission"]
+    print(
+        f'permission = "{permission}". ask stops the seat at its first approval prompt; '
+        "auto lets it run unattended. Edit .foil/templates/lead.toml."
+    )
+    print("Read .foil/skills/operator.md and follow it. My goal: <goal>.")
 
 
 def init_project(directory: str | None) -> None:
@@ -60,10 +107,17 @@ def init_project(directory: str | None) -> None:
     ensure_exclude(toplevel)
     ensure_board(toplevel)
     ensure_registry(toplevel)
+    template_dir = root / "templates"
+    persona_dir = template_dir / "personas"
+    roles = ("lead", "implementer", "reviewer")
+    had_templates = {role for role in roles if (template_dir / f"{role}.toml").exists()}
+    had_personas = {
+        path.stem
+        for path in persona_dir.glob("*.md")
+        if path.is_file() and not path.is_symlink()
+    }
     write_default_templates(toplevel)
-    permission = load_template(toplevel, "lead")["permission"]
-    print("Read .foil/skills/operator.md and follow it. My goal: <goal>.")
-    print(f'permission = "{permission}"')
+    _print_init_report(toplevel, had_templates, had_personas)
 
 
 def _shown(value: str) -> str:
@@ -174,12 +228,7 @@ def _accepted(root: Path) -> list[tuple[str, str]]:
 
 
 def _persona_line(template: dict) -> str:
-    persona = template["persona"]
-    if persona and "\n" not in persona and "\r" not in persona and not persona.startswith("/"):
-        path = template["path"].parent / persona
-        if path.is_file() and not path.is_symlink():
-            return f"Read `{path.resolve()}` untouched."
-    return persona or "none"
+    return persona_text(template).strip() or "none"
 
 
 def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> str:
@@ -211,7 +260,7 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
         "task/v1 (id, owner, state open|doing|done, acceptance),",
         "result/v1 (task, author, branch, outcome pass|fail).",
         f"Worktree: {work}",
-        f"Persona: {_persona_line(template)}",
+        f"Persona:\n{_persona_line(template)}",
         f"Skill: `{skill.resolve()}`.",
         *([skill_text] if skill_text else []),
         f"Accepted lessons: {learned}",
