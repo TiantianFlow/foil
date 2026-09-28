@@ -13,7 +13,7 @@ No command or flag was added.
 
 ### Added
 
-- `foil init` reports every installed eligible harness, in id order. The order is ascending Unicode code point of the id, case preserved: a tiebreak, not a ranking. `fake` is never eligible. A user preset that reuses a built-in id counts once. `lead` and `implementer` get the first installed id. `reviewer` gets the second when one exists, and the first otherwise. The report says this is two harness ids, not two programs and not two models, names what was written and what was left alone, and explains `ask` and `auto`.
+- `foil init` reports every installed eligible harness, in id order. The order is ascending Unicode code point of the id, case preserved: a tiebreak, not a ranking. `fake` is never eligible. A user preset that reuses a built-in id counts once. `lead` and `implementer` get the first installed id. `reviewer` gets the second when one exists, and the first otherwise. The report counts the distinct harness ids stored in the three templates. Two stored ids are two harness ids, not two programs and not two models. It names what was written and what was left alone, and explains `ask` and `auto`.
 - Candidate personas: `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `init` copies every packaged persona and still writes only the three default templates. It overwrites nothing.
 - Seats inherit `HOME` as well as `PATH`. A preset's `env` still names any further variables. The value is forwarded at launch and is not stored in the plan.
 - A seat's instruction file includes its persona's text.
