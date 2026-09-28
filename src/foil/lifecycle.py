@@ -51,6 +51,7 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
     second = found[1] if len(found) > 1 else first
     print(f"Installed harnesses, in id order (a tiebreak, not a ranking): {_names(found)}")
     roles = ("lead", "implementer", "reviewer")
+    stored: list[str] = []
     for role in roles:
         chosen = load_template(toplevel, role)["harness"]
         fresh = role not in had_templates
@@ -62,12 +63,18 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
         else:
             why = "left alone"
         print(f"{role}: {chosen} ({why})")
+        stored.append(chosen)
     if not found:
         print("No eligible harness is installed.")
-    elif second == first:
-        print("One harness id is installed, so every default template uses it.")
+    distinct = len(set(stored))
+    if distinct == 1:
+        print("The three default templates use one harness id.")
     else:
-        print("The roster guarantees two harness ids, not two programs and not two models.")
+        word = {2: "two", 3: "three"}.get(distinct, str(distinct))
+        print(
+            f"The three default templates use {word} harness ids, "
+            "not two programs and not two models."
+        )
     persona_dir = foil_root(toplevel) / "templates" / "personas"
     personas = sorted(
         path.stem

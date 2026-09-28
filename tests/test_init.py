@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -126,6 +127,37 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     assert auto in third.out
     assert ask not in third.out
     assert lead.read_text(encoding="utf-8") == edited
+
+
+def test_init_rerun_reports_the_harness_stored_after_an_edit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    real = shutil.which
+    hidden = {"grok", "opencode", "gemini", "fake", "foil-fake"}
+
+    def which(name: str, *args: object, **kwargs: object) -> str | None:
+        if name in hidden:
+            return None
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "which", which)
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    reviewer = foil_root(repo) / "templates" / "reviewer.toml"
+    original = reviewer.read_text(encoding="utf-8")
+    assert 'harness = "codex"' in original
+    edited = original.replace('harness = "codex"', 'harness = "claude"', 1)
+    reviewer.write_text(edited, encoding="utf-8")
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert "reviewer: claude (left alone)" in report
+    assert "The three default templates use one harness id." in report
+    assert "guarantees two harness ids" not in report
+    assert reviewer.read_text(encoding="utf-8") == edited
 
 
 def test_init_fails_outside_a_git_repository(
