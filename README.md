@@ -31,15 +31,6 @@ In Foil, every seat starts clean and sees only its role and its task. The review
 
 Models differ. Some reason better, some write code faster, some cost less, and some still have usage left this week. In Foil, each role is a template that names a harness and a model. The lead can plan on a strong reasoning model, implementers can run on a fast one, and the reviewer can come from a different vendor, which adds a second kind of independence: different training, different blind spots. Each seat uses its own CLI's login, so the work spreads across subscriptions you already pay for. Foil never stores your keys or logins.
 
-| | One agent session | Foil |
-|---|---|---|
-| Who manages the work | You, between terminals | The lead |
-| Models | One model, from one vendor | A harness and model per role |
-| When it says "done" | You take the author's word for it | A reviewer with a clean context checks, from another vendor if you like |
-| Context | One growing conversation | One focused context per seat |
-| After a crash | Whatever the CLI saved | Mail, status, and branches on disk; `foil seat resume` |
-| What you see | One chat | Your operator agent, plus `foil seat peek` into any seat |
-
 ## How it works
 
 ```mermaid
@@ -97,73 +88,36 @@ flowchart TB
 
 [docs/demo.md](docs/demo.md) walks through a real run: a failing test, a lead, an implementer, and a reviewer, from `foil init` to the merged fix.
 
-## Quick start
+## Get started
 
-You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil does not handle that login. Another CLI can join with a small preset file.
+You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Another CLI can join with a small preset file.
 
-Install Foil 0.2.0:
-
-```sh
-uv tool install "git+https://github.com/TiantianFlow/foil.git"
-```
-
-In a Git repository:
-
-```sh
-cd your-repo
-foil init .
-```
-
-`foil init` writes `.foil`, including the templates and `.foil/skills/operator.md`. It sets every template's `harness` to the first installed CLI among `grok`, `claude`, `codex`, `opencode`, and `gemini`. To mix providers, change `harness`, and optionally `model`, per role in `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Leave `permission = "ask"` for now.
-
-Load `.foil/skills/operator.md` into your harness and follow that skill. Tell the harness the goal. The skill starts the fleet, checks in, relays what you say, and tears the fleet down. It spawns the lead once. If that lead is already running, it sends the goal with `foil send` instead of spawning the lead again.
-
-The same commands, if you run them yourself:
-
-```sh
-foil seat spawn lead --task "Summarize this repository in board/status.md"
-foil seat list
-foil seat peek lead
-```
-
-Read `.foil/board/status.md` for the lead's own report. To pass an answer to the lead:
-
-```sh
-foil send lead "the answer"
-```
-
-When you are done:
-
-```sh
-foil seat kill --all
-```
-
-That stops every seat. It does not delete branches or worktrees.
-
-## Onboarding
-
-This is the path from install to a lead that is working.
-
-1. Install Foil. You need Python 3.11+, Git, tmux, and at least one harness CLI that is already logged in. Foil does not handle that login.
+1. Install Foil:
 
 ```sh
 uv tool install "git+https://github.com/TiantianFlow/foil.git"
 ```
 
-2. In the repository, run `foil init`. It writes `.foil/` and picks an installed harness. Its output ends with the pointer line and the lead template's permission.
+2. In your repository, run `foil init`:
 
 ```sh
 cd your-repo
 foil init
 ```
 
-3. In the harness, in the repository, paste this line. Replace `<goal>` with the goal. This needs nothing installed in the harness.
+It writes `.foil/`, keeps it out of `git status`, and sets every template's `harness` to the first installed CLI among `grok`, `claude`, `codex`, `opencode`, and `gemini`. Its output is the pointer line for step 4 and the lead template's permission. To mix providers, change `harness`, and optionally `model`, per role in `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`.
+
+3. Choose a permission for each of those templates. `permission = "ask"` is the default: that seat stops at its first approval prompt and waits in its window. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended.
+
+4. In the agent you already use, in the repository, paste the pointer line with your goal. Nothing needs to be installed in that agent.
 
 ```text
 Read .foil/skills/operator.md and follow it. My goal: <goal>.
 ```
 
-A persistent install is optional. Copy the skill where that harness discovers skills, at user level, so it stays out of `git status`. No path below was checked against that harness's current docs.
+That agent becomes the operator. It spawns the lead once with a small first-run check, then sends it your goal, checks in, relays the lead's questions, and tears the fleet down when you are done. It never does the project work itself.
+
+A persistent install of the operator skill is optional. Copy it where that harness discovers skills, at user level, so it stays out of `git status`. No path below was checked against that harness's current docs.
 
 | Harness | Install path | Verified |
 |---|---|---|
@@ -171,21 +125,27 @@ A persistent install is optional. Copy the skill where that harness discovers sk
 | Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | no |
 | grok, codex, opencode, gemini | none published | no |
 
-4. Before you spawn the lead, set `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `permission = "ask"` is the default: that seat stops at its first approval prompt and waits in that pane. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With `ask`, peek a new seat for an approval prompt.
+### By hand
 
-5. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`.
-
-6. Check that the lead is working. Spawn the lead once, with a task to write `board/status.md` containing `state: done`, then wait a few minutes. If the quick start already started the lead, skip this spawn.
+The operator runs these same commands. The first-run check spawns the lead once and asks for a status file:
 
 ```sh
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-If `.foil/board/status.md` does not appear, `foil seat peek lead` shows a login prompt, an approval prompt, or an error. When the file shows `state: done`, send the human's goal to that lead. Do not spawn the lead again.
+When `.foil/board/status.md` shows `state: done`, send the goal to that lead. Do not spawn the lead again. The lead's first prompt already carries its instructions, so a message holds only the goal or an answer.
 
 ```sh
 foil send lead "the goal"
+foil seat list
+foil seat peek lead
 ```
+
+`.foil/board/status.md` is the lead's own report, including any questions for you; answer them with `foil send lead "..."`. When you are done, `foil seat kill --all` stops every seat and leaves branches and worktrees in place.
+
+### If nothing happens
+
+Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually showing a login prompt, an approval prompt, or the harness's own first-run or opt-in dialog. Answer it in that window (`tmux ls` lists Foil's session and `tmux attach` opens it), or log in to that CLI once by hand, then `foil seat kill lead` and spawn it again.
 
 ## Limits
 
@@ -193,9 +153,9 @@ Foil is cooperative protection for seats that follow instructions. It is not iso
 
 Templates default to `permission = "ask"`, so the harness asks before it acts. Setting `permission = "auto"` inserts that preset's auto flags. For Claude, those flags are `--permission-mode` and `auto`, and the harness can edit files and run commands without asking. That seat is still you.
 
-Foil never interprets a pane. `foil seat peek` prints the raw tmux capture. `foil seat list` reports `alive`, `dead`, or `killed` from whether the stored window still exists, not from what the text on the screen means. Agents say whether they are blocked or done in board files.
+Foil never interprets what is on a seat's screen. `foil seat peek` prints the raw tmux capture, and `foil seat list` reports `alive`, `dead`, or `killed` from whether the seat's window still exists, not from what is on its screen. Agents say whether they are blocked or done in board files.
 
-A nudge is typed even when the pane is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path, then Enter. The message body is never typed. If the agent is not waiting for input, those keystrokes still go into the pane. Foil does not look at the pane to decide.
+A nudge is typed even when the window is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path, then Enter. The message body is never typed. If the agent is not waiting for input, those keystrokes still go into the window. Foil does not look at the screen to decide.
 
 ## Learn more
 
