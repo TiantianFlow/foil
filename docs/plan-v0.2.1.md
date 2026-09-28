@@ -107,14 +107,23 @@ preset that wraps some other program is found correctly.
 pick one harness each, because a template needs one, and one total order
 decides which:
 
-- Sort the eligible ids **alphabetically**: `claude`, `codex`, `gemini`,
-  `grok`, `opencode`, with any user id in its alphabetical place among
-  them. One order over built-in and user ids alike, so no rule is needed
-  for where user presets sort relative to built-ins.
+- Sort the eligible ids by **ascending Unicode code point of the id
+  string, case preserved**. One order over built-in and user ids alike,
+  so no rule is needed for where user presets sort relative to built-ins.
 - `lead` and `implementer` get the **first installed** id.
 - `reviewer` gets the **second installed** id when one exists, and the
   first otherwise.
 - `init` prints which id each template was given and why.
+
+The comparator is spelled out because "alphabetical" is not one order
+over the ids Foil actually allows. `SAFE_ID` permits uppercase, digits,
+`.`, `_`, and `-`, so a second implementer could reasonably reach for a
+case-folded or locale-aware collation and get a different roster from
+the same folder. Code-point order over the id string is Python's default
+for strings and needs no key function. Over the built-in ids it reads
+`claude`, `codex`, `gemini`, `grok`, `opencode`; the cases that separate
+it from the alternatives are `Alpha` before `alpha`, and `a-b` before
+`a.b` before `a_b`.
 
 Alphabetical is a tiebreak, not a ranking. Foil states no opinion about
 vendors, and the order shipped today, which leads with one of them, reads
@@ -209,7 +218,7 @@ commit as this plan, and nothing else in section 5 has started.
 |---|---|---|
 | Q1 | Rewrite Workflow → Onboarding for an AI-first flow: the human asks their coding agent, the agent installs Foil and runs `init`, reads the report, sets harnesses and permission, adds any candidate roles, runs the first-run check, and sends the goal. Step 1 says to run each harness once by hand and dismiss its first-run and opt-in dialogs (K1). | The onboarding section addresses the agent throughout and adds no command or flag. |
 | Q2 | Add F26: seats run as the same user and inherit that login; `PATH` and `HOME` are always forwarded and a preset's `env` names more. Forwarding is declared by name, and Foil reads a named variable's value only to hand it to the child process at launch, never storing, printing, or logging it. Say the same in the `env` row of section 7.3. | F26 exists, 7.3 agrees with it, and neither claims Foil does not read a value. |
-| Q3 | Keep F20 to templates and personas. Add F27 for eligibility (built-in and user presets, `fake` excluded, a user file reusing a built-in id being one id) and for installation (`command[0]` on the path). Add F28 for the one alphabetical total order and the first-and-second assignment, stating that the guarantee is two harness ids and not two programs or models. Extend the `init` row of section 6.1 to match. | F20, F27, F28, and 6.1 describe what A2, H1, H2, T1, and T3 implement, and an implementer reading them alone produces one roster. |
+| Q3 | Keep F20 to templates and personas. Add F27 for eligibility (built-in and user presets, `fake` excluded, a user file reusing a built-in id being one id) and for installation (`command[0]` on the path). Add F28 for the one total order, its exact comparator, and the first-and-second assignment, stating that the guarantee is two harness ids and not two programs or models. Every sentence that points at the choice of harness cites F28, not F27. Extend the `init` row of section 6.1 to match. | F20, F27, F28, and 6.1 describe what A2, H1, H2, T1, and T3 implement; two implementers reading them alone produce the same roster, comparator included. |
 | Q4 | Extend the operator row of section 8: managing default role templates, the candidate role catalog, the principles for picking a harness and a model, and peeking a lead after `seat resume` as well as after `seat spawn`. | Section 8 names all four. |
 | Q5 | Show `templates/personas/<role>.md` in the section 7.1 layout. | The layout matches what `init` writes. |
 
@@ -225,13 +234,13 @@ commit as this plan, and nothing else in section 5 has started.
 | ID | Action | Done when |
 |---|---|---|
 | H1 | In `src/foil/presets.py`, add a scan that returns every eligible preset, built-in and user, whose own `command[0]` is on `PATH`, with `fake` excluded and a user file reusing a built-in id counted once. Keep the single-harness helper, implemented on top of the scan. | A test sees a user preset in the scan, sees `fake` excluded, sees a user file that reuses a built-in id appear once, and gets one clear error when nothing is installed. |
-| H2 | Sort the scan's result alphabetically by id, as one total order over built-in and user ids: `claude`, `codex`, `gemini`, `grok`, `opencode`, with user ids in their alphabetical place among them. Say in the preset module and in `init`'s output that the order is a tiebreak, not a ranking. | The order is alphabetical with `grok` before `opencode`, a user id sorts into the same list, and no document calls the order a preference. |
+| H2 | Sort the scan's result by ascending Unicode code point of the id string, case preserved, as one total order over built-in and user ids. That is Python's default string order, so no key function is needed; it must not be case-folded or locale-dependent. Say in the preset module and in `init`'s output that the order is a tiebreak, not a ranking. | Tests pin the comparator, not just the built-ins: `grok` sorts before `opencode`; a user id sorts into the same list; the mixed-case pair `Alpha` and `alpha` sorts `Alpha` first; the punctuation ids `a-b`, `a.b`, and `a_b` sort in that order. No document calls the order a preference. |
 
 ### Templates and roles (T)
 
 | ID | Action | Done when |
 |---|---|---|
-| T1 | Give `lead` and `implementer` the first installed id in H2's order, and `reviewer` the second installed id when one exists and the first otherwise. The guarantee recorded in the report is two harness ids, not two programs and not two models. | Tests cover a mix of built-in and user presets: a user id that sorts between two built-ins takes its alphabetical place, `fake` on the path changes nothing, two presets wrapping the same program still count as two ids, and with one installed all three templates match and nothing fails. |
+| T1 | Give `lead` and `implementer` the first installed id in H2's order, and `reviewer` the second installed id when one exists and the first otherwise. The guarantee recorded in the report is two harness ids, not two programs and not two models. | Tests cover a mix of built-in and user presets: a user id that sorts between two built-ins takes its place in H2's order, `fake` on the path changes nothing, two presets wrapping the same program still count as two ids, and with one installed all three templates match and nothing fails. |
 | T2 | Package personas for `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier` in `src/foil/defaults/personas/`, in the shape of the three that are there. Each says what the role produces and what it does not do. | Eight personas ship, and each new one names its output. |
 | T3 | Have `init` copy every packaged persona into the project's `templates/personas` folder, still writing only the three templates, and still overwriting nothing. | After `init`, all eight personas are on disk and three templates exist. Re-running after an edit changes no file. |
 
@@ -296,9 +305,14 @@ commit as this plan, and nothing else in section 5 has started.
 - [ ] Scenarios 1–6 and all standing checks pass with the fake harness.
 - [ ] Scenarios 1–6 pass with a real harness, or each failure is explained
       by its captured pane.
-- [ ] The default roster is deterministic: the same machine and the same
-      Foil folder produce the same three harness ids, and the documents
-      say so precisely enough that two implementers agree.
+- [ ] The default roster is deterministic over its stated inputs: the
+      same Foil folder and the same path, meaning each eligible preset's
+      `command[0]` is found or missing the same way, produce the same
+      three harness ids. A different path, or a folder holding different
+      user presets, is a different input and may give a different
+      roster; that is configuration, not nondeterminism.
+- [ ] The documents fix the roster precisely enough that two
+      implementers reading only them agree, down to the comparator.
 - [ ] Every guarantee stated is one Foil can keep. Harness diversity is
       claimed; model diversity is not.
 - [ ] The command surface is unchanged: four commands, eleven actions.
