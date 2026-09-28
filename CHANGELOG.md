@@ -4,6 +4,12 @@ Notable changes to Foil, newest first.
 
 ## Unreleased
 
+### Documentation
+
+- Both READMEs: the product's two names in each title, the "loyal opposition" tagline, the problems Foil solves with a comparison to a single agent session, a diagram that labels what each box is, and badges for Python, platforms, and runtime dependencies.
+- A demo per language ([docs/demo.md](docs/demo.md), [docs/demo.zh-CN.md](docs/demo.zh-CN.md)), rebuilt from a hand replay of end-to-end scenario 1.
+- Module and spawn/send diagrams in [docs/architecture.md](docs/architecture.md), and corrections where it had fallen behind the code: seat state and nudges check the window's markers, and instruction files include the role skill's text.
+
 ## [0.2.0] - 2026-09-27
 
 The command surface is `foil init`, `foil seat`, `foil send`, and

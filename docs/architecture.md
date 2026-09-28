@@ -19,6 +19,85 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/runner.py` | Execs the argv in a launch plan. It does not choose that argv. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |
 
+### Module layers
+
+Each arrow points from a module to one it imports. Every module also raises
+the one-line errors in `errors.py`; those arrows are left out.
+
+```mermaid
+flowchart TB
+  cli["<b>cli.py</b><br/>parse · authorize · dispatch"]
+
+  lifecycle["<b>lifecycle.py</b><br/>init · spawn · kill · resume · list · peek<br/>instruction files · worktrees · calls git"]
+  board["<b>board.py</b><br/>mail files · nudge"]
+  memory["<b>memory.py</b><br/>lessons"]
+
+  presets["<b>presets.py</b><br/>templates · harness presets · argv"]
+  tmuxmod["<b>tmux.py</b><br/>windows by exact id and markers<br/>calls tmux"]
+  store["<b>store.py</b><br/>atomic JSON · registry · secret scan"]
+
+  project["<b>project.py</b><br/>find the repo and .foil · calls git"]
+
+  runner["<b>runner.py</b><br/>runs inside each tmux window<br/>execs the harness · imports nothing from foil"]
+
+  cli --> lifecycle
+  cli --> board
+  cli --> memory
+  lifecycle --> presets
+  lifecycle --> board
+  lifecycle --> tmuxmod
+  lifecycle --> store
+  board --> tmuxmod
+  board --> store
+  memory --> store
+  presets --> store
+  store --> project
+
+  classDef entry fill:#bfdbfe,stroke:#1d4ed8,color:#1f2937
+  classDef core fill:#bbf7d0,stroke:#15803d,color:#1f2937
+  classDef base fill:#e5e7eb,stroke:#374151,color:#1f2937
+  classDef apart fill:#fde68a,stroke:#b45309,color:#1f2937
+  class cli entry
+  class lifecycle,board,memory core
+  class presets,tmuxmod,store,project base
+  class runner apart
+```
+
+### Spawn and send
+
+What happens across processes when a seat is spawned with a task, and when
+mail is sent later.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Caller
+  participant F as foil
+  participant G as git
+  participant T as tmux
+  participant R as runner
+  participant H as Harness CLI
+  participant B as .foil/board
+
+  Note over C,H: foil seat spawn implementer --task "…"
+  C->>F: seat spawn implementer
+  F->>F: authorize caller, load template and preset
+  F->>G: worktree add -b foil/implementer-1
+  F->>F: write instruction file and launch plan
+  F->>T: new window, tagged with fleet and seat markers
+  T->>R: python -m foil.runner plan.json
+  R->>H: exec harness, first prompt = full instruction text
+  F->>F: save the seat in the registry
+  F->>B: with --task: write the task as mail
+  F->>T: with --task: send-keys sender + mail path, Enter
+
+  Note over C,B: foil send lead "…"
+  C->>F: send lead TEXT
+  F->>B: write mail file atomically
+  F->>T: check the window's markers, then send-keys the nudge line
+  H->>B: the seat reads the mail file itself
+```
+
 Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foil/defaults/personas`. A project file `.foil/harnesses/<id>.toml` overrides the preset with the same id. `init` never writes the `fake` preset into a template. Tests put `foil-fake` on `PATH` and point templates at it themselves.
 
 ## Where state lives
@@ -31,7 +110,7 @@ Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foi
 - `memory/<id>.json` — lessons. They belong to the project and stay when seats are killed.
 - `board/mail/<seat>/` — mail files. `board/notes/`, `board/tasks/`, and `board/results/` are directories seats use with ordinary file tools. Foil does not read task, result, note, or status files.
 - `run/registry.json` — fleet id, tmux session name, lead name, and one record per seat: name, template, harness, window id, state, worktree, branch, and session id.
-- `run/instructions/<seat>.md` — generated when that seat is spawned or resumed. It points at that seat's role skill by absolute path.
+- `run/instructions/<seat>.md` — generated when that seat is spawned or resumed. It includes the text of that seat's role skill.
 - `skills/operator.md`, `skills/lead.md`, and `skills/worker.md` — copied once from the package. Each file starts with a name and description. Init does not overwrite a file that is already there. The lead and worker skills are the role guidance for those seats.
 - `run/plans/<seat>.json` — the argv, working directory, and environment for the runner.
 
@@ -61,7 +140,7 @@ The file is regenerated on spawn and on resume, not when a lesson is accepted la
 
 `foil send TO TEXT` checks the recipient against the registry before it writes. An unknown seat prints one stderr line and leaves no file. `TEXT` of `-` reads stdin. The sender is `user` when the caller is outside the fleet, and the seat id when a seat sends. There is no operator mailbox.
 
-The file is Markdown with `contract: mail/v1` and `from`, `to`, and `time`. After the file exists, Foil types one line if the seat has a window id: the sender, a space, and the absolute mail path. The body is not typed. tmux is invoked as `send-keys -l -t @<window id> -- <line>`, and only if that succeeds, `send-keys -t @<window id> Enter`. The window id is the stored id, not a name. If the window is already gone, the send still succeeds and the file remains. Foil does not read the pane before typing, so the line is typed even when the pane is not at a prompt.
+The file is Markdown with `contract: mail/v1` and `from`, `to`, and `time`. After the file exists, Foil types one line if the seat's stored window still carries this fleet's and this seat's tmux markers: the sender, a space, and the absolute mail path. The body is not typed. tmux is invoked as `send-keys -l -t @<window id> -- <line>`, and only if that succeeds, `send-keys -t @<window id> Enter`. The window id is the stored id, not a name. tmux reuses window ids after its server restarts, so the marker check keeps a nudge from reaching another seat. If the window is gone or belongs to someone else, the send still succeeds and the file remains. Foil does not read the pane before typing, so the line is typed even when the pane is not at a prompt.
 
 ## Kill, resume, list, and peek
 
@@ -73,7 +152,7 @@ The file is Markdown with `contract: mail/v1` and `from`, `to`, and `time`. Afte
 
 Resume reads the harness from the template file now, not from the harness stored on the seat. That same preset both decides native resume and builds the argv. If the template harness differs from the stored one, the old session id is dropped and the registry harness becomes the template harness. If it is unchanged, the stored session id is kept. Native resume is used when the preset has a resume argv and a generated session id is present, or when the seat has its own worktree and the argv contains `--continue` or `--last`. A seat with no worktree does not use those directory-scoped flags; it starts fresh in the project directory. Any other seat without a native resume starts fresh. A generated-session preset mints a new id for a fresh start. Permission extras still apply.
 
-Alive, dead, and killed come from the registry and from whether that window id still exists. List prints `name`, `template`, `state`, and `worktree`, tab-separated, or the same four fields as JSON. It does not classify pane text.
+Alive, dead, and killed come from the registry and from whether a tmux window with the stored id still exists and carries this fleet's and this seat's markers. List prints `name`, `template`, `state`, and `worktree`, tab-separated, or the same four fields as JSON. It does not classify pane text.
 
 `foil seat peek NAME` runs `tmux capture-pane -p -t @<window id> -S -<N>` and writes that stdout unchanged. The default `N` is 40. A dead or killed seat is an error. Peek does not interpret the text.
 

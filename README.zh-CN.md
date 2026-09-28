@@ -3,28 +3,92 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.2.0-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
+[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-none-brightgreen)](pyproject.toml)
 
 [English](README.md)
 
-运筹把本机 CLI Agent 作为独立席位放进 tmux，并把邮件和状态留在文件里，这样一个席位可以干活，另一个席位可以在它看不见的上下文里检查结果。
+**你的 Agent 们的忠诚反对派。**
 
-## 工作流程
+运筹把你已经在用的编程 Agent（Claude Code、Codex、Gemini、OpenCode、Grok）组成一支小团队。你只和一个 Agent 对话，它把目标交给主座。主座规划工作，把每个任务交给有自己 Git 分支的工人席位，让另一个 Agent 检查结果，再把结果合并。每个 Agent 都跑在 tmux 里，每条消息都是你能直接读的文件。
+
+## 为什么选择运筹
+
+### 不必再亲手管理你的 Agent
+
+行之有效的做法是分工：一个 Agent 规划，一个实现，一个审查。Claude Code 甚至自带 `opusplan` 设置，用 Opus 规划、用 Sonnet 动手。但跨工具时，这种分工通常意味着由你来打杂：把计划复制到另一个终端，再把结果转述回来，还要提醒每个 Agent 之前定过什么。
+
+运筹把这种分工变成结构。主座负责规划，按角色派出工人席位，用邮件下发任务，再合并它们的分支。你只和一个操作员 Agent 对话，管理的活由主座来做。
+
+### 每项工作都用最合适的模型，不限厂商
+
+模型各有长短：有的更会推理，有的写代码更快，有的更便宜，有的这周还剩额度。在运筹里，每个角色是一个模板，写明用哪个 harness 和哪个模型。主座可以用擅长推理的模型做规划，实现者可以用快速的模型，审查者可以来自另一家厂商。
+
+最后这一点就是"忠诚反对派"。模型审查自己写的代码，往往会沿用自己的假设；另一家厂商的审查者盲区不同，能抓到不同的错误。每个席位还各自使用自己 CLI 的登录，工作因此分摊到你已经付费的多个订阅上。运筹从不保存你的密钥或登录信息。
+
+### 每个上下文都保持精简，状态落在磁盘上
+
+一次长会话会把一切都装进去：计划、读过的每个文件、走过的每条死路。上下文越满，质量越差，压缩还会丢细节。运筹的每个席位只看到自己的角色和任务。任务、结果和状态都是磁盘上的文件，经得住上下文压缩、tmux 会话被杀或重启。`foil seat resume` 会把死掉的席位拉起来。
+
+| | 一次 Agent 会话 | 运筹 |
+|---|---|---|
+| 谁来管理工作 | 你，在几个终端之间来回 | 主座 |
+| 模型 | 一个模型，一家厂商 | 每个角色各选 harness 和模型 |
+| 审查 | 作者自己检查自己 | 独立的席位，也可以来自另一家厂商 |
+| 上下文 | 一段越来越长的对话 | 每个席位一个聚焦的上下文 |
+| 崩溃之后 | CLI 存下了什么就剩什么 | 磁盘上的邮件、状态和分支；`foil seat resume` |
+| 你能看到什么 | 一个对话窗口 | 你的操作员 Agent，加上用 `foil seat peek` 看任意席位 |
+
+## 它如何运转
 
 ```mermaid
-flowchart LR
-  you[你] --> foil[Foil]
-  foil --> lead[tmux 中的主座]
-  lead --> workers[tmux 中的工人席位]
-  workers --> trees[Git worktree]
-  lead --> board[看板邮件与 status.md]
-  you --> board
+flowchart TB
+  you(["你"])
+  operator["<b>操作员 Agent</b><br/>你与之对话的 harness<br/>例如 Claude Code 或 Codex"]
+  foil[["<b>foil</b><br/>命令行工具"]]
+
+  subgraph fleet["tmux 会话 · 无界面的 Agent，各自用你选的 harness 和模型"]
+    lead["<b>主座</b><br/>规划 · 分派 · 合并"]
+    impl["<b>实现者</b><br/>写代码"]
+    rev["<b>审查者</b><br/>检查工作"]
+  end
+
+  subgraph disk["磁盘上"]
+    board[("<b>.foil/board</b><br/>邮件 · status.md")]
+    tree[("<b>Git worktree</b><br/>分支 foil/implementer-1")]
+  end
+
+  you <-->|对话| operator
+  operator -->|"foil init · seat spawn lead<br/>send · seat peek"| foil
+  lead -->|"seat spawn · seat kill · send"| foil
+  foil -->|"启动席位 · 写邮件 · 打一行提醒"| fleet
+  fleet <-->|读写| disk
+  impl -->|提交| tree
+  lead -->|合并| tree
+  operator -.->|读 status.md| board
+
+  classDef human fill:#fde68a,stroke:#b45309,color:#1f2937
+  classDef yours fill:#bfdbfe,stroke:#1d4ed8,color:#1f2937
+  classDef tool fill:#e5e7eb,stroke:#374151,color:#1f2937
+  classDef seat fill:#bbf7d0,stroke:#15803d,color:#1f2937
+  classDef data fill:#fbcfe8,stroke:#be185d,color:#1f2937
+  class you human
+  class operator yours
+  class foil tool
+  class lead,impl,rev seat
+  class board,tree data
 ```
 
-你加载操作员技能，并把目标交给它。主座从那里接管舰队，并写 `status.md`。你查看席位列表、主座窗格和那份状态文件。工作结束后，你停掉所有席位。运筹不做项目本身的工作。
+- **你**只和操作员 Agent 对话。
+- **操作员 Agent**：你喜欢的任何 harness，带着它原本的界面。它按操作员技能行事，自己从不做项目本身的工作。
+- **foil**：就是这个命令行工具。它在 tmux 里启动席位、写邮件，并往收件人的窗口里打一行提醒。它不跑守护进程，也从不解读席位屏幕上显示的内容。
+- **主座、实现者、审查者**：在 tmux 窗口里无界面运行的 Agent CLI，每个都带着自己角色的指令启动。默认只有实现者拥有自己的 Git worktree 和分支。
+- **.foil/board**：邮件、笔记和 `status.md`，都是席位读写的普通文件。
 
 ## 演示
 
-[docs/demo.md](docs/demo.md) 按命令逐步走一遍下面的快速开始。
+[docs/demo.zh-CN.md](docs/demo.zh-CN.md) 完整走一遍真实运行：一个失败的测试、一个主座、一个实现者和一个审查者，从 `foil init` 一直到修复被合并。
 
 ## 快速开始
 
@@ -116,12 +180,6 @@ foil seat spawn lead --task "Write board/status.md with state: done"
 foil send lead "the goal"
 ```
 
-## 和一次会话相比
-
-一次 Agent 会话是一个进程、一份上下文、一个工作目录。同一个模型既提出改动，又检查改动。会话结束后，留下的是那个 CLI 自己保存的东西。
-
-运筹的席位是各自独立的 CLI 进程。实现者在自己的 Git worktree 和分支上工作。评审者不共享那份上下文。邮件是接收方去读的文件。你相信的状态是主座写下的 `status.md`。停掉 tmux 不会删除分支。`foil seat resume` 会重新启动窗口已经消失的席位。
-
 ## 限制
 
 运筹保护的是遵守说明的席位，不是把恶意进程隔离开。席位身份来自运筹启动它时设置的环境变量 `FOIL_SEAT_ID`。没有哪个参数能让一个席位自称是另一个席位。在这台机器上你能做的事，以你的身份运行的进程也能做。
@@ -134,7 +192,7 @@ foil send lead "the goal"
 
 ## 进一步了解
 
-- [docs/demo.md](docs/demo.md) — 同一套快速开始，以及每一步做什么
+- [docs/demo.zh-CN.md](docs/demo.zh-CN.md) — 一次真实运行，从 `foil init` 到修复被合并
 - [docs/architecture.md](docs/architecture.md) — 组件、数据流和模块边界
 - [skills/operator.md](skills/operator.md)、[skills/lead.md](skills/lead.md)、[skills/worker.md](skills/worker.md) — 每个角色运行哪些命令
 - [CONTRIBUTING.md](CONTRIBUTING.md) — 搭建与检查
