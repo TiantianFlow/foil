@@ -50,7 +50,7 @@ def init_project(directory: str | None) -> None:
         not ((root / "templates" / f"{role}.toml").exists())
         for role in ("lead", "implementer", "reviewer")
     ):
-        installed_harness()
+        installed_harness(toplevel)
     root.mkdir(mode=0o700, exist_ok=True)
     root.chmod(0o700)
     for relative in SKELETON:
@@ -288,8 +288,9 @@ def _open(
         resume=native,
     )
     forward = list(preset["env"])
-    if "PATH" not in forward:
-        forward.append("PATH")
+    for name in ("PATH", "HOME"):
+        if name not in forward:
+            forward.append(name)
     plan_path = (foil_root(root) / "run" / "plans" / f"{seat}.json").resolve()
     plan = {
         "argv": argv,
