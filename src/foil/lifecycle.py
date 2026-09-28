@@ -67,14 +67,12 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
     if not found:
         print("No eligible harness is installed.")
     distinct = len(set(stored))
+    word = {1: "one", 2: "two", 3: "three"}.get(distinct, str(distinct))
     if distinct == 1:
-        print("The three default templates use one harness id.")
+        detail = "one harness id, not one program and not one model."
     else:
-        word = {2: "two", 3: "three"}.get(distinct, str(distinct))
-        print(
-            f"The three default templates use {word} harness ids, "
-            "not two programs and not two models."
-        )
+        detail = f"{word} harness ids, not {word} programs and not {word} models."
+    print(f"The three default templates use {detail}")
     persona_dir = foil_root(toplevel) / "templates" / "personas"
     personas = sorted(
         path.stem
