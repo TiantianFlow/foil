@@ -21,21 +21,21 @@ The pattern that works is a split: one agent plans, another implements, a third 
 
 Foil makes the split a structure. The lead plans, spawns workers by role, sends them tasks as mail, and merges their branches. You talk to one operator agent, and the lead does the managing.
 
+### A clean-context check that doesn't take "done" for an answer
+
+An agent that has worked for an hour grades its own work with everything it believed along the way. It skips the step it forgot, trusts the test it wrote, and says "I'm done" when it isn't. Long sessions make it worse: the context fills up, quality drops, and compaction loses details.
+
+In Foil, every seat starts clean and sees only its role and its task. The reviewer never saw the implementer's reasoning, only the result, so it checks the work instead of the story, and the lead asks for that check before it reports the goal done. Small, clean contexts also let the work run longer and stay correct: each seat does one job, and the plan, mail, and status live on disk, not in anyone's memory. That is the loyal opposition, and where Foil gets its name: a foil is the character whose contrast shows what the other one missed.
+
 ### Use the best model for each job, from any provider
 
-Models differ. Some reason better, some write code faster, some cost less, and some still have usage left this week. In Foil, each role is a template that names a harness and a model. The lead can plan on a strong reasoning model, implementers can run on a fast one, and the reviewer can come from a different vendor.
-
-That last part is the loyal opposition. A model reviewing its own code tends to repeat its own assumptions. A reviewer from another vendor brings different blind spots, so it catches different mistakes. Each seat also uses its own CLI's login, so the work spreads across subscriptions you already pay for. Foil never stores your keys or logins.
-
-### Keep each context small, and the state on disk
-
-One long session collects everything: the plan, every file it read, every dead end. Quality drops as the context fills, and compaction loses details. Each Foil seat sees only its role and its task. Tasks, results, and status are files on disk, so they survive compaction, a dead tmux session, or a reboot. `foil seat resume` brings dead seats back.
+Models differ. Some reason better, some write code faster, some cost less, and some still have usage left this week. In Foil, each role is a template that names a harness and a model. The lead can plan on a strong reasoning model, implementers can run on a fast one, and the reviewer can come from a different vendor, which adds a second kind of independence: different training, different blind spots. Each seat uses its own CLI's login, so the work spreads across subscriptions you already pay for. Foil never stores your keys or logins.
 
 | | One agent session | Foil |
 |---|---|---|
 | Who manages the work | You, between terminals | The lead |
 | Models | One model, from one vendor | A harness and model per role |
-| Review | The author checks itself | A separate seat, from another vendor if you like |
+| When it says "done" | You take the author's word for it | A reviewer with a clean context checks, from another vendor if you like |
 | Context | One growing conversation | One focused context per seat |
 | After a crash | Whatever the CLI saved | Mail, status, and branches on disk; `foil seat resume` |
 | What you see | One chat | Your operator agent, plus `foil seat peek` into any seat |
@@ -91,7 +91,7 @@ flowchart TB
 - **Your own agent runs the fleet.** You don't drive a dashboard or wire agents together by hand. You tell the agent you already use what you want, in whatever interface you like it in, as long as it can run shell commands in your repository. Following one skill file, it starts the lead, checks in, and relays questions.
 - **Each CLI works as it is.** Foil starts every agent with that CLI's own documented flags and talks to it the way you would: one short line typed into its window, and the message itself in a file. It never reads the screen to guess what an agent is doing, so a CLI update rarely breaks it, and adding a CLI takes a small preset file, not code.
 - **Runs wherever tmux runs.** A command-line tool with no daemon and no GUI, on Linux or macOS, on your laptop or over SSH on a remote machine. Close your terminal and the fleet keeps working; reattach with tmux.
-- **Nothing hidden.** Mail, tasks, status, and lessons are plain files, and the work lands on ordinary Git branches. You can read, grep, or edit any of it.
+- **Nothing hidden.** Mail, tasks, status, and lessons are plain files, and the work lands on ordinary Git branches. You can read, grep, or edit any of it. They survive a dead tmux session or a reboot, and `foil seat resume` brings the seats back.
 
 ## Demo
 
