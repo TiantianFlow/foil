@@ -87,7 +87,8 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert f"- {first}: prefer small diffs" in text
     assert proposed not in text
     assert "Templates:" in text
-    assert "- implementer: harness grok, worktree yes" in text
+    assert "- implementer: harness claude, worktree yes" in text
+    assert "- reviewer: harness codex, worktree no" in text
     assert "untouched." in text
     assert "none yet" not in text
 
@@ -181,7 +182,7 @@ def test_resume_without_a_worktree_starts_in_the_project(
     _alive(monkeypatch, set())
     templates = foil_root(repo) / "templates"
     lead = templates / "lead.toml"
-    text = lead.read_text(encoding="utf-8").replace('harness = "grok"', 'harness = "codex"')
+    text = lead.read_text(encoding="utf-8").replace('harness = "claude"', 'harness = "codex"')
     lead.write_text(text)
     templates.joinpath("plain.toml").write_text(
         'harness = "opencode"\nworktree = false\n',

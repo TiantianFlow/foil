@@ -104,7 +104,7 @@ def test_spawn_writes_plan_identity_and_window_id(
     seat = registry["seats"]["lead"]
     assert seat["window_id"] == "@21"
     assert seat["template"] == "lead"
-    assert seat["harness"] == "grok"
+    assert seat["harness"] == "claude"
     assert seat["worktree"] == ""
     assert seat["branch"] == ""
     assert seat["state"] != "killed"
@@ -124,7 +124,7 @@ def test_spawn_writes_plan_identity_and_window_id(
     assert "PATH" in plan["env_forward"]
     assert "HOME" in plan["env_forward"]
     assert "HOME" not in plan["env"]
-    assert plan["argv"][0] == "grok"
+    assert plan["argv"][0] == "claude"
     instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
     text = instruction.read_text(encoding="utf-8")
     assert text in plan["argv"]
@@ -358,7 +358,7 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     templates = foil_root(repo) / "templates"
     for harness in BUILTIN_IDS:
-        if harness == "grok":
+        if harness == "claude":
             continue
         templates.joinpath(f"via-{harness}.toml").write_text(
             f'harness = "{harness}"\nworktree = false\n',
@@ -368,8 +368,8 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
         assert main(["seat", "spawn", f"via-{harness}", "--name", f"seat-{harness}", *task]) == 0
     assert capsys.readouterr().err == ""
 
-    seats = {"lead": "grok"}
-    seats.update({f"seat-{name}": name for name in BUILTIN_IDS if name != "grok"})
+    seats = {"lead": "claude"}
+    seats.update({f"seat-{name}": name for name in BUILTIN_IDS if name != "claude"})
     assert len(calls) == len(seats)
     for seat, harness in seats.items():
         plan = json.loads(

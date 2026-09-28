@@ -18,7 +18,6 @@ _PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}")
 _PRESET_KEYS = {"id", "command", "permission", "resume", "session_id", "env", "unverified"}
 _TEMPLATE_KEYS = {"harness", "model", "persona", "worktree", "permission"}
 _ROLES = ("lead", "implementer", "reviewer")
-_HARNESS_ORDER = ("grok", "claude", "codex", "opencode", "gemini")
 BUILTIN_IDS = ("claude", "codex", "gemini", "opencode", "grok", "fake")
 
 
@@ -202,29 +201,34 @@ def launch_command(
     )
 
 
-def installed_presets(toplevel: Path) -> list[dict[str, Any]]:
-    """Eligible presets whose own command[0] is on PATH. ``fake`` is excluded.
+def _packaged_persona_names() -> list[str]:
+    directory = files("foil").joinpath("defaults", "personas")
+    return sorted(item.name for item in directory.iterdir() if item.name.endswith(".md"))
 
-    A user file that reuses a built-in id replaces that built-in, so the id
-    appears once.
+
+def installed_presets(toplevel: Path) -> list[dict[str, Any]]:
+    """Eligible presets whose own command[0] is on PATH.
+
+    ``fake`` is excluded. A user file that reuses a built-in id replaces
+    that built-in. Ids are sorted by Unicode code point, case preserved:
+    a tiebreak, not a ranking.
     """
 
-    order = [name for name in _HARNESS_ORDER if name != "fake"]
+    ids = {name for name in BUILTIN_IDS if name != "fake"}
     directory = foil_root(toplevel) / "harnesses"
     if directory.is_dir() and not directory.is_symlink():
-        for path in sorted(directory.glob("*.toml")):
+        for path in directory.glob("*.toml"):
             harness_id = path.stem
             if (
                 path.is_symlink()
                 or not path.is_file()
                 or harness_id == "fake"
-                or harness_id in order
                 or not SAFE_ID.fullmatch(harness_id)
             ):
                 continue
-            order.append(harness_id)
+            ids.add(harness_id)
     found: list[dict[str, Any]] = []
-    for harness_id in order:
+    for harness_id in sorted(ids):
         preset = load_preset(toplevel, harness_id)
         if shutil.which(preset["command"][0]):
             found.append(preset)
@@ -245,6 +249,12 @@ def write_default_templates(toplevel: Path) -> None:
             with suppress(FileExistsError):
                 create_exclusive(target, _builtin("skills", name).encode())
     directory = foil_root(toplevel) / "templates"
+    personas = directory / "personas"
+    for name in _packaged_persona_names():
+        target = personas / name
+        if not target.exists() and not target.is_symlink():
+            with suppress(FileExistsError):
+                create_exclusive(target, _builtin("personas", name).encode())
     missing = [
         role
         for role in _ROLES
@@ -253,12 +263,13 @@ def write_default_templates(toplevel: Path) -> None:
     ]
     if not missing:
         return
-    harness = installed_harness(toplevel)
+    found = installed_presets(toplevel)
+    if not found:
+        raise FoilError("foil: no harness installed")
+    first = found[0]["id"]
+    second = found[1]["id"] if len(found) > 1 else first
     for role in missing:
-        persona = directory / "personas" / f"{role}.md"
-        if not persona.exists() and not persona.is_symlink():
-            with suppress(FileExistsError):
-                create_exclusive(persona, _builtin("personas", f"{role}.md").encode())
+        harness = second if role == "reviewer" else first
         worktree = "true" if role == "implementer" else "false"
         body = (
             f'harness = "{harness}"\n'
