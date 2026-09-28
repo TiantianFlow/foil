@@ -1,30 +1,94 @@
-# Foil
+# Foil · 运筹
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.2.0-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
+[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-none-brightgreen)](pyproject.toml)
 
 [中文](README.zh-CN.md)
 
-Foil runs local CLI agents as separate seats in tmux, and keeps their mail and status in files, so one seat can do the work and another can check it from a context the first seat does not share.
+**Your agents' loyal opposition.**
 
-## Workflow
+Foil turns the coding agents you already use (Claude Code, Codex, Gemini, OpenCode, Grok) into a small team. You talk to one agent. It hands your goal to a lead. The lead plans the work, gives each task to a worker with its own Git branch, has another agent check the result, and merges it. Every agent runs in tmux, and every message is a file you can read.
+
+## Why Foil
+
+### Stop managing your agents by hand
+
+The pattern that works is a split: one agent plans, another implements, a third reviews. Claude Code even ships an `opusplan` setting that plans with Opus and builds with Sonnet. Across tools, though, the split usually means you do the plumbing: copy the plan into another terminal, relay the result back, remind each agent what was decided.
+
+Foil makes the split a structure. The lead plans, spawns workers by role, sends them tasks as mail, and merges their branches. You talk to one operator agent, and the lead does the managing.
+
+### Use the best model for each job, from any provider
+
+Models differ. Some reason better, some write code faster, some cost less, and some still have usage left this week. In Foil, each role is a template that names a harness and a model. The lead can plan on a strong reasoning model, implementers can run on a fast one, and the reviewer can come from a different vendor.
+
+That last part is the loyal opposition. A model reviewing its own code tends to repeat its own assumptions. A reviewer from another vendor brings different blind spots, so it catches different mistakes. Each seat also uses its own CLI's login, so the work spreads across subscriptions you already pay for. Foil never stores your keys or logins.
+
+### Keep each context small, and the state on disk
+
+One long session collects everything: the plan, every file it read, every dead end. Quality drops as the context fills, and compaction loses details. Each Foil seat sees only its role and its task. Tasks, results, and status are files on disk, so they survive compaction, a dead tmux session, or a reboot. `foil seat resume` brings dead seats back.
+
+| | One agent session | Foil |
+|---|---|---|
+| Who manages the work | You, between terminals | The lead |
+| Models | One model, from one vendor | A harness and model per role |
+| Review | The author checks itself | A separate seat, from another vendor if you like |
+| Context | One growing conversation | One focused context per seat |
+| After a crash | Whatever the CLI saved | Mail, status, and branches on disk; `foil seat resume` |
+| What you see | One chat | Your operator agent, plus `foil seat peek` into any seat |
+
+## How it works
 
 ```mermaid
-flowchart LR
-  you[You] --> foil[Foil]
-  foil --> lead[Lead seat in tmux]
-  lead --> workers[Worker seats in tmux]
-  workers --> trees[Git worktrees]
-  lead --> board[Board mail and status.md]
-  you --> board
+flowchart TB
+  you(["You"])
+  operator["<b>Operator agent</b><br/>the harness you chat with<br/>e.g. Claude Code or Codex"]
+  foil[["<b>foil</b><br/>command-line tool"]]
+
+  subgraph fleet["tmux session · headless agents, each on the harness and model you pick"]
+    lead["<b>Lead</b><br/>plans · delegates · merges"]
+    impl["<b>Implementer</b><br/>writes the code"]
+    rev["<b>Reviewer</b><br/>checks the work"]
+  end
+
+  subgraph disk["On disk"]
+    board[("<b>.foil/board</b><br/>mail · status.md")]
+    tree[("<b>Git worktree</b><br/>branch foil/implementer-1")]
+  end
+
+  you <-->|chat| operator
+  operator -->|"foil init · seat spawn lead<br/>send · seat peek"| foil
+  lead -->|"seat spawn · seat kill · send"| foil
+  foil -->|"launch seats · write mail · type a nudge line"| fleet
+  fleet <-->|read and write| disk
+  impl -->|commit| tree
+  lead -->|merge| tree
+  operator -.->|reads status.md| board
+
+  classDef human fill:#fde68a,stroke:#b45309,color:#1f2937
+  classDef yours fill:#bfdbfe,stroke:#1d4ed8,color:#1f2937
+  classDef tool fill:#e5e7eb,stroke:#374151,color:#1f2937
+  classDef seat fill:#bbf7d0,stroke:#15803d,color:#1f2937
+  classDef data fill:#fbcfe8,stroke:#be185d,color:#1f2937
+  class you human
+  class operator yours
+  class foil tool
+  class lead,impl,rev seat
+  class board,tree data
 ```
 
-You load the operator skill and give it the goal. The lead runs the fleet from there and writes `status.md`. You check the seat list, the lead's pane, and that status file. When the work is finished, you stop every seat. Foil does not do the project work.
+- **You** talk only to the operator agent.
+- **Operator agent**: any harness you like, with its normal interface. It follows the operator skill and never does the project work itself.
+- **foil**: this command-line tool. It launches seats in tmux, writes mail, and types a one-line nudge into the recipient's window. It runs no daemon and never interprets what is on a seat's screen.
+- **Lead, implementer, reviewer**: agent CLIs running headless in tmux windows, each started with its role's instructions. By default only the implementer gets its own Git worktree and branch.
+- **.foil/board**: mail, notes, and `status.md`, as plain files the seats read and write.
 
 ## Demo
 
-[docs/demo.md](docs/demo.md) walks through the quick start below, command by command.
+[docs/demo.md](docs/demo.md) walks through a real run: a failing test, a lead, an implementer, and a reviewer, from `foil init` to the merged fix.
 
 ## Quick start
 
@@ -116,12 +180,6 @@ If `.foil/board/status.md` does not appear, `foil seat peek lead` shows a login 
 foil send lead "the goal"
 ```
 
-## Compared with one session
-
-One agent session is one process, one context, and one working directory. The same model proposes the change and checks it. If the session ends, what remains is whatever that CLI saved.
-
-Foil seats are separate CLI processes. The implementer works in its own Git worktree and branch. The reviewer does not share that context. Mail is a file the recipient reads. The status you trust is `status.md`, which the lead writes. Stopping tmux does not delete the branch. `foil seat resume` restarts seats whose windows are gone.
-
 ## Limits
 
 Foil is cooperative protection for seats that follow instructions. It is not isolation from a hostile process. A seat's identity is the `FOIL_SEAT_ID` environment variable Foil sets when it launches that seat. There is no flag a seat can pass to claim another seat. Anything you can do on this machine, a process running as you can do too.
@@ -134,7 +192,7 @@ A nudge is typed even when the pane is not at a prompt. `foil send` writes the m
 
 ## Learn more
 
-- [docs/demo.md](docs/demo.md) — the same quick start, with what each step is for
+- [docs/demo.md](docs/demo.md) — a real run, from `foil init` to the merged fix
 - [docs/architecture.md](docs/architecture.md) — components, data flow, and module boundaries
 - [skills/operator.md](skills/operator.md), [skills/lead.md](skills/lead.md), and [skills/worker.md](skills/worker.md) — what each role runs
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup and checks

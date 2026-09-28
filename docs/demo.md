@@ -1,113 +1,191 @@
-# Demo
+# Demo: fix a failing test with a three-agent team
 
-The commands below are the quick start from the README. They use Claude, one mainstream harness.
+This is one real run, from `foil init` to a merged fix. It is the run the
+end-to-end suite checks as scenario 1, replayed by hand with the real
+`foil` command, real tmux, and real Git. Only the agents were scripted.
 
-You need Python 3.11+, Git, tmux 3.2+, and the `claude` CLI already logged in. Foil never sees that login.
+Everything shown under a command below is Foil's own output from that run.
+It looks the same whatever harness you use. What each agent shows in its
+own window will differ, and with real agents the run takes minutes rather
+than seconds. To replay the scripted run from a Foil checkout:
 
-## Install and initialize
+```sh
+uv run --frozen --extra dev pytest tests/e2e/test_scenarios.py -k scenario_1
+```
+
+## The starting point
+
+A Git repository where `check_calc.py` fails because `calc.py` subtracts
+instead of adding. You need Python 3.11+, Git, tmux 3.2+, and at least one
+agent CLI that is already logged in on this machine. Foil never handles
+that login.
+
+## 1. Install and initialize
 
 ```sh
 uv tool install "git+https://github.com/TiantianFlow/foil.git"
 cd your-repo
-foil init .
+foil init
 ```
 
-`foil init` checks that Git and tmux exist and that the current directory is a Git repository. It creates `.foil`, the default templates, `.foil/skills/operator.md`, and a Git exclude entry. Running it again does not overwrite templates or skills that are already there.
-
-Open `.foil/templates/lead.toml`. Init set `harness` to the first installed CLI among `grok`, `claude`, `codex`, `opencode`, and `gemini`. For this walkthrough every template should say:
-
-```toml
-harness = "claude"
+```text
+Read .foil/skills/operator.md and follow it. My goal: <goal>.
 permission = "ask"
 ```
 
-Change `harness` in `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml` when init picked a different CLI. Leave `permission` as `ask`. `auto` would add Claude's `--permission-mode auto` and let that seat act without asking.
+`foil init` writes `.foil/` and keeps it out of `git status`. The first
+line of its output is what you paste into your own agent later. The second
+is the lead template's permission.
 
-## Follow the operator skill
+## 2. Choose a harness and a permission for each role
 
-Load `.foil/skills/operator.md` into your harness and follow that skill. Tell the harness the goal. The skill starts the fleet, checks in, relays what you say, and tears the fleet down.
-
-## The same commands, typed yourself
-
-```sh
-foil seat spawn lead --task "Summarize this repository in board/status.md"
-```
-
-This creates the seat named `lead` in a tmux window. The task is the lead's first mail file. Foil then types one line into that window: `user`, a space, and the absolute path of the mail file, then Enter. It types that line even when the pane is not at a prompt. The task text itself is not typed.
-
-```sh
-foil seat list
-foil seat peek lead
-```
-
-`foil seat list` prints the lead's name, template, state, and worktree. `alive` means the stored tmux window id still exists. The list does not say whether the model is busy.
-
-`foil seat peek lead` prints the raw last 40 lines of that pane, the same text tmux captured. Foil does not decide from those lines whether the lead is stuck or finished.
-
-The lead's report is the file it writes at `.foil/board/status.md`.
-
-```sh
-foil send lead "the answer"
-```
-
-`foil send` writes a mail file, then types one line into the lead's window: the sender, a space, and that file's absolute path, then Enter. The answer text is not typed. The lead reads the file.
-
-```sh
-foil seat kill --all
-```
-
-Every seat's window is stopped and marked killed. Branches and worktrees are left in place.
-
-## 中文
-
-下面的命令和英文快速开始相同，用的是 Claude。
-
-需要 Python 3.11+、Git、tmux 3.2+，以及已经登录的 `claude` CLI。运筹看不到这次登录。
-
-```sh
-uv tool install "git+https://github.com/TiantianFlow/foil.git"
-cd your-repo
-foil init .
-```
-
-`foil init` 确认 Git 和 tmux 存在，且当前目录是 Git 仓库。它创建 `.foil`、默认模板、`.foil/skills/operator.md` 和 Git exclude 条目。再跑一次不会覆盖已经存在的模板或技能。
-
-打开 `.foil/templates/lead.toml`。init 会把 `harness` 设成 `grok`、`claude`、`codex`、`opencode`、`gemini` 里本机第一个已安装的 CLI。这篇演练里每个模板都应写成：
+Each role is a template in `.foil/templates/`. Init picks one installed
+CLI for all three. You can give each role a different one, for example a
+strong planner for the lead and a model from another vendor for the
+reviewer:
 
 ```toml
-harness = "claude"
-permission = "ask"
+# .foil/templates/implementer.toml
+harness = "codex"
+persona = "personas/implementer.md"
+worktree = true
+permission = "auto"
 ```
 
-如果 init 选了别的 CLI，就改 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里的 `harness`。`permission` 保持 `ask`。设成 `auto` 会加上 Claude 的 `--permission-mode auto`，那个席位就可以不再询问直接行动。
+`worktree = true` gives each implementer its own Git worktree and branch.
+`permission = "ask"` makes a seat stop at its first approval prompt and
+wait for you in its window. For an unattended run, set
+`permission = "auto"` on every template whose seat should work alone.
 
-把 `.foil/skills/operator.md` 加载到你的 harness，并按这个技能去做。把目标告诉这个 harness。技能会启动舰队、查看进展、转达你说的话，并在结束时拆掉舰队。
+## 3. Hand over the goal
+
+In your own agent (Claude Code, Codex, or any other), in the repository,
+paste the line from `foil init` with your goal:
+
+```text
+Read .foil/skills/operator.md and follow it. My goal: make the tests pass.
+```
+
+That agent becomes the operator. It checks that a lead can start, then
+sends it the goal. To do the same by hand:
 
 ```sh
-foil seat spawn lead --task "Summarize this repository in board/status.md"
+foil seat spawn lead --task "Make the tests pass."
 ```
 
-这会在 tmux 窗口里创建名为 `lead` 的席位。任务是主座的第一封邮件。运筹随后往窗口打一行：`user`、一个空格、邮件文件的绝对路径，然后 Enter。窗格不在提示符时也会打。任务正文本身不会被打进去。
+Foil opens a tmux window named `lead` and starts the lead's CLI with its
+full instructions as the first prompt. The task becomes a mail file, and
+Foil types one nudge line into the lead's window: the sender and the path
+of that file.
+
+## 4. Watch the team form
 
 ```sh
 foil seat list
-foil seat peek lead
 ```
 
-`foil seat list` 打印主座的名字、模板、状态和 worktree。`alive` 表示保存的 tmux 窗口 id 还在。列表不说明模型是否在忙。
+```text
+implementer-1	implementer	alive	/path/to/your-repo/.foil/worktrees/implementer-1
+lead	lead	alive
+reviewer-1	reviewer	alive
+```
 
-`foil seat peek lead` 打印该窗格原样的最后 40 行，就是 tmux 捕获的文本。运筹不根据这些行判断主座是卡住了还是做完了。
+The lead spawned an implementer and a reviewer. The implementer works in
+its own worktree on branch `foil/implementer-1`. `alive` means the seat's
+tmux window still exists and carries that seat's markers. It does not say
+whether the agent is busy.
 
-主座的报告在它写的 `.foil/board/status.md`。
+## 5. Look inside a seat
 
 ```sh
-foil send lead "the answer"
+foil seat peek lead --lines 8
 ```
 
-`foil send` 先写成一封邮件，再往主座窗口打一行：发送者、一个空格、该文件的绝对路径，然后 Enter。回答正文不会被打进去。主座去读那个文件。
+```text
+...
+implementer-1 /path/to/your-repo/.foil/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+...
+reviewer-1 /path/to/your-repo/.foil/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
+```
+
+Peek prints the raw bottom of that window (trimmed here). Among the
+agent's own output are two nudge lines: the implementer reported its fix,
+and the reviewer approved it. With a real
+harness you see its full screen. Foil never interprets what is there.
+
+## 6. Read the mail and the lead's report
+
+```sh
+ls .foil/board/mail/lead
+cat .foil/board/status.md
+```
+
+```text
+20260928T005855Z-user-40eda840.md
+20260928T005856Z-implementer-1-df1d08d0.md
+20260928T005857Z-reviewer-1-d5045b2b.md
+```
+
+```text
+---
+contract: status/v1
+state: done
+updated: 2026-09-26T00:00:00Z
+questions: []
+---
+
+The tests pass.
+```
+
+Every message is a file: your task, the implementer's report, and the
+reviewer's approval. `status.md` is the lead's own report. When the lead
+needs you, it lists questions there, and you answer with
+`foil send lead "..."`.
+
+## 7. Check the result
+
+```sh
+git log --oneline --graph
+python3 -m pytest -q check_calc.py
+```
+
+```text
+* 1afdc55 fix add
+* fc11425 base: failing test
+```
+
+```text
+1 passed
+```
+
+The lead merged `foil/implementer-1`. The test now passes.
+
+## 8. Tear down
 
 ```sh
 foil seat kill --all
+foil seat list
 ```
 
-每个席位的窗口都会被停掉并标成 killed。分支和 worktree 会留在原地。
+```text
+implementer-1	implementer	killed	/path/to/your-repo/.foil/worktrees/implementer-1
+lead	lead	killed
+reviewer-1	reviewer	killed
+```
+
+Every window is closed. Branches and worktrees stay, and nothing from
+Foil shows up in `git status`.
+
+## If nothing happens
+
+Run `foil seat peek lead`. A seat that makes no progress is usually
+showing one of these:
+
+- a login prompt: log in to that CLI once by hand, then
+  `foil seat kill lead` and spawn it again;
+- an approval prompt: approve it in that window (`tmux ls` lists Foil's
+  session, and `tmux attach` opens it), or set `permission = "auto"`;
+- the harness's own first-run or opt-in dialog: answer it the same way.
+
+If tmux died or the machine rebooted, `foil seat resume` restarts every
+seat that was not killed.
