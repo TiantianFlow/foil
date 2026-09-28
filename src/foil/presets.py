@@ -202,11 +202,40 @@ def launch_command(
     )
 
 
-def installed_harness() -> str:
-    for name in _HARNESS_ORDER:
-        if shutil.which(name):
-            return name
-    raise FoilError("foil: no harness installed")
+def installed_presets(toplevel: Path) -> list[dict[str, Any]]:
+    """Eligible presets whose own command[0] is on PATH. ``fake`` is excluded.
+
+    A user file that reuses a built-in id replaces that built-in, so the id
+    appears once.
+    """
+
+    order = [name for name in _HARNESS_ORDER if name != "fake"]
+    directory = foil_root(toplevel) / "harnesses"
+    if directory.is_dir() and not directory.is_symlink():
+        for path in sorted(directory.glob("*.toml")):
+            harness_id = path.stem
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or harness_id == "fake"
+                or harness_id in order
+                or not SAFE_ID.fullmatch(harness_id)
+            ):
+                continue
+            order.append(harness_id)
+    found: list[dict[str, Any]] = []
+    for harness_id in order:
+        preset = load_preset(toplevel, harness_id)
+        if shutil.which(preset["command"][0]):
+            found.append(preset)
+    return found
+
+
+def installed_harness(toplevel: Path | None = None) -> str:
+    found = installed_presets(Path.cwd() if toplevel is None else toplevel)
+    if not found:
+        raise FoilError("foil: no harness installed")
+    return found[0]["id"]
 
 
 def write_default_templates(toplevel: Path) -> None:
@@ -224,7 +253,7 @@ def write_default_templates(toplevel: Path) -> None:
     ]
     if not missing:
         return
-    harness = installed_harness()
+    harness = installed_harness(toplevel)
     for role in missing:
         persona = directory / "personas" / f"{role}.md"
         if not persona.exists() and not persona.is_symlink():

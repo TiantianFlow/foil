@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import tomllib
 from importlib.resources import files
@@ -14,6 +15,8 @@ from foil.errors import FoilError
 from foil.presets import (
     BUILTIN_IDS,
     expand_argv,
+    installed_harness,
+    installed_presets,
     launch_command,
     load_preset,
     load_template,
@@ -234,6 +237,56 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
     reviewed = reviewer.read_bytes()
     assert main(["init"]) == 0
     assert reviewer.read_bytes() == reviewed
+
+
+def _stub_program(directory: Path, name: str) -> None:
+    binary = directory / name
+    binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    binary.chmod(0o755)
+
+
+def test_scan_sees_user_presets_once_and_excludes_fake(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for name in ("my-agent", "custom-grok", "foil-fake"):
+        _stub_program(bindir, name)
+    monkeypatch.setenv(
+        "PATH",
+        f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+    )
+    harnesses = tmp_path / ".foil" / "harnesses"
+    harnesses.mkdir(parents=True)
+    (harnesses / "my-agent.toml").write_text(
+        'id = "my-agent"\ncommand = ["my-agent", "{prompt}"]\nsession_id = "none"\n',
+        encoding="utf-8",
+    )
+    (harnesses / "grok.toml").write_text(
+        'id = "grok"\ncommand = ["custom-grok", "{prompt}"]\nsession_id = "none"\n',
+        encoding="utf-8",
+    )
+    (harnesses / "fake.toml").write_text(
+        'id = "fake"\ncommand = ["foil-fake", "{prompt}"]\nsession_id = "none"\n',
+        encoding="utf-8",
+    )
+
+    found = installed_presets(tmp_path)
+    ids = [preset["id"] for preset in found]
+    assert "my-agent" in ids
+    assert ids.count("grok") == 1
+    assert "fake" not in ids
+    grok = next(preset for preset in found if preset["id"] == "grok")
+    assert grok["command"][0] == "custom-grok"
+
+
+def test_scan_errors_when_nothing_is_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hide_agent_clis(monkeypatch)
+    assert installed_presets(tmp_path) == []
+    with pytest.raises(FoilError, match="no harness installed"):
+        installed_harness(tmp_path)
 
 
 def test_init_without_a_harness_writes_nothing(

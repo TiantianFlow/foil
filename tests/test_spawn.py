@@ -122,12 +122,40 @@ def test_spawn_writes_plan_identity_and_window_id(
     assert plan["env"] == {"FOIL_SEAT_ID": "lead"}
     assert plan["cwd"] == str(repo.resolve())
     assert "PATH" in plan["env_forward"]
+    assert "HOME" in plan["env_forward"]
+    assert "HOME" not in plan["env"]
     assert plan["argv"][0] == "grok"
     instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
     text = instruction.read_text(encoding="utf-8")
     assert text in plan["argv"]
     assert "You are seat `lead`." in text
     assert "bootstrap.json" not in text
+
+
+def test_launch_plan_forwards_home_for_a_user_preset_with_empty_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    harnesses = foil_root(repo) / "harnesses"
+    (harnesses / "local.toml").write_text(
+        'id = "local"\ncommand = ["grok", "{prompt}"]\nsession_id = "none"\nenv = []\n',
+        encoding="utf-8",
+    )
+    (foil_root(repo) / "templates" / "lead.toml").write_text(
+        'harness = "local"\n'
+        'persona = "personas/lead.md"\n'
+        "worktree = false\n"
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    assert main(["seat", "spawn", "lead"]) == 0
+    plan = json.loads(Path(calls[0]["runner_argv"][3]).read_text(encoding="utf-8"))
+    assert plan["argv"][0] == "grok"
+    assert plan["env"] == {"FOIL_SEAT_ID": "lead"}
+    assert "HOME" in plan["env_forward"]
+    assert "PATH" in plan["env_forward"]
+    assert plan["env_forward"].count("HOME") == 1
 
 
 def test_worktree_names_stay_inside_the_foil_folder(
