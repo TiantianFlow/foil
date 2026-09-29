@@ -148,7 +148,7 @@ The file is Markdown with `contract: mail/v1` and `from`, `to`, and `time`. Afte
 
 `foil seat kill --all` does that for every seat. Only a caller outside the fleet can run it.
 
-`foil seat resume NAME` refuses a killed seat. If the named seat's window still exists, it prints that the seat is alive and does not launch again. With no name, resume restarts every dead seat and skips killed and alive ones.
+`foil seat resume NAME` refuses a killed seat. If the named seat's window still exists, it prints that the seat is alive and does not launch again. With no name, resume restarts every dead seat and skips killed and alive ones. A seat that cannot be restarted does not stop the others: resume prints `foil: seat '<name>' not resumed: <reason>` on stderr for each one, restarts the rest, and exits 1.
 
 Resume reads the harness from the template file now, not from the harness stored on the seat. That same preset both decides native resume and builds the argv. If the template harness differs from the stored one, the old session id is dropped and the registry harness becomes the template harness. If it is unchanged, the stored session id is kept. Native resume is used when the preset has a resume argv and a generated session id is present, or when the seat has its own worktree and the argv contains `--continue` or `--last`. A seat with no worktree does not use those directory-scoped flags; it starts fresh in the project directory. Any other seat without a native resume starts fresh. A generated-session preset mints a new id for a fresh start. Permission extras still apply.
 

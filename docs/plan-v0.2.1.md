@@ -490,7 +490,7 @@ can start a seat in a worktree (G1).
 
 ### 10.5 C12 verification record
 
-### C12 verification (2026-09-29)
+#### C12 verification (2026-09-29)
 
 Both checks section 7 asks for were run, once each, by an independent
 verifier's own seat, not by the fleet that wrote the code above.

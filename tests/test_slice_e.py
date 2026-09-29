@@ -385,13 +385,13 @@ def test_resume_names_a_broken_seat_and_continues(
     capsys.readouterr()
     assert main(["seat", "resume"]) == 1
     captured = capsys.readouterr()
+    assert main(["seat", "list", "--json"]) == 0
+    rows = {row["name"]: row["state"] for row in json.loads(capsys.readouterr().out)}
+    assert rows == {"implementer-1": "dead", "lead": "alive", "reviewer-1": "alive"}
     assert captured.out == ""
     assert captured.err == (
         "foil: seat 'implementer-1' not resumed: "
         "persona file not found: personas/missing.md\n"
     )
-    assert main(["seat", "list", "--json"]) == 0
-    rows = {row["name"]: row["state"] for row in json.loads(capsys.readouterr().out)}
-    assert rows == {"implementer-1": "dead", "lead": "alive", "reviewer-1": "alive"}
     assert main(["seat", "resume", "implementer-1"]) == 1
     assert capsys.readouterr().err == "foil: persona file not found: personas/missing.md\n"
