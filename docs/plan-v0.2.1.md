@@ -303,8 +303,7 @@ commit as this plan, and nothing else in section 5 has started.
 - [ ] Scenarios 1–6 pass with a real harness, or each failure is explained
       by its captured pane. G2 ran against `codex`: scenarios 2 and 6
       passed; scenarios 1, 3, 4, and 5 timed out, each on `codex`'s own
-      workspace-trust prompt in a fresh, never-trusted directory. See
-      `board/results/t-h-gates-2.md`.
+      workspace-trust prompt in a fresh directory.
 - [x] The default roster is deterministic over its stated inputs: the
       same Foil folder and the same path, meaning each eligible preset's
       `command[0]` is found or missing the same way, produce the same
@@ -321,7 +320,11 @@ commit as this plan, and nothing else in section 5 has started.
       sentence in the README, reaches a lead that writes `state: done`.
       G3 was not run: the commit under review is not on a GitHub remote,
       and a `git+https` install cannot see a commit that was not pushed.
-      See `board/results/t-h-gates-2.md`.
+
+G1: trusting the repository once covered the worktree seat. It did not
+ask for folder trust again. Both seats then stopped on a
+command-approval prompt. `auto` is one of Claude Code's permission
+modes, and the prompt still appeared.
 
 ## 8. Out of scope for 0.2.1
 
