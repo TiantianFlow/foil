@@ -25,9 +25,25 @@ No command or flag was added.
 - Both READMEs lead with the one sentence the human gives their coding agent. The by-hand commands stay as a second section. The agent asks the human to dismiss each harness's first-run and opt-in dialogs, or to confirm that is already done, before the first spawn.
 - Earlier documentation that had not been released: both READMEs carry the product's two names, the "loyal opposition" tagline, three problems Foil solves compared with a single agent session, a labeled diagram, how Foil is built, and badges for Python, platforms, and runtime dependencies. A demo per language ([docs/demo.md](docs/demo.md), [docs/demo.zh-CN.md](docs/demo.zh-CN.md)). [docs/architecture.md](docs/architecture.md) matches the scan, the persona copy, the inlined persona, and the launch environment.
 
+### C12 verification (2026-09-29)
+
+Both checks section 7 asks for were run, once each, by an independent
+verifier's own seat, not by the fleet that wrote the code above.
+
+- **Live tier.** `FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live`, with `permission = "auto"`. `foil init` selected `claude` for `lead` and `implementer` and `codex` for `reviewer`. Scenario 1 spawned the `claude` lead, which sat on Claude Code's own folder-trust dialog ("Is this project one you trust?") in the scenario's temporary directory and never got past it. The dialog was captured from the pane, not clicked. Scenarios 2–6 were not started: each spawns the same `claude` lead in its own fresh temporary directory and would sit on the same dialog. No scenario passed live in this run.
+- **Fresh-agent onboarding.** In a disposable repository outside this checkout, one new `cursor-agent` process was given only the sentence from C1 and nothing else. Unattended, it fetched the repository, ran `uv tool install "git+https://github.com/TiantianFlow/foil.git"`, ran `foil init` (which selected `grok` for all three templates in that process), set `permission = "auto"`, and spawned the lead. The `grok` lead sat on grok's own browser-based login prompt. The agent, on its own, killed that seat, switched all three templates to `codex` (already logged in), and respawned; the `codex` lead came up and asked for the goal, which the agent then sent by mail. The verifier stopped the process there, before `board/status.md` said `state: done`, because it had already sat on a harness's own login dialog once. Nothing was pushed and nothing outside the disposable repository and its own `uv tool` install was touched.
+
+Neither check reached a clean pass: both stopped on a harness's own
+first-run or login dialog, which this release already treats as a known
+issue below. Section 7's "Scenarios 1–6 pass with a real harness" and
+"a fresh install... reaches a lead that writes `state: done`" boxes stay
+unticked for this reason; every other section 7 box is unchanged by this
+entry.
+
 ### Known issues
 
-- The live tier has not been run for 0.2.1. No live harness is named here. The crash scenario that stops on a harness opt-in dialog was not re-run.
+- The live tier ran for 0.2.1 with `claude` (`lead`, `implementer`) and `codex` (`reviewer`); scenario 1 stopped on Claude Code's own folder-trust dialog before any scenario passed, and scenarios 2–6 were not attempted for the same reason. See "C12 verification" above.
+- A fresh install driven by a single coding agent (C1's sentence, tried with `cursor-agent` over `grok` then `codex`) can install Foil, run `init`, and spawn a lead, but the first harness `init` selects can stop the lead on its own first-run or login dialog before the goal is delivered. See "C12 verification" above.
 - The Claude Code operator-skill path (`~/.claude/skills/foil-operator/SKILL.md`) has not been checked by hand. The table still says no. The pointer line is the path that does not depend on that check.
 - A harness's own first-run or opt-in dialog can still stop a seat, including after `foil seat resume`. The docs now say to dismiss those dialogs before the fleet starts, and to peek after a resume.
 
