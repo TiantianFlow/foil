@@ -42,7 +42,7 @@ how to tell they are done.
 | "Add few more candidate roles … documentation-writer, domain-designer, memory-curator etc." | F20 and section 7.1 | Q3, Q5, T2, T3 |
 
 Two changes in this release are not in issue 8. Seats losing `HOME` (E1)
-is a defect: seats started without it cannot find their login, and K1–K4 are the small
+is a defect: a seat started without it cannot find its login. K1–K4 are the small
 gaps v0.2.0 carried forward.
 
 ## 3. Gaps
@@ -297,25 +297,26 @@ commit as this plan, and nothing else in section 5 has started.
       written down here.
 - [ ] Every action item in section 5 is done, except K4, which may stay
       unverified.
-- [ ] Issue 8's five requests each trace to a requirement and to a closed
+- [x] Issue 8's five requests each trace to a requirement and to a closed
       action item (section 2).
-- [ ] Scenarios 1–6 and all standing checks pass with the fake harness.
+- [x] Scenarios 1–6 and all standing checks pass with the fake harness.
 - [ ] Scenarios 1–6 pass with a real harness, or each failure is explained
-      by its captured pane.
-- [ ] The default roster is deterministic over its stated inputs: the
+      by its captured pane. Waiting on G2.
+- [x] The default roster is deterministic over its stated inputs: the
       same Foil folder and the same path, meaning each eligible preset's
       `command[0]` is found or missing the same way, produce the same
       three harness ids. A different path, or a folder holding different
       user presets, is a different input and may give a different
       roster; that is configuration, not nondeterminism.
-- [ ] The documents fix the roster precisely enough that two
+- [x] The documents fix the roster precisely enough that two
       implementers reading only them agree, down to the comparator.
-- [ ] Every guarantee stated is one Foil can keep. Harness diversity is
+- [x] Every guarantee stated is one Foil can keep. Harness diversity is
       claimed; model diversity is not.
-- [ ] The command surface is unchanged: four commands, eleven actions.
-- [ ] The package source is within the N4 target.
+- [x] The command surface is unchanged: four commands, eleven actions.
+- [x] The package source is within the N4 target.
 - [ ] A fresh install, driven only by a coding agent given the one
       sentence in the README, reaches a lead that writes `state: done`.
+      Waiting on G3.
 
 ## 8. Out of scope for 0.2.1
 
@@ -469,10 +470,10 @@ commits. Run `uv run --frozen --extra dev pytest -q` and
 | ID | Severity | Action | Done when |
 |---|---|---|---|
 | G1 | Release gate | **Find out whether Claude Code's folder-trust dialog blocks real use, and say what to do about it in the docs.** Claude Code asks "Is this project one you trust?" the first time it starts in a folder. `claude` is now the first harness in the default order, so this dialog is the first thing most users hit. There are two questions. (1) Does trusting the repository once cover the seats? Check by hand. In a real repository, run `claude` once in the repository root and accept the dialog. Then run `foil init`, set `permission = "auto"` on all three templates, `foil seat spawn lead --task "Write board/status.md with state: done"`, and `foil seat spawn implementer`, which starts in `.foil/worktrees/implementer-1`. Run `foil seat peek lead` and `foil seat peek implementer-1`, and write down whether either shows the trust dialog. (2) Fix the docs either way. Onboarding step 1 in `docs/requirements.md`, step 1 of the operator skill (`src/foil/defaults/skills/operator.md`), and the prerequisites paragraph of both READMEs say to run each harness once. Change that to run each harness once **in this repository** and accept its folder-trust prompt as well as its first-run and opt-in dialogs, because trust is per folder. If step (1) shows that the worktree seat asks again, add a known issue to the changelog saying so and how to answer it (`tmux attach`, then accept), and record it here as a gap for the next release. Do not add a harness flag in this release: that is a design decision for the owner. | Both results from step (1) are written in this plan, the four documents say "in this repository", and the changelog has a known issue if a worktree seat asks again. |
-| G2 | Release gate | **Let the live tier run with a chosen harness.** `tests/e2e/test_live.py` always uses whatever `foil init` picks, so on a machine where `claude` is installed, every scenario starts `claude` in a fresh temporary folder and waits on the trust dialog. Add a test-only environment variable, `FOIL_E2E_HARNESS`. When it is set, the live tests rewrite the `harness` line of the three templates after `init`, the same way `_set_auto` rewrites `permission`. It is read only by the tests, so it adds nothing to the command surface. Then run `FOIL_E2E_LIVE=1 FOIL_E2E_HARNESS=codex uv run --frozen --extra dev pytest tests/e2e -m e2e_live`, or use any other harness that is logged in and has no folder-trust dialog. Record the result in the changelog: the harness used, and for each scenario, pass, or fail with the reason shown in its pane capture. | Scenarios 1–6 have all been started with at least one real harness, and each one either passed or has its pane's reason recorded. |
+| G2 | Release gate | **Let the live tier run with a chosen harness.** `tests/e2e/test_live.py` always uses whatever `foil init` picks, so on a machine where `claude` is installed, every scenario starts `claude` in a fresh temporary folder and waits on the trust dialog. Add a test-only environment variable, `FOIL_E2E_HARNESS`. When it is set, the live tests rewrite the `harness` line of the three templates after `init`, the same way `_set_auto` rewrites `permission`. It is a test-only override, read only by the tests, and it is not a command or a flag. Then run `FOIL_E2E_LIVE=1 FOIL_E2E_HARNESS=codex uv run --frozen --extra dev pytest tests/e2e -m e2e_live`, or use any other harness that is logged in and has no folder-trust dialog. Record the result in the changelog: the harness used, and for each scenario, pass, or fail with the reason shown in its pane capture. | Scenarios 1–6 have all been started with at least one real harness, and each one either passed or has its pane's reason recorded. |
 | G3 | Release gate | **Run the fresh-agent check against this branch, without touching the machine's own `foil`.** The sentence installs from `main`, which is 0.2.0 until this release is merged, so the last run tested the old code. It also replaced the machine's own `foil` command. For the check, change only the install source in the sentence: `Install Foil with uv tool install "git+https://github.com/TiantianFlow/foil.git@foil/verifier-4", onboard this repository with it, and start a fleet. My goal: <goal>.` Give it to one new coding-agent process, in a new disposable repository, with `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` set to folders inside a temporary directory and that bin folder first on `PATH`. The install then stays out of the machine's own tools. Choose a harness for which step (1) of G1 passed. Stop when `board/status.md` says `state: done`, or when a seat waits on a dialog, and capture that pane. Write in the changelog what `foil --version` printed (it must be 0.2.1), which harness was used, and where it stopped. | The record shows 0.2.1 and either `state: done` or the captured reason it stopped. |
 | G4 | Medium | **Check the persona before creating the worktree.** `spawn_seat` in `src/foil/lifecycle.py` (line 398) creates the worktree and the `foil/<seat>` branch (line 412) before `_open` writes the instruction file, which is where `persona_text` raises. A template with a misspelled persona path therefore leaves an unregistered branch and worktree behind, and the next attempt gets `foil/implementer-2`. To reproduce: give the implementer template `persona = "personas/implementr.md"`, spawn the lead, then spawn `implementer`. You get the error, and `git worktree list` still shows `.foil/worktrees/implementer-1`. Fix: call `persona_text(loaded)` right after `load_template` in `spawn_seat`, and in `_restart`, and discard the result. Also give the "leaves the template folder" case in `persona_text` (`src/foil/presets.py`) its own message, for example `foil: persona path must stay inside .foil/templates: <value>`. Today an absolute or `..` path that exists is reported as "not found", which sends the reader looking for a missing file. | A test in `tests/test_spawn.py` spawns an implementer with a misspelled persona and finds no `foil/implementer-1` branch and no extra worktree. A second test checks the new message for a `..` path. |
-| G5 | Medium | **Keep the changelog for users.** The 0.2.1 entry in `CHANGELOG.md` has a "C12 verification" subsection that names a plan item, a verifier seat, the agent program used, and cleanup of the verifier's machine. Readers of a changelog need the outcome, not the procedure. Move that subsection, as written, into this plan as section 10.4. In the changelog, keep only two short known-issue bullets: which harness the live tier used and how it ended, and how the fresh-agent check ended. Leave out plan IDs and tool names. Set the date in the `## [0.2.1]` heading on the day you tag, not before. | The changelog has no "C12", no verifier seat, and no agent program name, and this plan holds the full record. |
+| G5 | Medium | **Keep the changelog for users.** The 0.2.1 entry in `CHANGELOG.md` has a "C12 verification" subsection that names a plan item, a verifier seat, the agent program used, and cleanup of the verifier's machine. Readers of a changelog need the outcome, not the procedure. Move that subsection, as written, into this plan as section 10.5. In the changelog, keep only two short known-issue bullets: which harness the live tier used and how it ended, and how the fresh-agent check ended. Leave out plan IDs and tool names. Set the date in the `## [0.2.1]` heading on the day you tag, not before. | The changelog has no "C12", no verifier seat, and no agent program name, and this plan holds the full record. |
 | G6 | Low | **Fix the report line when all three templates use one id.** With one harness installed, `init` prints `The three default templates use one different harness id. Two ids can still run the same program or model; ...`, which makes no sense for one id. In `_print_init_report` (`src/foil/lifecycle.py`), print only `The three default templates use one harness id.` when the count is 1, and keep the current two sentences otherwise. Update the one-harness assertion in `tests/test_init.py`. | With one harness installed, the report has no "different" and no "Two ids". |
 | G7 | Low | **Tick section 7.** Every box there is still unticked, but most are now true: the command surface, the package size, the fake-harness scenarios, determinism, the traceability in section 2, and the guarantees. Tick those. Leave the real-harness and fresh-install boxes unticked until G2 and G3 are done, with one line after each that points at G2 or G3. | Section 7 matches the facts. |
 | G8 | Low | **Fix one sentence in section 2.** "Seats losing `HOME` (E1) is a defect: seats started without it cannot find their login, and K1–K4 are the small gaps v0.2.0 carried forward." runs two points together. Make it two sentences: "Seats losing `HOME` (E1) is a defect: a seat started without it cannot find its login. K1–K4 are the small gaps v0.2.0 carried forward." | Section 2 reads as two sentences. |
@@ -486,6 +487,23 @@ the release, provided the pane capture shows the dialog and the
 changelog says how to get past it. What does block the release is
 shipping a new default order without knowing whether its first harness
 can start a seat in a worktree (G1).
+
+## 10.5
+
+### C12 verification (2026-09-29)
+
+Both checks section 7 asks for were run, once each, by an independent
+verifier's own seat, not by the fleet that wrote the code above.
+
+- **Live tier.** `FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live`, with `permission = "auto"`. `foil init` selected `claude` for `lead` and `implementer` and `codex` for `reviewer`. Scenario 1 spawned the `claude` lead, which sat on Claude Code's own folder-trust dialog ("Is this project one you trust?") in the scenario's temporary directory and never got past it. The dialog was captured from the pane, not clicked. Scenarios 2–6 were not started: each spawns the same `claude` lead in its own fresh temporary directory and would sit on the same dialog. No scenario passed live in this run.
+- **Fresh-agent onboarding.** In a disposable repository outside this checkout, one new `cursor-agent` process was given only the sentence from C1 and nothing else. Unattended, it fetched the repository, ran `uv tool install "git+https://github.com/TiantianFlow/foil.git"` — which installs the published `main` branch, foil-orchestrator 0.2.0 at `e83f957`, not this branch's C1–C11 work — then ran `foil init` (which selected `grok` for all three templates), set `permission = "auto"`, and spawned the lead. That published 0.2.0 binary still picks `grok` first, as it did before this release's C6 fix; this is expected of that binary and is not evidence that this branch's `init` is nondeterministic. The `grok` lead sat on grok's own browser-based login prompt. The agent, on its own, killed that seat, switched all three templates to `codex` (already logged in), and respawned; the `codex` lead came up and asked for the goal, which the agent then sent by mail. The verifier stopped the process there, before `board/status.md` said `state: done`, because it had already sat on a harness's own login dialog once. Nothing was pushed. Cleanup afterward removed the disposable repository, and also uninstalled and reinstalled the machine's own `foil` command, which the fresh agent's `uv tool install` had replaced; that reinstall was verified working.
+
+Neither check reached a clean pass: both stopped on a harness's own
+first-run or login dialog, which this release already treats as a known
+issue below. Section 7's "Scenarios 1–6 pass with a real harness" and
+"a fresh install... reaches a lead that writes `state: done`" boxes stay
+unticked for this reason; every other section 7 box is unchanged by this
+entry.
 
 ## 11. Process review (2026-09-29)
 

@@ -181,7 +181,7 @@ def persona_text(template: dict[str, Any]) -> str:
         return persona
     relative = Path(persona)
     if relative.is_absolute() or ".." in relative.parts:
-        raise FoilError(f"foil: persona file not found: {persona}")
+        raise FoilError(f"foil: persona path must stay inside .foil/templates: {persona}")
     path = template["path"].parent / relative
     if path.is_symlink():
         raise FoilError("foil: refusing symlink")

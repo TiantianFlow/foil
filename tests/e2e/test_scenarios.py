@@ -57,6 +57,9 @@ def _prepare(
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
     if not fake:
+        chosen = os.environ.get("FOIL_E2E_HARNESS")
+        if chosen:
+            _set_harness(repo, chosen)
         return repo
     templates = foil_root(repo) / "templates"
     for role in ("lead", "implementer", "reviewer"):
@@ -104,6 +107,21 @@ def _set_auto(repo: Path) -> None:
         text = re.sub(
             r'(?m)^permission = ".*"$',
             'permission = "auto"',
+            path.read_text(encoding="utf-8"),
+            count=1,
+        )
+        path.write_text(text, encoding="utf-8")
+
+
+def _set_harness(repo: Path, harness: str) -> None:
+    """Rewrite the harness line of the three default templates."""
+
+    templates = foil_root(repo) / "templates"
+    for role in ("lead", "implementer", "reviewer"):
+        path = templates / f"{role}.toml"
+        text = re.sub(
+            r'(?m)^harness = ".*"$',
+            f'harness = "{harness}"',
             path.read_text(encoding="utf-8"),
             count=1,
         )
@@ -717,3 +735,13 @@ def test_unattended_templates_and_peek_on_timeout(
         assert "foil-fake lead ready" in message
     finally:
         _close(repo)
+
+
+def test_e2e_harness_override_rewrites_the_three_templates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FOIL_E2E_HARNESS", "codex")
+    repo = _prepare(tmp_path, "scenario-6", monkeypatch, fake=False)
+    for role in ("lead", "implementer", "reviewer"):
+        text = (foil_root(repo) / "templates" / f"{role}.toml").read_text(encoding="utf-8")
+        assert 'harness = "codex"\n' in text

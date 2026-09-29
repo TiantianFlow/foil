@@ -80,6 +80,73 @@ def test_spawn_rejects_a_missing_persona_path(
     assert captured.out == ""
 
 
+def _branch_exists(repo: Path, name: str) -> bool:
+    shown = subprocess.run(
+        ["git", "-C", str(repo), "show-ref", "--verify", "--quiet", f"refs/heads/{name}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return shown.returncode == 0
+
+
+def test_misspelled_persona_leaves_no_implementer_branch_or_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    implementer = foil_root(repo) / "templates" / "implementer.toml"
+    implementer.write_text(
+        implementer.read_text(encoding="utf-8").replace(
+            'persona = "personas/implementer.md"',
+            'persona = "personas/implementr.md"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    capsys.readouterr()
+    assert main(["seat", "spawn", "implementer"]) == 1
+    assert not _branch_exists(repo, "foil/implementer-1")
+    assert not (repo / ".foil" / "worktrees" / "implementer-1").exists()
+    assert "implementer-1" not in load_registry(repo)["seats"]
+    captured = capsys.readouterr()
+    assert captured.err == "foil: persona file not found: personas/implementr.md\n"
+    assert captured.out == ""
+
+
+def test_persona_path_outside_templates_leaves_no_implementer_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    outside = foil_root(repo) / "verifier.md"
+    outside.write_text("should not be read\n", encoding="utf-8")
+    implementer = foil_root(repo) / "templates" / "implementer.toml"
+    implementer.write_text(
+        implementer.read_text(encoding="utf-8").replace(
+            'persona = "personas/implementer.md"',
+            'persona = "../verifier.md"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    capsys.readouterr()
+    assert main(["seat", "spawn", "implementer"]) == 1
+    assert not _branch_exists(repo, "foil/implementer-1")
+    assert not (repo / ".foil" / "worktrees" / "implementer-1").exists()
+    assert "implementer-1" not in load_registry(repo)["seats"]
+    captured = capsys.readouterr()
+    assert captured.err == "foil: persona path must stay inside .foil/templates: ../verifier.md\n"
+    assert captured.out == ""
+    assert "should not be read" not in captured.err
+
+
 def test_spawn_still_fails_when_the_template_names_a_broken_preset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
