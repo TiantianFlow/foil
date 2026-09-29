@@ -662,3 +662,11 @@ search was for the literal new phrase, so the Chinese README got an
 English insert (H3), and the lists that describe the same prompts in
 other words were missed (H2). Search for the idea, then write it in each
 file's own language and voice.
+
+### 12.5 Owner's decisions
+
+- **`Co-authored-by: Cursor` trailers stay.** They are fine to publish.
+  This settles half of G9. The other half, a squash merge or a merge
+  commit, now depends only on whether the internal sentences that C11
+  removed should also stay out of `main`'s history. They are in older
+  commits on this branch, and only a squash merge keeps them out.
