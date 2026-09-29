@@ -23,6 +23,7 @@ No command or flag was added.
 
 - A fresh `init` used to pick `grok` first when several CLIs were installed. It now picks the first id in code-point order, so `claude` is first when it is installed. Re-creating the templates uses that new order.
 - Both READMEs lead with the one sentence the human gives their coding agent. The by-hand commands stay as a second section. The agent asks the human to dismiss each harness's first-run and opt-in dialogs, or to confirm that is already done, before the first spawn.
+- [CONTRIBUTING.md](CONTRIBUTING.md) has a self-review to run before asking for review, and a new [AGENTS.md](AGENTS.md) points coding agents to it.
 - Earlier documentation that had not been released: both READMEs carry the product's two names, the "loyal opposition" tagline, three problems Foil solves compared with a single agent session, a labeled diagram, how Foil is built, and badges for Python, platforms, and runtime dependencies. A demo per language ([docs/demo.md](docs/demo.md), [docs/demo.zh-CN.md](docs/demo.zh-CN.md)). [docs/architecture.md](docs/architecture.md) matches the scan, the persona copy, the inlined persona, and the launch environment.
 
 ### C12 verification (2026-09-29)

@@ -541,7 +541,7 @@ follows from C8). Section 11.3 applies to review rounds too.
 | M3 | After a behavior or wording change, search the repository for the old phrasing (for example `grep -rn "lead.toml" README* docs skills src tests`) and update every hit in the same commit. | No document, skill, or test contradicts the change. |
 | M4 | Report a check that did not exercise this release as "not run", with the reason, not as a result. | The changelog and this plan hold only results from this release's code. |
 
-The self-review checklist for M1:
+The self-review checklist for M1 now lives in [CONTRIBUTING.md](../CONTRIBUTING.md), under "Before you ask for review", and [AGENTS.md](../AGENTS.md) points coding agents to it. The version below is the one this review was written with:
 
 1. **Goal.** For each item, write one sentence on why it exists. Check
    the goal, not only the "done when" line.
