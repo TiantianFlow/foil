@@ -486,3 +486,76 @@ the release, provided the pane capture shows the dialog and the
 changelog says how to get past it. What does block the release is
 shipping a new default order without knowing whether its first harness
 can start a seat in a worktree (G1).
+
+## 11. Process review (2026-09-29)
+
+This section is about how the work is checked, not about the code.
+0.2.1 has now had three review rounds: C1–C12 in section 9, G1–G9 in
+section 10, and this one. The code at `79000e8` is unchanged since
+section 10, so G1–G9 still stand as that section's action items.
+
+**Verdict: the rounds are costly because the implementation meets each
+item's "done when" line without checking the goal behind it.** The
+individual items were done well. Most of what the reviews found could
+have been caught before the first review with a short self-review that
+looked beyond the checklist.
+
+### 11.1 What the rounds found, by cause
+
+| Cause | Examples | A self-review would have caught it by |
+|---|---|---|
+| Not run as a user would run it | The onboarding sentence gave no install source (C1). The fresh-agent check ran 0.2.0 from `main` (G3). | Trying the documented sentence, word for word, in an empty folder with a coding agent that had no other context |
+| Not run on failure paths | One broken preset stopped every `init` (C3). A misspelled persona left an orphaned worktree and branch (G4). `foil init \| head` printed an error (C9). | Giving each new code path a bad input and then checking what was left on disk |
+| One change, several places | The permission line said "edit `lead.toml`" while the docs said each template has its own permission (C4). The pointer line was removed from the README but the table still pointed "above" to it (C10). | Searching every document, skill, and test for the old wording after each change |
+| Tests that assert current output | The tests pinned the exact text "not two programs and not two models" and the lead-only permission sentence, so the tests passed while the behavior was wrong (C4, C7). | Asking what each test proves, and checking that it fails when the fix is reverted |
+| Not written for a public reader | The plan described the fleet that built it (C11). The changelog recorded the verifier's procedure (G5). F28 repeats the plan's examples. | Reading every added line as a stranger to the project would |
+
+### 11.2 Principles this project already states
+
+Most of the above is ordinary engineering practice. Four points are
+written rules in this repository, and they were missed:
+
+- **Requirements, section 10:** "Tests check real outcomes (tests pass, a
+  branch exists, a window is gone), not Foil's reports about itself."
+  Many new tests assert the text of the `init` report. A check that ran
+  against a different binary did not test this release at all.
+- **Requirements, Onboarding:** the reader is a coding agent that has
+  nothing but the sentence. Only a cold run shows whether that is
+  enough.
+- **N9, and "Everything you commit is public" in CONTRIBUTING.md:**
+  documents are public, so they hold the product, not the process.
+- **Every guarantee stated is one Foil can keep (section 7):** this
+  also applies to reports about verification. "Checked" means the check
+  exercised this release.
+
+The reviews share part of the cost. Each round hand-ran only some paths,
+so some findings appeared one round later than they could have (G4
+follows from C8). Section 11.3 applies to review rounds too.
+
+### 11.3 Action items
+
+| ID | Action | Done when |
+|---|---|---|
+| M1 | Before asking for a review, run the self-review checklist below, and put a short record of it in the commit message or the request: what was run, against which version, and what was left unverified. | The next review request has that record. |
+| M2 | For each test added or changed, revert the fix locally, run the test, and see it fail. Assert on files, branches, windows, and exit codes before asserting on printed text. | Every new test has been seen failing without its fix. |
+| M3 | After a behavior or wording change, search the repository for the old phrasing (for example `grep -rn "lead.toml" README* docs skills src tests`) and update every hit in the same commit. | No document, skill, or test contradicts the change. |
+| M4 | Report a check that did not exercise this release as "not run", with the reason, not as a result. | The changelog and this plan hold only results from this release's code. |
+
+The self-review checklist for M1:
+
+1. **Goal.** For each item, write one sentence on why it exists. Check
+   the goal, not only the "done when" line.
+2. **Run it as a user.** Use a fresh folder and install from this branch
+   into a temporary tool directory. Use only the documented commands,
+   or the documented sentence given to an agent with no other context.
+3. **Break it.** Try a missing file, an invalid file, none, one, many, a
+   second run, an interrupted run, and output sent to a pipe. After each
+   failure, look at what is left on disk.
+4. **Search for the old wording.** Every document, skill, test, and
+   message must say the same thing.
+5. **Test the tests.** Each new test fails without its fix and checks an
+   outcome.
+6. **Read the diff as a stranger.** Is it public-safe, free of process
+   notes, and no longer than it needs to be?
+7. **Report honestly.** Say what was verified, against which version,
+   and what was not.
