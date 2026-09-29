@@ -60,6 +60,42 @@ def _mail(repo: Path, seat: str) -> list[Path]:
     return sorted(directory.glob("*.md")) if directory.is_dir() else []
 
 
+def test_spawn_rejects_a_missing_persona_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    lead = foil_root(repo) / "templates" / "lead.toml"
+    lead.write_text(
+        lead.read_text(encoding="utf-8").replace(
+            'persona = "personas/lead.md"',
+            'persona = "personas/verfier.md"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    capsys.readouterr()
+    assert main(["seat", "spawn", "lead"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == "foil: persona file not found: personas/verfier.md\n"
+    assert captured.out == ""
+
+
+def test_spawn_still_fails_when_the_template_names_a_broken_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    (foil_root(repo) / "harnesses" / "zz.toml").write_text('id = "zz"\n', encoding="utf-8")
+    (foil_root(repo) / "templates" / "lead.toml").write_text(
+        'harness = "zz"\n'
+        'persona = "personas/lead.md"\n'
+        "worktree = false\n"
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    assert main(["seat", "spawn", "lead"]) == 1
+    assert capsys.readouterr().err == "foil: invalid preset\n"
+
+
 def test_unknown_template_and_worker_spawn_are_one_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

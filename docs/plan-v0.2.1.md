@@ -42,7 +42,7 @@ how to tell they are done.
 | "Add few more candidate roles … documentation-writer, domain-designer, memory-curator etc." | F20 and section 7.1 | Q3, Q5, T2, T3 |
 
 Two changes in this release are not in issue 8. Seats losing `HOME` (E1)
-is a live defect found while running this fleet, and K1–K4 are the small
+is a defect: seats started without it cannot find their login, and K1–K4 are the small
 gaps v0.2.0 carried forward.
 
 ## 3. Gaps
@@ -74,8 +74,7 @@ follows them.
 ### 4.1 Onboarding is AI-first, with no new command or flag
 
 The human's whole interface becomes one sentence typed into the coding
-agent they already use: *onboard this repository with Foil and start a
-fleet on this goal*. The agent installs Foil, runs `foil init`, reads what
+agent they already use: `Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.` The agent installs Foil, runs `foil init`, reads what
 `init` prints, edits templates, and spawns the lead. Nothing in section 6
 changes.
 
@@ -130,16 +129,14 @@ vendors, and the order shipped today, which leads with one of them, reads
 as one.
 
 What the reviewer's second id guarantees is **two harness ids**, and
-nothing more. It is not two programs and not two models: two presets may
+nothing more. Two ids can still run the same program or model: two presets may
 wrap the same program, and two harnesses may reach the same model. Foil
 cannot see which model a harness will use, so it cannot promise model
 diversity, and F28 does not. The default is best-effort harness
 diversity, worth having because it is free, and the operator changes it
 by editing two lines.
 
-This fleet bans a specific model. That is a local operating rule for one
-fleet and does not enter the product: Foil ships no vendor or model
-blocklist. An operator that wants one edits its templates.
+Foil ships no vendor or model blocklist. An operator that wants one edits its templates.
 
 ### 4.3 Candidate roles ship as personas, not as templates
 
@@ -160,7 +157,7 @@ The catalog, and why each role is in it:
 | `documentation-writer` | User-facing documents, the changelog, and keeping them true to the code | yes; it commits | Named in issue 8 |
 | `domain-designer` | Domain boundaries, invariants, architecture, and stated tradeoffs | yes; it commits plans and requirements | Named in issue 8; shipped in v0.1.1 |
 | `memory-curator` | Distilling reviewed lessons, proposing them, and superseding stale ones | no; it works through `foil memory` and the board | Named in issue 8; shipped in v0.1.1 |
-| `researcher` | Bounded evidence, with verified facts separated from unknowns | no; it writes board notes | Issue 8 says "etc."; shipped in v0.1.1, and this release was planned from a digest written by one |
+| `researcher` | Bounded evidence, with verified facts separated from unknowns | no; it writes board notes | Issue 8 says "etc."; shipped in v0.1.1 |
 | `verifier` | Running the checks end to end on a branch and reporting what passed | no; it reads a worktree the lead names | Issue 8 says "etc."; shipped in v0.1.1. Distinct from `reviewer`, which reads a change and argues about it |
 
 `init` never overwrites a persona or a template that exists. Re-running it
@@ -218,7 +215,7 @@ commit as this plan, and nothing else in section 5 has started.
 |---|---|---|
 | Q1 | Rewrite Workflow → Onboarding for an AI-first flow: the human asks their coding agent, the agent installs Foil and runs `init`, reads the report, sets harnesses and permission, adds any candidate roles, runs the first-run check, and sends the goal. Step 1 says to run each harness once by hand and dismiss its first-run and opt-in dialogs (K1). | The onboarding section addresses the agent throughout and adds no command or flag. |
 | Q2 | Add F26: seats run as the same user and inherit that login; `PATH` and `HOME` are always forwarded and a preset's `env` names more. Forwarding is declared by name, and Foil reads a named variable's value only to hand it to the child process at launch, never storing, printing, or logging it. Say the same in the `env` row of section 7.3. | F26 exists, 7.3 agrees with it, and neither claims Foil does not read a value. |
-| Q3 | Keep F20 to templates and personas. Add F27 for eligibility (built-in and user presets, `fake` excluded, a user file reusing a built-in id being one id) and for installation (`command[0]` on the path). Add F28 for the one total order, its exact comparator, and the first-and-second assignment, stating that the guarantee is two harness ids and not two programs or models. Every sentence that points at the choice of harness cites F28, not F27. Extend the `init` row of section 6.1 to match. | F20, F27, F28, and 6.1 describe what A2, H1, H2, T1, and T3 implement; two implementers reading them alone produce the same roster, comparator included. |
+| Q3 | Keep F20 to templates and personas. Add F27 for eligibility (built-in and user presets, `fake` excluded, a user file reusing a built-in id being one id) and for installation (`command[0]` on the path). Add F28 for the one total order, its exact comparator, and the first-and-second assignment, stating that the guarantee is two harness ids, and that two ids can still run the same program or model. Every sentence that points at the choice of harness cites F28, not F27. Extend the `init` row of section 6.1 to match. | F20, F27, F28, and 6.1 describe what A2, H1, H2, T1, and T3 implement; two implementers reading them alone produce the same roster, comparator included. |
 | Q4 | Extend the operator row of section 8: managing default role templates, the candidate role catalog, the principles for picking a harness and a model, and peeking a lead after `seat resume` as well as after `seat spawn`. | Section 8 names all four. |
 | Q5 | Show `templates/personas/<role>.md` in the section 7.1 layout. | The layout matches what `init` writes. |
 
@@ -240,7 +237,7 @@ commit as this plan, and nothing else in section 5 has started.
 
 | ID | Action | Done when |
 |---|---|---|
-| T1 | Give `lead` and `implementer` the first installed id in H2's order, and `reviewer` the second installed id when one exists and the first otherwise. The guarantee recorded in the report is two harness ids, not two programs and not two models. | Tests cover a mix of built-in and user presets: a user id that sorts between two built-ins takes its place in H2's order, `fake` on the path changes nothing, two presets wrapping the same program still count as two ids, and with one installed all three templates match and nothing fails. |
+| T1 | Give `lead` and `implementer` the first installed id in H2's order, and `reviewer` the second installed id when one exists and the first otherwise. The guarantee recorded in the report is two different harness ids. Two ids can still run the same program or model. | Tests cover a mix of built-in and user presets: a user id that sorts between two built-ins takes its place in H2's order, `fake` on the path changes nothing, two presets wrapping the same program still count as two ids, and with one installed all three templates match and nothing fails. |
 | T2 | Package personas for `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier` in `src/foil/defaults/personas/`, in the shape of the three that are there. Each says what the role produces and what it does not do. | Eight personas ship, and each new one names its output. |
 | T3 | Have `init` copy every packaged persona into the project's `templates/personas` folder, still writing only the three templates, and still overwriting nothing. | After `init`, all eight personas are on disk and three templates exist. Re-running after an edit changes no file. |
 

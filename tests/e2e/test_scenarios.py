@@ -613,8 +613,8 @@ def test_scenario_7_ai_native_onboarding(
     assert "implementer: claude (first installed id)" in first
     assert "reviewer: codex (second installed id)" in first
     assert (
-        "The three default templates use two harness ids, "
-        "not two programs and not two models."
+        "The three default templates use two different harness ids. "
+        "Two ids can still run the same program or model; set model on a template to choose one."
     ) in first
 
     # Store three different harness ids in the templates, then init again.
@@ -646,10 +646,9 @@ def test_scenario_7_ai_native_onboarding(
     assert "implementer: codex (left alone)" in second
     assert "reviewer: gemini (left alone)" in second
     assert (
-        "The three default templates use three harness ids, "
-        "not three programs and not three models."
+        "The three default templates use three different harness ids. "
+        "Two ids can still run the same program or model; set model on a template to choose one."
     ) in second
-    assert "not two programs" not in second
 
     for role in ("lead", "implementer", "reviewer"):
         path = templates / f"{role}.toml"

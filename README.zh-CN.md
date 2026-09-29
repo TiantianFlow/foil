@@ -95,12 +95,19 @@ flowchart TB
 人要做的只有一句话。在仓库里，把它交给你已经在用的编程 Agent：
 
 ```text
-Onboard this repository with Foil and start a fleet. My goal: <goal>.
+Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.
 ```
 
-这个 Agent 会安装运筹、运行 `foil init`，然后读报告。报告按 id 顺序列出每一个已安装的 harness（这是平局时的次序，不是排名），每个默认模板分到的 id，写了哪些模板和人格、留下了哪些，以及权限。`lead` 和 `implementer` 用第一个已安装的 id。有第二个时，`reviewer` 用第二个，否则也用第一个。刚写好的模板因此是两个 harness id，不是两个模型。之后再运行 `init`，报告的是这三个模板里实际存着的 id。然后 Agent 在 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里设置 `harness`、`model` 和 `permission`，需要候选角色时，就在 `init` 已经复制好的人格旁边写一个模板。默认是 `permission = "ask"`：该席位会停在第一个审批提示上，在自己的窗口里等你。只把主座改成 `auto` 不会让工人席位无人值守。要让哪个席位无人值守，就把它的模板设成 `auto`。
+- Agent 安装运筹并运行 `foil init`。
+- 它读报告，并在 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里设置 `harness`、`model` 和 `permission`。只把主座改成 `auto` 不会让工人席位无人值守。
+- 它做首次运行检查，然后把目标发出去。
+- 它自己从不做项目本身的工作。
 
-Agent 接着遵循 `.foil/skills/operator.md`。它用首次运行检查启动一次主座；状态文件没有出现就看一眼，席位恢复之后也再看一眼。检查通过后，它把目标发出去。它自己从不做项目本身的工作。
+没有拿到那句话就启动的 Agent，改用这行指针：
+
+```text
+Read .foil/skills/operator.md and follow it. My goal: <goal>.
+```
 
 持久安装操作员技能是可选的。把它复制到该 harness 发现技能的位置，放在用户级，这样它不会出现在 `git status` 里。下面的路径都没有对照该 harness 的当前文档核对过。
 

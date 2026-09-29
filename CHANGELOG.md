@@ -13,7 +13,7 @@ No command or flag was added.
 
 ### Added
 
-- `foil init` reports every installed eligible harness, in id order. The order is ascending Unicode code point of the id, case preserved: a tiebreak, not a ranking. `fake` is never eligible. A user preset that reuses a built-in id counts once. `lead` and `implementer` get the first installed id. `reviewer` gets the second when one exists, and the first otherwise. The report counts the distinct harness ids stored in the three templates, and uses that same count for programs and models. It names what was written and what was left alone, and explains `ask` and `auto`.
+- `foil init` reports every installed eligible harness, in id order. The order is ascending Unicode code point of the id, case preserved: a tiebreak, not a ranking. `fake` is never eligible. A user preset that reuses a built-in id counts once. `lead` and `implementer` get the first installed id. `reviewer` gets the second when one exists, and the first otherwise. The report counts the distinct harness ids stored in the three templates. Two ids can still run the same program or model; set model on a template to choose one. It names what was written and what was left alone, and explains `ask` and `auto`. One invalid user preset is skipped and named; it does not abort `init`.
 - Candidate personas: `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `init` copies every packaged persona and still writes only the three default templates. It overwrites nothing.
 - Seats inherit `HOME` as well as `PATH`. A preset's `env` still names any further variables. The value is forwarded at launch and is not stored in the plan.
 - A seat's instruction file includes its persona's text.
@@ -21,7 +21,8 @@ No command or flag was added.
 
 ### Changed
 
-- Both READMEs lead with the one sentence the human gives their coding agent. The by-hand commands stay as a second section. Each harness is run once by hand so its first-run and opt-in dialogs are dismissed.
+- A fresh `init` used to pick `grok` first when several CLIs were installed. It now picks the first id in code-point order, so `claude` is first when it is installed. Re-creating the templates uses that new order.
+- Both READMEs lead with the one sentence the human gives their coding agent. The by-hand commands stay as a second section. The agent asks the human to dismiss each harness's first-run and opt-in dialogs, or to confirm that is already done, before the first spawn.
 - Earlier documentation that had not been released: both READMEs carry the product's two names, the "loyal opposition" tagline, three problems Foil solves compared with a single agent session, a labeled diagram, how Foil is built, and badges for Python, platforms, and runtime dependencies. A demo per language ([docs/demo.md](docs/demo.md), [docs/demo.zh-CN.md](docs/demo.zh-CN.md)). [docs/architecture.md](docs/architecture.md) matches the scan, the persona copy, the inlined persona, and the launch environment.
 
 ### Known issues

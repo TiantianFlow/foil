@@ -95,12 +95,19 @@ You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Cla
 The human's part is one sentence, typed into the coding agent they already use, in the repository:
 
 ```text
-Onboard this repository with Foil and start a fleet. My goal: <goal>.
+Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.
 ```
 
-That agent installs Foil, runs `foil init`, and reads the report. The report lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given, the templates and personas that were written, and the permission. `lead` and `implementer` get the first installed id. `reviewer` gets the second when one exists, and the first otherwise. Fresh templates then hold two harness ids, not two models. A later `init` reports the ids stored in the three templates. The agent then sets `harness`, `model`, and `permission` on `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`, and adds any candidate role by writing a template next to a persona `init` already copied. `permission = "ask"` is the default: that seat stops at its first approval prompt and waits in its window. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended.
+- The agent installs Foil and runs `foil init`.
+- It reads the report and sets `harness`, `model`, and `permission` on `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. `auto` on the lead alone does not let the workers run unattended.
+- It runs the first-run check and sends the goal.
+- It never does the project work itself.
 
-The agent follows `.foil/skills/operator.md`. It spawns the lead once with a first-run check, peeks if the status file does not appear, and peeks again after a resume. When the check passes it sends the goal. It never does the project work itself.
+An agent that was started without that sentence uses this pointer line instead:
+
+```text
+Read .foil/skills/operator.md and follow it. My goal: <goal>.
+```
 
 A persistent install of the operator skill is optional. Copy it where that harness discovers skills, at user level, so it stays out of `git status`. No path below was checked against that harness's current docs.
 
