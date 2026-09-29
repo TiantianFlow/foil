@@ -410,3 +410,79 @@ scan (P1), 0.2.1 can be merged and tagged. If a harness's own dialog
 blocks the live run in C12, that alone does not block the release,
 provided the pane capture shows the dialog and the changelog says so, as
 in 0.2.0.
+
+## 10. Second acceptance review (2026-09-29)
+
+Reviewed at commit `aded578` on `foil/verifier-4`, which contains
+section 9 and four commits after it. The checks were the full test
+suite, lint, the package size report, a hand run of `foil init` and
+`foil seat spawn` in a scratch repository, a reading of every changed
+file against section 9's items, and a scan of the four new commits.
+
+**Verdict: not accepted yet, but close.** C1–C11 are done, and done
+well. The code is correct apart from one new edge case (G4). The two
+release checks in C12 were run and reported honestly, but neither one
+tested this release. The live tier stopped on Claude Code's
+folder-trust dialog before any scenario ran. The fresh-agent check
+installed the published 0.2.0 from `main`, not this branch. The
+folder-trust dialog also matters beyond the tests: `claude` is now the
+first harness in the default order, so it is the default for most
+users (G1). Three release gates (G1–G3) and five small fixes remain.
+
+### 10.1 Checks
+
+| Check | Result |
+|---|---|
+| Tests | Pass: 122 pass, 6 live tests skip as designed |
+| Lint (`ruff check .`) | Pass |
+| Package size | Pass: 2,128 of 2,500 lines |
+| Command surface | Pass: unchanged |
+| Hand run of `foil init` | Pass. A broken user preset is skipped and named, the permission line lists all three templates, and `foil init \| head -1` prints nothing on stderr. One wording issue (G6) |
+| Hand run of `foil seat spawn` with a misspelled persona | The error is correct, but it comes after the worktree is created (G4) |
+| Live tier | **Did not test this release.** Scenario 1 stopped on Claude Code's folder-trust dialog; scenarios 2–6 were not started (G1, G2) |
+| Fresh-agent onboarding | **Did not test this release.** The agent installed 0.2.0 from `main` (G3) |
+| Publishing safety | Pass: the four new commits add no secrets, personal paths, private hosts, or personal emails. The three internal sentences are gone from the plan. They are still in older commits on this branch (G9) |
+
+### 10.2 Section 9 items
+
+| ID | Status |
+|---|---|
+| C1 | Done. The sentence names the install source in the requirements, both READMEs, and section 4.1, and `test_onboarding_sentence_names_the_install_source` checks both READMEs. |
+| C2 | Done. The requirements and the operator skill say the human dismisses the dialogs, and a dialog seen in `foil seat peek` is reported to the human, not answered by the agent. G1 sharpens this for folder-trust dialogs. |
+| C3 | Done. `installed_presets` returns the skipped files, `init` names them, and `foil seat spawn` still fails on a broken preset. Both cases are tested. |
+| C4 | Done. The report prints each template's permission and the per-template rule. |
+| C5 | Done, in the lead skill and in the requirements. |
+| C6 | Done. |
+| C7 | Done, apart from the one-id case (G6). |
+| C8 | Done, and it also rejects a path that leaves the template folder. F22 says so. Two follow-ups are in G4. |
+| C9 | Done and tested. |
+| C10 | Done. The READMEs show four bullets and the pointer line above the install table. |
+| C11 | Done. |
+| C12 | Run and recorded, but neither check exercised this release. See G1–G3. |
+
+### 10.3 Action items
+
+Do G1–G3 before tagging. G4–G8 are small and can go in the same
+commits. Run `uv run --frozen --extra dev pytest -q` and
+`uv run --frozen --extra dev ruff check .` before every push.
+
+| ID | Severity | Action | Done when |
+|---|---|---|---|
+| G1 | Release gate | **Find out whether Claude Code's folder-trust dialog blocks real use, and say what to do about it in the docs.** Claude Code asks "Is this project one you trust?" the first time it starts in a folder. `claude` is now the first harness in the default order, so this dialog is the first thing most users hit. There are two questions. (1) Does trusting the repository once cover the seats? Check by hand. In a real repository, run `claude` once in the repository root and accept the dialog. Then run `foil init`, set `permission = "auto"` on all three templates, `foil seat spawn lead --task "Write board/status.md with state: done"`, and `foil seat spawn implementer`, which starts in `.foil/worktrees/implementer-1`. Run `foil seat peek lead` and `foil seat peek implementer-1`, and write down whether either shows the trust dialog. (2) Fix the docs either way. Onboarding step 1 in `docs/requirements.md`, step 1 of the operator skill (`src/foil/defaults/skills/operator.md`), and the prerequisites paragraph of both READMEs say to run each harness once. Change that to run each harness once **in this repository** and accept its folder-trust prompt as well as its first-run and opt-in dialogs, because trust is per folder. If step (1) shows that the worktree seat asks again, add a known issue to the changelog saying so and how to answer it (`tmux attach`, then accept), and record it here as a gap for the next release. Do not add a harness flag in this release: that is a design decision for the owner. | Both results from step (1) are written in this plan, the four documents say "in this repository", and the changelog has a known issue if a worktree seat asks again. |
+| G2 | Release gate | **Let the live tier run with a chosen harness.** `tests/e2e/test_live.py` always uses whatever `foil init` picks, so on a machine where `claude` is installed, every scenario starts `claude` in a fresh temporary folder and waits on the trust dialog. Add a test-only environment variable, `FOIL_E2E_HARNESS`. When it is set, the live tests rewrite the `harness` line of the three templates after `init`, the same way `_set_auto` rewrites `permission`. It is read only by the tests, so it adds nothing to the command surface. Then run `FOIL_E2E_LIVE=1 FOIL_E2E_HARNESS=codex uv run --frozen --extra dev pytest tests/e2e -m e2e_live`, or use any other harness that is logged in and has no folder-trust dialog. Record the result in the changelog: the harness used, and for each scenario, pass, or fail with the reason shown in its pane capture. | Scenarios 1–6 have all been started with at least one real harness, and each one either passed or has its pane's reason recorded. |
+| G3 | Release gate | **Run the fresh-agent check against this branch, without touching the machine's own `foil`.** The sentence installs from `main`, which is 0.2.0 until this release is merged, so the last run tested the old code. It also replaced the machine's own `foil` command. For the check, change only the install source in the sentence: `Install Foil with uv tool install "git+https://github.com/TiantianFlow/foil.git@foil/verifier-4", onboard this repository with it, and start a fleet. My goal: <goal>.` Give it to one new coding-agent process, in a new disposable repository, with `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` set to folders inside a temporary directory and that bin folder first on `PATH`. The install then stays out of the machine's own tools. Choose a harness for which step (1) of G1 passed. Stop when `board/status.md` says `state: done`, or when a seat waits on a dialog, and capture that pane. Write in the changelog what `foil --version` printed (it must be 0.2.1), which harness was used, and where it stopped. | The record shows 0.2.1 and either `state: done` or the captured reason it stopped. |
+| G4 | Medium | **Check the persona before creating the worktree.** `spawn_seat` in `src/foil/lifecycle.py` (line 398) creates the worktree and the `foil/<seat>` branch (line 412) before `_open` writes the instruction file, which is where `persona_text` raises. A template with a misspelled persona path therefore leaves an unregistered branch and worktree behind, and the next attempt gets `foil/implementer-2`. To reproduce: give the implementer template `persona = "personas/implementr.md"`, spawn the lead, then spawn `implementer`. You get the error, and `git worktree list` still shows `.foil/worktrees/implementer-1`. Fix: call `persona_text(loaded)` right after `load_template` in `spawn_seat`, and in `_restart`, and discard the result. Also give the "leaves the template folder" case in `persona_text` (`src/foil/presets.py`) its own message, for example `foil: persona path must stay inside .foil/templates: <value>`. Today an absolute or `..` path that exists is reported as "not found", which sends the reader looking for a missing file. | A test in `tests/test_spawn.py` spawns an implementer with a misspelled persona and finds no `foil/implementer-1` branch and no extra worktree. A second test checks the new message for a `..` path. |
+| G5 | Medium | **Keep the changelog for users.** The 0.2.1 entry in `CHANGELOG.md` has a "C12 verification" subsection that names a plan item, a verifier seat, the agent program used, and cleanup of the verifier's machine. Readers of a changelog need the outcome, not the procedure. Move that subsection, as written, into this plan as section 10.4. In the changelog, keep only two short known-issue bullets: which harness the live tier used and how it ended, and how the fresh-agent check ended. Leave out plan IDs and tool names. Set the date in the `## [0.2.1]` heading on the day you tag, not before. | The changelog has no "C12", no verifier seat, and no agent program name, and this plan holds the full record. |
+| G6 | Low | **Fix the report line when all three templates use one id.** With one harness installed, `init` prints `The three default templates use one different harness id. Two ids can still run the same program or model; ...`, which makes no sense for one id. In `_print_init_report` (`src/foil/lifecycle.py`), print only `The three default templates use one harness id.` when the count is 1, and keep the current two sentences otherwise. Update the one-harness assertion in `tests/test_init.py`. | With one harness installed, the report has no "different" and no "Two ids". |
+| G7 | Low | **Tick section 7.** Every box there is still unticked, but most are now true: the command surface, the package size, the fake-harness scenarios, determinism, the traceability in section 2, and the guarantees. Tick those. Leave the real-harness and fresh-install boxes unticked until G2 and G3 are done, with one line after each that points at G2 or G3. | Section 7 matches the facts. |
+| G8 | Low | **Fix one sentence in section 2.** "Seats losing `HOME` (E1) is a defect: seats started without it cannot find their login, and K1–K4 are the small gaps v0.2.0 carried forward." runs two points together. Make it two sentences: "Seats losing `HOME` (E1) is a defect: a seat started without it cannot find its login. K1–K4 are the small gaps v0.2.0 carried forward." | Section 2 reads as two sentences. |
+| G9 | Owner's call | **Decide how to merge.** The removed internal sentences (section 9, C11) are still in older commits on this branch, and every commit has a `Co-authored-by: Cursor` line. Neither is a secret. A squash merge keeps both out of `main`'s history. A merge commit keeps them. | The owner has picked one. |
+
+### 10.4 Decision
+
+Do G1–G8, then merge with the method chosen in G9 and tag 0.2.1. As in
+0.2.0, a harness's own dialog that stops a live scenario does not block
+the release, provided the pane capture shows the dialog and the
+changelog says how to get past it. What does block the release is
+shipping a new default order without knowing whether its first harness
+can start a seat in a worktree (G1).
