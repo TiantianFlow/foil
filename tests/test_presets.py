@@ -271,7 +271,7 @@ def test_scan_sees_user_presets_once_and_excludes_fake(
         encoding="utf-8",
     )
 
-    found = installed_presets(tmp_path)
+    found, _skipped = installed_presets(tmp_path)
     ids = [preset["id"] for preset in found]
     assert "my-agent" in ids
     assert ids.count("grok") == 1
@@ -318,7 +318,7 @@ def test_scan_sorts_ids_by_code_point(
         _write_preset(harnesses, name, name)
     monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
 
-    ids = [preset["id"] for preset in installed_presets(tmp_path)]
+    ids = [preset["id"] for preset in installed_presets(tmp_path)[0]]
     assert ids.index("grok") < ids.index("opencode")
     assert ids.index("gemini") < ids.index("mid") < ids.index("opencode")
     assert ids.index("a-b") < ids.index("a.b") < ids.index("a_b")
@@ -335,9 +335,28 @@ def test_scan_errors_when_nothing_is_installed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _hide_agent_clis(monkeypatch)
-    assert installed_presets(tmp_path) == []
+    assert installed_presets(tmp_path)[0] == []
     with pytest.raises(FoilError, match="no harness installed"):
         installed_harness(tmp_path)
+
+
+def test_scan_skips_one_invalid_user_preset_and_returns_the_valid_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    _stub_program(bindir, "ok-agent")
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
+    harnesses = tmp_path / ".foil" / "harnesses"
+    harnesses.mkdir(parents=True)
+    _write_preset(harnesses, "ok-agent", "ok-agent")
+    (harnesses / "zz.toml").write_text('id = "zz"\n', encoding="utf-8")
+
+    found, skipped = installed_presets(tmp_path)
+    ids = [preset["id"] for preset in found]
+    assert "ok-agent" in ids
+    assert "zz" not in ids
+    assert (".foil/harnesses/zz.toml", "invalid preset") in skipped
 
 
 def _fresh_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -366,7 +385,7 @@ def test_user_id_sorts_between_builtins_and_fake_is_ignored(
     assert load_template(repo, "lead")["harness"] == "claude"
     assert load_template(repo, "implementer")["harness"] == "claude"
     assert load_template(repo, "reviewer")["harness"] == "delta"
-    ids = [preset["id"] for preset in installed_presets(repo)]
+    ids = [preset["id"] for preset in installed_presets(repo)[0]]
     assert ids == ["claude", "delta", "opencode"]
 
 
@@ -381,7 +400,7 @@ def test_same_program_counts_as_two_ids_and_one_id_fills_every_template(
     assert main(["init"]) == 0
     assert load_template(repo, "lead")["harness"] == "claude"
     assert load_template(repo, "reviewer")["harness"] == "extra"
-    assert [preset["command"][0] for preset in installed_presets(repo)] == ["claude", "claude"]
+    assert [preset["command"][0] for preset in installed_presets(repo)[0]] == ["claude", "claude"]
 
     reviewer = foil_root(repo) / "templates" / "reviewer.toml"
     reviewer.unlink()

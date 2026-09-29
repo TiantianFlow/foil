@@ -46,10 +46,13 @@ def _names(items: list[str]) -> str:
 
 
 def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: set[str]) -> None:
-    found = [item["id"] for item in installed_presets(toplevel)]
+    presets, skipped = installed_presets(toplevel)
+    found = [item["id"] for item in presets]
     first = found[0] if found else ""
     second = found[1] if len(found) > 1 else first
     print(f"Installed harnesses, in id order (a tiebreak, not a ranking): {_names(found)}")
+    for path, reason in skipped:
+        print(f"Skipped {path}: {reason}")
     roles = ("lead", "implementer", "reviewer")
     stored: list[str] = []
     for role in roles:
@@ -68,11 +71,11 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
         print("No eligible harness is installed.")
     distinct = len(set(stored))
     word = {1: "one", 2: "two", 3: "three"}.get(distinct, str(distinct))
-    if distinct == 1:
-        detail = "one harness id, not one program and not one model."
-    else:
-        detail = f"{word} harness ids, not {word} programs and not {word} models."
-    print(f"The three default templates use {detail}")
+    noun = "harness id" if distinct == 1 else "harness ids"
+    print(
+        f"The three default templates use {word} different {noun}. "
+        "Two ids can still run the same program or model; set model on a template to choose one."
+    )
     persona_dir = foil_root(toplevel) / "templates" / "personas"
     personas = sorted(
         path.stem
@@ -83,10 +86,14 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
     print("Left templates: " + _names([role for role in roles if role in had_templates]))
     print("Wrote personas: " + _names([name for name in personas if name not in had_personas]))
     print("Left personas: " + _names([name for name in personas if name in had_personas]))
-    permission = load_template(toplevel, "lead")["permission"]
+    permissions = ", ".join(
+        f"{role} {load_template(toplevel, role)['permission']}" for role in roles
+    )
+    print(f"permission: {permissions}.")
     print(
-        f'permission = "{permission}". ask stops the seat at its first approval prompt; '
-        "auto lets it run unattended. Edit .foil/templates/lead.toml."
+        "ask stops a seat at its first approval prompt; auto lets it run unattended. "
+        "Set it in each .foil/templates/<role>.toml; auto on the lead alone does not "
+        "let the workers run unattended."
     )
     print("Read .foil/skills/operator.md and follow it. My goal: <goal>.")
 

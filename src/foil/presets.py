@@ -184,6 +184,8 @@ def persona_text(template: dict[str, Any]) -> str:
         raise FoilError("foil: refusing symlink")
     if path.is_file():
         return path.read_text(encoding="utf-8")
+    if persona.endswith(".md"):
+        raise FoilError(f"foil: persona file not found: {persona}")
     return persona
 
 
@@ -206,12 +208,17 @@ def _packaged_persona_names() -> list[str]:
     return sorted(item.name for item in directory.iterdir() if item.name.endswith(".md"))
 
 
-def installed_presets(toplevel: Path) -> list[dict[str, Any]]:
-    """Eligible presets whose own command[0] is on PATH.
+def installed_presets(
+    toplevel: Path,
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Eligible presets whose own command[0] is on PATH, and skipped files.
 
     ``fake`` is excluded. A user file that reuses a built-in id replaces
     that built-in. Ids are sorted by Unicode code point, case preserved:
-    a tiebreak, not a ranking.
+    a tiebreak, not a ranking. One invalid file is skipped. Its display
+    path and the reason are returned beside the presets that loaded.
+    ``load_preset`` itself is unchanged, so a spawn that names a broken
+    preset still fails.
     """
 
     ids = {name for name in BUILTIN_IDS if name != "fake"}
@@ -228,15 +235,22 @@ def installed_presets(toplevel: Path) -> list[dict[str, Any]]:
                 continue
             ids.add(harness_id)
     found: list[dict[str, Any]] = []
+    skipped: list[tuple[str, str]] = []
     for harness_id in sorted(ids):
-        preset = load_preset(toplevel, harness_id)
+        try:
+            preset = load_preset(toplevel, harness_id)
+        except FoilError as exc:
+            skipped.append(
+                (f".foil/harnesses/{harness_id}.toml", str(exc).removeprefix("foil: "))
+            )
+            continue
         if shutil.which(preset["command"][0]):
             found.append(preset)
-    return found
+    return found, skipped
 
 
 def installed_harness(toplevel: Path | None = None) -> str:
-    found = installed_presets(Path.cwd() if toplevel is None else toplevel)
+    found, _skipped = installed_presets(Path.cwd() if toplevel is None else toplevel)
     if not found:
         raise FoilError("foil: no harness installed")
     return found[0]["id"]
@@ -263,7 +277,7 @@ def write_default_templates(toplevel: Path) -> None:
     ]
     if not missing:
         return
-    found = installed_presets(toplevel)
+    found, _skipped = installed_presets(toplevel)
     if not found:
         raise FoilError("foil: no harness installed")
     first = found[0]["id"]

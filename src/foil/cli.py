@@ -186,9 +186,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         parser = _build_parser()
         args = parser.parse_args(None if argv is None else list(argv))
-        return _run(args)
+        code = _run(args)
+        sys.stdout.flush()
+        return code
     except FoilError as exc:
         print(str(exc), file=sys.stderr)
+        return 1
+    except BrokenPipeError:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
         return 1
     except Exception:
         print("foil: unexpected error", file=sys.stderr)
