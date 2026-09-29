@@ -330,3 +330,86 @@ commit as this plan, and nothing else in section 5 has started.
   Foil would then have to track five vendors' formats.
 - Harness system-prompt flags. The launch prompt stays the delivery path,
   as decided in 0.2.0.
+
+## 9. Acceptance review (2026-09-29)
+
+Reviewed at commit `f984e6d` in this order: the requirements changes,
+this plan, then the code, tests, skills, and documents. The checks were
+the full test suite, lint, the package size report, a hand run of
+`foil init` in a scratch repository with two fake harnesses on `PATH`,
+and a scan of all 13 commits on the branch.
+
+**Verdict: not accepted yet.** The requirements and the decisions in
+section 4 are sound, and most of the code is small and correct. One
+blocker remains: the one sentence the human types (C1) cannot start
+onboarding for an agent that has never heard of Foil, and that sentence
+is the headline of this release. Two further items (C3, C4) are
+behavior bugs that an agent will hit on its first run. The rest are
+small. Everything below fits in the line budget in section 4.5.
+
+### 9.1 Checks
+
+| Check | Result |
+|---|---|
+| Tests | Pass: 115 pass, 6 live tests skip as designed |
+| Lint (`ruff check .`) | Pass |
+| Package size | Pass: 2,100 of 2,500 lines |
+| Command surface | Pass: four commands, eleven actions, unchanged |
+| Hand run of `foil init` | Mostly pass. The report, the reviewer's second harness, and the persona copy all behave as written. C3, C4, and C9 were found here |
+| Live tier (V3) | **Not run.** The changelog says so |
+| Agent-driven fresh install (section 7, last item) | **Not run.** Scenario 7 is scripted, so it cannot show this |
+| Publishing safety (P1) | Pass: no secrets, personal paths, private hosts, or personal emails. Every commit carries a `Co-authored-by: Cursor` trailer; that is the owner's call, not a defect. Three lines of this plan describe the fleet that built it rather than the product (C11) |
+
+### 9.2 What is done well
+
+- **Requirements.** F26 is honest about what forwarding means: Foil reads
+  a value only to hand it to the child process. F27 and F28 make the
+  default roster deterministic, and F28 says plainly that it promises two
+  harness ids, not two models.
+- **Plan.** Every line of issue 8 traces to a requirement and to action
+  items (section 2). The rejected alternatives in section 4 are stated
+  with reasons, and there is a line budget.
+- **Code.** `installed_presets` in `src/foil/presets.py` is short and
+  follows F27 exactly: `fake` is excluded, a user file that reuses a
+  built-in id counts once, and detection checks the preset's own
+  `command[0]`. `HOME` is forwarded in the launch path in
+  `src/foil/lifecycle.py`, so hand-written presets get the fix too. The
+  persona text is now inlined (K2). `init` copies every persona and
+  overwrites nothing (T3).
+- **Tests.** The comparator cases from H2 (`Alpha` before `alpha`; `a-b`,
+  `a.b`, `a_b`) are pinned. Scenario 7 checks that `HOME` is forwarded by
+  name and never stored in the plan file.
+
+### 9.3 Action items
+
+Do them in the order listed. C1 is the blocker. Each item names the
+files to touch and how to tell it is done. Keep the command surface
+unchanged, and run `uv run --frozen --extra dev pytest -q` and
+`uv run --frozen --extra dev ruff check .` before every push.
+
+| ID | Severity | Action | Done when |
+|---|---|---|---|
+| C1 | Blocker | **Make the human's sentence able to start onboarding.** Today it is `Onboard this repository with Foil and start a fleet. My goal: <goal>.` An agent that does not already know Foil has no install source, and the operator skill only exists after `foil init` has run, so the agent cannot find its instructions. Put the install source in the sentence. For example: `Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.` Change it in four places, word for word: Onboarding step 2 in `docs/requirements.md`, the Get started code block in `README.md` and in `README.zh-CN.md` (keep the sentence in English in both, as the pointer line already is), and decision 4.1 in this plan. | The same sentence appears in all four places. A new test in `tests/test_skills.py` reads both READMEs and asserts that the sentence contains `github.com/TiantianFlow/foil`. |
+| C2 | Medium | **Say who dismisses the first-run dialogs.** Onboarding step 1 in `docs/requirements.md` and step 1 of the operator skill (`src/foil/defaults/skills/operator.md`) tell the reader to run each harness once by hand and dismiss its dialogs. An agent cannot click through another CLI's interactive dialog. Reword both so that the agent asks the human to do it, or to confirm it is done, before the first spawn, and so that a dialog seen in `foil seat peek` is reported to the human, not answered by the agent. Edit only the packaged skill: `skills/operator.md` is a symlink to it. | Both texts name the human as the one who dismisses dialogs. |
+| C3 | High | **One broken user preset must not break every `init`.** In `installed_presets` (`src/foil/presets.py`), the loop calls `load_preset(toplevel, harness_id)` on every file in `.foil/harnesses/`. If any one file is invalid, `load_preset` raises and `foil init` exits with `foil: invalid preset`, without saying which file. Reproduce it: write `id = "zz"` to `.foil/harnesses/zz.toml` and run `foil init`. Fix: wrap that one call in `try` / `except FoilError`, skip the preset, and return the skipped ids alongside the found presets (or collect them in a second list). In `_print_init_report` (`src/foil/lifecycle.py`), print one line per skipped file, for example `Skipped .foil/harnesses/zz.toml: invalid preset`. Do not change `load_preset` itself: `foil seat spawn` must still fail loudly when a template names a broken preset. | A test in `tests/test_presets.py` puts one invalid and one valid user preset on disk and gets the valid one back from the scan. A test in `tests/test_init.py` checks that `init` exits 0 and prints the skipped file's name. The existing spawn tests still pass. |
+| C4 | Medium | **The permission sentence must cover all three templates.** `_print_init_report` prints only the lead's permission and ends with `Edit .foil/templates/lead.toml.` That tells the agent the opposite of the rule in the onboarding docs, which is that `auto` on the lead alone does not let the workers run unattended. Print each template's value, then one sentence. For example: `permission: lead ask, implementer ask, reviewer ask.` followed by `ask stops a seat at its first approval prompt; auto lets it run unattended. Set it in each .foil/templates/<role>.toml; auto on the lead alone does not let the workers run unattended.` Update the assertion at `tests/test_init.py` lines 93–94 to match. | The report names all three values and the per-template rule, and the updated test passes. |
+| C5 | Medium | **Tell the lead that candidate roles exist.** The lead staffs the fleet, but `src/foil/defaults/skills/lead.md` never mentions `.foil/templates/personas/`. A lead that needs a documentation writer cannot know one is ready. After the roster paragraph (line 55), add two or three sentences: the packaged personas are in `.foil/templates/personas/`; to add a role, write `.foil/templates/<role>.toml` with `harness`, `persona = "personas/<role>.md"`, `worktree`, and `permission`; a role that commits needs `worktree = true`. Add the same point to the lead row of section 8 in `docs/requirements.md`, because behavior changes start in the requirements. Do not add a command: `test_skill_commands_exist_in_section_6` must still pass. | The lead skill and the requirements both say it, and the skill tests pass. |
+| C6 | Medium | **Record the changed default order.** Before this release, a fresh `init` on a machine with several CLIs picked `grok` first. It now picks the first id in code-point order (`claude` when it is installed). An upgrading user who re-creates their templates will see a different harness. Add a bullet under `### Changed` in the 0.2.1 entry of `CHANGELOG.md` that says so. | The changelog names the old order and the new one. |
+| C7 | Low | **Reword the harness-count line.** The report prints `The three default templates use two harness ids, not two programs and not two models.` A reader takes that as "these are definitely not two programs", which is not what F28 means. Print instead: `The three default templates use two different harness ids. Two ids can still run the same program or model; set model on a template to choose one.` Keep the counting logic in `_print_init_report` as it is. Update `tests/test_init.py` (lines 109, 162, 197), `tests/e2e/test_scenarios.py` (lines 617 and 652), and the sentence "uses that same count for programs and models" in `CHANGELOG.md` and `docs/architecture.md` line 101. | No document or test contains "not two programs", and the tests pass. |
+| C8 | Low | **Fail on a persona path that does not exist.** `persona_text` in `src/foil/presets.py` returns the raw string when the file is missing, so `persona = "personas/verfier.md"` (a typo) silently becomes the persona text `personas/verfier.md`. This matters now that adding a role means writing a template by hand. When the value has no newline, ends in `.md`, and the file does not exist, raise `FoilError("foil: persona file not found: <value>")`. Single-line inline text that does not end in `.md` stays inline text (F22). | A test in `tests/test_spawn.py` spawns from a template with a misspelled persona path and gets that one-line error. The existing inline-persona tests still pass. |
+| C9 | Low | **Handle a closed output pipe.** `foil init \| head -3` prints `foil: unexpected error`, because `main` in `src/foil/cli.py` turns the `BrokenPipeError` into that message. The report is now long enough that an agent may cut it off this way. Add an `except BrokenPipeError` clause before the generic one. It should point `sys.stdout` at `os.devnull` (the pattern the Python documentation gives under "Note on SIGPIPE") and return 1 without printing anything. | A test runs `foil init` through a pipe that closes after one line and finds nothing on stderr. |
+| C10 | Medium | **Make the README's Get started readable, and fix the dangling reference.** The paragraph after the sentence in `README.md` is one block about id order, re-run behavior, and template fields. Keep the details in the operator skill, and rewrite the README part as the sentence (C1), then four short bullets: the agent installs Foil and runs `foil init`; it reads the report and sets each template's harness, model, and permission; it runs the first-run check and sends the goal; it never does the project work itself. Keep the sentence that contains "`auto` on the lead alone does not let the workers run unattended" (a test requires it), and keep the three template file names. The install table's row says "the pointer line above", but the README no longer shows the pointer line. Add it back as the fallback, for an agent that was started without the sentence, in its own code block above the table. Mirror all of it in `README.zh-CN.md` (D3), keeping the phrase `不会让工人席位无人值守`. | Both READMEs have the same bullets and the pointer line above the table, and `tests/test_skills.py` and `tests/test_docs_hygiene.py` pass. |
+| C11 | Low | **Keep this plan about the product.** Three lines describe the fleet that built this release. In section 2, change "is a live defect found while running this fleet" to "is a defect: seats started without it cannot find their login". In section 4.2, delete the sentence "This fleet bans a specific model." and start the paragraph at "Foil ships no vendor or model blocklist." In the `researcher` row of the catalog table in section 4.3, delete ", and this release was planned from a digest written by one". | None of the three phrases remains. |
+| C12 | Release gate | **Run what section 7 asks for, and record it.** (1) Run the live tier with at least one logged-in harness: `FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live`. Include scenario 3, which K1 was about, and use `permission = "auto"` as the live tier does. (2) In a fresh, disposable repository, give one real coding agent only the sentence from C1, and check that it reaches a lead whose `status.md` says `state: done`. (3) Write both results in the 0.2.1 entry of `CHANGELOG.md`, replacing the known issue that says the live tier was not run. If a scenario fails, record the reason shown in its pane capture. (4) Tick the boxes in section 7 that are now true. | The changelog names the harness used and both results, and section 7 is up to date. |
+
+F28's wording in `docs/requirements.md` is precise but long: it repeats the
+regular expression and the comparator examples from section 4.2 of this
+plan. Trimming it is optional and can wait for a later release.
+
+### 9.4 Decision
+
+Do C1–C11, then C12, on this branch. After that, and a clean publishing
+scan (P1), 0.2.1 can be merged and tagged. If a harness's own dialog
+blocks the live run in C12, that alone does not block the release,
+provided the pane capture shows the dialog and the changelog says so, as
+in 0.2.0.
