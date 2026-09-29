@@ -678,3 +678,75 @@ file's own language and voice.
   commit, now depends only on whether the internal sentences that C11
   removed should also stay out of `main`'s history. They are in older
   commits on this branch, and only a squash merge keeps them out.
+
+## 13. Fourth acceptance review (2026-09-29)
+
+Reviewed at commit `6fcadb9` on `foil/implementer-7`: four commits
+after `d1e7ea0`. I ran the full test suite, lint, and the package size
+report. I checked the H1 test against a reverted fix, read every changed
+file against section 12's items, searched the documents for claims that
+the new G1 and G2 facts contradict, and scanned the four commits for
+anything that should not be public.
+
+**Verdict: not accepted yet, and close.** All of H1–H8 are done, and I
+confirmed the one code change. G1 and G2 were run, and their facts were
+recorded without anyone answering a dialog. That is the right way to
+run a gate. One new problem is left, and G1 found it:
+
+- **`permission = "auto"` did not make the Claude seats unattended.**
+  Both seats stopped on Claude Code's own command-approval prompt. The
+  plan records this, but the README, the requirements, and the `init`
+  report still promise that `auto` runs a seat unattended (J1).
+
+G3 has still not been run. The reason given, that the commit was not
+on GitHub, no longer holds: `6fcadb9` is on the remote now (J2).
+
+### 13.1 Checks
+
+| Check | Result |
+|---|---|
+| Tests | Pass: 126 pass, 6 live tests skip as designed |
+| Lint | Pass |
+| Package size | Pass: 2,143 of 2,500 lines |
+| H1 test against a reverted fix | Fails without the fix and passes with it, as the commit message says (M2) |
+| Claims contradicted by the G1 result | **Six places still promise that `auto` runs unattended (J1)** |
+| Publishing safety | Pass: no secrets, personal paths, private hosts, or personal emails. The trailers are fine (section 12.5) |
+
+### 13.2 Status of earlier items
+
+| ID | Status |
+|---|---|
+| H1 | Done and verified. With no seat named, `foil seat resume` names each seat it could not restart, restarts the others, and exits 1. F9, the architecture document, and the changelog say so. |
+| H2–H5, H7 | Done. The folder-trust prompt is in all six lists. The Chinese README is translated. The README speaks to its reader. The known issues describe user problems. The heading says `Unreleased`. The plan and index are tidied. |
+| H6 | Done: the G3 row names "the commit under review". |
+| H8 | Followed: G1 and G2 results were added to section 7, not written over the G rows. |
+| G1 | Done. Trusting the repository once covered the worktree seat. The new fact it found is J1. |
+| G2 | Done by its own "done when": every scenario was started, and each failure's pane reason is recorded. Scenarios 2 and 6 passed. Scenarios 1, 3, 4, and 5, the ones where an agent does the work, stopped on Codex's trust prompt in each fresh folder (J3). |
+| G3 | Not run. Now unblocked (J2). |
+| G9 | Only squash merge versus merge commit is left. |
+
+### 13.3 Action items
+
+Do J1 first, then J2 on the commit that contains J1. J3 is optional.
+Keep writing the self-review record in each commit message, as the
+last three commits did.
+
+| ID | Severity | Action | Done when |
+|---|---|---|---|
+| J1 | Release gate | **Make every claim about `auto` match what G1 saw.** Step 1: find out whether Foil passed the flag. Spawn a Claude seat with `permission = "auto"`, open `.foil/run/plans/<seat>.json`, and check that `argv` contains `--permission-mode` followed by `auto`. If it does not, that is a Foil bug: fix it, add a test that reads the plan file, and stop here. If it does, Claude Code's own auto mode asked anyway. Keep the flags for this release. Change the six claims in (1)–(6), and make the two related edits in (7) and (8). (1) `README.md` Limits: replace "and the harness can edit files and run commands without asking" with "Claude Code's auto mode can still ask before some commands, so an `auto` seat may stop on an approval prompt. Peek new seats." (2) The same change in the Limits section of `README.zh-CN.md`. (3) In `_print_init_report` (`src/foil/lifecycle.py`), change "auto lets it run unattended" to "auto asks the harness to skip approval prompts, though some harnesses still ask for some commands", and update the matching assertion in `tests/test_init.py`. (4) Onboarding step 5 in `docs/requirements.md`: change "`permission = \"auto\"` lets the fleet run unattended" in the same way. (5) The permission paragraph of `docs/demo.md`, after "For an unattended run, set `permission = \"auto\"` on every template whose seat should work alone.": add "A harness may still ask before some commands, so peek new seats." (6) The same paragraph of `docs/demo.zh-CN.md`: add "有些 harness 仍会在执行某些命令前请求批准，所以要看一眼新席位。" (7) Step 3 of the operator skill: change "With `ask`, peek a new seat for an approval prompt" to "With either setting, peek a new seat for an approval prompt." (8) Add a known issue to `CHANGELOG.md`: "With `permission = \"auto\"`, a Claude Code seat can still stop on Claude Code's own command-approval prompt. Peek new seats, and answer the prompt in that window." Keep the sentence "`auto` on the lead alone does not let the workers run unattended" as it is; it is still true, and a test requires it. Whether the `claude` preset should switch to a mode that never asks is a security decision for the owner. Record it in this plan as a gap for the next release, and do not change it in this release. | The plan records what the argv check found. No document promises that `auto` alone runs a Claude seat unattended, and the changelog has the known issue. |
+| J2 | Release gate | **Run G3 on the commit that contains J1.** Install with `uv tool install "git+https://github.com/TiantianFlow/foil.git@<full sha>"`, using the full sha of that pushed commit. If you cannot push, ask the owner to push the commit and give you the sha; do not stop at "not on a remote". Everything else is as the G3 row says. Because of J1, a stop on an approval prompt is a likely outcome. Recording that stop, with its pane, is an accepted result (section 10.4). | The record names the sha, what `foil --version` printed, the harness, and where the run ended. |
+| J3 | Optional | **Try once to get the live scenarios past per-folder trust.** Each live scenario creates a new folder, so a CLI that asks for trust per folder stops every time. pytest can put all of its temporary folders under one directory with `--basetemp`. Pick a folder used only for this, for example `~/foil-e2e`. Run the CLI there once and accept its trust prompt. Then run `FOIL_E2E_LIVE=1 FOIL_E2E_HARNESS=<harness> uv run --frozen --extra dev pytest tests/e2e -m e2e_live --basetemp ~/foil-e2e/run`. pytest empties `--basetemp` at the start of every run, so do not point it at anything you want to keep. G1 suggests that Claude Code's trust covers subfolders. Whether Codex's does is unknown, and finding out is the point. Record the result either way. If it works, add those two steps to the live-tier part of `CONTRIBUTING.md`. | The plan records whether trust covered the scenario folders, for the harness tried. |
+
+### 13.4 Decision
+
+Do J1, push, and then run J2 on that commit. After that, the only open
+question is G9's merge method, and 0.2.1 can be tagged. J3 is worth one
+try, because it would let the live tier test real work again, but it
+does not block the tag. The owner decides whether two live passes out of
+six, with every stop explained, is enough for this release; 0.2.0
+shipped with five of six.
+
+One process note. G1 found a fact that contradicted the documents. The
+fact went into the plan, but not into the documents that make the
+claim. When a check finds something new, search for every sentence it
+proves wrong (steps 1 and 4 of the self-review in CONTRIBUTING.md).
