@@ -90,7 +90,7 @@ flowchart TB
 
 ## 开始使用
 
-你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。在舰队开始之前，人要在本仓库里把每个 harness 运行一次（in this repository），接受它的 folder-trust 提示以及首次运行和意见征集对话框，因为信任按文件夹生效。Agent 请人去做，或请人确认已经完成。在 `foil seat peek` 里看到的对话框要报告给人，不要代为回答。停在这些对话框上的席位，从外面看就和正在工作一样。其他 CLI 只要一个小小的预设文件就能接入。
+你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。在舰队开始之前，先在本仓库里把每个 harness 运行一次，接受它的文件夹信任提示，以及首次运行和意见征集对话框，因为信任是按文件夹生效的。停在这些提示上的席位，从外面看就像一个正在工作的席位。你的 Agent 会请你去做这件事，或者请你确认已经完成，并且报告它看到的任何提示，而不是替你回答。其他 CLI 只要一个小小的预设文件就能接入。
 
 人要做的只有一句话。在仓库里，把它交给你已经在用的编程 Agent：
 
@@ -145,7 +145,7 @@ foil seat peek lead
 
 ### 如果什么都没发生
 
-运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在登录提示、审批提示，或者 harness 自己的首次运行或意见征集对话框上。在那个窗口里处理它（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入），或者先手动登录一次那个 CLI，然后 `foil seat kill lead`，再重新启动主座。
+运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在登录提示、文件夹信任提示、审批提示，或者 harness 自己的首次运行或意见征集对话框上。在那个窗口里处理它（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入），或者先手动登录一次那个 CLI，然后 `foil seat kill lead`，再重新启动主座。
 
 ## 限制
 

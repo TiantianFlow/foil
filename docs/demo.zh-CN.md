@@ -167,6 +167,7 @@ reviewer-1	reviewer	killed
 运行 `foil seat peek lead`。一个没有进展的席位，通常停在下面某一种画面上：
 
 - 登录提示：先手动登录一次那个 CLI，然后 `foil seat kill lead`，再重新启动主座；
+- 文件夹信任提示：在那个窗口里接受它，或者在舰队开始之前先在本仓库里把这个 CLI 运行一次；
 - 审批提示：在那个窗口里批准（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入），
   或者设置 `permission = "auto"`；
 - harness 自己的首次运行或意见征集对话框：用同样的办法回答它。

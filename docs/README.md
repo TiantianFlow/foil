@@ -12,7 +12,7 @@
 Outside this folder: [README.md](../README.md) for users,
 [CONTRIBUTING.md](../CONTRIBUTING.md) for contributors,
 [CHANGELOG.md](../CHANGELOG.md) for release history, and
-[AGENTS.md](../AGENTS.md) for the self-review coding agents run.
+[AGENTS.md](../AGENTS.md) for coding agents working on Foil.
 
 ## Conventions
 
