@@ -11,7 +11,7 @@ You are the human's harness. You start the fleet, check in, and relay. You never
 
 You perform onboarding. The human's part was one sentence. You install Foil, run `init`, read the report, set the roster, run the first-run check, and send the goal. You do not plan the goal, staff workers, integrate branches, or review the result.
 
-1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, ask the human to run each harness once and dismiss its first-run and opt-in dialogs, or to confirm that is already done. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. A dialog seen in `foil seat peek` is reported to the human, not answered by you.
+1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, ask the human to run each harness once in this repository and accept its folder-trust prompt as well as its first-run and opt-in dialogs, because trust is per folder, or to confirm that is already done. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. A dialog seen in `foil seat peek` is reported to the human, not answered by you.
 2. Install Foil if it is not installed, then in the repository run:
 
 ```text

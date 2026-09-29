@@ -70,12 +70,15 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
     if not found:
         print("No eligible harness is installed.")
     distinct = len(set(stored))
-    word = {1: "one", 2: "two", 3: "three"}.get(distinct, str(distinct))
-    noun = "harness id" if distinct == 1 else "harness ids"
-    print(
-        f"The three default templates use {word} different {noun}. "
-        "Two ids can still run the same program or model; set model on a template to choose one."
-    )
+    if distinct == 1:
+        print("The three default templates use one harness id.")
+    else:
+        word = {2: "two", 3: "three"}.get(distinct, str(distinct))
+        print(
+            f"The three default templates use {word} different harness ids. "
+            "Two ids can still run the same program or model; "
+            "set model on a template to choose one."
+        )
     persona_dir = foil_root(toplevel) / "templates" / "personas"
     personas = sorted(
         path.stem
@@ -403,6 +406,7 @@ def spawn_seat(
     task: str | None = None,
 ) -> None:
     loaded = load_template(root, template)
+    persona_text(loaded)
     if task is not None:
         scan(task)
     registry = load_registry(root)
@@ -484,6 +488,7 @@ def kill_seats(
 def _restart(root: Path, registry: dict, name: str) -> None:
     record = registry["seats"][name]
     loaded = load_template(root, record["template"])
+    persona_text(loaded)
     preset = load_preset(root, loaded["harness"])
     stored = "" if loaded["harness"] != record["harness"] else record["session_id"]
     native = _native_resume(preset, stored, worktree=record.get("worktree") or "")

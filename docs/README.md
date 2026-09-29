@@ -10,8 +10,9 @@
 | [demo.zh-CN.md](demo.zh-CN.md) | The same demo in Chinese. Linked from the Chinese README. |
 
 Outside this folder: [README.md](../README.md) for users,
-[CONTRIBUTING.md](../CONTRIBUTING.md) for contributors, and
-[CHANGELOG.md](../CHANGELOG.md) for release history.
+[CONTRIBUTING.md](../CONTRIBUTING.md) for contributors,
+[CHANGELOG.md](../CHANGELOG.md) for release history, and
+[AGENTS.md](../AGENTS.md) for the self-review coding agents run.
 
 ## Conventions
 

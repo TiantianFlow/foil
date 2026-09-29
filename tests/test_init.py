@@ -163,10 +163,9 @@ def test_init_rerun_reports_the_harness_stored_after_an_edit(
     assert main(["init"]) == 0
     report = capsys.readouterr().out
     assert "reviewer: claude (left alone)" in report
-    assert (
-        "The three default templates use one different harness id. "
-        "Two ids can still run the same program or model; set model on a template to choose one."
-    ) in report
+    assert "The three default templates use one harness id." in report
+    assert "different" not in report
+    assert "Two ids" not in report
     assert "guarantees two harness ids" not in report
     assert reviewer.read_text(encoding="utf-8") == edited
 

@@ -254,10 +254,14 @@ def test_persona_text_rejects_a_leading_slash_without_reading(
     monkeypatch.setattr(Path, "read_text", denied)
     with pytest.raises(FoilError) as caught:
         persona_text({"path": template_path, "persona": "/missing/verifier.md"})
-    assert str(caught.value) == "foil: persona file not found: /missing/verifier.md"
+    assert str(caught.value) == (
+        "foil: persona path must stay inside .foil/templates: /missing/verifier.md"
+    )
     with pytest.raises(FoilError) as climbed:
         persona_text({"path": template_path, "persona": "../verifier.md"})
-    assert str(climbed.value) == "foil: persona file not found: ../verifier.md"
+    assert str(climbed.value) == (
+        "foil: persona path must stay inside .foil/templates: ../verifier.md"
+    )
     assert persona_text({"path": template_path, "persona": "/keep me"}) == "/keep me"
 
 

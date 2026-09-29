@@ -90,7 +90,7 @@ flowchart TB
 
 ## Get started
 
-You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Run each CLI once by hand and dismiss its first-run and opt-in dialogs before a fleet starts. A seat waiting on one of those looks, from outside, like a seat that is working. Another CLI can join with a small preset file.
+You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Before a fleet starts, the human runs each harness once in this repository and accepts its folder-trust prompt as well as its first-run and opt-in dialogs, because trust is per folder. The agent asks the human to do that, or to confirm it is done. A dialog seen in `foil seat peek` is reported, not answered. A seat waiting on one of those looks, from outside, like a seat that is working. Another CLI can join with a small preset file.
 
 The human's part is one sentence, typed into the coding agent they already use, in the repository:
 
