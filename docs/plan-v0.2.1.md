@@ -488,7 +488,7 @@ changelog says how to get past it. What does block the release is
 shipping a new default order without knowing whether its first harness
 can start a seat in a worktree (G1).
 
-## 10.5
+### 10.5 C12 verification record
 
 ### C12 verification (2026-09-29)
 
@@ -500,7 +500,7 @@ verifier's own seat, not by the fleet that wrote the code above.
 
 Neither check reached a clean pass: both stopped on a harness's own
 first-run or login dialog, which this release already treats as a known
-issue below. Section 7's "Scenarios 1–6 pass with a real harness" and
+issue in the changelog. Section 7's "Scenarios 1–6 pass with a real harness" and
 "a fresh install... reaches a lead that writes `state: done`" boxes stay
 unticked for this reason; every other section 7 box is unchanged by this
 entry.

@@ -28,7 +28,7 @@ Read the whole report. It lists every installed harness in id order (a tiebreak,
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-If `board/status.md` does not appear, peek the lead and tell the human whether the pane shows a login prompt, an approval prompt, or an error. You report that. You do not fix the project. Peek the same way after a seat is resumed, not only after it is spawned.
+If `board/status.md` does not appear, peek the lead and tell the human whether the pane shows a login prompt, a folder-trust prompt, an approval prompt, or an error. You report that. You do not fix the project. Peek the same way after a seat is resumed, not only after it is spawned.
 
 ```text
 foil seat peek lead

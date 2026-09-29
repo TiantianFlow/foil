@@ -349,3 +349,49 @@ def test_resume_uses_the_edited_template_harness(
     assert plan["argv"][0] == "gemini"
     assert "--resume" not in plan["argv"]
     assert previous not in plan["argv"]
+
+
+def test_resume_names_a_broken_seat_and_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    assert main(["seat", "spawn", "reviewer"]) == 0
+    dead = {record["window_id"] for record in load_registry(repo)["seats"].values()}
+
+    def matches_window(
+        self: TmuxController,
+        fleet_id: str,
+        seat_id: str,
+        session_name: str,
+        window_id: str,
+    ) -> bool:
+        del self, fleet_id, seat_id, session_name
+        return window_id not in dead
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.matches_window", matches_window)
+    template = foil_root(repo) / "templates" / "implementer.toml"
+    template.write_text(
+        template.read_text(encoding="utf-8").replace(
+            'persona = "personas/implementer.md"',
+            'persona = "personas/missing.md"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    capsys.readouterr()
+    assert main(["seat", "resume"]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        "foil: seat 'implementer-1' not resumed: "
+        "persona file not found: personas/missing.md\n"
+    )
+    assert main(["seat", "list", "--json"]) == 0
+    rows = {row["name"]: row["state"] for row in json.loads(capsys.readouterr().out)}
+    assert rows == {"implementer-1": "dead", "lead": "alive", "reviewer-1": "alive"}
+    assert main(["seat", "resume", "implementer-1"]) == 1
+    assert capsys.readouterr().err == "foil: persona file not found: personas/missing.md\n"

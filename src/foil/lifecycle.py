@@ -527,7 +527,7 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         raise
 
 
-def resume_seats(root: Path, name: str | None) -> None:
+def resume_seats(root: Path, name: str | None) -> int:
     registry = load_registry(root)
     if name is not None:
         _known(registry, name)
@@ -536,12 +536,22 @@ def resume_seats(root: Path, name: str | None) -> None:
             raise FoilError(f"foil: seat '{name}' is killed")
         if state == "alive":
             print(f"foil: seat '{name}' is alive")
-            return
+            return 0
         _restart(root, registry, name)
-        return
+        return 0
+    failures: list[str] = []
     for seat_name in sorted(registry["seats"]):
-        if _state(registry, seat_name, registry["seats"][seat_name]) == "dead":
+        if _state(registry, seat_name, registry["seats"][seat_name]) != "dead":
+            continue
+        try:
             _restart(root, registry, seat_name)
+        except FoilError as exc:
+            reason = str(exc).removeprefix("foil: ")
+            failures.append(f"foil: seat '{seat_name}' not resumed: {reason}")
+    if not failures:
+        return 0
+    print("\n".join(failures), file=sys.stderr)
+    return 1
 
 
 def list_seats(root: Path, *, as_json: bool = False) -> None:

@@ -154,7 +154,7 @@ def _run(args: argparse.Namespace) -> int:
                 kill_seats(root, name=args.NAME)
         elif action == "resume":
             authorize("resume")
-            resume_seats(root, args.NAME)
+            return resume_seats(root, args.NAME)
         elif action == "list":
             authorize("list")
             list_seats(root, as_json=args.json)

@@ -90,7 +90,7 @@ flowchart TB
 
 ## Get started
 
-You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Before a fleet starts, the human runs each harness once in this repository and accepts its folder-trust prompt as well as its first-run and opt-in dialogs, because trust is per folder. The agent asks the human to do that, or to confirm it is done. A dialog seen in `foil seat peek` is reported, not answered. A seat waiting on one of those looks, from outside, like a seat that is working. Another CLI can join with a small preset file.
+You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Before your first fleet, run each CLI once in this repository and accept its folder-trust, first-run, and opt-in prompts. Trust is per folder. A seat waiting on one of those prompts looks, from outside, like a seat that is working. Your agent asks you to do this, or to confirm it is done, and it reports any prompt it sees rather than answering it. Another CLI can join with a small preset file.
 
 The human's part is one sentence, typed into the coding agent they already use, in the repository:
 
@@ -145,7 +145,7 @@ foil seat peek lead
 
 ### If nothing happens
 
-Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually showing a login prompt, an approval prompt, or the harness's own first-run or opt-in dialog. Answer it in that window (`tmux ls` lists Foil's session and `tmux attach` opens it), or log in to that CLI once by hand, then `foil seat kill lead` and spawn it again.
+Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually showing a login prompt, a folder-trust prompt, an approval prompt, or the harness's own first-run or opt-in dialog. Answer it in that window (`tmux ls` lists Foil's session and `tmux attach` opens it), or log in to that CLI once by hand, then `foil seat kill lead` and spawn it again.
 
 ## Limits
 

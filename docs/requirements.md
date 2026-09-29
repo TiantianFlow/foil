@@ -81,7 +81,7 @@ human's part is one sentence; everything after step 2 is the agent's work.
 
 5. Before spawning any seat, the agent sets each template's harness, model, and permission, and adds any candidate role the goal needs by writing a template beside a persona `init` already copied (F20). `permission = "ask"` is the default: that seat stops at its first approval prompt and waits for the human in that pane. `permission = "auto"` lets the fleet run unattended. Each template carries its own permission.
 6. Foil launches each seat and delivers instructions with no harness-specific flags. The first launch prompt inlines the instruction file: the role skill, persona, commands, and board conventions. That text tells the seat to re-read the instruction file whenever it is woken. The operator and the lead put only the goal in `--task`. The instruction file stays the single source. Harness system-prompt flags are not used.
-7. The agent's first task is the first-run check: spawn the lead with `Write board/status.md with state: done`, then wait a few minutes. If the file does not appear, `foil seat peek lead` shows a login prompt, an approval prompt, or an error, and the agent reports that to the human instead of waiting. It peeks the same way after `foil seat resume`.
+7. The agent's first task is the first-run check: spawn the lead with `Write board/status.md with state: done`, then wait a few minutes. If the file does not appear, `foil seat peek lead` shows a login prompt, a folder-trust prompt, an approval prompt, or an error, and the agent reports that to the human instead of waiting. It peeks the same way after `foil seat resume`.
 8. When the check passes, the agent sends the goal to that lead and does no project work itself.
 
 ## 4. Functional requirements
@@ -98,7 +98,7 @@ human's part is one sentence; everything after step 2 is the agent's work.
 | F6 | When a template asks for a worktree, spawning creates a git worktree on a new branch whose name is unique in the repository. Killing a seat never deletes its branch and never silently destroys uncommitted work. |
 | F7 | Files and worktrees Foil creates never appear as untracked or modified files in the user's repository. |
 | F8 | Seat state is `alive` (its exact tmux window exists), `dead` (the window is gone and the seat wasn't killed), or `killed` (stopped with `foil seat kill`). |
-| F9 | `seat resume` restarts `dead` seats, never `killed` ones. It uses the harness's own session resume when the preset supports it; otherwise it starts the seat fresh and tells it that it was restarted and should re-read its mail. A seat with no worktree resumes in the project directory. |
+| F9 | `seat resume` restarts `dead` seats, never `killed` ones. It uses the harness's own session resume when the preset supports it; otherwise it starts the seat fresh and tells it that it was restarted and should re-read its mail. A seat with no worktree resumes in the project directory. A seat that cannot be restarted is named in the error and does not stop the others. |
 
 ### Visibility
 
