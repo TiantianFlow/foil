@@ -21,6 +21,7 @@ No command or flag was added.
 
 ### Changed
 
+- A seat whose persona file is missing fails to spawn or resume with an error that names the file. `foil seat resume` with no name names each seat it could not restart, restarts the others, and exits 1.
 - A fresh `init` used to pick `grok` first when several CLIs were installed. It now picks the first id in code-point order, so `claude` is first when it is installed. Re-creating the templates uses that new order.
 - Both READMEs lead with the one sentence the human gives their coding agent. The by-hand commands stay as a second section. The agent asks the human to run each harness once in this repository and accept its folder-trust prompt as well as its first-run and opt-in dialogs, because trust is per folder, or to confirm that is already done, before the first spawn.
 - [CONTRIBUTING.md](CONTRIBUTING.md) has a self-review to run before asking for review, and a new [AGENTS.md](AGENTS.md) points coding agents to it.
