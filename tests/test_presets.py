@@ -232,11 +232,33 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
     assert persona.read_text(encoding="utf-8") == "custom persona\n"
     assert load_template(repo, "lead")["harness"] == "claude"
     assert persona_text(load_template(repo, "lead")) == "keep me"
+    assert persona_text({"path": lead, "persona": "/keep me"}) == "/keep me"
     assert reviewer.is_file()
     assert load_template(repo, "reviewer")["harness"] == "codex"
     reviewed = reviewer.read_bytes()
     assert main(["init"]) == 0
     assert reviewer.read_bytes() == reviewed
+
+
+def test_persona_text_rejects_a_leading_slash_without_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_path = tmp_path / "lead.toml"
+    template_path.write_text("x\n", encoding="utf-8")
+
+    def denied(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("filesystem access")
+
+    monkeypatch.setattr(Path, "is_symlink", denied)
+    monkeypatch.setattr(Path, "is_file", denied)
+    monkeypatch.setattr(Path, "read_text", denied)
+    with pytest.raises(FoilError) as caught:
+        persona_text({"path": template_path, "persona": "/missing/verifier.md"})
+    assert str(caught.value) == "foil: persona file not found: /missing/verifier.md"
+    with pytest.raises(FoilError) as climbed:
+        persona_text({"path": template_path, "persona": "../verifier.md"})
+    assert str(climbed.value) == "foil: persona file not found: ../verifier.md"
+    assert persona_text({"path": template_path, "persona": "/keep me"}) == "/keep me"
 
 
 def _stub_program(directory: Path, name: str) -> None:
