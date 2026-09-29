@@ -577,3 +577,88 @@ The self-review checklist for M1 now lives in [CONTRIBUTING.md](../CONTRIBUTING.
    notes, and no longer than it needs to be?
 7. **Report honestly.** Say what was verified, against which version,
    and what was not.
+
+## 12. Third acceptance review (2026-09-29)
+
+Reviewed at commit `d7ad802` on `foil/implementer-4`, the one commit
+after `615cb6d`. I ran the full test suite, lint, and the package size
+report. I checked the commit message's self-review record against my
+own runs. By hand, I ran `foil init`, `foil seat spawn`, and
+`foil seat resume` after a crash in a scratch repository. I also
+searched every document for the wording this commit changed, and
+scanned the commit for anything that should not be public.
+
+**Verdict: not accepted yet.** G4 and G6 are done, and I confirmed both.
+G5, G7, and G8 are done apart from small leftovers. The commit message
+is the first one with a self-review record (M1), and the record is
+accurate. Three things still stand between this branch and a tag:
+
+- The three release gates from section 10 (G1's hand check, G2's live
+  run, G3's fresh-agent run) have not been run. The commit message says
+  so, which is the right way to report it.
+- One regression is new in this release: a misspelled persona now stops
+  `foil seat resume` for every seat after it (H1).
+- The folder-trust prompt was added where G1 named it, but not in the
+  lists of what a stuck seat shows (H2).
+
+### 12.1 Checks
+
+| Check | Result |
+|---|---|
+| Tests | Pass: 125 pass, 6 live tests skip as designed. Matches the commit message |
+| Lint | Pass |
+| Package size | Pass: 2,133 of 2,500 lines. Matches the commit message |
+| Self-review record (M1) | Present and accurate. I reverted the new `persona_text(loaded)` line in `spawn_seat`, and both new G4 tests failed. With the line restored, they pass (M2) |
+| Hand run: `foil init` with one harness | Pass: prints only `The three default templates use one harness id.` |
+| Hand run: misspelled persona on a worktree seat | Pass: exit 1, no `foil/implementer-1` branch, no worktree |
+| Hand run: `foil seat resume` after a crash, one template broken | **Fail (H1).** Nothing is resumed |
+| G1 hand check, live tier, fresh-agent run | Not run. The commit message says so |
+| Publishing safety | Pass: no secrets, personal paths, private hosts, or personal emails. The `Co-authored-by: Cursor` line is still there (G9) |
+
+### 12.2 Section 10 items
+
+| ID | Status |
+|---|---|
+| G1 | Half done. The four documents say "in this repository". The hand check in step (1) has not been run, so it is still a release gate. The new wording has problems of its own (H3, H4). |
+| G2 | Half done. `FOIL_E2E_HARNESS` works, has a test, and is documented in CONTRIBUTING.md. The live run itself is still a release gate. |
+| G3 | Not run. The install source in its sentence is now out of date (H6). |
+| G4 | Done and verified. |
+| G5 | Mostly done. The C12 record moved to the plan. Two leftovers are in H5 and H7. Moving it to 10.5 rather than 10.4 was right: 10.4 was already "Decision", which was my mistake. |
+| G6 | Done and verified. |
+| G7 | Done. |
+| G8 | Done. |
+| G9 | Still the owner's call. |
+
+### 12.3 Action items
+
+Do H1–H5 and H7 in one commit. Then do H6 and run the release gates
+G1–G3. Record your self-review in the commit message as this commit
+did: what you ran, against which commit, and what you did not run.
+
+| ID | Severity | Action | Done when |
+|---|---|---|---|
+| H1 | High, new in this release | **A bad template must not stop `foil seat resume` for the other seats.** In `resume_seats` (`src/foil/lifecycle.py`), the loop over all seats calls `_restart` for each dead seat in name order. The first `FoilError` ends the loop. Since C8, a misspelled persona raises in `_restart`. One typo in `implementer.toml` therefore leaves `lead` and `reviewer-1` dead after a crash, and the error does not say which seat failed. To reproduce: spawn `lead`, `implementer`, and `reviewer`; run `tmux kill-server`; misspell the persona in `implementer.toml`; run `foil seat resume`. It exits 1 and all three seats stay dead. In 0.2.0 the same typo resumed every seat, because a missing persona path became plain text. Fix: in that loop, wrap `_restart` in `try` / `except FoilError`. For each failure, print `foil: seat '<name>' not resumed: <reason>` to stderr, where the reason is the error text without its `foil: ` prefix, and go on to the next seat. After the loop, exit 1 if any seat failed. Leave `foil seat resume NAME` as it is. Requirements first: add "A seat that cannot be restarted is named in the error and does not stop the others." to F9 in `docs/requirements.md`. | A test in `tests/test_slice_e.py` has three dead seats, one of them with a broken template, and runs `foil seat resume`. It checks that the other two are alive, the exit code is 1, and stderr names the broken seat. With the fix reverted, the test fails. |
+| H2 | Medium | **Add the folder-trust prompt wherever the docs list what a stuck seat shows.** The only stop the live tier has seen is Claude Code's folder-trust prompt. These lists still name only login, approval, and first-run or opt-in: the "If nothing happens" sections of `README.md` and `README.zh-CN.md`, the "If nothing happens" sections of `docs/demo.md` and `docs/demo.zh-CN.md`, Onboarding step 7 in `docs/requirements.md`, and step 5 of `src/foil/defaults/skills/operator.md`. Add "a folder-trust prompt" to each list. In the demos, add a bullet: "a folder-trust prompt: accept it in that window, or run the CLI once in the repository before the first fleet". | Every hit of `grep -rn "login prompt" README* docs src/foil/defaults/skills` also names the folder-trust prompt, and so does every hit of `grep -rn "登录提示" README.zh-CN.md docs`. |
+| H3 | Medium | **Translate the new Chinese sentence.** Line 93 of `README.zh-CN.md` contains the English `（in this repository）` and `folder-trust 提示`. Replace that sentence with: "在舰队开始之前，先在本仓库里把每个 harness 运行一次，接受它的文件夹信任提示，以及首次运行和意见征集对话框，因为信任是按文件夹生效的。" The point of M3 is that every document says the same thing. It does not mean the same English words must appear in the Chinese one. | The paragraph has no English apart from product names, CLI names, and code. |
+| H4 | Medium | **Write the README prerequisites for its reader.** Line 93 of `README.md` speaks to "you" and then switches to "the human". Its sentence "A dialog seen in `foil seat peek` is reported, not answered" also contradicts "Answer it in that window" under "If nothing happens". The first rule is for the agent; the second is for a person. Keep the text up to "Foil never handles that login." and the closing "Another CLI can join with a small preset file." Replace everything in between with: "Before your first fleet, run each CLI once in this repository and accept its folder-trust, first-run, and opt-in prompts. Trust is per folder. A seat waiting on one of those prompts looks, from outside, like a seat that is working. Your agent asks you to do this, or to confirm it is done, and it reports any prompt it sees rather than answering it." Make the same change in `README.zh-CN.md`, together with H3. | Both READMEs speak to the reader throughout, and nothing contradicts "If nothing happens". |
+| H5 | Medium | **Finish G5: known issues are for users.** The first two known issues in the 0.2.1 entry of `CHANGELOG.md` are records of checks. The second says a check "did not exercise this release"; under M4 that check is "not run", not an issue. Replace both with the issue a user will actually meet: "Claude Code, and any CLI that asks whether to trust a folder, waits on that prompt in a folder it has not trusted, and a waiting seat looks like a working one. Run the CLI once in the repository and accept the prompt before the first fleet." After G2 and G3 have run, add one line with their results: the harness and the outcome. Also change `## [0.2.1] - 2026-09-28` to `## Unreleased` until the tag, as CONTRIBUTING.md rule 4 says. | The known issues describe user problems only, and the heading says `Unreleased`. |
+| H6 | Release gate prerequisite | **Point G3 at a commit, not a branch.** G3's sentence installs `@foil/verifier-4`. That branch is now `615cb6d`, which does not have this commit; the commit message noticed this. Branch names move, and commits do not. Install from the exact commit you are about to release, `uv tool install "git+https://github.com/TiantianFlow/foil.git@<full commit sha>"`, and record that sha next to what `foil --version` prints. Change the G3 row to say "the commit under review" instead of a branch name. | The G3 record names the commit it tested. |
+| H7 | Low | **Tidy the moved record and the docs index.** The moved record's heading is a bare `## 10.5`, at the same level as sections 10 and 11. Make it `### 10.5 C12 verification record`, inside section 10. In that text, "which this release already treats as a known issue below" points at the changelog, not at anything below it, so change "below" to "in the changelog". `docs/README.md` says AGENTS.md is "for the self-review coding agents run", but the self-review is in CONTRIBUTING.md. Say "[AGENTS.md](../AGENTS.md) for coding agents working on Foil". | The heading, the sentence, and the index line are fixed. |
+| H8 | Low, process | **Leave a review's items as written, and record status next to them.** The G2 and G5 rows in section 10 were edited. The G5 edit fixed my own mistake, which is welcome. A review, though, is a record of what was asked at a given commit. Put corrections and status in the next review, or in a status line under the item, for example "G5: moved to 10.5, because 10.4 is taken". A reader can then tell what was asked apart from what was done. | Later rounds add status instead of changing earlier items. |
+
+### 12.4 Decision
+
+Do H1–H5 and H7, then H6 and the release gates G1–G3. H1 is a
+regression, so fix it before the tag whatever the gates show. The rule
+from section 10.4 still holds. G1 blocks the release until we know
+whether a `claude` seat in a worktree asks for trust again. If it does,
+a known issue and a documented workaround are enough; it does not need
+a fix in this release.
+
+What went well this round: the commit message said what was run,
+against which commit, and what was not run, and each claim checked out.
+What was missed is step 4 of the self-review in CONTRIBUTING.md. The
+search was for the literal new phrase, so the Chinese README got an
+English insert (H3), and the lists that describe the same prompts in
+other words were missed (H2). Search for the idea, then write it in each
+file's own language and voice.
