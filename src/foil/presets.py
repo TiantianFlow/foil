@@ -177,16 +177,17 @@ def load_template(toplevel: Path, name: str) -> dict[str, Any]:
 
 def persona_text(template: dict[str, Any]) -> str:
     persona = template["persona"]
-    if not persona or "\n" in persona or "\r" in persona or persona.startswith("/"):
+    if not persona or "\n" in persona or "\r" in persona or not persona.endswith(".md"):
         return persona
-    path = template["path"].parent / persona
+    relative = Path(persona)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise FoilError(f"foil: persona file not found: {persona}")
+    path = template["path"].parent / relative
     if path.is_symlink():
         raise FoilError("foil: refusing symlink")
     if path.is_file():
         return path.read_text(encoding="utf-8")
-    if persona.endswith(".md"):
-        raise FoilError(f"foil: persona file not found: {persona}")
-    return persona
+    raise FoilError(f"foil: persona file not found: {persona}")
 
 
 def launch_command(
