@@ -12,6 +12,7 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/project.py` | Finds the Git toplevel and the `.foil` directory. |
 | `src/foil/store.py` | Writes JSON atomically, loads the registry, and rejects credential-shaped text. |
 | `src/foil/presets.py` | Loads harness presets and role templates, scans which eligible presets are installed, and expands launch argv. It does not start a process. |
+| `src/foil/roster_ops.py` | Lists, shows, adds, updates, and removes role templates. Writes are atomic and refuse a symlink. |
 | `src/foil/lifecycle.py` | Initializes a project and spawns, kills, resumes, lists, and peeks seats. It writes instruction files. |
 | `src/foil/tmux.py` | Creates, stops, and reads tmux windows by exact window id. |
 | `src/foil/board.py` | Writes mail files, then asks tmux to type the nudge line. |
@@ -104,7 +105,7 @@ Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foi
 
 `foil init` creates `.foil` in the Git toplevel and adds `/.foil/` to that repository's exclude file, so Foil's files stay out of `git status`. It prints a report: every installed eligible harness in id order, the id each default template was given and why, which templates and personas it wrote and which it left alone, a sentence about the permission setting, and the operator pointer line. A re-run prints the report again and overwrites nothing. The directory holds:
 
-- `templates/<role>.toml` — the roster. The file name is the role. Fields used by the loader are `harness`, `model`, `persona`, `worktree`, and `permission`.
+- `templates/<role>.toml` — the roster. The file name is the role. Fields used by the loader are `harness`, `model`, `persona`, `worktree`, and `permission`. `foil roster` lists, shows, adds, updates, and removes these files. Add and update write atomically in this directory and refuse a symlink. Remove, and a harness change, fail while a seat of that role is alive or dead.
 - `templates/personas/<role>.md` — every packaged persona, copied once, including candidate roles that have no template yet. A persona adds only specialization the role skill does not already state. A template may instead point `persona` at another Markdown file, which is left untouched, or it may hold inline text.
 - `harnesses/` — optional project presets.
 - `memory/<id>.json` — lessons. They belong to the project and stay when seats are killed.
@@ -118,7 +119,7 @@ A linked worktree does not contain `.foil`. From that worktree, discovery walks 
 
 ## Authority
 
-The caller is outside the fleet when `FOIL_SEAT_ID` is unset. The lead is the process whose variable is `lead`. Every other value is a worker. The CLI allows or refuses the action before it changes anything. A worker cannot spawn, kill, or resume, and cannot accept or reject a lesson. The lead cannot kill the seat named `lead` and cannot run `foil seat kill --all`. No flag selects a different identity.
+The caller is outside the fleet when `FOIL_SEAT_ID` is unset. The lead is the process whose variable is `lead`. Every other value is a worker. The CLI allows or refuses the action before it changes anything. A worker cannot spawn, kill, or resume, and cannot accept or reject a lesson. The lead cannot kill the seat named `lead` and cannot run `foil seat kill --all`. The lead also cannot set a template's `permission`; only a caller outside the fleet can. No flag selects a different identity.
 
 ## Spawn
 

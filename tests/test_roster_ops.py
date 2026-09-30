@@ -17,6 +17,7 @@ from foil.roster_ops import (
     show_template,
     update_template,
 )
+from foil.store import load_registry, save_registry
 
 
 @pytest.fixture
@@ -397,6 +398,149 @@ def test_roster_authority_worker_cannot_list(
     assert code == 1
     err = capsys.readouterr().err
     assert "not allowed" in err
+
+
+@pytest.mark.parametrize("role", ["..", "../outside", "/tmp/outside", "a/b"])
+def test_unsafe_role_is_rejected_before_any_path_is_used(project: Path, role: str) -> None:
+    templates = project / ".foil" / "templates"
+    before = sorted(path.name for path in templates.iterdir())
+    outside = project.parent / "outside.toml"
+    with pytest.raises(FoilError, match="invalid role name"):
+        add_template(project, role)
+    with pytest.raises(FoilError, match="unknown template"):
+        update_template(project, role, "model", "x")
+    with pytest.raises(FoilError, match="unknown template"):
+        remove_template(project, role)
+    assert sorted(path.name for path in templates.iterdir()) == before
+    assert not outside.exists()
+
+
+def test_invalid_update_restores_the_same_bytes(project: Path) -> None:
+    path = project / ".foil" / "templates" / "lead.toml"
+    before = path.read_bytes()
+    with pytest.raises(FoilError):
+        update_template(project, "lead", "model", 'say "hi"')
+    assert path.read_bytes() == before
+
+
+def test_unknown_harness_and_parent_persona_roll_back(project: Path) -> None:
+    path = project / ".foil" / "templates" / "lead.toml"
+    before = path.read_bytes()
+    with pytest.raises(FoilError, match="unknown harness"):
+        update_template(project, "lead", "harness", "not-a-harness")
+    assert path.read_bytes() == before
+    with pytest.raises(FoilError, match="must stay inside"):
+        update_template(project, "lead", "persona", "../secret.md")
+    assert path.read_bytes() == before
+
+
+def test_add_from_invalid_file_leaves_no_template(project: Path) -> None:
+    source = project / "extra.toml"
+    source.write_text(
+        'harness = "claude"\nextra = true\nworktree = false\npermission = "ask"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(FoilError, match="invalid template"):
+        add_template(project, "custom", from_file=str(source))
+    plain = project / "notes.toml"
+    plain.write_text("this is not toml [\n", encoding="utf-8")
+    with pytest.raises(FoilError, match="invalid template"):
+        add_template(project, "custom", from_file=str(plain))
+    assert not (project / ".foil" / "templates" / "custom.toml").exists()
+
+
+def test_init_report_names_personas_without_templates(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    init_project(str(project))
+    out = capsys.readouterr().out
+    assert "Available personas (use 'foil roster add'):" in out
+    assert "researcher" in out
+
+
+def _seat(project: Path, *, state: str) -> None:
+    add_template(project, "researcher")
+    registry = load_registry(project)
+    registry["seats"]["researcher-1"] = {
+        "name": "researcher-1",
+        "template": "researcher",
+        "harness": "fake",
+        "window_id": "",
+        "state": state,
+        "worktree": "",
+        "branch": "",
+        "session_id": "",
+    }
+    save_registry(project, registry)
+
+
+def test_remove_and_harness_change_refuse_a_live_seat(project: Path) -> None:
+    _seat(project, state="alive")
+    path = project / ".foil" / "templates" / "researcher.toml"
+    before = path.read_bytes()
+    with pytest.raises(FoilError, match="still in use"):
+        remove_template(project, "researcher")
+    with pytest.raises(FoilError, match="still in use"):
+        update_template(project, "researcher", "harness", "codex")
+    assert path.read_bytes() == before
+    assert path.is_file()
+
+
+def test_killed_seat_does_not_block_remove(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _seat(project, state="killed")
+    remove_template(project, "researcher")
+    assert "removed template 'researcher'" in capsys.readouterr().out
+    assert not (project / ".foil" / "templates" / "researcher.toml").exists()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["roster", "list"],
+        ["roster", "show", "lead"],
+        ["roster", "add", "researcher"],
+        ["roster", "update", "lead", "model=x"],
+        ["roster", "remove", "reviewer"],
+    ],
+)
+def test_worker_cannot_run_any_roster_command(
+    monkeypatch: pytest.MonkeyPatch,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+) -> None:
+    monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
+    assert main(argv) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert "not allowed" in err
+
+
+def test_lead_cannot_set_permission(
+    monkeypatch: pytest.MonkeyPatch,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = project / ".foil" / "templates" / "lead.toml"
+    before = path.read_bytes()
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["roster", "update", "lead", "permission=auto"]) == 1
+    assert "permission is outside the fleet only" in capsys.readouterr().err
+    assert path.read_bytes() == before
+
+
+def test_outside_caller_can_set_permission(
+    monkeypatch: pytest.MonkeyPatch,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
+    assert main(["roster", "update", "reviewer", "permission=auto"]) == 0
+    text = (project / ".foil" / "templates" / "reviewer.toml").read_text(encoding="utf-8")
+    assert 'permission = "auto"' in text
+    assert "updated template 'reviewer'" in capsys.readouterr().out
 
 
 def test_roster_authority_lead_can_list(

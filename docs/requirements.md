@@ -90,7 +90,7 @@ human's part is one sentence; everything after step 2 is the agent's work.
 
 | ID | Requirement |
 |---|---|
-| F1 | The command set is exactly the one in section 6. Roster management (F21) extends the surface by five actions under `foil roster`. |
+| F1 | The command set is exactly the one in section 6. |
 | F2 | The template named `lead` defines the lead, and its seat is always named `lead`. A fleet has at most one live lead, and the first seat spawned must be the lead. A new lead may be spawned only after the previous one was killed. |
 | F3 | `seat spawn` takes a template name, not a harness command. Worker names are auto-numbered from the template name (`implementer-1`, `implementer-2`) unless `--name` is given. A worker name is never reused within a fleet. |
 | F4 | Only the lead or a caller outside the fleet may spawn, kill, or resume seats, or review memory (section 6.2). |
@@ -139,7 +139,7 @@ human's part is one sentence; everything after step 2 is the agent's work.
 | ID | Requirement |
 |---|---|
 | F20 | Templates are per project. `init` creates default templates for `lead`, `implementer`, and `reviewer`, each with a real persona prompt and an installed harness chosen by F28. `implementer` asks for a worktree. `init` also copies every packaged persona into the project, including candidate roles that have no default template, so adding a role is writing a template beside a persona that is already on disk. `init` never overwrites an existing template or persona, and re-running it after the roster is edited changes nothing. |
-| F21 | `foil roster` commands manage templates (F23). `list` shows templates and available personas. `show ROLE` displays one template. `add ROLE` creates a template from a TOML file, or from the persona of the same name already in the project. `update ROLE FIELD=VALUE` changes one field. `remove ROLE` deletes (fails for lead/implementer/reviewer). Authority: outside fleet and lead only. |
+| F21 | `foil roster` manages templates. A role name is checked against the safe-id rule before any template path is built. `list` shows every template and every persona that has no template. `show ROLE` shows one template. `add ROLE` creates one. Without `--from`, `personas/ROLE.md` must already exist; the new file uses the first installed harness, `worktree = false`, and `permission = ask`, and it sets no model. `--from FILE` copies that TOML. Add fails if ROLE exists, the name is not a safe id, or the file is not a valid template. Writes are atomic in the templates directory and refuse a symlink. An invalid result is removed, including an unknown harness or a persona path that leaves `.foil/templates`. `update ROLE FIELD=VALUE` changes one of `harness`, `model`, `persona`, `worktree`, and `permission`, splitting on the first `=`. An invalid result is rolled back to the previous bytes. Only a caller outside the fleet may set `permission`. Remove and a harness change fail while a seat of that template is `alive` or `dead`. `remove ROLE` deletes a template and fails for `lead`, `implementer`, and `reviewer`. Every error is one line. Workers cannot run roster commands. The lead can, except setting `permission`. |
 | F22 | A template's persona may be inline text or a path to a Markdown file, which is used untouched. A missing file inside the template directory raises `foil: persona file not found: <value>`. An absolute path or any `..` part raises `foil: persona path must stay inside .foil/templates: <value>` before filesystem access. A newline, a carriage return, or a single line that does not end in `.md` stays inline text. |
 | F23 | Harness presets ship for `claude`, `codex`, `gemini`, `grok`, and `opencode`, plus `fake` (a test double, section 10, never eligible under F27). Users can add their own presets in the same format. The list is in F28's order, so the two never read as different orders. |
 | F24 | Each seat gets a generated instruction file at launch. That file is the single source of the seat's instructions. The first launch prompt inlines the file's full text, including the role skill, persona, commands, and board conventions, and tells the seat to re-read the instruction file whenever it is woken. The file contains the seat's name, the lead's name, the board path, the exact commands the seat may run, the board and contract conventions, all accepted memory lessons, and, for the lead only, the available templates. |
@@ -201,11 +201,11 @@ accepts `--help`, and `foil --version` prints the version.
 | `foil memory accept ID` | none | Accepts a proposal. |
 | `foil memory reject ID` | none | Rejects a proposal. |
 | `foil memory list` | `--all`, `--json` | Lists accepted lessons; `--all` lists every lesson with its state. |
-| `foil roster list` | `--json` | Lists all templates and available personas (F21). Human: `<role> [<harness>/<model>]` (templates) and `+ <persona>` (no template). JSON: `{"templates": [...], "personas": [...]}`. |
-| `foil roster show TEMPLATE` | `--json` | Shows one template's configuration (F21). Human: key-value pairs. JSON: full template object. |
-| `foil roster add ROLE` | `--from FILE` | Creates a template from FILE (TOML), or from `personas/ROLE.md` with the first installed harness (F21). Fails if ROLE exists. |
-| `foil roster update ROLE FIELD=VALUE` | none | Updates one field in ROLE's template (F21). FIELD: `harness`, `model`, `persona`, `worktree`, `permission`. |
-| `foil roster remove ROLE` | none | Deletes ROLE's template (F21). Fails for lead/implementer/reviewer (protected defaults). |
+| `foil roster list` | `--json` | Lists templates and personas with no template (F21). Human: `<role> [<harness>/<model>]` and `+ <persona>`. JSON: `{"templates":[{"role","harness","model","worktree","permission"}],"personas":["<name>"]}`. |
+| `foil roster show ROLE` | `--json` | Shows one template (F21). JSON: `role`, `harness`, `model`, `persona`, `worktree`, `permission`. |
+| `foil roster add ROLE` | `--from FILE` | Creates a template (F21). Without `--from`: first installed harness, `worktree = false`, `permission = ask`. |
+| `foil roster update ROLE FIELD=VALUE` | none | Changes one field (F21). `permission` is outside the fleet only. An invalid result is rolled back. A harness change fails while the template is in use. |
+| `foil roster remove ROLE` | none | Deletes ROLE (F21). Fails for lead, implementer, and reviewer, and while that template is in use. |
 
 That's seven top-level commands (`init`, `seat`, `send`, `memory`, `mail`, `board`, `roster`) and
 twenty actions.
@@ -215,7 +215,7 @@ twenty actions.
 | Caller | `init` | `seat spawn` | `seat kill` | `seat kill --all` | `seat resume` | `seat list` / `peek` | `send` | `mail read` | `mail list` | `board read` | `board list` | `memory add` / `list` | `memory accept` / `reject` | `roster list` / `show` | `roster add` / `update` / `remove` |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Outside the fleet | yes | yes | yes | yes | yes | yes | yes | yes | no | yes | yes | yes | yes | yes | yes |
-| Lead | no | yes | yes, not itself | no | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Lead | no | yes | yes, not itself | no | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes, except `permission` |
 | Worker | no | no | no | no | no | yes | yes | yes | yes | yes | yes | yes | no | no | no |
 
 ## 7. Data design

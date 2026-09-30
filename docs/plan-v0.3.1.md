@@ -7,11 +7,11 @@ hand-editing TOML, and teaches both skills the new commands.
 ## Done when
 
 - `foil roster list [--json]` shows every template and every persona that has no template.
-- `foil roster show TEMPLATE [--json]` shows one template.
+- `foil roster show ROLE [--json]` shows one template.
 - `foil roster add ROLE [--from FILE]` creates a template. Without `--from`, it needs `personas/<ROLE>.md` on disk and writes a template for it, using the first installed harness. It fails if ROLE exists.
 - `foil roster update ROLE FIELD=VALUE` changes one of `harness`, `model`, `persona`, `worktree`, `permission`. An invalid result is rolled back.
 - `foil roster remove ROLE` deletes a template. It refuses `lead`, `implementer`, and `reviewer`.
-- Workers cannot run any roster command. The outside caller and the lead can.
+- Workers cannot run any roster command. The outside caller and the lead can. Only the outside caller may set `permission`. Remove and a harness change fail while a seat of that template is alive or dead.
 - `foil init` names the personas that have no template.
 - The operator skill teaches the roster commands, a first-run roster review, and importing a role file. The lead skill teaches the roster commands.
 - requirements.md (F1, F21, sections 6.1 and 6.2) and the tests match the command surface.
@@ -31,4 +31,4 @@ hand-editing TOML, and teaches both skills the new commands.
 
 ## Version note
 
-Another fleet builds mail and board commands (#12). The first branch merge-ready takes 0.3.0; the other rebases and becomes 0.3.1.
+This file is the 0.3.1 plan. Another fleet builds mail and board commands (#12) as 0.3.0. If that order changes, retitle this plan to the version it actually ships.

@@ -83,7 +83,7 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert "foil board list PATTERN [--json]" in text
     assert "foil memory accept ID" in text
     assert "foil roster list [--json]" in text
-    assert "foil roster show TEMPLATE [--json]" in text
+    assert "foil roster show ROLE [--json]" in text
     assert "foil roster add ROLE [--from FILE]" in text
     assert "foil roster update ROLE FIELD=VALUE" in text
     assert "foil roster remove ROLE" in text
