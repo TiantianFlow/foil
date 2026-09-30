@@ -16,6 +16,7 @@ Notable changes to Foil, newest first.
 
 - Command surface expanded from eleven actions to sixteen: five new roster actions under `foil roster` (F1).
 - Requirements F21 changed from "The roster is managed by editing template files. There are no roster commands." to documenting the five roster subcommands.
+- The lead's generated instructions list the `foil roster` commands. Roster errors are one line. Roster writes are atomic and do not follow a template symlink.
 
 ## Unreleased
 
