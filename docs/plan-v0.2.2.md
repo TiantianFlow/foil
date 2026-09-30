@@ -84,7 +84,7 @@ in section 5; reviewers may tighten it, but not widen the scope.
 | D3 | `docs/demo.md` section 6: show the checklist in the sample `status.md`, taken from the scenario 1 fixture (T4). | The sample equals what scenario 1 writes. |
 | D4 | `docs/demo.zh-CN.md`: the same sample. | The sample matches D3. |
 | D5 | `docs/README.md`: list this plan (D8). | The index test passes. Done in the commit that adds this plan. |
-| D6 | `docs/architecture.md`: no change. It already says Foil does not read `status.md`. | Re-read after S1 and S2; still accurate. |
+| D6 | `docs/architecture.md`: only the version line changed, from 0.2.1 to 0.2.2. It still says Foil does not read `status.md`. | Re-read after S1 and S2; still accurate. |
 
 ### Tests (T)
 
@@ -175,8 +175,8 @@ The tests pass.
 Done. This branch is rebased onto v0.2.1 at `84602ec`. The table records
 how each overlap was resolved.
 
-These files are edited by both releases. Keep each 0.2.2 hunk inside the
-named section so the R1 rebase stays mechanical.
+These files were edited by both releases. Each 0.2.2 hunk stayed inside
+the named section, so the R1 rebase stayed mechanical.
 
 | File | 0.2.2 edits | 0.2.1 edits | At rebase |
 |---|---|---|---|
@@ -203,7 +203,7 @@ not touched by 0.2.1 in the paragraphs this plan edits.
 ## 8. Definition of done
 
 - [x] Q1 to Q3, S1 and S2, D1 to D5, T1 to T5, and R1 to R4 are done; S3
-      and D6 are confirmed unchanged.
+      is unchanged, and D6 changed only its version line.
 - [x] The CONTRIBUTING checks pass: unit tests, fake-harness scenarios,
       lint, and build.
 - [x] Section 6 of the requirements is unchanged, and
