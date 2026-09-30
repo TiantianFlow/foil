@@ -6,7 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Added
 
-- `foil roster` commands for managing role templates: `list` shows all templates and available personas, `show TEMPLATE` displays one template's configuration, `add ROLE` creates a new template from TOML file or for an existing persona, `update ROLE FIELD=VALUE` modifies a template field, and `remove ROLE` deletes a template (fails for lead/implementer/reviewer). Authority: outside the fleet and lead only (F21).
+- `foil roster` commands for managing role templates: `list` shows all templates and available personas, `show TEMPLATE` displays one template's configuration, `add ROLE` creates a template from a TOML file, or from the persona of the same name, `update ROLE FIELD=VALUE` modifies a template field, and `remove ROLE` deletes a template (fails for lead/implementer/reviewer). Authority: outside the fleet and lead only (F21).
 - `foil roster list` and `foil roster show` accept `--json` for structured output.
 - `foil init` report now includes available personas (those without templates) with a note to use `foil roster add`.
 - The operator skill teaches the roster commands, first-run roster exploration, and importing from agency-agent library.

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
-from typing import Any
 
 from foil.errors import FoilError
-from foil.presets import load_template
+from foil.presets import installed_harness, load_template
 from foil.project import foil_root
 from foil.store import SAFE_ID
 
@@ -106,7 +104,7 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
 
 
 def add_template(toplevel: Path, role: str, *, from_file: str | None = None) -> None:
-    """Create a new template from TOML file or interactively."""
+    """Create a template from a TOML file or from the persona of the same name."""
     if not SAFE_ID.fullmatch(role):
         raise FoilError(f"foil: invalid role name '{_shown(role)}'")
 
@@ -129,7 +127,6 @@ def add_template(toplevel: Path, role: str, *, from_file: str | None = None) -> 
             template_path.unlink()
             raise exc
     else:
-        # Interactive mode: check if persona exists
         personas_dir = templates_dir / "personas"
         persona_file = personas_dir / f"{role}.md"
 
@@ -140,7 +137,7 @@ def add_template(toplevel: Path, role: str, *, from_file: str | None = None) -> 
             )
 
         # Create minimal template pointing to the persona
-        content = f"""harness = "claude"
+        content = f"""harness = "{installed_harness(toplevel)}"
 persona = "personas/{role}.md"
 worktree = false
 permission = "ask"
@@ -177,11 +174,11 @@ def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
             # Format the new value based on field type
             if field == "worktree":
                 if value.lower() not in {"true", "false"}:
-                    raise FoilError(f"foil: worktree must be 'true' or 'false'")
+                    raise FoilError("foil: worktree must be 'true' or 'false'")
                 formatted = value.lower()
             elif field == "permission":
                 if value not in {"ask", "auto"}:
-                    raise FoilError(f"foil: permission must be 'ask' or 'auto'")
+                    raise FoilError("foil: permission must be 'ask' or 'auto'")
                 formatted = f'"{value}"'
             else:
                 formatted = f'"{value}"'
@@ -194,11 +191,11 @@ def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
     if not updated:
         if field == "worktree":
             if value.lower() not in {"true", "false"}:
-                raise FoilError(f"foil: worktree must be 'true' or 'false'")
+                raise FoilError("foil: worktree must be 'true' or 'false'")
             formatted = value.lower()
         elif field == "permission":
             if value not in {"ask", "auto"}:
-                raise FoilError(f"foil: permission must be 'ask' or 'auto'")
+                raise FoilError("foil: permission must be 'ask' or 'auto'")
             formatted = f'"{value}"'
         else:
             formatted = f'"{value}"'

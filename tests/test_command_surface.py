@@ -52,7 +52,7 @@ class CommandSpec:
     commands: dict[str, CommandSpec] | None = None
 
 
-# docs/requirements.md §6.1 — six top-level commands, fifteen actions.
+# docs/requirements.md §6.1 — seven top-level commands, twenty actions.
 SECTION_6 = CommandSpec(
     flags=(FlagSpec("--version"),),
     commands={
@@ -121,6 +121,23 @@ SECTION_6 = CommandSpec(
                 ),
             }
         ),
+        "roster": CommandSpec(
+            commands={
+                "list": CommandSpec(flags=(FlagSpec("--json"),)),
+                "show": CommandSpec(
+                    flags=(FlagSpec("--json"),),
+                    positionals=(PositionalSpec("TEMPLATE"),),
+                ),
+                "add": CommandSpec(
+                    flags=(FlagSpec("--from", metavar="FILE"),),
+                    positionals=(PositionalSpec("ROLE"),),
+                ),
+                "update": CommandSpec(
+                    positionals=(PositionalSpec("ROLE"), PositionalSpec("FIELD=VALUE"))
+                ),
+                "remove": CommandSpec(positionals=(PositionalSpec("ROLE"),)),
+            }
+        ),
     },
 )
 
@@ -140,6 +157,11 @@ SECTION_6_SYNOPSES = (
     "foil memory accept ID",
     "foil memory reject ID",
     "foil memory list",
+    "foil roster list",
+    "foil roster show TEMPLATE",
+    "foil roster add ROLE",
+    "foil roster update ROLE FIELD=VALUE",
+    "foil roster remove ROLE",
 )
 
 
