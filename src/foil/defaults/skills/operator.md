@@ -20,7 +20,7 @@ foil init
 
 Read the whole report. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, and the permission sentence. Running it again does not overwrite a template or a persona.
 
-3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `ask` is the default: that seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With `ask`, peek a new seat for an approval prompt.
+3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `ask` is the default: that seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With either setting, peek a new seat for an approval prompt.
 4. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`. Do not copy skill text into the task.
 5. Check that the lead is working. Spawn the lead once, with this task, then wait a few minutes:
 

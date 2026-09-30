@@ -33,6 +33,7 @@ No command or flag was added.
 - The live tier, pointed at Codex, passed two of six scenarios. The other four stopped on Codex's workspace-trust prompt in a fresh directory.
 - The Claude Code operator-skill path (`~/.claude/skills/foil-operator/SKILL.md`) has not been checked by hand. The table still says no. The pointer line is the path that does not depend on that check.
 - A harness's own first-run or opt-in dialog can still stop a seat, including after `foil seat resume`. The docs now say to dismiss those dialogs before the fleet starts, and to peek after a resume.
+- With `permission = "auto"`, a Claude Code seat can still stop on Claude Code's own command-approval prompt. Peek new seats, and answer the prompt in that window.
 
 ## [0.2.0] - 2026-09-27
 

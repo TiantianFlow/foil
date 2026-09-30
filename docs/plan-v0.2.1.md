@@ -746,6 +746,10 @@ does not block the tag. The owner decides whether two live passes out of
 six, with every stop explained, is enough for this release; 0.2.0
 shipped with five of six.
 
+The argv check found that Foil passed `--permission-mode auto`, so this
+commit changes the claims and not the flag. A mode that never asks is a
+gap for the next release.
+
 One process note. G1 found a fact that contradicted the documents. The
 fact went into the plan, but not into the documents that make the
 claim. When a check finds something new, search for every sentence it
