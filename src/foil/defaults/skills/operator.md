@@ -56,7 +56,7 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 A template is a four-line file in `.foil/templates/`. The file name is the role. The fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. `init` copies every packaged persona there and writes only the three default templates. It overwrites nothing: re-running it after an edit changes no file.
 
-View and modify templates with `foil roster` commands:
+View and modify templates with the roster commands:
 
 ```text
 foil roster list
