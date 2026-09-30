@@ -127,6 +127,17 @@ def test_operator_spawns_the_lead_once_then_sends_the_goal() -> None:
     assert "Do not spawn the lead again." in text
 
 
+def test_onboarding_sentence_names_the_install_source() -> None:
+    sentence = (
+        "Install Foil from https://github.com/TiantianFlow/foil, "
+        "onboard this repository with it, and start a fleet. My goal: <goal>."
+    )
+    assert "github.com/TiantianFlow/foil" in sentence
+    for name in ("README.md", "README.zh-CN.md"):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert sentence in text
+
+
 def test_permission_is_per_template_in_the_onboarding_docs() -> None:
     for relative in ("README.md", "README.zh-CN.md", "skills/operator.md"):
         text = (ROOT / relative).read_text(encoding="utf-8")

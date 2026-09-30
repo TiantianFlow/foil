@@ -4,11 +4,35 @@ Notable changes to Foil, newest first.
 
 ## Unreleased
 
-### Documentation
+`foil --version` prints 0.2.1.
+[docs/requirements.md](docs/requirements.md) is the specification, and
+[docs/plan-v0.2.1.md](docs/plan-v0.2.1.md) is the plan for this release.
+Onboarding is a sentence the human gives a coding agent. The agent
+installs Foil, reads the `foil init` report, and starts the fleet.
+No command or flag was added.
 
-- Both READMEs: the product's two names in each title, the "loyal opposition" tagline, three problems Foil solves compared with a single agent session, a diagram that labels what each box is, a short section on how Foil is built, one getting-started path (replacing the separate quick start and onboarding) for any supported agent CLI rather than Claude only, with what to check when a seat makes no progress, and badges for Python, platforms, and runtime dependencies.
-- A demo per language ([docs/demo.md](docs/demo.md), [docs/demo.zh-CN.md](docs/demo.zh-CN.md)), rebuilt from a hand replay of end-to-end scenario 1.
-- Module and spawn/send diagrams in [docs/architecture.md](docs/architecture.md), and corrections where it had fallen behind the code: seat state and nudges check the window's markers, and instruction files include the role skill's text.
+### Added
+
+- `foil init` reports every installed eligible harness, in id order. The order is ascending Unicode code point of the id, case preserved: a tiebreak, not a ranking. `fake` is never eligible. A user preset that reuses a built-in id counts once. `lead` and `implementer` get the first installed id. `reviewer` gets the second when one exists, and the first otherwise. The report counts the distinct harness ids stored in the three templates. Two ids can still run the same program or model; set model on a template to choose one. It names what was written and what was left alone, and explains `ask` and `auto`. One invalid user preset is skipped and named; it does not abort `init`.
+- Candidate personas: `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `init` copies every packaged persona and still writes only the three default templates. It overwrites nothing.
+- Seats inherit `HOME` as well as `PATH`. A preset's `env` still names any further variables. The value is forwarded at launch and is not stored in the plan.
+- A seat's instruction file includes its persona's text.
+- The operator skill describes the template fields, the candidate catalog, and a few principles for picking a harness and a model. It tells the operator to peek after a resume, not only after a spawn.
+
+### Changed
+
+- A seat whose persona file is missing fails to spawn or resume with an error that names the file. `foil seat resume` with no name names each seat it could not restart, restarts the others, and exits 1.
+- A fresh `init` used to pick `grok` first when several CLIs were installed. It now picks the first id in code-point order, so `claude` is first when it is installed. Re-creating the templates uses that new order.
+- Both READMEs lead with the one sentence the human gives their coding agent. The by-hand commands stay as a second section. The agent asks the human to run each harness once in this repository and accept its folder-trust prompt as well as its first-run and opt-in dialogs, because trust is per folder, or to confirm that is already done, before the first spawn.
+- [CONTRIBUTING.md](CONTRIBUTING.md) has a self-review to run before asking for review, and a new [AGENTS.md](AGENTS.md) points coding agents to it.
+- Earlier documentation that had not been released: both READMEs carry the product's two names, the "loyal opposition" tagline, three problems Foil solves compared with a single agent session, a labeled diagram, how Foil is built, and badges for Python, platforms, and runtime dependencies. A demo per language ([docs/demo.md](docs/demo.md), [docs/demo.zh-CN.md](docs/demo.zh-CN.md)). [docs/architecture.md](docs/architecture.md) matches the scan, the persona copy, the inlined persona, and the launch environment.
+
+### Known issues
+
+- Claude Code, and any CLI that asks whether to trust a folder, waits on that prompt in a folder it has not trusted, and a waiting seat looks like a working one. Run the CLI once in the repository and accept the prompt before the first fleet.
+- The live tier, pointed at Codex, passed two of six scenarios. The other four stopped on Codex's workspace-trust prompt in a fresh directory.
+- The Claude Code operator-skill path (`~/.claude/skills/foil-operator/SKILL.md`) has not been checked by hand. The table still says no. The pointer line is the path that does not depend on that check.
+- A harness's own first-run or opt-in dialog can still stop a seat, including after `foil seat resume`. The docs now say to dismiss those dialogs before the fleet starts, and to peek after a resume.
 
 ## [0.2.0] - 2026-09-27
 
@@ -88,6 +112,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.2.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.1
 [0.2.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.0
 [0.1.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.1.1
 [0.1.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.1.0

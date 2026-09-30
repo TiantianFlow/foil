@@ -1,7 +1,7 @@
 # 运筹 · Foil
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.2.1-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -90,32 +90,24 @@ flowchart TB
 
 ## 开始使用
 
-你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。其他 CLI 只要一个小小的预设文件就能接入。
+你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。在舰队开始之前，先在本仓库里把每个 harness 运行一次，接受它的文件夹信任提示，以及首次运行和意见征集对话框，因为信任是按文件夹生效的。停在这些提示上的席位，从外面看就像一个正在工作的席位。你的 Agent 会请你去做这件事，或者请你确认已经完成，并且报告它看到的任何提示，而不是替你回答。其他 CLI 只要一个小小的预设文件就能接入。
 
-1. 安装运筹：
+人要做的只有一句话。在仓库里，把它交给你已经在用的编程 Agent：
 
-```sh
-uv tool install "git+https://github.com/TiantianFlow/foil.git"
+```text
+Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.
 ```
 
-2. 在你的仓库里运行 `foil init`：
+- Agent 安装运筹并运行 `foil init`。
+- 它读报告，并在 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里设置 `harness`、`model` 和 `permission`。只把主座改成 `auto` 不会让工人席位无人值守。
+- 它做首次运行检查，然后把目标发出去。
+- 它自己从不做项目本身的工作。
 
-```sh
-cd your-repo
-foil init
-```
-
-它会写好 `.foil/`，让它不出现在 `git status` 里，并把每个模板的 `harness` 都设成 `grok`、`claude`、`codex`、`opencode`、`gemini` 里本机第一个已安装的 CLI。它的输出是第 4 步要用的指针行，以及主座模板的权限设置。想混用不同厂商，就按角色修改 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里的 `harness`，也可以改 `model`。
-
-3. 给这几个模板各选一个权限。默认是 `permission = "ask"`：该席位会停在第一个审批提示上，在自己的窗口里等你。只把主座改成 `auto` 不会让工人席位无人值守。要让哪个席位无人值守，就把它的模板设成 `auto`。
-
-4. 在你已经在用的 Agent 里、在这个仓库中，粘贴指针行并写上你的目标。这个 Agent 里不需要安装任何东西。
+没有拿到那句话就启动的 Agent，改用这行指针：
 
 ```text
 Read .foil/skills/operator.md and follow it. My goal: <goal>.
 ```
-
-这个 Agent 就成了操作员。它先用一个小小的首次运行检查启动一次主座，再把你的目标发给主座，之后查看进展、转达主座的问题，并在你结束时拆掉舰队。它自己从不做项目本身的工作。
 
 持久安装操作员技能是可选的。把它复制到该 harness 发现技能的位置，放在用户级，这样它不会出现在 `git status` 里。下面的路径都没有对照该 harness 的当前文档核对过。
 
@@ -127,7 +119,15 @@ Read .foil/skills/operator.md and follow it. My goal: <goal>.
 
 ### 手动操作
 
-操作员跑的就是下面这些命令。首次运行检查只启动一次主座，让它写一个状态文件：
+同样的步骤，自己来敲。先安装运筹，再在仓库里：
+
+```sh
+uv tool install "git+https://github.com/TiantianFlow/foil.git"
+cd your-repo
+foil init
+```
+
+读报告，改那三个模板，然后只启动一次主座：
 
 ```sh
 foil seat spawn lead --task "Write board/status.md with state: done"
@@ -145,7 +145,7 @@ foil seat peek lead
 
 ### 如果什么都没发生
 
-运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在登录提示、审批提示，或者 harness 自己的首次运行或意见征集对话框上。在那个窗口里处理它（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入），或者先手动登录一次那个 CLI，然后 `foil seat kill lead`，再重新启动主座。
+运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在登录提示、文件夹信任提示、审批提示，或者 harness 自己的首次运行或意见征集对话框上。在那个窗口里处理它（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入），或者先手动登录一次那个 CLI，然后 `foil seat kill lead`，再重新启动主座。
 
 ## 限制
 

@@ -183,6 +183,8 @@ showing one of these:
 
 - a login prompt: log in to that CLI once by hand, then
   `foil seat kill lead` and spawn it again;
+- a folder-trust prompt: accept it in that window, or run the CLI once
+  in the repository before the first fleet;
 - an approval prompt: approve it in that window (`tmux ls` lists Foil's
   session, and `tmux attach` opens it), or set `permission = "auto"`;
 - the harness's own first-run or opt-in dialog: answer it the same way.

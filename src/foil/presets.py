@@ -18,7 +18,6 @@ _PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}")
 _PRESET_KEYS = {"id", "command", "permission", "resume", "session_id", "env", "unverified"}
 _TEMPLATE_KEYS = {"harness", "model", "persona", "worktree", "permission"}
 _ROLES = ("lead", "implementer", "reviewer")
-_HARNESS_ORDER = ("grok", "claude", "codex", "opencode", "gemini")
 BUILTIN_IDS = ("claude", "codex", "gemini", "opencode", "grok", "fake")
 
 
@@ -178,14 +177,17 @@ def load_template(toplevel: Path, name: str) -> dict[str, Any]:
 
 def persona_text(template: dict[str, Any]) -> str:
     persona = template["persona"]
-    if not persona or "\n" in persona or "\r" in persona or persona.startswith("/"):
+    if not persona or "\n" in persona or "\r" in persona or not persona.endswith(".md"):
         return persona
-    path = template["path"].parent / persona
+    relative = Path(persona)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise FoilError(f"foil: persona path must stay inside .foil/templates: {persona}")
+    path = template["path"].parent / relative
     if path.is_symlink():
         raise FoilError("foil: refusing symlink")
     if path.is_file():
         return path.read_text(encoding="utf-8")
-    return persona
+    raise FoilError(f"foil: persona file not found: {persona}")
 
 
 def launch_command(
@@ -202,11 +204,57 @@ def launch_command(
     )
 
 
-def installed_harness() -> str:
-    for name in _HARNESS_ORDER:
-        if shutil.which(name):
-            return name
-    raise FoilError("foil: no harness installed")
+def _packaged_persona_names() -> list[str]:
+    directory = files("foil").joinpath("defaults", "personas")
+    return sorted(item.name for item in directory.iterdir() if item.name.endswith(".md"))
+
+
+def installed_presets(
+    toplevel: Path,
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Eligible presets whose own command[0] is on PATH, and skipped files.
+
+    ``fake`` is excluded. A user file that reuses a built-in id replaces
+    that built-in. Ids are sorted by Unicode code point, case preserved:
+    a tiebreak, not a ranking. One invalid file is skipped. Its display
+    path and the reason are returned beside the presets that loaded.
+    ``load_preset`` itself is unchanged, so a spawn that names a broken
+    preset still fails.
+    """
+
+    ids = {name for name in BUILTIN_IDS if name != "fake"}
+    directory = foil_root(toplevel) / "harnesses"
+    if directory.is_dir() and not directory.is_symlink():
+        for path in directory.glob("*.toml"):
+            harness_id = path.stem
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or harness_id == "fake"
+                or not SAFE_ID.fullmatch(harness_id)
+            ):
+                continue
+            ids.add(harness_id)
+    found: list[dict[str, Any]] = []
+    skipped: list[tuple[str, str]] = []
+    for harness_id in sorted(ids):
+        try:
+            preset = load_preset(toplevel, harness_id)
+        except FoilError as exc:
+            skipped.append(
+                (f".foil/harnesses/{harness_id}.toml", str(exc).removeprefix("foil: "))
+            )
+            continue
+        if shutil.which(preset["command"][0]):
+            found.append(preset)
+    return found, skipped
+
+
+def installed_harness(toplevel: Path | None = None) -> str:
+    found, _skipped = installed_presets(Path.cwd() if toplevel is None else toplevel)
+    if not found:
+        raise FoilError("foil: no harness installed")
+    return found[0]["id"]
 
 
 def write_default_templates(toplevel: Path) -> None:
@@ -216,6 +264,12 @@ def write_default_templates(toplevel: Path) -> None:
             with suppress(FileExistsError):
                 create_exclusive(target, _builtin("skills", name).encode())
     directory = foil_root(toplevel) / "templates"
+    personas = directory / "personas"
+    for name in _packaged_persona_names():
+        target = personas / name
+        if not target.exists() and not target.is_symlink():
+            with suppress(FileExistsError):
+                create_exclusive(target, _builtin("personas", name).encode())
     missing = [
         role
         for role in _ROLES
@@ -224,12 +278,13 @@ def write_default_templates(toplevel: Path) -> None:
     ]
     if not missing:
         return
-    harness = installed_harness()
+    found, _skipped = installed_presets(toplevel)
+    if not found:
+        raise FoilError("foil: no harness installed")
+    first = found[0]["id"]
+    second = found[1]["id"] if len(found) > 1 else first
     for role in missing:
-        persona = directory / "personas" / f"{role}.md"
-        if not persona.exists() and not persona.is_symlink():
-            with suppress(FileExistsError):
-                create_exclusive(persona, _builtin("personas", f"{role}.md").encode())
+        harness = second if role == "reviewer" else first
         worktree = "true" if role == "implementer" else "false"
         body = (
             f'harness = "{harness}"\n'

@@ -15,8 +15,10 @@ from foil.errors import FoilError
 from foil.presets import (
     expand_argv,
     installed_harness,
+    installed_presets,
     load_preset,
     load_template,
+    persona_text,
     write_default_templates,
 )
 from foil.project import (
@@ -39,6 +41,66 @@ from foil.store import (
 from foil.tmux import TmuxController, TmuxError, TmuxTarget
 
 
+def _names(items: list[str]) -> str:
+    return ", ".join(items) if items else "none"
+
+
+def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: set[str]) -> None:
+    presets, skipped = installed_presets(toplevel)
+    found = [item["id"] for item in presets]
+    first = found[0] if found else ""
+    second = found[1] if len(found) > 1 else first
+    print(f"Installed harnesses, in id order (a tiebreak, not a ranking): {_names(found)}")
+    for path, reason in skipped:
+        print(f"Skipped {path}: {reason}")
+    roles = ("lead", "implementer", "reviewer")
+    stored: list[str] = []
+    for role in roles:
+        chosen = load_template(toplevel, role)["harness"]
+        fresh = role not in had_templates
+        second_reviewer = role == "reviewer" and chosen == second and second != first
+        if fresh and second_reviewer:
+            why = "second installed id"
+        elif fresh and chosen == first:
+            why = "first installed id"
+        else:
+            why = "left alone"
+        print(f"{role}: {chosen} ({why})")
+        stored.append(chosen)
+    if not found:
+        print("No eligible harness is installed.")
+    distinct = len(set(stored))
+    if distinct == 1:
+        print("The three default templates use one harness id.")
+    else:
+        word = {2: "two", 3: "three"}.get(distinct, str(distinct))
+        print(
+            f"The three default templates use {word} different harness ids. "
+            "Two ids can still run the same program or model; "
+            "set model on a template to choose one."
+        )
+    persona_dir = foil_root(toplevel) / "templates" / "personas"
+    personas = sorted(
+        path.stem
+        for path in persona_dir.glob("*.md")
+        if path.is_file() and not path.is_symlink()
+    )
+    print("Wrote templates: " + _names([role for role in roles if role not in had_templates]))
+    print("Left templates: " + _names([role for role in roles if role in had_templates]))
+    print("Wrote personas: " + _names([name for name in personas if name not in had_personas]))
+    print("Left personas: " + _names([name for name in personas if name in had_personas]))
+    permissions = ", ".join(
+        f"{role} {load_template(toplevel, role)['permission']}" for role in roles
+    )
+    print(f"permission: {permissions}.")
+    print(
+        "ask stops a seat at its first approval prompt; auto lets it run unattended. "
+        "Set it in each .foil/templates/<role>.toml; auto on the lead alone does not "
+        "let the workers run unattended."
+    )
+    print("Read .foil/skills/operator.md and follow it. My goal: <goal>.")
+
+
 def init_project(directory: str | None) -> None:
     require_host_tools()
     start = Path(directory).expanduser().resolve() if directory else Path.cwd()
@@ -50,7 +112,7 @@ def init_project(directory: str | None) -> None:
         not ((root / "templates" / f"{role}.toml").exists())
         for role in ("lead", "implementer", "reviewer")
     ):
-        installed_harness()
+        installed_harness(toplevel)
     root.mkdir(mode=0o700, exist_ok=True)
     root.chmod(0o700)
     for relative in SKELETON:
@@ -60,10 +122,17 @@ def init_project(directory: str | None) -> None:
     ensure_exclude(toplevel)
     ensure_board(toplevel)
     ensure_registry(toplevel)
+    template_dir = root / "templates"
+    persona_dir = template_dir / "personas"
+    roles = ("lead", "implementer", "reviewer")
+    had_templates = {role for role in roles if (template_dir / f"{role}.toml").exists()}
+    had_personas = {
+        path.stem
+        for path in persona_dir.glob("*.md")
+        if path.is_file() and not path.is_symlink()
+    }
     write_default_templates(toplevel)
-    permission = load_template(toplevel, "lead")["permission"]
-    print("Read .foil/skills/operator.md and follow it. My goal: <goal>.")
-    print(f'permission = "{permission}"')
+    _print_init_report(toplevel, had_templates, had_personas)
 
 
 def _shown(value: str) -> str:
@@ -174,12 +243,7 @@ def _accepted(root: Path) -> list[tuple[str, str]]:
 
 
 def _persona_line(template: dict) -> str:
-    persona = template["persona"]
-    if persona and "\n" not in persona and "\r" not in persona and not persona.startswith("/"):
-        path = template["path"].parent / persona
-        if path.is_file() and not path.is_symlink():
-            return f"Read `{path.resolve()}` untouched."
-    return persona or "none"
+    return persona_text(template).strip() or "none"
 
 
 def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> str:
@@ -211,7 +275,7 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
         "task/v1 (id, owner, state open|doing|done, acceptance),",
         "result/v1 (task, author, branch, outcome pass|fail).",
         f"Worktree: {work}",
-        f"Persona: {_persona_line(template)}",
+        f"Persona:\n{_persona_line(template)}",
         f"Skill: `{skill.resolve()}`.",
         *([skill_text] if skill_text else []),
         f"Accepted lessons: {learned}",
@@ -288,8 +352,9 @@ def _open(
         resume=native,
     )
     forward = list(preset["env"])
-    if "PATH" not in forward:
-        forward.append("PATH")
+    for name in ("PATH", "HOME"):
+        if name not in forward:
+            forward.append(name)
     plan_path = (foil_root(root) / "run" / "plans" / f"{seat}.json").resolve()
     plan = {
         "argv": argv,
@@ -341,6 +406,7 @@ def spawn_seat(
     task: str | None = None,
 ) -> None:
     loaded = load_template(root, template)
+    persona_text(loaded)
     if task is not None:
         scan(task)
     registry = load_registry(root)
@@ -422,6 +488,7 @@ def kill_seats(
 def _restart(root: Path, registry: dict, name: str) -> None:
     record = registry["seats"][name]
     loaded = load_template(root, record["template"])
+    persona_text(loaded)
     preset = load_preset(root, loaded["harness"])
     stored = "" if loaded["harness"] != record["harness"] else record["session_id"]
     native = _native_resume(preset, stored, worktree=record.get("worktree") or "")
@@ -460,7 +527,7 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         raise
 
 
-def resume_seats(root: Path, name: str | None) -> None:
+def resume_seats(root: Path, name: str | None) -> int:
     registry = load_registry(root)
     if name is not None:
         _known(registry, name)
@@ -469,12 +536,22 @@ def resume_seats(root: Path, name: str | None) -> None:
             raise FoilError(f"foil: seat '{name}' is killed")
         if state == "alive":
             print(f"foil: seat '{name}' is alive")
-            return
+            return 0
         _restart(root, registry, name)
-        return
+        return 0
+    failures: list[str] = []
     for seat_name in sorted(registry["seats"]):
-        if _state(registry, seat_name, registry["seats"][seat_name]) == "dead":
+        if _state(registry, seat_name, registry["seats"][seat_name]) != "dead":
+            continue
+        try:
             _restart(root, registry, seat_name)
+        except FoilError as exc:
+            reason = str(exc).removeprefix("foil: ")
+            failures.append(f"foil: seat '{seat_name}' not resumed: {reason}")
+    if not failures:
+        return 0
+    print("\n".join(failures), file=sys.stderr)
+    return 1
 
 
 def list_seats(root: Path, *, as_json: bool = False) -> None:
