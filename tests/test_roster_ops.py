@@ -20,25 +20,21 @@ from foil.roster_ops import (
 
 
 @pytest.fixture
-def project(tmp_path: Path) -> Path:
-    """Create an initialized foil project."""
+def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Create an initialized foil project and run commands inside it.
+
+    The current directory has to be that project. From a linked worktree
+    with no ``.foil`` of its own, discovery walks up to the main checkout.
+    """
     import subprocess
-    
-    # Initialize a real git repository
+
     subprocess.run(
         ["git", "-C", str(tmp_path), "init", "--quiet"],
         check=True,
         capture_output=True,
     )
-    # Initialize foil
-    import os
-    prev = os.getcwd()
-    try:
-        os.chdir(tmp_path)
-        init_project(None)
-    finally:
-        os.chdir(prev)
-    
+    init_project(str(tmp_path))
+    monkeypatch.chdir(tmp_path)
     return tmp_path
 
 
