@@ -160,7 +160,7 @@ def add_template(toplevel: Path, role: str, *, from_file: str | None = None) -> 
     if from_file:
         source = Path(from_file)
         if not source.is_file():
-            raise FoilError(f"foil: file not found: {from_file}")
+            raise FoilError(f"foil: file not found: {_shown(from_file)}")
         content = source.read_text(encoding="utf-8")
     else:
         personas_dir = templates_dir / "personas"
@@ -199,7 +199,7 @@ def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
 
     if field not in _TEMPLATE_FIELDS:
         fields = ", ".join(sorted(_TEMPLATE_FIELDS))
-        raise FoilError(f"foil: invalid field '{field}'. Valid fields: {fields}")
+        raise FoilError(f"foil: invalid field '{_shown(field)}'. Valid fields: {fields}")
 
     # Load existing template to validate it exists
     template = load_template(toplevel, role)
