@@ -269,7 +269,12 @@ def _run(args: argparse.Namespace) -> int:
         show_template(root, args.ROLE, as_json=args.json)
     elif action == "add":
         authorize("roster-add")
-        add_template(root, args.ROLE, from_file=args.from_file)
+        add_template(
+            root,
+            args.ROLE,
+            from_file=args.from_file,
+            in_fleet=_caller() != OUTSIDE,
+        )
     elif action == "update":
         authorize("roster-update")
         if "=" not in args.FIELD_VALUE:

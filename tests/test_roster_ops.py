@@ -496,7 +496,7 @@ def _seat(project: Path, *, state: str) -> None:
 
 
 def test_remove_and_harness_change_refuse_a_live_seat(project: Path) -> None:
-    _seat(project, state="alive")
+    _seat(project, state="")
     path = project / ".foil" / "templates" / "researcher.toml"
     before = path.read_bytes()
     with pytest.raises(FoilError, match="still in use"):
@@ -537,6 +537,56 @@ def test_worker_cannot_run_any_roster_command(
     err = capsys.readouterr().err
     assert err.count("\n") == 1
     assert "not allowed" in err
+
+
+def _permission_source(path: Path, permission: str | None) -> Path:
+    lines = [
+        'harness = "claude"',
+        'persona = "personas/researcher.md"',
+        "worktree = false",
+    ]
+    if permission is not None:
+        lines.append(f'permission = "{permission}"')
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_lead_cannot_add_from_with_non_ask_permission(
+    monkeypatch: pytest.MonkeyPatch,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = _permission_source(project / "auto.toml", "auto")
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["roster", "add", "custom", "--from", str(source)]) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert err.strip() == "foil: permission is outside the fleet only"
+    assert not (project / ".foil" / "templates" / "custom.toml").exists()
+
+
+def test_lead_can_add_from_when_permission_is_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = _permission_source(project / "plain.toml", None)
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["roster", "add", "custom", "--from", str(source)]) == 0
+    text = (project / ".foil" / "templates" / "custom.toml").read_text(encoding="utf-8")
+    assert "permission" not in text
+    assert "created template 'custom'" in capsys.readouterr().out
+
+
+def test_outside_caller_can_add_from_with_auto_permission(
+    monkeypatch: pytest.MonkeyPatch,
+    project: Path,
+) -> None:
+    source = _permission_source(project / "auto.toml", "auto")
+    monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
+    assert main(["roster", "add", "custom", "--from", str(source)]) == 0
+    text = (project / ".foil" / "templates" / "custom.toml").read_text(encoding="utf-8")
+    assert 'permission = "auto"' in text
 
 
 def test_lead_cannot_set_permission(

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from foil.errors import FoilError
-from foil.presets import installed_harness, load_preset, load_template
+from foil.presets import installed_harness, load_preset, load_template, template_permission
 from foil.project import foil_root
 from foil.store import SAFE_ID, create_exclusive, load_registry, write_bytes
 
@@ -57,7 +57,7 @@ def _accept(toplevel: Path, role: str) -> None:
 def _in_use(toplevel: Path, role: str) -> None:
     registry = load_registry(toplevel)
     for seat in registry["seats"].values():
-        if seat["template"] == role and seat["state"] in {"alive", "dead"}:
+        if seat["template"] == role and seat["state"] != "killed":
             raise FoilError(f"foil: template '{role}' is still in use")
 
 
@@ -146,7 +146,13 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
         print(f"permission: {template.get('permission', 'ask')}")
 
 
-def add_template(toplevel: Path, role: str, *, from_file: str | None = None) -> None:
+def add_template(
+    toplevel: Path,
+    role: str,
+    *,
+    from_file: str | None = None,
+    in_fleet: bool = False,
+) -> None:
     """Create a template from a TOML file or from the persona of the same name."""
     if not SAFE_ID.fullmatch(role):
         raise FoilError(f"foil: invalid role name '{_shown(role)}'")
@@ -162,6 +168,8 @@ def add_template(toplevel: Path, role: str, *, from_file: str | None = None) -> 
         if not source.is_file():
             raise FoilError(f"foil: file not found: {_shown(from_file)}")
         content = source.read_text(encoding="utf-8")
+        if in_fleet and template_permission(content) != "ask":
+            raise FoilError("foil: permission is outside the fleet only")
     else:
         personas_dir = templates_dir / "personas"
         persona_file = personas_dir / f"{role}.md"

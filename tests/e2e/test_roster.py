@@ -202,7 +202,9 @@ def test_roster_json_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_added_role_can_be_spawned(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A role added with the roster can be spawned, then the fleet is stopped."""
     repo = _prepare(tmp_path, monkeypatch)
@@ -217,6 +219,16 @@ def test_added_role_can_be_spawned(
         seat = load_registry(repo)["seats"]["researcher-1"]
         assert seat["template"] == "researcher"
         assert seat["harness"] == "fake"
+        assert seat["state"] == ""
+        path = foil_root(repo) / "templates" / "researcher.toml"
+        before = path.read_bytes()
+        capsys.readouterr()
+        assert main(["roster", "remove", "researcher"]) == 1
+        assert main(["roster", "update", "researcher", "harness=codex"]) == 1
+        err = capsys.readouterr().err
+        assert err.count("\n") == 2
+        assert err.count("still in use") == 2
+        assert path.read_bytes() == before
     finally:
         monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
         main(["seat", "kill", "--all"])

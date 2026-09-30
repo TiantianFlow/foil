@@ -64,7 +64,7 @@ foil roster remove old-role
 
 To add a role whose persona file exists, use `foil roster add <role>`. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. To provision a custom role, write its persona file in `.foil/templates/personas/<role>.md` first, then add the template. A role that commits needs `worktree = true`.
 
-You can still edit template files directly in `.foil/templates/` if you prefer. Do not overwrite a template the fleet is already using unless you mean to change the next spawn. You cannot set `permission`; only a caller outside the fleet can. You cannot remove a template, or change its harness, while a seat of that template is alive or dead.
+You can still edit template files directly in `.foil/templates/` if you prefer. Do not overwrite a template the fleet is already using unless you mean to change the next spawn. You cannot set `permission`, including adding a file whose permission is not `ask`; only a caller outside the fleet can. An omitted permission is `ask`. You cannot remove a template, or change its harness, while a seat of that template has a stored state other than `killed`.
 
 ## Board and contracts
 
