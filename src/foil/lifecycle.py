@@ -232,7 +232,7 @@ foil memory list [--all] [--json]
 foil memory accept ID
 foil memory reject ID
 foil roster list [--json]
-foil roster show TEMPLATE [--json]
+foil roster show ROLE [--json]
 foil roster add ROLE [--from FILE]
 foil roster update ROLE FIELD=VALUE
 foil roster remove ROLE"""
