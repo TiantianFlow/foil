@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import tomllib
 from importlib.resources import files
@@ -14,6 +15,8 @@ from foil.errors import FoilError
 from foil.presets import (
     BUILTIN_IDS,
     expand_argv,
+    installed_harness,
+    installed_presets,
     launch_command,
     load_preset,
     load_template,
@@ -204,7 +207,7 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
     root = foil_root(repo)
     for role, worktree in (("lead", False), ("implementer", True), ("reviewer", False)):
         template = load_template(repo, role)
-        assert template["harness"] == "grok"
+        assert template["harness"] == ("codex" if role == "reviewer" else "claude")
         assert template["worktree"] is worktree
         assert template["permission"] == "ask"
         packaged = files("foil").joinpath("defaults", "personas", f"{role}.md").read_text(
@@ -213,7 +216,7 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
         assert persona_text(template) == packaged
         assert len(packaged) > 50
         argv = launch_command(repo, role, prompt=prompt, session_id="abc")
-        assert argv[0] == "grok"
+        assert argv[0] == template["harness"]
         assert argv[-1] == prompt
         stored = tomllib.loads((root / "templates" / f"{role}.toml").read_text(encoding="utf-8"))
         assert stored["persona"] == f"personas/{role}.md"
@@ -229,11 +232,248 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
     assert persona.read_text(encoding="utf-8") == "custom persona\n"
     assert load_template(repo, "lead")["harness"] == "claude"
     assert persona_text(load_template(repo, "lead")) == "keep me"
+    assert persona_text({"path": lead, "persona": "/keep me"}) == "/keep me"
     assert reviewer.is_file()
-    assert load_template(repo, "reviewer")["harness"] == "grok"
+    assert load_template(repo, "reviewer")["harness"] == "codex"
     reviewed = reviewer.read_bytes()
     assert main(["init"]) == 0
     assert reviewer.read_bytes() == reviewed
+
+
+def test_persona_text_rejects_a_leading_slash_without_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template_path = tmp_path / "lead.toml"
+    template_path.write_text("x\n", encoding="utf-8")
+
+    def denied(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("filesystem access")
+
+    monkeypatch.setattr(Path, "is_symlink", denied)
+    monkeypatch.setattr(Path, "is_file", denied)
+    monkeypatch.setattr(Path, "read_text", denied)
+    with pytest.raises(FoilError) as caught:
+        persona_text({"path": template_path, "persona": "/missing/verifier.md"})
+    assert str(caught.value) == (
+        "foil: persona path must stay inside .foil/templates: /missing/verifier.md"
+    )
+    with pytest.raises(FoilError) as climbed:
+        persona_text({"path": template_path, "persona": "../verifier.md"})
+    assert str(climbed.value) == (
+        "foil: persona path must stay inside .foil/templates: ../verifier.md"
+    )
+    assert persona_text({"path": template_path, "persona": "/keep me"}) == "/keep me"
+
+
+def _stub_program(directory: Path, name: str) -> None:
+    binary = directory / name
+    binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    binary.chmod(0o755)
+
+
+def test_scan_sees_user_presets_once_and_excludes_fake(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for name in ("my-agent", "custom-grok", "foil-fake"):
+        _stub_program(bindir, name)
+    monkeypatch.setenv(
+        "PATH",
+        f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}",
+    )
+    harnesses = tmp_path / ".foil" / "harnesses"
+    harnesses.mkdir(parents=True)
+    (harnesses / "my-agent.toml").write_text(
+        'id = "my-agent"\ncommand = ["my-agent", "{prompt}"]\nsession_id = "none"\n',
+        encoding="utf-8",
+    )
+    (harnesses / "grok.toml").write_text(
+        'id = "grok"\ncommand = ["custom-grok", "{prompt}"]\nsession_id = "none"\n',
+        encoding="utf-8",
+    )
+    (harnesses / "fake.toml").write_text(
+        'id = "fake"\ncommand = ["foil-fake", "{prompt}"]\nsession_id = "none"\n',
+        encoding="utf-8",
+    )
+
+    found, _skipped = installed_presets(tmp_path)
+    ids = [preset["id"] for preset in found]
+    assert "my-agent" in ids
+    assert ids.count("grok") == 1
+    assert "fake" not in ids
+    grok = next(preset for preset in found if preset["id"] == "grok")
+    assert grok["command"][0] == "custom-grok"
+
+
+def _limit_harnesses(monkeypatch: pytest.MonkeyPatch, allowed: set[str]) -> None:
+    real = shutil.which
+
+    def which(name: str, *args: object, **kwargs: object) -> str | None:
+        if name not in allowed and (name in _AGENT_CLIS or name == "foil-fake"):
+            return None
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "which", which)
+
+
+def _write_preset(directory: Path, harness_id: str, program: str) -> None:
+    (directory / f"{harness_id}.toml").write_text(
+        f'id = "{harness_id}"\ncommand = ["{program}"]\nsession_id = "none"\n',
+        encoding="utf-8",
+    )
+
+
+def test_scan_sorts_ids_by_code_point(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    names = ["a-b", "a.b", "a_b", "mid"]
+    harnesses = tmp_path / ".foil" / "harnesses"
+    harnesses.mkdir(parents=True)
+    (harnesses / "Alpha.toml").write_text("A\n", encoding="utf-8")
+    (harnesses / "alpha.toml").write_text("a\n", encoding="utf-8")
+    case_distinct = (harnesses / "Alpha.toml").read_text(encoding="utf-8") == "A\n"
+    for path in (harnesses / "Alpha.toml", harnesses / "alpha.toml"):
+        path.unlink(missing_ok=True)
+    if case_distinct:
+        names.extend(("Alpha", "alpha"))
+    for name in names:
+        _stub_program(bindir, name)
+        _write_preset(harnesses, name, name)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    ids = [preset["id"] for preset in installed_presets(tmp_path)[0]]
+    assert ids.index("grok") < ids.index("opencode")
+    assert ids.index("gemini") < ids.index("mid") < ids.index("opencode")
+    assert ids.index("a-b") < ids.index("a.b") < ids.index("a_b")
+    if case_distinct:
+        assert ids.index("Alpha") < ids.index("alpha")
+    else:
+        # A case-insensitive volume cannot store both files. The scan uses
+        # Python's default string order, which places Alpha before alpha.
+        assert sorted(["alpha", "Alpha"]) == ["Alpha", "alpha"]
+    assert ids == sorted(ids)
+
+
+def test_scan_errors_when_nothing_is_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hide_agent_clis(monkeypatch)
+    assert installed_presets(tmp_path)[0] == []
+    with pytest.raises(FoilError, match="no harness installed"):
+        installed_harness(tmp_path)
+
+
+def test_scan_skips_one_invalid_user_preset_and_returns_the_valid_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    _stub_program(bindir, "ok-agent")
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
+    harnesses = tmp_path / ".foil" / "harnesses"
+    harnesses.mkdir(parents=True)
+    _write_preset(harnesses, "ok-agent", "ok-agent")
+    (harnesses / "zz.toml").write_text('id = "zz"\n', encoding="utf-8")
+
+    found, skipped = installed_presets(tmp_path)
+    ids = [preset["id"] for preset in found]
+    assert "ok-agent" in ids
+    assert "zz" not in ids
+    assert (".foil/harnesses/zz.toml", "invalid preset") in skipped
+
+
+def _fresh_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    return repo
+
+
+def test_user_id_sorts_between_builtins_and_fake_is_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _fresh_repo(tmp_path, monkeypatch)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for name in ("delta", "foil-fake"):
+        _stub_program(bindir, name)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
+    _limit_harnesses(monkeypatch, {"claude", "opencode", "delta", "foil-fake"})
+    harnesses = foil_root(repo) / "harnesses"
+    harnesses.mkdir(parents=True)
+    _write_preset(harnesses, "delta", "delta")
+    _write_preset(harnesses, "fake", "foil-fake")
+    assert main(["init"]) == 0
+    assert load_template(repo, "lead")["harness"] == "claude"
+    assert load_template(repo, "implementer")["harness"] == "claude"
+    assert load_template(repo, "reviewer")["harness"] == "delta"
+    ids = [preset["id"] for preset in installed_presets(repo)[0]]
+    assert ids == ["claude", "delta", "opencode"]
+
+
+def test_same_program_counts_as_two_ids_and_one_id_fills_every_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _fresh_repo(tmp_path, monkeypatch)
+    _limit_harnesses(monkeypatch, {"claude"})
+    harnesses = foil_root(repo) / "harnesses"
+    harnesses.mkdir(parents=True)
+    _write_preset(harnesses, "extra", "claude")
+    assert main(["init"]) == 0
+    assert load_template(repo, "lead")["harness"] == "claude"
+    assert load_template(repo, "reviewer")["harness"] == "extra"
+    assert [preset["command"][0] for preset in installed_presets(repo)[0]] == ["claude", "claude"]
+
+    reviewer = foil_root(repo) / "templates" / "reviewer.toml"
+    reviewer.unlink()
+    implementer = foil_root(repo) / "templates" / "implementer.toml"
+    implementer.unlink()
+    lead = foil_root(repo) / "templates" / "lead.toml"
+    lead.unlink()
+    (harnesses / "extra.toml").unlink()
+    assert main(["init"]) == 0
+    for role in ("lead", "implementer", "reviewer"):
+        assert load_template(repo, role)["harness"] == "claude"
+
+
+def test_init_copies_every_persona_and_keeps_an_edit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _fresh_repo(tmp_path, monkeypatch)
+    assert main(["init"]) == 0
+    personas = foil_root(repo) / "templates" / "personas"
+    names = sorted(path.name for path in personas.glob("*.md"))
+    assert names == [
+        "documentation-writer.md",
+        "domain-designer.md",
+        "implementer.md",
+        "lead.md",
+        "memory-curator.md",
+        "researcher.md",
+        "reviewer.md",
+        "verifier.md",
+    ]
+    templates = sorted(path.name for path in (foil_root(repo) / "templates").glob("*.toml"))
+    assert templates == ["implementer.toml", "lead.toml", "reviewer.toml"]
+    edited = personas / "researcher.md"
+    edited.write_text("custom researcher\n", encoding="utf-8")
+    before = {
+        path: path.read_bytes()
+        for path in (foil_root(repo) / "templates").rglob("*")
+        if path.is_file()
+    }
+    assert main(["init"]) == 0
+    after = {
+        path: path.read_bytes()
+        for path in (foil_root(repo) / "templates").rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+    assert edited.read_text(encoding="utf-8") == "custom researcher\n"
 
 
 def test_init_without_a_harness_writes_nothing(

@@ -1,7 +1,7 @@
 # Foil · 运筹
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.2.1-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -90,32 +90,24 @@ flowchart TB
 
 ## Get started
 
-You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Another CLI can join with a small preset file.
+You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Before your first fleet, run each CLI once in this repository and accept its folder-trust, first-run, and opt-in prompts. Trust is per folder. A seat waiting on one of those prompts looks, from outside, like a seat that is working. Your agent asks you to do this, or to confirm it is done, and it reports any prompt it sees rather than answering it. Another CLI can join with a small preset file.
 
-1. Install Foil:
+The human's part is one sentence, typed into the coding agent they already use, in the repository:
 
-```sh
-uv tool install "git+https://github.com/TiantianFlow/foil.git"
+```text
+Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.
 ```
 
-2. In your repository, run `foil init`:
+- The agent installs Foil and runs `foil init`.
+- It reads the report and sets `harness`, `model`, and `permission` on `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. `auto` on the lead alone does not let the workers run unattended.
+- It runs the first-run check and sends the goal.
+- It never does the project work itself.
 
-```sh
-cd your-repo
-foil init
-```
-
-It writes `.foil/`, keeps it out of `git status`, and sets every template's `harness` to the first installed CLI among `grok`, `claude`, `codex`, `opencode`, and `gemini`. Its output is the pointer line for step 4 and the lead template's permission. To mix providers, change `harness`, and optionally `model`, per role in `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`.
-
-3. Choose a permission for each of those templates. `permission = "ask"` is the default: that seat stops at its first approval prompt and waits in its window. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended.
-
-4. In the agent you already use, in the repository, paste the pointer line with your goal. Nothing needs to be installed in that agent.
+An agent that was started without that sentence uses this pointer line instead:
 
 ```text
 Read .foil/skills/operator.md and follow it. My goal: <goal>.
 ```
-
-That agent becomes the operator. It spawns the lead once with a small first-run check, then sends it your goal, checks in, relays the lead's questions, and tears the fleet down when you are done. It never does the project work itself.
 
 A persistent install of the operator skill is optional. Copy it where that harness discovers skills, at user level, so it stays out of `git status`. No path below was checked against that harness's current docs.
 
@@ -127,7 +119,15 @@ A persistent install of the operator skill is optional. Copy it where that harne
 
 ### By hand
 
-The operator runs these same commands. The first-run check spawns the lead once and asks for a status file:
+The same steps, typed yourself. Install Foil, then in the repository:
+
+```sh
+uv tool install "git+https://github.com/TiantianFlow/foil.git"
+cd your-repo
+foil init
+```
+
+Read the report, edit the three templates, then spawn the lead once:
 
 ```sh
 foil seat spawn lead --task "Write board/status.md with state: done"
@@ -145,7 +145,7 @@ foil seat peek lead
 
 ### If nothing happens
 
-Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually showing a login prompt, an approval prompt, or the harness's own first-run or opt-in dialog. Answer it in that window (`tmux ls` lists Foil's session and `tmux attach` opens it), or log in to that CLI once by hand, then `foil seat kill lead` and spawn it again.
+Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually showing a login prompt, a folder-trust prompt, an approval prompt, or the harness's own first-run or opt-in dialog. Answer it in that window (`tmux ls` lists Foil's session and `tmux attach` opens it), or log in to that CLI once by hand, then `foil seat kill lead` and spawn it again.
 
 ## Limits
 

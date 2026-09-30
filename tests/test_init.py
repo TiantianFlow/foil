@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -87,27 +89,160 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     repo.mkdir()
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
-    pointer = "Read .foil/skills/operator.md and follow it. My goal: <goal>.\n"
+    pointer = "Read .foil/skills/operator.md and follow it. My goal: <goal>."
+    ask = "permission: lead ask, implementer ask, reviewer ask."
+    rule = (
+        "ask stops a seat at its first approval prompt; auto lets it run unattended. "
+        "Set it in each .foil/templates/<role>.toml; auto on the lead alone does not "
+        "let the workers run unattended."
+    )
+    auto = "permission: lead auto, implementer ask, reviewer ask."
 
     assert main(["init"]) == 0
     first = capsys.readouterr()
     assert first.err == ""
-    assert first.out == pointer + 'permission = "ask"\n'
+    assert pointer in first.out
+    assert ask in first.out
+    assert rule in first.out
+    assert "Installed harnesses, in id order (a tiebreak, not a ranking):" in first.out
+    for name in ("claude", "codex", "gemini", "grok", "opencode"):
+        assert name in first.out
+    assert "lead: claude (first installed id)" in first.out
+    assert "implementer: claude (first installed id)" in first.out
+    assert "reviewer: codex (second installed id)" in first.out
+    assert (
+        "The three default templates use two different harness ids. "
+        "Two ids can still run the same program or model; set model on a template to choose one."
+    ) in first.out
+    assert "Wrote templates: lead, implementer, reviewer" in first.out
+    assert "documentation-writer" in first.out
     lead = foil_root(repo) / "templates" / "lead.toml"
     original = lead.read_text(encoding="utf-8")
     assert 'permission = "ask"\n' in original
 
     assert main(["init"]) == 0
     second = capsys.readouterr()
-    assert second.out == first.out
+    assert "Left templates: lead, implementer, reviewer" in second.out
+    assert "Wrote templates: none" in second.out
+    assert ask in second.out
     assert lead.read_text(encoding="utf-8") == original
 
     edited = original.replace('permission = "ask"', 'permission = "auto"')
     lead.write_text(edited, encoding="utf-8")
     assert main(["init"]) == 0
     third = capsys.readouterr()
-    assert third.out == pointer + 'permission = "auto"\n'
+    assert auto in third.out
+    assert rule in third.out
+    assert ask not in third.out
     assert lead.read_text(encoding="utf-8") == edited
+
+
+def test_init_rerun_reports_the_harness_stored_after_an_edit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    real = shutil.which
+    hidden = {"grok", "opencode", "gemini", "fake", "foil-fake"}
+
+    def which(name: str, *args: object, **kwargs: object) -> str | None:
+        if name in hidden:
+            return None
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "which", which)
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    reviewer = foil_root(repo) / "templates" / "reviewer.toml"
+    original = reviewer.read_text(encoding="utf-8")
+    assert 'harness = "codex"' in original
+    edited = original.replace('harness = "codex"', 'harness = "claude"', 1)
+    reviewer.write_text(edited, encoding="utf-8")
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert "reviewer: claude (left alone)" in report
+    assert "The three default templates use one harness id." in report
+    assert "different" not in report
+    assert "Two ids" not in report
+    assert "guarantees two harness ids" not in report
+    assert reviewer.read_text(encoding="utf-8") == edited
+
+
+def test_init_report_uses_three_for_three_stored_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    templates = foil_root(repo) / "templates"
+    implementer = templates / "implementer.toml"
+    reviewer = templates / "reviewer.toml"
+    implementer.write_text(
+        implementer.read_text(encoding="utf-8").replace(
+            'harness = "claude"', 'harness = "codex"', 1
+        ),
+        encoding="utf-8",
+    )
+    reviewer.write_text(
+        reviewer.read_text(encoding="utf-8").replace(
+            'harness = "codex"', 'harness = "gemini"', 1
+        ),
+        encoding="utf-8",
+    )
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert (
+        "The three default templates use three different harness ids. "
+        "Two ids can still run the same program or model; set model on a template to choose one."
+    ) in report
+
+
+def test_init_skips_one_invalid_user_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    harnesses = repo / ".foil" / "harnesses"
+    harnesses.mkdir(parents=True)
+    (harnesses / "zz.toml").write_text('id = "zz"\n', encoding="utf-8")
+
+    assert main(["init"]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "Skipped .foil/harnesses/zz.toml: invalid preset" in captured.out
+
+
+def test_init_closed_pipe_prints_nothing_on_stderr(tmp_path: Path) -> None:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    read_fd, write_fd = os.pipe()
+    os.close(read_fd)
+    env = _identity_environ()
+    root = Path(__file__).resolve().parents[1]
+    env["PYTHONPATH"] = os.pathsep.join([str(root / "src"), env.get("PYTHONPATH", "")])
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "foil", "init"],
+            cwd=repo,
+            stdout=write_fd,
+            stderr=subprocess.PIPE,
+            env=env,
+        )
+    finally:
+        os.close(write_fd)
+    assert proc.stderr is not None
+    err = proc.stderr.read()
+    code = proc.wait(timeout=30)
+    assert err == b""
+    assert code == 1
 
 
 def test_init_fails_outside_a_git_repository(

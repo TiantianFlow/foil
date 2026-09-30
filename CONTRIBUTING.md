@@ -41,7 +41,9 @@ templates at the `fake` harness, so it needs no agent CLI and no login.
 The live tier runs the same scenarios against the harness CLI that
 `foil init` would select on your `PATH`. It needs that CLI installed and
 already logged in. CI does not run it. The default `pytest` command
-skips it.
+skips it. `FOIL_E2E_HARNESS` is a test-only override: when it is set, those
+tests rewrite the `harness` line of the three templates after `init`. It is
+not a command or a flag.
 
 ```sh
 FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live
@@ -62,6 +64,40 @@ FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live
 4. **Keep docs tidy.** List every new document in docs/README.md, name
    release plans `plan-vX.Y.Z.md`, and add notable changes to
    CHANGELOG.md under "Unreleased".
+
+## Before you ask for review
+
+CI only shows that the tests pass. Run this self-review too, and say in
+the pull request or commit message what you ran, against which version,
+and what you did not verify.
+
+1. **Check the goal, not only the checkbox.** For each change, write one
+   sentence on why it exists, and verify that. A plan's "done when" line
+   is the least a change must do, not everything it must do.
+2. **Run it as a user would.** Use a fresh folder, and install from your
+   branch, not from `main`, into a temporary tool directory so your own
+   `foil` is untouched:
+   `UV_TOOL_DIR=$TMP/tools UV_TOOL_BIN_DIR=$TMP/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@<branch>"`.
+   Use only the documented commands. For onboarding, give the documented
+   sentence to a coding agent that has no other context.
+3. **Break it.** Give each new code path a missing file, an invalid file,
+   none, one, and many; run it twice; interrupt it; send its output to a
+   pipe. After every failure, check what is left on disk: branches,
+   worktrees, windows, and files.
+4. **Finish the change everywhere.** After changing a behavior or a
+   message, search the READMEs, `docs/`, `skills/`, `src/`, and `tests/`
+   for the old wording, and update every hit in the same change.
+5. **Test the tests.** Revert your fix and watch each new test fail.
+   Assert on outcomes, such as files, branches, windows, and exit codes,
+   before asserting on printed text. A test that pins today's output also
+   pins today's bugs.
+6. **Read your diff as a stranger would.** Everything is public (rule 3
+   above). Keep notes about how the work was done out of documents,
+   which describe the product, and keep each addition as short as it can
+   be.
+7. **Report honestly.** A check that did not exercise your code, for
+   example one that ran an older installed version, is "not run", not a
+   result.
 
 ## License
 

@@ -1,9 +1,10 @@
-"""Scenarios 1–6: real Foil, tmux, and git. Only the agent is foil-fake."""
+"""Scenarios 1–7: real Foil, tmux, and git. Only the agent is foil-fake."""
 
 from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import re
 import shutil
@@ -56,6 +57,9 @@ def _prepare(
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
     if not fake:
+        chosen = os.environ.get("FOIL_E2E_HARNESS")
+        if chosen:
+            _set_harness(repo, chosen)
         return repo
     templates = foil_root(repo) / "templates"
     for role in ("lead", "implementer", "reviewer"):
@@ -103,6 +107,21 @@ def _set_auto(repo: Path) -> None:
         text = re.sub(
             r'(?m)^permission = ".*"$',
             'permission = "auto"',
+            path.read_text(encoding="utf-8"),
+            count=1,
+        )
+        path.write_text(text, encoding="utf-8")
+
+
+def _set_harness(repo: Path, harness: str) -> None:
+    """Rewrite the harness line of the three default templates."""
+
+    templates = foil_root(repo) / "templates"
+    for role in ("lead", "implementer", "reviewer"):
+        path = templates / f"{role}.toml"
+        text = re.sub(
+            r'(?m)^harness = ".*"$',
+            f'harness = "{harness}"',
             path.read_text(encoding="utf-8"),
             count=1,
         )
@@ -507,7 +526,7 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
 
     try:
         version = foil("--version")
-        assert version.stdout.strip() == "foil 0.2.0", version.stderr
+        assert version.stdout.strip() == "foil 0.2.1", version.stderr
         assert Path(shutil.which("foil", path=environment["PATH"]) or "") == bindir / "foil"
         assert foil("init").returncode == 0
         templates = foil_root(repo) / "templates"
@@ -579,6 +598,113 @@ def test_scenario_6_errors_are_one_line(
     assert repo.is_dir()
 
 
+def test_scenario_7_ai_native_onboarding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """GitHub issue 8: harness reporting, HOME-by-name, and an inlined persona."""
+
+    repo = tmp_path / "project"
+    repo.mkdir()
+    source = FIXTURES / "scenario-7"
+    for path in source.rglob("*"):
+        if not path.is_file() or "scripts" in path.relative_to(source).parts:
+            continue
+        target = repo / path.relative_to(source)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+    assert _git(repo, "init", "--quiet").returncode == 0
+    assert _git(repo, "config", "user.name", "Foil Test").returncode == 0
+    assert _git(repo, "config", "user.email", "foil-test@localhost").returncode == 0
+    assert _git(repo, "add", "-A").returncode == 0
+    assert _git(repo, "commit", "--allow-empty", "-m", "base").returncode == 0
+    monkeypatch.chdir(repo)
+
+    # A real `foil init`: the report names every installed harness and says
+    # which stored id each default template uses.
+    assert main(["init"]) == 0
+    first = capsys.readouterr().out
+    assert (
+        "Installed harnesses, in id order (a tiebreak, not a ranking): "
+        "claude, codex, gemini, grok, opencode"
+    ) in first
+    assert "lead: claude (first installed id)" in first
+    assert "implementer: claude (first installed id)" in first
+    assert "reviewer: codex (second installed id)" in first
+    assert (
+        "The three default templates use two different harness ids. "
+        "Two ids can still run the same program or model; set model on a template to choose one."
+    ) in first
+
+    # Store three different harness ids in the templates, then init again.
+    # Five harnesses stay installed throughout, so a guarantee computed only
+    # from the install count would still say "two". The report must instead
+    # read the ids actually stored in the three templates and say "three".
+    templates = foil_root(repo) / "templates"
+    implementer = templates / "implementer.toml"
+    reviewer = templates / "reviewer.toml"
+    implementer.write_text(
+        implementer.read_text(encoding="utf-8").replace(
+            'harness = "claude"', 'harness = "codex"', 1
+        ),
+        encoding="utf-8",
+    )
+    reviewer.write_text(
+        reviewer.read_text(encoding="utf-8").replace(
+            'harness = "codex"', 'harness = "gemini"', 1
+        ),
+        encoding="utf-8",
+    )
+    assert main(["init"]) == 0
+    second = capsys.readouterr().out
+    assert (
+        "Installed harnesses, in id order (a tiebreak, not a ranking): "
+        "claude, codex, gemini, grok, opencode"
+    ) in second
+    assert "lead: claude (left alone)" in second
+    assert "implementer: codex (left alone)" in second
+    assert "reviewer: gemini (left alone)" in second
+    assert (
+        "The three default templates use three different harness ids. "
+        "Two ids can still run the same program or model; set model on a template to choose one."
+    ) in second
+
+    for role in ("lead", "implementer", "reviewer"):
+        path = templates / f"{role}.toml"
+        text = re.sub(
+            r'(?m)^harness = ".*"$', 'harness = "fake"', path.read_text(encoding="utf-8"), count=1
+        )
+        path.write_text(text, encoding="utf-8")
+
+    try:
+        _scripts(repo, "scenario-7", {"lead": "lead.json"})
+        task = "AI-native onboarding: https://github.com/TiantianFlow/foil/issues/8"
+        assert main(["seat", "spawn", "lead", "--task", task]) == 0
+
+        # The launch plan forwards HOME by name; it never stores the value.
+        plan_path = foil_root(repo) / "run" / "plans" / "lead.json"
+        plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        assert "HOME" in plan["env_forward"]
+        assert "HOME" not in plan["env"]
+        assert plan["env"] == {"FOIL_SEAT_ID": "lead"}
+
+        # The instruction file carries the persona's own words, not only a
+        # pointer to the persona file.
+        instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
+        text = instruction.read_text(encoding="utf-8")
+        persona_words = (templates / "personas" / "lead.md").read_text(encoding="utf-8").strip()
+        assert persona_words in text
+        assert "personas/lead.md" not in text
+
+        _wait(repo, lambda: "state: done" in _status(repo))
+        assert "state: done" in _status(repo)
+
+        session = str(load_registry(repo)["tmux_session"])
+        assert main(["seat", "kill", "--all"]) == 0
+        _no_windows(session)
+    finally:
+        _close(repo)
+
+
 def test_unattended_templates_and_peek_on_timeout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -609,3 +735,13 @@ def test_unattended_templates_and_peek_on_timeout(
         assert "foil-fake lead ready" in message
     finally:
         _close(repo)
+
+
+def test_e2e_harness_override_rewrites_the_three_templates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FOIL_E2E_HARNESS", "codex")
+    repo = _prepare(tmp_path, "scenario-6", monkeypatch, fake=False)
+    for role in ("lead", "implementer", "reviewer"):
+        text = (foil_root(repo) / "templates" / f"{role}.toml").read_text(encoding="utf-8")
+        assert 'harness = "codex"\n' in text

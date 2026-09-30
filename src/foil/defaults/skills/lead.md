@@ -54,6 +54,8 @@ Implementation belongs in a seat whose template sets `worktree` to true. That se
 
 The roster is the template files under `.foil/templates/`. Edit those files to change a role's harness, model, persona, worktree, or permission. There is no roster command. Do not overwrite a template the fleet is already using unless you mean to change the next spawn.
 
+The packaged personas are in `.foil/templates/personas/`. To add a role, write `.foil/templates/<role>.toml` with `harness`, `persona = "personas/<role>.md"`, `worktree`, and `permission`. A role that commits needs `worktree = true`.
+
 ## Board and contracts
 
 Keep `board/status.md` current. Contract `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`.

@@ -60,6 +60,109 @@ def _mail(repo: Path, seat: str) -> list[Path]:
     return sorted(directory.glob("*.md")) if directory.is_dir() else []
 
 
+def test_spawn_rejects_a_missing_persona_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    lead = foil_root(repo) / "templates" / "lead.toml"
+    lead.write_text(
+        lead.read_text(encoding="utf-8").replace(
+            'persona = "personas/lead.md"',
+            'persona = "personas/verfier.md"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    capsys.readouterr()
+    assert main(["seat", "spawn", "lead"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == "foil: persona file not found: personas/verfier.md\n"
+    assert captured.out == ""
+
+
+def _branch_exists(repo: Path, name: str) -> bool:
+    shown = subprocess.run(
+        ["git", "-C", str(repo), "show-ref", "--verify", "--quiet", f"refs/heads/{name}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return shown.returncode == 0
+
+
+def test_misspelled_persona_leaves_no_implementer_branch_or_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    implementer = foil_root(repo) / "templates" / "implementer.toml"
+    implementer.write_text(
+        implementer.read_text(encoding="utf-8").replace(
+            'persona = "personas/implementer.md"',
+            'persona = "personas/implementr.md"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    capsys.readouterr()
+    assert main(["seat", "spawn", "implementer"]) == 1
+    assert not _branch_exists(repo, "foil/implementer-1")
+    assert not (repo / ".foil" / "worktrees" / "implementer-1").exists()
+    assert "implementer-1" not in load_registry(repo)["seats"]
+    captured = capsys.readouterr()
+    assert captured.err == "foil: persona file not found: personas/implementr.md\n"
+    assert captured.out == ""
+
+
+def test_persona_path_outside_templates_leaves_no_implementer_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    outside = foil_root(repo) / "verifier.md"
+    outside.write_text("should not be read\n", encoding="utf-8")
+    implementer = foil_root(repo) / "templates" / "implementer.toml"
+    implementer.write_text(
+        implementer.read_text(encoding="utf-8").replace(
+            'persona = "personas/implementer.md"',
+            'persona = "../verifier.md"',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    capsys.readouterr()
+    assert main(["seat", "spawn", "implementer"]) == 1
+    assert not _branch_exists(repo, "foil/implementer-1")
+    assert not (repo / ".foil" / "worktrees" / "implementer-1").exists()
+    assert "implementer-1" not in load_registry(repo)["seats"]
+    captured = capsys.readouterr()
+    assert captured.err == "foil: persona path must stay inside .foil/templates: ../verifier.md\n"
+    assert captured.out == ""
+    assert "should not be read" not in captured.err
+
+
+def test_spawn_still_fails_when_the_template_names_a_broken_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    (foil_root(repo) / "harnesses" / "zz.toml").write_text('id = "zz"\n', encoding="utf-8")
+    (foil_root(repo) / "templates" / "lead.toml").write_text(
+        'harness = "zz"\n'
+        'persona = "personas/lead.md"\n'
+        "worktree = false\n"
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    assert main(["seat", "spawn", "lead"]) == 1
+    assert capsys.readouterr().err == "foil: invalid preset\n"
+
+
 def test_unknown_template_and_worker_spawn_are_one_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -104,7 +207,7 @@ def test_spawn_writes_plan_identity_and_window_id(
     seat = registry["seats"]["lead"]
     assert seat["window_id"] == "@21"
     assert seat["template"] == "lead"
-    assert seat["harness"] == "grok"
+    assert seat["harness"] == "claude"
     assert seat["worktree"] == ""
     assert seat["branch"] == ""
     assert seat["state"] != "killed"
@@ -122,12 +225,40 @@ def test_spawn_writes_plan_identity_and_window_id(
     assert plan["env"] == {"FOIL_SEAT_ID": "lead"}
     assert plan["cwd"] == str(repo.resolve())
     assert "PATH" in plan["env_forward"]
-    assert plan["argv"][0] == "grok"
+    assert "HOME" in plan["env_forward"]
+    assert "HOME" not in plan["env"]
+    assert plan["argv"][0] == "claude"
     instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
     text = instruction.read_text(encoding="utf-8")
     assert text in plan["argv"]
     assert "You are seat `lead`." in text
     assert "bootstrap.json" not in text
+
+
+def test_launch_plan_forwards_home_for_a_user_preset_with_empty_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    harnesses = foil_root(repo) / "harnesses"
+    (harnesses / "local.toml").write_text(
+        'id = "local"\ncommand = ["grok", "{prompt}"]\nsession_id = "none"\nenv = []\n',
+        encoding="utf-8",
+    )
+    (foil_root(repo) / "templates" / "lead.toml").write_text(
+        'harness = "local"\n'
+        'persona = "personas/lead.md"\n'
+        "worktree = false\n"
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    assert main(["seat", "spawn", "lead"]) == 0
+    plan = json.loads(Path(calls[0]["runner_argv"][3]).read_text(encoding="utf-8"))
+    assert plan["argv"][0] == "grok"
+    assert plan["env"] == {"FOIL_SEAT_ID": "lead"}
+    assert "HOME" in plan["env_forward"]
+    assert "PATH" in plan["env_forward"]
+    assert plan["env_forward"].count("HOME") == 1
 
 
 def test_worktree_names_stay_inside_the_foil_folder(
@@ -330,7 +461,7 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     templates = foil_root(repo) / "templates"
     for harness in BUILTIN_IDS:
-        if harness == "grok":
+        if harness == "claude":
             continue
         templates.joinpath(f"via-{harness}.toml").write_text(
             f'harness = "{harness}"\nworktree = false\n',
@@ -340,8 +471,8 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
         assert main(["seat", "spawn", f"via-{harness}", "--name", f"seat-{harness}", *task]) == 0
     assert capsys.readouterr().err == ""
 
-    seats = {"lead": "grok"}
-    seats.update({f"seat-{name}": name for name in BUILTIN_IDS if name != "grok"})
+    seats = {"lead": "claude"}
+    seats.update({f"seat-{name}": name for name in BUILTIN_IDS if name != "claude"})
     assert len(calls) == len(seats)
     for seat, harness in seats.items():
         plan = json.loads(

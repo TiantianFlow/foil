@@ -9,46 +9,57 @@ You are the human's harness. You start the fleet, check in, and relay. You never
 
 ## Onboarding
 
-Follow these steps. You start the fleet and check on the lead. You do not plan the goal, staff workers, integrate branches, or review the result.
+You perform onboarding. The human's part was one sentence. You install Foil, run `init`, read the report, set the roster, run the first-run check, and send the goal. You do not plan the goal, staff workers, integrate branches, or review the result.
 
-1. The human installs Foil with `uv tool install "git+https://github.com/TiantianFlow/foil.git"`. They need Python, Git, tmux, and a harness CLI that is already logged in. You do not handle that login.
-2. In the repository, run:
+1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, ask the human to run each harness once in this repository and accept its folder-trust prompt as well as its first-run and opt-in dialogs, because trust is per folder, or to confirm that is already done. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. A dialog seen in `foil seat peek` is reported to the human, not answered by you.
+2. Install Foil if it is not installed, then in the repository run:
 
 ```text
 foil init
 ```
 
-It writes the Foil folder and picks an installed harness. It prints the pointer line and the lead template's permission. Running it again does not overwrite files.
+Read the whole report. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, and the permission sentence. Running it again does not overwrite a template or a persona.
 
-3. The human pastes this line into the harness, in the repository, and fills in the goal. This needs nothing installed in the harness.
-
-```text
-Read .foil/skills/operator.md and follow it. My goal: <goal>.
-```
-
-A persistent copy is optional and stays at user level, out of `git status`. These paths were not checked against that harness's current docs.
-
-| Harness | Install path | Verified |
-|---|---|---|
-| any | the pointer line above | required; not a per-harness install |
-| Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | no |
-| grok, codex, opencode, gemini | none published | no |
-
-4. Before you spawn the lead, set `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `ask` is the default: that seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With `ask`, peek a new seat for an approval prompt.
-5. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`. Do not copy skill text into the task.
-6. Check that the lead is working. Spawn the lead once, with this task, then wait a few minutes:
+3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `ask` is the default: that seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With `ask`, peek a new seat for an approval prompt.
+4. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`. Do not copy skill text into the task.
+5. Check that the lead is working. Spawn the lead once, with this task, then wait a few minutes:
 
 ```text
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-If `board/status.md` does not appear, peek the lead and tell the human whether the pane shows a login prompt, an approval prompt, or an error. You report that. You do not fix the project.
+If `board/status.md` does not appear, peek the lead and tell the human whether the pane shows a login prompt, a folder-trust prompt, an approval prompt, or an error. You report that. You do not fix the project. Peek the same way after a seat is resumed, not only after it is spawned.
 
 ```text
 foil seat peek lead
 ```
 
 When the file shows `state: done`, send the human's goal to that lead. Do not spawn the lead again.
+
+A persistent copy of this skill is optional and stays at user level, out of `git status`. These paths were not checked against that harness's current docs.
+
+| Harness | Install path | Verified |
+|---|---|---|
+| any | the pointer line `init` prints | required; not a per-harness install |
+| Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | no |
+| grok, codex, opencode, gemini | none published | no |
+
+## Role templates
+
+A template is a four-line file in `.foil/templates/`. The file name is the role. The fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. `init` copies every packaged persona there and writes only the three default templates. It overwrites nothing: re-running it after an edit changes no file.
+
+Adding a candidate role is writing a new template next to a persona that is already on disk. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. Changing the harness or the model on an existing role is editing those two lines in its template.
+
+## Picking a harness and a model
+
+Keep the principles few.
+
+- Match the model to the work.
+- Keep the reviewer off the implementer's harness whenever at least two eligible harnesses are installed. `init` does this when it can. A different harness is not a different model. An operator who wants two models sets `model` on the templates.
+- Give a large context to roles that read a lot.
+- Pair `auto` with a worktree. A seat that runs unattended and can commit should have its own branch.
+
+The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist.
 
 ## Start
 
