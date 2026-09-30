@@ -747,8 +747,11 @@ six, with every stop explained, is enough for this release; 0.2.0
 shipped with five of six.
 
 The argv check found that Foil passed `--permission-mode auto`, so this
-commit changes the claims and not the flag. A mode that never asks is a
-gap for the next release.
+commit changes the claims and not the flag. The check read the plan files
+of the reviewer seat and the verifier seat. Both templates use the claude
+harness. The reviewer model was claude-opus-5-5 and the verifier model
+was claude-sonnet-5. Both argv lists contained `--permission-mode`
+followed by `auto`. A mode that never asks is a gap for the next release.
 
 One process note. G1 found a fact that contradicted the documents. The
 fact went into the plan, but not into the documents that make the
