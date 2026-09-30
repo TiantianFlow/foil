@@ -141,7 +141,7 @@ foil seat list
 foil seat peek lead
 ```
 
-`.foil/board/status.md` is the lead's own report, including any questions for you; answer them with `foil send lead "..."`. When you are done, `foil seat kill --all` stops every seat and leaves branches and worktrees in place.
+`.foil/board/status.md` is the lead's own report, including any questions for you; answer them with `foil send lead "..."`. It carries a checklist of what is done and what is left, and the operator reports it when asked. When you are done, `foil seat kill --all` stops every seat and leaves branches and worktrees in place.
 
 ### If nothing happens
 

@@ -141,7 +141,7 @@ foil seat list
 foil seat peek lead
 ```
 
-`.foil/board/status.md` 是主座自己的报告，也会列出要问你的问题；用 `foil send lead "..."` 回答。结束时，`foil seat kill --all` 会停掉每个席位，分支和 worktree 都会保留。
+`.foil/board/status.md` 是主座自己的报告，也会列出要问你的问题；用 `foil send lead "..."` 回答。它带有一份清单，写明已经完成的和还剩下的，操作员在被问到时报告这份清单。结束时，`foil seat kill --all` 会停掉每个席位，分支和 worktree 都会保留。
 
 ### 如果什么都没发生
 

@@ -84,6 +84,8 @@ foil seat peek lead
 
 Read the lead's `status.md` in the Foil folder at `board/status.md`. That file is the lead's own report. Its contract is `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`.
 
+After each check-in, and whenever the human asks for status, tell the human in a few lines: `state` and `updated` as the file says them; how many checklist items are ticked out of the total, and the open items as written; any `questions`; and which seats `foil seat list` shows alive, dead, or killed. Quote the file. Do not guess progress from the pane. If `updated` has not changed over several check-ins, nudge the lead as below.
+
 ## Relay and nudge
 
 Carry the human's words to the lead, and the lead's questions back to the human:
