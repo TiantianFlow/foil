@@ -230,7 +230,12 @@ foil board list PATTERN [--json]
 foil memory add TEXT [--replaces ID]
 foil memory list [--all] [--json]
 foil memory accept ID
-foil memory reject ID"""
+foil memory reject ID
+foil roster list [--json]
+foil roster show TEMPLATE [--json]
+foil roster add ROLE [--from FILE]
+foil roster update ROLE FIELD=VALUE
+foil roster remove ROLE"""
 
 _WORKER_COMMANDS = """foil seat list [--json]
 foil seat peek NAME [--lines N]
@@ -316,7 +321,7 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
                 "Templates:",
                 *roster,
                 'Staff with `foil seat spawn implementer --task "..."`. '
-                "The roster is `.foil/templates/*.toml`. There is no roster command.",
+                "Use `foil roster` to change a template.",
                 "Keep `board/status.md` current.",
             ]
         )

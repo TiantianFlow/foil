@@ -211,6 +211,16 @@ def test_operator_reports_the_checklist() -> None:
     assert "guess progress from the pane" in section
 
 
+def test_lead_section_8_uses_roster_commands() -> None:
+    text = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
+    section_8 = text.split("## 8. Skills", 1)[1].split("## 9.", 1)[0]
+    lead = next(line for line in section_8.splitlines() if line.startswith("| `lead`"))
+    assert "foil roster list" in lead
+    assert "foil roster add" in lead
+    assert "editing template files" not in lead
+    assert "write `.foil/templates/<role>.toml`" not in lead
+
+
 def test_requirements_define_the_checklist() -> None:
     text = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
     section_74 = text.split("### 7.4 Board files", 1)[1].split("### 7.5", 1)[0]

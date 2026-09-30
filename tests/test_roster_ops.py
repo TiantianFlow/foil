@@ -122,8 +122,9 @@ def test_roster_add_duplicate_fails(project: Path) -> None:
 
 def test_roster_add_without_persona_fails(project: Path) -> None:
     """add_template fails when persona file doesn't exist."""
-    with pytest.raises(FoilError, match="persona file not found"):
+    with pytest.raises(FoilError, match="persona file not found") as caught:
         add_template(project, "nonexistent", from_file=None)
+    assert "\n" not in str(caught.value)
 
 
 def test_roster_add_from_file(
@@ -204,8 +205,9 @@ def test_roster_update_worktree(project: Path, capsys: pytest.CaptureFixture[str
 
 def test_roster_update_invalid_field_fails(project: Path) -> None:
     """update_template fails for invalid field name."""
-    with pytest.raises(FoilError, match="invalid field"):
+    with pytest.raises(FoilError, match="invalid field") as caught:
         update_template(project, "lead", "badfield", "value")
+    assert "\n" not in str(caught.value)
 
 
 def test_roster_update_invalid_permission_value_fails(project: Path) -> None:
@@ -243,8 +245,9 @@ def test_roster_remove_deletes_template(project: Path, capsys: pytest.CaptureFix
 
 def test_roster_remove_protected_fails(project: Path) -> None:
     """remove_template fails for protected templates."""
-    with pytest.raises(FoilError, match="cannot remove protected"):
+    with pytest.raises(FoilError, match="cannot remove protected") as caught:
         remove_template(project, "lead")
+    assert "\n" not in str(caught.value)
     
     with pytest.raises(FoilError, match="cannot remove protected"):
         remove_template(project, "implementer")
@@ -257,6 +260,74 @@ def test_roster_remove_unknown_template_fails(project: Path) -> None:
     """remove_template fails for unknown template."""
     with pytest.raises(FoilError, match="unknown template"):
         remove_template(project, "nonexistent")
+
+
+def test_roster_cli_errors_are_one_line(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """CLI prints roster failures as one stderr line (N8)."""
+    assert main(["roster", "remove", "lead"]) == 1
+    removed = capsys.readouterr().err
+    assert removed.count("\n") == 1
+    assert "cannot remove protected" in removed
+
+    assert main(["roster", "update", "lead", "badfield=value"]) == 1
+    updated = capsys.readouterr().err
+    assert updated.count("\n") == 1
+    assert "invalid field" in updated
+
+    assert main(["roster", "add", "nonexistent"]) == 1
+    added = capsys.readouterr().err
+    assert added.count("\n") == 1
+    assert "persona file not found" in added
+
+
+def test_roster_add_does_not_follow_a_symlink(project: Path) -> None:
+    """A template symlink is not treated as a missing file."""
+    outside = project / "escaped.toml"
+    link = project / ".foil" / "templates" / "researcher.toml"
+    link.symlink_to(outside)
+    with pytest.raises(FoilError, match="refusing symlink"):
+        add_template(project, "researcher", from_file=None)
+    assert not outside.exists()
+    assert link.is_symlink()
+
+
+def test_roster_add_from_file_does_not_follow_a_symlink(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    """--from does not write through a template symlink, then delete the link."""
+    outside = project / "escaped.toml"
+    outside.write_text("original\n", encoding="utf-8")
+    link = project / ".foil" / "templates" / "custom.toml"
+    link.symlink_to(outside)
+    source = tmp_path / "custom.toml"
+    source.write_text("not = a template [\n", encoding="utf-8")
+    with pytest.raises(FoilError, match="refusing symlink"):
+        add_template(project, "custom", from_file=str(source))
+    assert outside.read_text(encoding="utf-8") == "original\n"
+    assert link.is_symlink()
+
+
+def test_roster_update_does_not_follow_a_symlink(project: Path) -> None:
+    """update refuses a symlinked template instead of writing its target."""
+    outside = project / "escaped.toml"
+    outside.write_text(
+        'harness = "claude"\n'
+        'persona = "personas/lead.md"\n'
+        "worktree = false\n"
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    link = project / ".foil" / "templates" / "lead.toml"
+    link.unlink()
+    link.symlink_to(outside)
+    with pytest.raises(FoilError, match="unknown template"):
+        update_template(project, "lead", "model", "other")
+    assert "other" not in outside.read_text(encoding="utf-8")
+    assert link.is_symlink()
 
 
 def test_roster_cli_list(project: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -82,6 +82,12 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert "foil board read PATH [--json]" in text
     assert "foil board list PATTERN [--json]" in text
     assert "foil memory accept ID" in text
+    assert "foil roster list [--json]" in text
+    assert "foil roster show TEMPLATE [--json]" in text
+    assert "foil roster add ROLE [--from FILE]" in text
+    assert "foil roster update ROLE FIELD=VALUE" in text
+    assert "foil roster remove ROLE" in text
+    assert "There is no roster command." not in text
     assert "There is no ack command." in text
     assert "from path" in text
     assert "status/v1" in text and "task/v1" in text and "result/v1" in text
@@ -125,6 +131,7 @@ def test_worker_instruction_and_resume_refreshes_lessons(
     assert "foil board read PATH [--json]" in text
     assert "foil board list PATTERN [--json]" in text
     assert "foil memory accept ID" not in text
+    assert "foil roster" not in text
     assert f"- {first}: prefer small diffs" in text
     second = _lesson(capsys, "re-read the diff")
     assert main(["seat", "resume", "implementer-1"]) == 0
