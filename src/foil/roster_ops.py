@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 
 from foil.errors import FoilError
-from foil.presets import installed_harness, load_template
+from foil.presets import installed_harness, load_preset, load_template
 from foil.project import foil_root
-from foil.store import SAFE_ID, create_exclusive, write_bytes
+from foil.store import SAFE_ID, create_exclusive, load_registry, write_bytes
 
 _PROTECTED_ROLES = {"lead", "implementer", "reviewer"}
 _TEMPLATE_FIELDS = {"harness", "model", "persona", "worktree", "permission"}
@@ -38,6 +38,27 @@ def _create_template_file(path: Path, content: str) -> None:
 def _replace_template_file(path: Path, content: str) -> None:
     _refuse_symlink(path)
     write_bytes(path, content.encode())
+
+
+def _persona_inside(persona: str) -> None:
+    if "\n" in persona or "\r" in persona or not persona.endswith(".md"):
+        return
+    relative = Path(persona)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise FoilError(f"foil: persona path must stay inside .foil/templates: {persona}")
+
+
+def _accept(toplevel: Path, role: str) -> None:
+    template = load_template(toplevel, role)
+    _persona_inside(str(template.get("persona") or ""))
+    load_preset(toplevel, str(template["harness"]))
+
+
+def _in_use(toplevel: Path, role: str) -> None:
+    registry = load_registry(toplevel)
+    for seat in registry["seats"].values():
+        if seat["template"] == role and seat["state"] in {"alive", "dead"}:
+            raise FoilError(f"foil: template '{role}' is still in use")
 
 
 def _packaged_persona_names(toplevel: Path) -> list[str]:
@@ -162,7 +183,7 @@ def add_template(toplevel: Path, role: str, *, from_file: str | None = None) -> 
     try:
         _create_template_file(template_path, content)
         created = True
-        load_template(toplevel, role)
+        _accept(toplevel, role)
     except FoilError:
         if created and template_path.is_file() and not template_path.is_symlink():
             template_path.unlink()
@@ -184,6 +205,8 @@ def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
     template = load_template(toplevel, role)
     template_path = template["path"]
     _refuse_symlink(template_path)
+    if field == "harness":
+        _in_use(toplevel, role)
 
     # Read current content
     original = template_path.read_text(encoding="utf-8")
@@ -230,7 +253,7 @@ def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
 
     # Validate by loading
     try:
-        load_template(toplevel, role)
+        _accept(toplevel, role)
     except FoilError:
         _replace_template_file(template_path, original)
         raise
@@ -249,9 +272,11 @@ def remove_template(toplevel: Path, role: str) -> None:
             f"foil: cannot remove protected template '{role}'. Protected: {protected}"
         )
 
-    # Load to validate it exists
+    # Load to validate it exists. The name was checked before this path.
     template = load_template(toplevel, role)
+    _in_use(toplevel, role)
     template_path = template["path"]
+    _refuse_symlink(template_path)
 
     template_path.unlink()
     print(f"foil: removed template '{role}'")

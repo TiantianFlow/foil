@@ -161,7 +161,7 @@ def _build_parser() -> argparse.ArgumentParser:
     roster_list.add_argument("--json", action="store_true")
 
     roster_show = roster_sub.add_parser("show", help="Show one template")
-    roster_show.add_argument("TEMPLATE", metavar="TEMPLATE")
+    roster_show.add_argument("ROLE", metavar="ROLE")
     roster_show.add_argument("--json", action="store_true")
 
     roster_add = roster_sub.add_parser("add", help="Add a new template")
@@ -266,7 +266,7 @@ def _run(args: argparse.Namespace) -> int:
         list_roster(root, as_json=args.json)
     elif action == "show":
         authorize("roster-show")
-        show_template(root, args.TEMPLATE, as_json=args.json)
+        show_template(root, args.ROLE, as_json=args.json)
     elif action == "add":
         authorize("roster-add")
         add_template(root, args.ROLE, from_file=args.from_file)
@@ -275,6 +275,8 @@ def _run(args: argparse.Namespace) -> int:
         if "=" not in args.FIELD_VALUE:
             raise FoilError("foil: FIELD=VALUE format required")
         field, value = args.FIELD_VALUE.split("=", 1)
+        if field == "permission" and _caller() != OUTSIDE:
+            raise FoilError("foil: permission is outside the fleet only")
         update_template(root, args.ROLE, field, value)
     else:
         authorize("roster-remove")

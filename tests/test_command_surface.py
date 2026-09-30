@@ -126,7 +126,7 @@ SECTION_6 = CommandSpec(
                 "list": CommandSpec(flags=(FlagSpec("--json"),)),
                 "show": CommandSpec(
                     flags=(FlagSpec("--json"),),
-                    positionals=(PositionalSpec("TEMPLATE"),),
+                    positionals=(PositionalSpec("ROLE"),),
                 ),
                 "add": CommandSpec(
                     flags=(FlagSpec("--from", metavar="FILE"),),
@@ -158,7 +158,7 @@ SECTION_6_SYNOPSES = (
     "foil memory reject ID",
     "foil memory list",
     "foil roster list",
-    "foil roster show TEMPLATE",
+    "foil roster show ROLE",
     "foil roster add ROLE",
     "foil roster update ROLE FIELD=VALUE",
     "foil roster remove ROLE",
