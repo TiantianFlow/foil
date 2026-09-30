@@ -18,7 +18,15 @@ You perform onboarding. The human's part was one sentence. You install Foil, run
 foil init
 ```
 
-Read the whole report. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, and the permission sentence. Running it again does not overwrite a template or a persona.
+Read the whole report. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, available personas without templates, and the permission sentence. Running it again does not overwrite a template or a persona.
+
+After first init, run `foil roster list` to see all templates and available personas. Review with the human:
+
+1. Which harnesses are installed
+2. What models to assign to lead/implementer/reviewer
+3. Whether to add researcher/verifier or other candidate roles
+
+Add roles as needed with `foil roster add <role>`. Update harness or model with `foil roster update <role> harness=<id>` or `foil roster update <role> model=<model>`.
 
 3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `ask` is the default: that seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With either setting, peek a new seat for an approval prompt.
 4. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`. Do not copy skill text into the task.
@@ -48,7 +56,16 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 A template is a four-line file in `.foil/templates/`. The file name is the role. The fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. `init` copies every packaged persona there and writes only the three default templates. It overwrites nothing: re-running it after an edit changes no file.
 
-Adding a candidate role is writing a new template next to a persona that is already on disk. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. Changing the harness or the model on an existing role is editing those two lines in its template.
+View and modify templates with `foil roster` commands:
+
+```text
+foil roster list
+foil roster show implementer
+foil roster update implementer model=claude-sonnet-5.5
+foil roster add researcher
+```
+
+The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add <role>` creates a template for a role whose persona file exists. You can still edit template files directly in `.foil/templates/` if you prefer.
 
 ## Picking a harness and a model
 
@@ -122,6 +139,19 @@ foil seat kill --all
 ```
 
 That stops every seat. It does not delete branches or worktrees.
+
+## Importing from agency-agent
+
+To use a role from the agency-agent library or similar role libraries:
+
+1. Find the role definition (usually a TOML file)
+2. Add it with:
+
+```text
+foil roster add <role> --from /path/to/role.toml
+```
+
+If the file format differs from Foil's template format, convert it to match the template structure: `harness`, `model`, `persona`, `worktree`, and `permission` fields. For roles with custom personas, create the persona file in `.foil/templates/personas/<role>.md` first, then add the template.
 
 ## What you do not do
 

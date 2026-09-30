@@ -23,6 +23,13 @@ from foil.lifecycle import (
 from foil.mail_ops import mail_list, mail_read
 from foil.memory import accept_lesson, add_lesson, list_lessons, reject_lesson
 from foil.project import discover_project, is_initialized
+from foil.roster_ops import (
+    add_template,
+    list_roster,
+    remove_template,
+    show_template,
+    update_template,
+)
 
 OUTSIDE = "outside"
 LEAD = "lead"
@@ -45,6 +52,11 @@ _ALLOWED = {
     "memory-list": {OUTSIDE, LEAD, WORKER},
     "memory-accept": {OUTSIDE, LEAD},
     "memory-reject": {OUTSIDE, LEAD},
+    "roster-list": {OUTSIDE, LEAD},
+    "roster-show": {OUTSIDE, LEAD},
+    "roster-add": {OUTSIDE, LEAD},
+    "roster-update": {OUTSIDE, LEAD},
+    "roster-remove": {OUTSIDE, LEAD},
 }
 
 
@@ -141,6 +153,28 @@ def _build_parser() -> argparse.ArgumentParser:
     mem_list = mem_sub.add_parser("list", help="List lessons")
     mem_list.add_argument("--all", action="store_true")
     mem_list.add_argument("--json", action="store_true")
+
+    roster = sub.add_parser("roster", help="Manage role templates")
+    roster_sub = roster.add_subparsers(dest="roster_command", required=True)
+
+    roster_list = roster_sub.add_parser("list", help="List templates and personas")
+    roster_list.add_argument("--json", action="store_true")
+
+    roster_show = roster_sub.add_parser("show", help="Show one template")
+    roster_show.add_argument("TEMPLATE", metavar="TEMPLATE")
+    roster_show.add_argument("--json", action="store_true")
+
+    roster_add = roster_sub.add_parser("add", help="Add a new template")
+    roster_add.add_argument("ROLE", metavar="ROLE")
+    roster_add.add_argument("--from", dest="from_file", metavar="FILE")
+
+    roster_update = roster_sub.add_parser("update", help="Update a template field")
+    roster_update.add_argument("ROLE", metavar="ROLE")
+    roster_update.add_argument("FIELD_VALUE", metavar="FIELD=VALUE")
+
+    roster_remove = roster_sub.add_parser("remove", help="Remove a template")
+    roster_remove.add_argument("ROLE", metavar="ROLE")
+
     return parser
 
 
@@ -211,19 +245,40 @@ def _run(args: argparse.Namespace) -> int:
             authorize("board-list")
             board_list(args.PATTERN, as_json=args.json)
         return 0
-    action = args.memory_command
-    if action == "add":
-        authorize("memory-add")
-        add_lesson(root, _text_arg(args.TEXT), replaces=args.replaces)
-    elif action == "accept":
-        authorize("memory-accept")
-        accept_lesson(root, args.ID)
-    elif action == "reject":
-        authorize("memory-reject")
-        reject_lesson(root, args.ID)
+    if args.command == "memory":
+        action = args.memory_command
+        if action == "add":
+            authorize("memory-add")
+            add_lesson(root, _text_arg(args.TEXT), replaces=args.replaces)
+        elif action == "accept":
+            authorize("memory-accept")
+            accept_lesson(root, args.ID)
+        elif action == "reject":
+            authorize("memory-reject")
+            reject_lesson(root, args.ID)
+        else:
+            authorize("memory-list")
+            list_lessons(root, all_lessons=args.all, as_json=args.json)
+        return 0
+    action = args.roster_command
+    if action == "list":
+        authorize("roster-list")
+        list_roster(root, as_json=args.json)
+    elif action == "show":
+        authorize("roster-show")
+        show_template(root, args.TEMPLATE, as_json=args.json)
+    elif action == "add":
+        authorize("roster-add")
+        add_template(root, args.ROLE, from_file=args.from_file)
+    elif action == "update":
+        authorize("roster-update")
+        if "=" not in args.FIELD_VALUE:
+            raise FoilError("foil: FIELD=VALUE format required")
+        field, value = args.FIELD_VALUE.split("=", 1)
+        update_template(root, args.ROLE, field, value)
     else:
-        authorize("memory-list")
-        list_lessons(root, all_lessons=args.all, as_json=args.json)
+        authorize("roster-remove")
+        remove_template(root, args.ROLE)
     return 0
 
 
