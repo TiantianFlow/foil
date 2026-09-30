@@ -17,9 +17,9 @@ Four read commands, each with `--json`:
 
 | Command | Behavior |
 |---|---|
-| `foil mail read PATH` | Reads one mail file under `.foil/board/mail/`. Human output is the body; JSON is `from`, `to`, `time`, `re`, `body`. |
+| `foil mail read PATH` | Reads one mail file under `.foil/board/mail/`. PATH must be absolute. Human output is the body; JSON is the `mail/v1` contract plus `from`, `to`, `time`, `re`, and `body`. |
 | `foil mail list` | Lists the calling seat's mail, newest first. Needs `FOIL_SEAT_ID`. |
-| `foil board read PATH` | Reads one file under `.foil/board/`, by absolute path or relative to the board folder. JSON carries the front matter fields and `body`, or only `body` for a file with no front matter. |
+| `foil board read PATH` | Reads one file under `.foil/board/`, by absolute path or relative to the board folder. JSON carries the front matter fields and `body`, or only `body` for a file with no front matter. List values stay JSON arrays. |
 | `foil board list PATTERN` | Lists board files matching a glob relative to the board folder, sorted. JSON is `{"files": [...]}`. |
 
 Paths are checked before any read: a `..` part is refused, and so is any

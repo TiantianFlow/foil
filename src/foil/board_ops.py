@@ -16,21 +16,50 @@ def board_root() -> Path:
     raise FoilError("foil: not in a foil project")
 
 
-def split_front_matter(text: str) -> tuple[dict[str, str] | None, str]:
+def _flow_list(value: str) -> list[str] | None:
+    if len(value) < 2 or value[0] != "[" or value[-1] != "]":
+        return None
+    inner = value[1:-1].strip()
+    if not inner:
+        return []
+    return [part.strip().strip("\"'") for part in inner.split(",")]
+
+
+def split_front_matter(text: str) -> tuple[dict[str, str | list[str]] | None, str]:
     lines = text.split("\n")
-    if lines[0] != "---" or "---" not in lines[1:]:
+    if not lines or lines[0] != "---" or "---" not in lines[1:]:
         return None, text
     end = lines.index("---", 1)
-    fields: dict[str, str] = {}
-    key = None
+    fields: dict[str, str | list[str]] = {}
+    key: str | None = None
+    listing = False
+    block = False
     for line in lines[1:end]:
-        if key is not None and (line.startswith(" ") or not line):
-            fields[key] = (fields[key] + "\n" + line.strip()).strip()
-        elif ":" in line:
-            key, _, value = line.partition(":")
-            key = key.strip()
-            value = value.strip()
-            fields[key] = "" if value in ("|", ">") else value
+        if key is not None and (line[:1] in " \t" or line == ""):
+            stripped = line.strip()
+            if listing:
+                items = fields[key]
+                if stripped.startswith("-") and isinstance(items, list):
+                    items.append(stripped[1:].strip())
+                continue
+            if not block and fields[key] == "" and stripped.startswith("-"):
+                listing = True
+                fields[key] = [stripped[1:].strip()]
+                continue
+            fields[key] = f"{fields[key]}\n{stripped}".strip()
+            continue
+        if ":" not in line:
+            continue
+        name, _, raw = line.partition(":")
+        key = name.strip()
+        value = raw.strip()
+        block = value in ("|", ">")
+        flow = None if block else _flow_list(value)
+        listing = flow is not None
+        if flow is not None:
+            fields[key] = flow
+        else:
+            fields[key] = "" if block else value
     body = "\n".join(lines[end + 1 :])
     return fields, body[1:] if body.startswith("\n") else body
 

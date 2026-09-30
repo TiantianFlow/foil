@@ -140,6 +140,7 @@ def test_mail_read_outputs_json(
     captured = capsys.readouterr()
     data = json.loads(captured.out)
 
+    assert data["contract"] == "mail/v1"
     assert data["from"] == "lead"
     assert data["to"] == "worker-1"
     assert data["time"] == "2026-09-30T12:00:00Z"
@@ -335,6 +336,83 @@ def test_cli_mail_read(
     assert main(["mail", "read", str(mail_file.resolve())]) == 0
     captured = capsys.readouterr()
     assert "Test mail" in captured.out
+
+
+def test_cli_mail_read_rejects_relative_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A relative mail path exits 1 with one stderr line."""
+    repo = _repo(tmp_path, monkeypatch)
+    mail_file = _create_mail(repo, "worker-1", "lead", "Do the task.")
+    relative = f"worker-1/{mail_file.name}"
+
+    assert main(["mail", "read", relative]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == "foil: path must be absolute\n"
+    assert captured.out == ""
+
+
+def test_cli_mail_read_json_includes_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """JSON mail includes the mail/v1 contract plus the fields and body."""
+    repo = _repo(tmp_path, monkeypatch)
+    mail_file = _create_mail(repo, "worker-1", "lead", "Do the task.")
+    text = mail_file.read_text(encoding="utf-8").replace(
+        "time: 2026-09-30T12:00:00Z\n",
+        "time: 2026-09-30T12:00:00Z\nre: /mail/earlier.md\n",
+    )
+    mail_file.write_text(text, encoding="utf-8")
+
+    assert main(["mail", "read", str(mail_file.resolve()), "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data == {
+        "contract": "mail/v1",
+        "from": "lead",
+        "to": "worker-1",
+        "time": "2026-09-30T12:00:00Z",
+        "re": "/mail/earlier.md",
+        "body": "Do the task.",
+    }
+
+
+def test_cli_board_read_json_keeps_question_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """status/v1 questions stay a JSON array, including an empty list."""
+    repo = _repo(tmp_path, monkeypatch)
+    listed = """---
+contract: status/v1
+state: working
+updated: 2026-09-30T12:00:00Z
+questions:
+  - first
+  - second
+note: |
+  - keep this text
+---
+
+Status body"""
+    _create_board_file(repo, "status.md", listed)
+    assert main(["board", "read", "status.md", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["questions"] == ["first", "second"]
+    assert data["note"] == "- keep this text"
+    assert data["body"] == "Status body"
+
+    empty = """---
+contract: status/v1
+state: done
+updated: 2026-09-30T12:00:00Z
+questions: []
+---
+
+Done"""
+    _create_board_file(repo, "status-empty.md", empty)
+    assert main(["board", "read", "status-empty.md", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["questions"] == []
+    assert data["body"] == "Done"
 
 
 def test_cli_mail_list_requires_seat_id(

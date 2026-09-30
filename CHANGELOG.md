@@ -2,15 +2,18 @@
 
 Notable changes to Foil, newest first.
 
-## [0.3.0] - YYYY-MM-DD
+## Unreleased
 
 ### Added
-- Four new commands for reading mail and board files: `foil mail read`, `foil mail list`, 
-  `foil board read`, `foil board list`. Seats in worktrees can now read board files 
-  without permission prompts. (#12)
+- Four new commands for reading mail and board files: `foil mail read`,
+  `foil mail list`, `foil board read`, and `foil board list`. Seats in
+  worktrees can now read board files without permission prompts. (#12)
 - JSON output support for all new read/list commands via `--json` flag.
 
 ### Changed
+- `foil mail read` requires an absolute path. Its JSON output includes
+  the `mail/v1` contract. `foil board read --json` keeps list front matter
+  as arrays.
 - Skills updated to use `foil mail read` instead of direct file reads.
 - Command count increased from 11 to 15 actions across 6 top-level commands.
 

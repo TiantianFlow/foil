@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 from foil.board_ops import board_root, inside, read_text, split_front_matter
 from foil.errors import FoilError
 
 
-def _fields(text: str, shown: str) -> tuple[dict[str, str], str]:
+def _fields(text: str, shown: str) -> tuple[dict[str, str | list[str]], str]:
     fields, body = split_front_matter(text)
     if fields is None:
         raise FoilError(f"foil: not a mail file: {shown}")
@@ -17,12 +18,15 @@ def _fields(text: str, shown: str) -> tuple[dict[str, str], str]:
 
 
 def mail_read(path_text: str, *, as_json: bool = False) -> None:
+    if not Path(path_text).is_absolute():
+        raise FoilError("foil: path must be absolute")
     text = read_text(inside(path_text, board_root() / "mail"), path_text)
     fields, body = _fields(text, path_text)
     if as_json:
         print(
             json.dumps(
                 {
+                    "contract": fields.get("contract", ""),
                     "from": fields.get("from", ""),
                     "to": fields.get("to", ""),
                     "time": fields.get("time", ""),
