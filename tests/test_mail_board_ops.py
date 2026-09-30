@@ -426,6 +426,39 @@ def test_cli_mail_list_requires_seat_id(
     assert "FOIL_SEAT_ID not set" in captured.err
 
 
+def test_cli_board_read_refuses_run_and_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """board read refuses paths under board/run and board/memory."""
+    repo = _repo(tmp_path, monkeypatch)
+    run_file = _create_board_file(repo, "run/registry.json", "state")
+    memory_file = _create_board_file(repo, "memory/lesson.json", "lesson")
+    paths = (
+        "run/registry.json",
+        "memory/lesson.json",
+        str(run_file.resolve()),
+        str(memory_file.resolve()),
+    )
+    for path in paths:
+        assert main(["board", "read", path]) == 1
+        captured = capsys.readouterr()
+        assert captured.err == "foil: path not allowed\n"
+        assert captured.out == ""
+
+
+def test_cli_board_read_prints_credential_shaped_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """board read does not scan seat-authored file text."""
+    repo = _repo(tmp_path, monkeypatch)
+    _create_board_file(repo, "notes/token.md", "sk-live-looking-token\n")
+
+    assert main(["board", "read", "notes/token.md"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "sk-live-looking-token\n"
+    assert captured.err == ""
+
+
 def test_cli_board_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

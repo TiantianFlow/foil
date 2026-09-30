@@ -220,7 +220,7 @@ foil send TO TEXT
 foil mail read PATH [--json]
 foil mail list [--json]
 foil board read PATH [--json]
-foil board list PATTERN [--json]
+foil board list [PATTERN] [--json]
 foil memory add TEXT [--replaces ID]
 foil memory list [--all] [--json]
 foil memory accept ID
@@ -232,7 +232,7 @@ foil send TO TEXT
 foil mail read PATH [--json]
 foil mail list [--json]
 foil board read PATH [--json]
-foil board list PATTERN [--json]
+foil board list [PATTERN] [--json]
 foil memory add TEXT [--replaces ID]
 foil memory list [--all] [--json]"""
 
