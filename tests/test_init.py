@@ -92,7 +92,8 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     pointer = "Read .foil/skills/operator.md and follow it. My goal: <goal>."
     ask = "permission: lead ask, implementer ask, reviewer ask."
     rule = (
-        "ask stops a seat at its first approval prompt; auto lets it run unattended. "
+        "ask stops a seat at its first approval prompt; auto asks the harness to skip "
+        "approval prompts, though some harnesses still ask for some commands. "
         "Set it in each .foil/templates/<role>.toml; auto on the lead alone does not "
         "let the workers run unattended."
     )

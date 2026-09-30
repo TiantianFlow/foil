@@ -94,7 +94,8 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
     )
     print(f"permission: {permissions}.")
     print(
-        "ask stops a seat at its first approval prompt; auto lets it run unattended. "
+        "ask stops a seat at its first approval prompt; auto asks the harness to skip "
+        "approval prompts, though some harnesses still ask for some commands. "
         "Set it in each .foil/templates/<role>.toml; auto on the lead alone does not "
         "let the workers run unattended."
     )

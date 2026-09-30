@@ -56,6 +56,7 @@ permission = "auto"
 `permission = "ask"` makes a seat stop at its first approval prompt and
 wait for you in its window. For an unattended run, set
 `permission = "auto"` on every template whose seat should work alone.
+A harness may still ask before some commands, so peek new seats.
 
 ## 3. Hand over the goal
 
