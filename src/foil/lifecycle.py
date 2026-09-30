@@ -85,10 +85,15 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
         for path in persona_dir.glob("*.md")
         if path.is_file() and not path.is_symlink()
     )
+    template_names = {role for role in roles if (foil_root(toplevel) / "templates" / f"{role}.toml").exists()}
+    available_personas = [name for name in personas if name not in template_names]
+
     print("Wrote templates: " + _names([role for role in roles if role not in had_templates]))
     print("Left templates: " + _names([role for role in roles if role in had_templates]))
     print("Wrote personas: " + _names([name for name in personas if name not in had_personas]))
     print("Left personas: " + _names([name for name in personas if name in had_personas]))
+    if available_personas:
+        print(f"Available personas (use 'foil roster add'): {_names(available_personas)}")
     permissions = ", ".join(
         f"{role} {load_template(toplevel, role)['permission']}" for role in roles
     )
