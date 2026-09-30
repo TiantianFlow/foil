@@ -52,7 +52,7 @@ class CommandSpec:
     commands: dict[str, CommandSpec] | None = None
 
 
-# docs/requirements.md §6.1 — four top-level commands, eleven actions.
+# docs/requirements.md §6.1 — six top-level commands, fifteen actions.
 SECTION_6 = CommandSpec(
     flags=(FlagSpec("--version"),),
     commands={
@@ -84,6 +84,27 @@ SECTION_6 = CommandSpec(
                 PositionalSpec("TEXT"),
             )
         ),
+        "mail": CommandSpec(
+            commands={
+                "read": CommandSpec(
+                    flags=(FlagSpec("--json"),),
+                    positionals=(PositionalSpec("PATH"),),
+                ),
+                "list": CommandSpec(flags=(FlagSpec("--json"),)),
+            }
+        ),
+        "board": CommandSpec(
+            commands={
+                "read": CommandSpec(
+                    flags=(FlagSpec("--json"),),
+                    positionals=(PositionalSpec("PATH"),),
+                ),
+                "list": CommandSpec(
+                    flags=(FlagSpec("--json"),),
+                    positionals=(PositionalSpec("PATTERN"),),
+                ),
+            }
+        ),
         "memory": CommandSpec(
             commands={
                 "add": CommandSpec(
@@ -111,6 +132,10 @@ SECTION_6_SYNOPSES = (
     "foil seat list",
     "foil seat peek NAME",
     "foil send TO TEXT",
+    "foil mail read PATH",
+    "foil mail list",
+    "foil board read PATH",
+    "foil board list PATTERN",
     "foil memory add TEXT",
     "foil memory accept ID",
     "foil memory reject ID",

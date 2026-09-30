@@ -74,22 +74,18 @@ Write tasks at `board/tasks/<id>.md`. Contract `task/v1`: `id`, `owner`, `state`
 
 Read results at `board/results/<id>.md`. Contract `result/v1`: `task`, `author`, `branch` if any, and `outcome` of `pass` or `fail`.
 
-Mail is a file with contract `mail/v1`: `from`, `to`, `time`, and an optional `re`. A nudge line is the sender, a space, and the absolute mail path. Read it with:
+Mail is a file with contract `mail/v1`: `from`, `to`, `time`, and an optional `re`. A nudge line is the sender, a space, and the absolute mail path. Read it, list your mail, and read board files with:
 
-    foil mail read /absolute/path/from/nudge
+```text
+foil mail read /absolute/path/from/nudge
+foil mail list
+foil mail list --json
+foil board read tasks/t1.md
+foil board read status.md
+foil board list "tasks/*.md"
+```
 
-List your mail:
-
-    foil mail list
-    foil mail list --json
-
-Read board files with:
-
-    foil board read board/tasks/t1.md
-    foil board read board/status.md
-    foil board list tasks/*.md
-
-Notes under `board/notes/` wake no one. Foil does not read contracts.
+Board paths are relative to the board folder. Notes under `board/notes/` wake no one. Foil does not read contracts.
 
 ## Memory
 
