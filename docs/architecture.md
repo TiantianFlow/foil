@@ -108,13 +108,13 @@ Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foi
 - `templates/personas/<role>.md` — every packaged persona, copied once, including candidate roles that have no template yet. A persona adds only specialization the role skill does not already state. A template may instead point `persona` at another Markdown file, which is left untouched, or it may hold inline text.
 - `harnesses/` — optional project presets.
 - `memory/<id>.json` — lessons. They belong to the project and stay when seats are killed.
-- `board/mail/<seat>/` — mail files. `board/notes/`, `board/tasks/`, and `board/results/` are directories seats use with ordinary file tools. Foil does not read task, result, note, or status files.
+- `board/mail/<seat>/` — mail files. Seats read them with `foil mail read` and `foil mail list`, and read notes, tasks, results, and status with `foil board read` and `foil board list`. Foil does not interpret those files.
 - `run/registry.json` — fleet id, tmux session name, lead name, and one record per seat: name, template, harness, window id, state, worktree, branch, and session id.
 - `run/instructions/<seat>.md` — generated when that seat is spawned or resumed. It includes the text of that seat's role skill.
 - `skills/operator.md`, `skills/lead.md`, and `skills/worker.md` — copied once from the package. Each file starts with a name and description. Init does not overwrite a file that is already there. The lead and worker skills are the role guidance for those seats.
 - `run/plans/<seat>.json` — the argv, working directory, and environment for the runner.
 
-A linked worktree does not contain `.foil`. From that worktree, discovery walks to the Git common directory and uses the parent that contains `.foil`, so a seat can run `foil send` and `foil memory` against the project.
+A linked worktree does not contain `.foil`. From that worktree, discovery walks to the Git common directory and uses the parent that contains `.foil`, so a seat can run `foil send`, `foil mail`, `foil board`, and `foil memory` against the project.
 
 ## Authority
 
@@ -134,7 +134,7 @@ The instruction file includes the persona's text. When the template points at a 
 
 ## Instruction file
 
-The file is regenerated on spawn and on resume, not when a lesson is accepted later. It names the seat, the lead (`lead`), the absolute board path, and the commands that role may run. It includes the role skill's text and the persona's text, not only a path to either, and its last line tells the seat to re-read this file whenever it is woken. It states that mail is a file, that the nudge line is the sender and the mail path, and that notes wake nobody. It names the `status/v1`, `task/v1`, and `result/v1` contracts. It tells a worktree seat to stay in its worktree. Accepted lessons are copied in, or the file says none yet. The lead's file also lists each template's harness and whether it asks for a worktree. If this launch is a fresh start after a restart, the file says the seat was restarted and should re-read its mail.
+The file is regenerated on spawn and on resume, not when a lesson is accepted later. It names the seat, the lead (`lead`), the absolute board path, and the commands that role may run. It includes the role skill's text and the persona's text, not only a path to either, and its last line tells the seat to re-read this file whenever it is woken. It states that mail is a file, that the nudge line is the sender and the mail path, and that notes wake nobody. It names the `status/v1`, `task/v1`, and `result/v1` contracts. It tells a worktree seat to stay in its worktree. Accepted lessons are copied in, or the file says none yet. The lead's file also lists each template's harness and whether it asks for a worktree. If this launch is a fresh start after a restart, the file says the seat was restarted and should list its mail with `foil mail list` and read each file with `foil mail read`.
 
 ## Mail and nudge
 

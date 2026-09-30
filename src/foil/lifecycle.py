@@ -217,6 +217,10 @@ foil seat resume [NAME]
 foil seat list [--json]
 foil seat peek NAME [--lines N]
 foil send TO TEXT
+foil mail read PATH [--json]
+foil mail list [--json]
+foil board read PATH [--json]
+foil board list PATTERN [--json]
 foil memory add TEXT [--replaces ID]
 foil memory list [--all] [--json]
 foil memory accept ID
@@ -225,6 +229,10 @@ foil memory reject ID"""
 _WORKER_COMMANDS = """foil seat list [--json]
 foil seat peek NAME [--lines N]
 foil send TO TEXT
+foil mail read PATH [--json]
+foil mail list [--json]
+foil board read PATH [--json]
+foil board list PATTERN [--json]
 foil memory add TEXT [--replaces ID]
 foil memory list [--all] [--json]"""
 
@@ -268,7 +276,7 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
         f"Identity is `FOIL_SEAT_ID` (yours is `{seat}`). You cannot change it with flags.",
         "Commands you may run:",
         _LEAD_COMMANDS if lead else _WORKER_COMMANDS,
-        "Mail: `foil send TO TEXT`. A nudge line is `from path`; read that file.",
+        "Mail: `foil send TO TEXT`. A nudge line is `from path`. Read it with `foil mail read`.",
         "There is no ack command.",
         "Notes: write files under `board/notes/`. They wake no one.",
         "Contracts (Foil does not read them):",
@@ -282,7 +290,10 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
         f"Accepted lessons: {learned}",
     ]
     if restarted:
-        lines.append(f"You were restarted. Re-read `{board / 'mail' / seat}/`.")
+        lines.append(
+            "You were restarted. List your mail with `foil mail list` "
+            "and read each file with `foil mail read`."
+        )
     if lead:
         roster = []
         directory = foil_root(root) / "templates"
