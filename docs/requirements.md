@@ -125,6 +125,15 @@ human's part is one sentence; everything after step 2 is the agent's work.
 | F18 | Any seat or the operator may propose a lesson and list lessons. Only the lead or the operator may accept or reject a proposal. A proposal may name a lesson it replaces; accepting it marks the replaced lesson superseded. |
 | F19 | All accepted lessons are included in every seat's instruction file at launch. |
 
+### Board reads
+
+| ID | Requirement |
+|---|---|
+| F29 | `mail read` reads a mail file by absolute path. The path must be in `.foil/board/mail/`. It outputs the body only in human mode, and the full contract with body in JSON mode (`--json`). |
+| F30 | `mail list` lists mail files for the current seat, identified by `FOIL_SEAT_ID`. It fails when called outside a fleet. Mail is sorted newest first. Human output: one line per mail with time, sender, and path. JSON output: array of mail metadata. |
+| F31 | `board read` reads a board file by path (relative to board root or absolute). The path must be in `.foil/board/`. Human output: full file contents. JSON output: parsed frontmatter plus body for contract files, or `{"body": "..."}` for non-contract files. |
+| F32 | `board list` lists board files matching a glob pattern (relative to board root). Human output: one path per line, sorted alphabetically. JSON output: `{"files": [...]}`. |
+
 ### Templates, presets, and instructions
 
 | ID | Requirement |
@@ -184,21 +193,25 @@ accepts `--help`, and `foil --version` prints the version.
 | `foil seat list` | `--json` | Lists seats (F10). |
 | `foil seat peek NAME` | `--lines N` (default 40) | Prints the pane tail (F11). |
 | `foil send TO TEXT` | none; `TEXT` = `-` reads stdin | Writes mail and nudges the recipient (F13, F14). |
+| `foil mail read PATH` | `--json` | Reads mail file at PATH. PATH must be absolute and in `.foil/board/mail/`. Human output: body only. JSON: full contract + body. |
+| `foil mail list` | `--json` | Lists mail for current seat (FOIL_SEAT_ID required). Sorted newest first. Human: `<time> <from> <path>` per line. JSON: array of mail metadata. |
+| `foil board read PATH` | `--json` | Reads board file at PATH (relative to board root or absolute). PATH must be in `.foil/board/`. Human output: full file. JSON: parsed frontmatter + body. |
+| `foil board list PATTERN` | `--json` | Lists board files matching glob PATTERN (relative to board root). Sorted alphabetically. Human: one path per line. JSON: `{"files": [...]}`. |
 | `foil memory add TEXT` | `--replaces ID`; `TEXT` = `-` reads stdin | Proposes a lesson and prints its ID (F18). |
 | `foil memory accept ID` | none | Accepts a proposal. |
 | `foil memory reject ID` | none | Rejects a proposal. |
 | `foil memory list` | `--all`, `--json` | Lists accepted lessons; `--all` lists every lesson with its state. |
 
-That's four top-level commands (`init`, `seat`, `send`, `memory`) and
-eleven actions.
+That's six top-level commands (`init`, `seat`, `send`, `memory`, `mail`, `board`) and
+fifteen actions.
 
 ### 6.2 Authority
 
-| Caller | `init` | `seat spawn` | `seat kill` | `seat kill --all` | `seat resume` | `seat list` / `peek` | `send` | `memory add` / `list` | `memory accept` / `reject` |
-|---|---|---|---|---|---|---|---|---|---|
-| Outside the fleet | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| Lead | no | yes | yes, not itself | no | yes | yes | yes | yes | yes |
-| Worker | no | no | no | no | no | yes | yes | yes | no |
+| Caller | `init` | `seat spawn` | `seat kill` | `seat kill --all` | `seat resume` | `seat list` / `peek` | `send` | `mail read` | `mail list` | `board read` | `board list` | `memory add` / `list` | `memory accept` / `reject` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Outside the fleet | yes | yes | yes | yes | yes | yes | yes | yes | no | yes | yes | yes | yes |
+| Lead | no | yes | yes, not itself | no | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Worker | no | no | no | no | no | yes | yes | yes | yes | yes | yes | yes | no |
 
 ## 7. Data design
 

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from foil import __version__
 from foil.board import send_mail
+from foil.board_ops import board_list, board_read
 from foil.errors import FoilError
 from foil.lifecycle import (
     init_project,
@@ -19,6 +20,7 @@ from foil.lifecycle import (
     resume_seats,
     spawn_seat,
 )
+from foil.mail_ops import mail_list, mail_read
 from foil.memory import accept_lesson, add_lesson, list_lessons, reject_lesson
 from foil.project import discover_project, is_initialized
 
@@ -35,6 +37,10 @@ _ALLOWED = {
     "list": {OUTSIDE, LEAD, WORKER},
     "peek": {OUTSIDE, LEAD, WORKER},
     "send": {OUTSIDE, LEAD, WORKER},
+    "mail-read": {OUTSIDE, LEAD, WORKER},
+    "mail-list": {LEAD, WORKER},
+    "board-read": {OUTSIDE, LEAD, WORKER},
+    "board-list": {OUTSIDE, LEAD, WORKER},
     "memory-add": {OUTSIDE, LEAD, WORKER},
     "memory-list": {OUTSIDE, LEAD, WORKER},
     "memory-accept": {OUTSIDE, LEAD},
@@ -97,6 +103,27 @@ def _build_parser() -> argparse.ArgumentParser:
     send = sub.add_parser("send", help="Write mail and nudge the recipient")
     send.add_argument("TO", metavar="TO")
     send.add_argument("TEXT", metavar="TEXT")
+
+    mail = sub.add_parser("mail", help="Read mail files")
+    mail_sub = mail.add_subparsers(dest="mail_command", required=True)
+
+    mail_read_p = mail_sub.add_parser("read", help="Read a mail file")
+    mail_read_p.add_argument("PATH", metavar="PATH")
+    mail_read_p.add_argument("--json", action="store_true")
+
+    mail_list_p = mail_sub.add_parser("list", help="List mail for current seat")
+    mail_list_p.add_argument("--json", action="store_true")
+
+    board = sub.add_parser("board", help="Read board files")
+    board_sub = board.add_subparsers(dest="board_command", required=True)
+
+    board_read_p = board_sub.add_parser("read", help="Read a board file")
+    board_read_p.add_argument("PATH", metavar="PATH")
+    board_read_p.add_argument("--json", action="store_true")
+
+    board_list_p = board_sub.add_parser("list", help="List board files")
+    board_list_p.add_argument("PATTERN", metavar="PATTERN")
+    board_list_p.add_argument("--json", action="store_true")
 
     memory = sub.add_parser("memory", help="Project lessons")
     mem_sub = memory.add_subparsers(dest="memory_command", required=True)
@@ -165,6 +192,24 @@ def _run(args: argparse.Namespace) -> int:
     if args.command == "send":
         authorize("send")
         send_mail(root, args.TO, _text_arg(args.TEXT))
+        return 0
+    if args.command == "mail":
+        action = args.mail_command
+        if action == "read":
+            authorize("mail-read")
+            mail_read(args.PATH, as_json=args.json)
+        else:
+            authorize("mail-list")
+            mail_list(as_json=args.json)
+        return 0
+    if args.command == "board":
+        action = args.board_command
+        if action == "read":
+            authorize("board-read")
+            board_read(args.PATH, as_json=args.json)
+        else:
+            authorize("board-list")
+            board_list(args.PATTERN, as_json=args.json)
         return 0
     action = args.memory_command
     if action == "add":
