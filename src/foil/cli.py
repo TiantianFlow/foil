@@ -38,7 +38,7 @@ _ALLOWED = {
     "peek": {OUTSIDE, LEAD, WORKER},
     "send": {OUTSIDE, LEAD, WORKER},
     "mail-read": {OUTSIDE, LEAD, WORKER},
-    "mail-list": {OUTSIDE, LEAD, WORKER},
+    "mail-list": {LEAD, WORKER},
     "board-read": {OUTSIDE, LEAD, WORKER},
     "board-list": {OUTSIDE, LEAD, WORKER},
     "memory-add": {OUTSIDE, LEAD, WORKER},

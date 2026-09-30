@@ -114,8 +114,8 @@ human's part is one sentence; everything after step 2 is the agent's work.
 |---|---|
 | F13 | `send` stores the message as a mail file on the board, then types one nudge line into the recipient's pane: the sender and the mail file's absolute path. The message body is never typed into a pane. |
 | F14 | Mail sent from outside the fleet shows the sender as `user`. There is no operator mailbox. |
-| F15 | The board has a notes area for unaddressed shared files. Seats read and write notes with ordinary file tools; notes wake no one. |
-| F16 | Board contracts (section 7.4) are Markdown files with versioned front matter. Foil defines them and tells seats about them, but never reads them. |
+| F15 | The board has a notes area for unaddressed shared files. Seats write notes with ordinary file tools and read them with `foil board read` and `foil board list`. Notes wake no one. |
+| F16 | Board contracts (section 7.4) are Markdown files with versioned front matter. Foil defines them and tells seats about them. Foil does not act on contract fields (`state`, `outcome`, and the rest). `mail read`, `mail list`, and `board read` may parse front matter only to print the file. |
 
 ### Memory
 

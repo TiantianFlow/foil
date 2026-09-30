@@ -418,12 +418,32 @@ Done"""
 def test_cli_mail_list_requires_seat_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """foil mail list fails without FOIL_SEAT_ID."""
+    """An outside-fleet caller may not list mail."""
     _repo(tmp_path, monkeypatch)
 
     assert main(["mail", "list"]) == 1
     captured = capsys.readouterr()
-    assert "FOIL_SEAT_ID not set" in captured.err
+    assert captured.err == "foil: not allowed\n"
+    assert captured.out == ""
+
+
+def test_cli_mail_list_rejects_parent_seat_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A seat id of ../../.. does not list files outside the board."""
+    repo = _repo(tmp_path, monkeypatch)
+    escaped = repo / "escaped.md"
+    escaped.write_text(
+        "---\ncontract: mail/v1\nfrom: x\nto: y\ntime: 2026-09-30T12:00:00Z\n---\n\nnope\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FOIL_SEAT_ID", "../../..")
+
+    assert main(["mail", "list"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err == "foil: invalid seat\n"
+    assert captured.out == ""
+    assert "escaped.md" not in captured.out
 
 
 def test_cli_board_read_refuses_run_and_memory(

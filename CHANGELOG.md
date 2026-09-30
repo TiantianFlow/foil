@@ -13,6 +13,8 @@ Notable changes to Foil, newest first.
 ### Changed
 - Skills and seat instructions use `foil mail read` and `foil mail list`
   instead of direct mail file reads.
+- `foil mail list` rejects an unsafe seat id. An outside-fleet caller
+  gets `foil: not allowed`.
 
 ## [0.2.2] - 2026-09-30
 
