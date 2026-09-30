@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,10 +21,34 @@ def _outside_caller(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
 
 
+def _identity_environ() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GIT_AUTHOR_NAME": "Foil Test",
+            "GIT_AUTHOR_EMAIL": "foil-test@localhost",
+            "GIT_COMMITTER_NAME": "Foil Test",
+            "GIT_COMMITTER_EMAIL": "foil-test@localhost",
+        }
+    )
+    environment.pop("FOIL_SEAT_ID", None)
+    return environment
+
+
+def _init_git_repository(path: Path) -> None:
+    subprocess.run(
+        ["git", "init", "--quiet", str(path)],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_identity_environ(),
+    )
+
+
 def _repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo = tmp_path / "project"
     repo.mkdir()
-    (repo / ".git").mkdir()
+    _init_git_repository(repo)
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
     return repo
