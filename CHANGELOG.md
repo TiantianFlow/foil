@@ -9,12 +9,12 @@ Notable changes to Foil, newest first.
   A seat in a worktree can read mail and board files without a permission
   prompt. `mail read` takes an absolute path. JSON mail includes the
   `mail/v1` contract. JSON board output keeps list front matter as arrays. (#12)
+- `foil mail list` rejects an unsafe seat id. An outside-fleet caller
+  gets `foil: not allowed`.
 
 ### Changed
 - Skills and seat instructions use `foil mail read` and `foil mail list`
   instead of direct mail file reads.
-- `foil mail list` rejects an unsafe seat id. An outside-fleet caller
-  gets `foil: not allowed`.
 
 ## [0.2.2] - 2026-09-30
 

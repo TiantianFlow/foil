@@ -446,24 +446,29 @@ def test_cli_mail_list_rejects_parent_seat_id(
     assert "escaped.md" not in captured.out
 
 
-def test_cli_board_read_refuses_run_and_memory(
+def test_cli_board_read_refuses_foil_run_and_memory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """board read refuses paths under board/run and board/memory."""
+    """board read refuses .foil/run and .foil/memory, and still reads notes/run.md."""
     repo = _repo(tmp_path, monkeypatch)
-    run_file = _create_board_file(repo, "run/registry.json", "state")
-    memory_file = _create_board_file(repo, "memory/lesson.json", "lesson")
-    paths = (
-        "run/registry.json",
-        "memory/lesson.json",
-        str(run_file.resolve()),
-        str(memory_file.resolve()),
-    )
-    for path in paths:
+    foil = foil_root(repo)
+    run_file = foil / "run" / "registry.json"
+    memory_file = foil / "memory" / "lesson.json"
+    run_file.parent.mkdir(parents=True, exist_ok=True)
+    memory_file.parent.mkdir(parents=True, exist_ok=True)
+    run_file.write_text("registry\n", encoding="utf-8")
+    memory_file.write_text("lesson\n", encoding="utf-8")
+    _create_board_file(repo, "notes/run.md", "a note named run\n")
+
+    for path in ("../run/registry.json", str(run_file.resolve()), str(memory_file.resolve())):
         assert main(["board", "read", path]) == 1
         captured = capsys.readouterr()
-        assert captured.err == "foil: path not allowed\n"
+        assert captured.err.count("\n") == 1
+        assert captured.err.startswith("foil:")
         assert captured.out == ""
+
+    assert main(["board", "read", "notes/run.md"]) == 0
+    assert capsys.readouterr().out == "a note named run\n"
 
 
 def test_cli_board_read_prints_credential_shaped_body(
