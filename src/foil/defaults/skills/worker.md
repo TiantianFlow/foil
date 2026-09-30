@@ -59,4 +59,4 @@ Read your task at `board/tasks/<id>.md`. Contract `task/v1`: `id`, `owner`, `sta
 
 The lead's status is `board/status.md`. Contract `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`. You do not write that file.
 
-Notes under `board/notes/` are ordinary files. They wake no one. Foil does not read contracts.
+Notes under `board/notes/` are ordinary files. They wake no one. Foil parses front matter only to print a file and does not act on contract fields.

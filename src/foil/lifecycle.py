@@ -279,7 +279,7 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
         "Mail: `foil send TO TEXT`. A nudge line is `from path`. Read it with `foil mail read`.",
         "There is no ack command.",
         "Notes: write files under `board/notes/`. They wake no one.",
-        "Contracts (Foil does not read them):",
+        "Contracts (parsed only to print; Foil does not act on them):",
         "status/v1 (state working|blocked|done, updated, questions),",
         "task/v1 (id, owner, state open|doing|done, acceptance),",
         "result/v1 (task, author, branch, outcome pass|fail).",

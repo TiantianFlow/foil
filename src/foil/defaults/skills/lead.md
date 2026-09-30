@@ -85,7 +85,7 @@ foil board read status.md
 foil board list "tasks/*.md"
 ```
 
-Board paths are relative to the board folder. Notes under `board/notes/` wake no one. Foil does not read contracts.
+Board paths are relative to the board folder. Notes under `board/notes/` wake no one. Foil parses front matter only to print a file and does not act on contract fields.
 
 ## Memory
 
