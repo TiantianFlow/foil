@@ -11,7 +11,7 @@ hand-editing TOML, and teaches both skills the new commands.
 - `foil roster add ROLE [--from FILE]` creates a template. Without `--from`, it needs `personas/<ROLE>.md` on disk and writes a template for it, using the first installed harness. It fails if ROLE exists.
 - `foil roster update ROLE FIELD=VALUE` changes one of `harness`, `model`, `persona`, `worktree`, `permission`. An invalid result is rolled back.
 - `foil roster remove ROLE` deletes a template. It refuses `lead`, `implementer`, and `reviewer`.
-- Workers cannot run any roster command. The outside caller and the lead can. Only the outside caller may set `permission`. Remove and a harness change fail while a seat of that template is alive or dead.
+- Workers cannot run any roster command. The outside caller and the lead can. Only the outside caller may set `permission`, including `add --from` when the file's permission is not `ask`. Remove and a harness change fail while a seat of that template has a stored state other than `killed`.
 - `foil init` names the personas that have no template.
 - The operator skill teaches the roster commands, a first-run roster review, and importing a role file. The lead skill teaches the roster commands.
 - requirements.md (F1, F21, sections 6.1 and 6.2) and the tests match the command surface.

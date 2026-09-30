@@ -25,6 +25,15 @@ def _fail(label: str) -> None:
     raise FoilError(f"foil: invalid {label}")
 
 
+def _permission_field(raw: dict[str, Any]) -> Any:
+    return raw.get("permission", "ask")
+
+
+def template_permission(text: str) -> Any:
+    """Permission as load_template reads it. An omitted field is ask."""
+    return _permission_field(_load_toml(text, "template"))
+
+
 def _shown(value: str) -> str:
     return value.replace("\n", "").replace("\r", "")
 
@@ -153,7 +162,7 @@ def load_template(toplevel: Path, name: str) -> dict[str, Any]:
     model = raw.get("model", "")
     persona = raw.get("persona", "")
     worktree = raw.get("worktree", False)
-    permission = raw.get("permission", "ask")
+    permission = _permission_field(raw)
     if (
         set(raw) - _TEMPLATE_KEYS
         or not isinstance(harness, str)

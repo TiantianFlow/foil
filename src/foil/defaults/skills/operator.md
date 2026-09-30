@@ -65,7 +65,7 @@ foil roster update implementer model=claude-sonnet-5.5
 foil roster add researcher
 ```
 
-The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add <role>` creates a template for a role whose persona file exists, using the first installed harness. Set `permission` from outside the fleet; the lead cannot. Do not remove a template, or change its harness, while a seat of that template is alive or dead. You can still edit template files directly in `.foil/templates/` if you prefer.
+The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add <role>` creates a template for a role whose persona file exists, using the first installed harness. Set `permission` from outside the fleet; the lead cannot, including on `foil roster add --from` when the file's permission is not `ask`. An omitted permission is `ask`. Do not remove a template, or change its harness, while a seat of that template has a stored state other than `killed`. You can still edit template files directly in `.foil/templates/` if you prefer.
 
 ## Picking a harness and a model
 
