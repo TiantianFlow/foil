@@ -6,7 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Added
 
-- `foil roster` commands for managing role templates: `list` shows all templates and available personas, `show TEMPLATE` displays one template's configuration, `add ROLE` creates a template from a TOML file, or from the persona of the same name, `update ROLE FIELD=VALUE` modifies a template field, and `remove ROLE` deletes a template (fails for lead/implementer/reviewer). Authority: outside the fleet and lead only (F21).
+- `foil roster` commands for managing role templates: `list` shows all templates and available personas, `show ROLE` displays one template's configuration, `add ROLE` creates a template from a TOML file, or from the persona of the same name, `update ROLE FIELD=VALUE` modifies a template field, and `remove ROLE` deletes a template (fails for lead/implementer/reviewer). Authority: outside the fleet and lead only (F21).
 - `foil roster list` and `foil roster show` accept `--json` for structured output.
 - `foil init` report now includes available personas (those without templates) with a note to use `foil roster add`.
 - The operator skill teaches the roster commands, first-run roster exploration, and adding a role from a Foil template file.
@@ -21,7 +21,7 @@ Notable changes to Foil, newest first.
 - Command surface expanded from eleven actions to sixteen: five new roster actions under `foil roster` (F1).
 - Requirements F21 changed from "The roster is managed by editing template files. There are no roster commands." to documenting the five roster subcommands.
 - The lead's generated instructions list the `foil roster` commands. Roster errors are one line. Roster writes are atomic and do not follow a template symlink.
-- Only a caller outside the fleet may set `permission`. Remove and a harness change fail while a seat of that template is alive or dead.
+- Only a caller outside the fleet may set `permission`, including `add --from` when the file's permission is not `ask`. Remove and a harness change fail while a seat of that template has a stored state other than `killed`.
 
 ## Unreleased
 
