@@ -17,6 +17,10 @@ contract version was added.
 - The lead skill says how to keep the checklist. The operator skill says to report it at each check-in and whenever the human asks, quoting the file rather than the pane.
 - Both READMEs and both demos describe the checklist. The scenario 1 status sample includes a ticked checklist.
 
+### Upgrading
+
+`foil init` does not replace an existing project's `.foil/skills/`. A project upgraded from 0.2.1 to 0.2.2 keeps the old lead and operator skills, so it does not get the checklist. Move `.foil/skills/lead.md` and `.foil/skills/operator.md` aside, or delete them if they were never edited. Run `foil init` again, and re-copy any user-level copy of the operator skill. New and resumed seats then get the new text.
+
 ## [0.2.1] - 2026-09-29
 
 `foil --version` prints 0.2.1.
