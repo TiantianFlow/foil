@@ -2,7 +2,7 @@
 
 Notable changes to Foil, newest first.
 
-## Unreleased
+## [0.2.1] - 2026-09-29
 
 `foil --version` prints 0.2.1.
 [docs/requirements.md](docs/requirements.md) is the specification, and
