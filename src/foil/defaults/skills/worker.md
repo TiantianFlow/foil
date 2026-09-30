@@ -11,7 +11,9 @@ You do the assigned task, stay in your own worktree, and report to the lead. You
 
 Read your mail before you act. A nudge line is the sender, a space, and the absolute path of a mail file. Read it with:
 
-    foil mail read /absolute/path/from/nudge
+```text
+foil mail read /absolute/path/from/nudge
+```
 
 The contract is `mail/v1`, with `from`, `to`, `time`, and an optional `re`.
 

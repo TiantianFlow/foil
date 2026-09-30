@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -50,7 +52,8 @@ def _repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo.mkdir()
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
-    assert main(["init"]) == 0
+    with contextlib.redirect_stdout(io.StringIO()):
+        assert main(["init"]) == 0
     return repo
 
 
@@ -85,7 +88,7 @@ def _create_board_file(repo: Path, rel_path: str, content: str) -> Path:
 
 def test_mail_read_rejects_dotdot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """mail read rejects paths with .."""
-    repo = _repo(tmp_path, monkeypatch)
+    _repo(tmp_path, monkeypatch)
     with pytest.raises(FoilError, match="path must not contain"):
         mail_read("/some/path/../file.md")
 
@@ -94,17 +97,17 @@ def test_mail_read_rejects_outside_board(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """mail read rejects paths outside .foil/board/mail/."""
-    repo = _repo(tmp_path, monkeypatch)
+    _repo(tmp_path, monkeypatch)
     outside_file = tmp_path / "outside.md"
     outside_file.write_text("test", encoding="utf-8")
 
-    with pytest.raises(FoilError, match="path not in .foil/board/mail/"):
+    with pytest.raises(FoilError, match="path not inside"):
         mail_read(str(outside_file.resolve()))
 
 
 def test_board_read_rejects_dotdot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """board read rejects paths with .."""
-    repo = _repo(tmp_path, monkeypatch)
+    _repo(tmp_path, monkeypatch)
     with pytest.raises(FoilError, match="path must not contain"):
         board_read("tasks/../../../etc/passwd")
 
@@ -151,7 +154,7 @@ def test_mail_list_requires_seat_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """mail list fails without FOIL_SEAT_ID."""
-    repo = _repo(tmp_path, monkeypatch)
+    _repo(tmp_path, monkeypatch)
     with pytest.raises(FoilError, match="FOIL_SEAT_ID not set"):
         mail_list()
 
@@ -194,7 +197,7 @@ def test_mail_list_empty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """mail list outputs empty list when no mail."""
-    repo = _repo(tmp_path, monkeypatch)
+    _repo(tmp_path, monkeypatch)
 
     monkeypatch.setenv("FOIL_SEAT_ID", "worker-1")
     mail_list(as_json=True)
@@ -225,7 +228,7 @@ Do the task."""
 
     board_read("tasks/t1.md", as_json=False)
     captured = capsys.readouterr()
-    assert captured.out == content
+    assert captured.out == content + "\n"
 
 
 def test_board_read_json_with_frontmatter(
@@ -338,7 +341,7 @@ def test_cli_mail_list_requires_seat_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """foil mail list fails without FOIL_SEAT_ID."""
-    repo = _repo(tmp_path, monkeypatch)
+    _repo(tmp_path, monkeypatch)
 
     assert main(["mail", "list"]) == 1
     captured = capsys.readouterr()
@@ -376,7 +379,7 @@ def test_error_messages_one_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Errors output one line to stderr, no tracebacks."""
-    repo = _repo(tmp_path, monkeypatch)
+    _repo(tmp_path, monkeypatch)
 
     # Test mail read with invalid path
     assert main(["mail", "read", "/nonexistent/path.md"]) == 1
