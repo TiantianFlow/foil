@@ -171,7 +171,7 @@ human's part is one sentence; everything after step 2 is the agent's work.
 | N2 | External programs are limited to tmux 3.2+, git, and the harness CLIs. |
 | N3 | Supported platforms: Linux and macOS. |
 | N4 | **Lightweight:** the package source targets at most 2,500 lines of Python. The target is not a hard limit: an automated check reports the count, and going over it needs a stated reason. The exact command surface is enforced by an automated test. |
-| N5 | Foil does not store or log credentials. Environment variables are forwarded to seats by name only and are never printed. Memory lessons and mail written by `send` are refused if they contain credential-shaped text. `foil board read` does not apply that refusal: it prints a board file the seat wrote, as stored. |
+| N5 | Foil does not store or log credentials. Environment variables are forwarded to seats by name only and are never printed. Memory lessons and mail written by `send` are refused if they contain credential-shaped text. `foil board read` does not apply that refusal: it prints the file as stored, whoever wrote it. |
 | N6 | Tmux windows are always targeted by exact window ID, never by name. |
 | N7 | Foil's own state is written atomically and carries a schema version. |
 | N8 | Every error is a one-line message on stderr with a non-zero exit code. No Python tracebacks. |

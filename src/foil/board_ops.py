@@ -84,11 +84,7 @@ def read_text(path: Path, shown: str) -> str:
 
 
 def board_read(path_text: str, *, as_json: bool = False) -> None:
-    root = board_root()
-    path = inside(path_text, root)
-    if path.relative_to(root).parts[:1] in {("run",), ("memory",)}:
-        raise FoilError("foil: path not allowed")
-    text = read_text(path, path_text)
+    text = read_text(inside(path_text, board_root()), path_text)
     if not as_json:
         print(text, end="" if text.endswith("\n") else "\n")
         return
