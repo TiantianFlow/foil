@@ -80,7 +80,7 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert "foil mail read PATH [--json]" in text
     assert "foil mail list [--json]" in text
     assert "foil board read PATH [--json]" in text
-    assert "foil board list PATTERN [--json]" in text
+    assert "foil board list [PATTERN] [--json]" in text
     assert "foil memory accept ID" in text
     assert "There is no ack command." in text
     assert "from path" in text
@@ -123,7 +123,7 @@ def test_worker_instruction_and_resume_refreshes_lessons(
     assert "foil mail read PATH [--json]" in text
     assert "foil mail list [--json]" in text
     assert "foil board read PATH [--json]" in text
-    assert "foil board list PATTERN [--json]" in text
+    assert "foil board list [PATTERN] [--json]" in text
     assert "foil memory accept ID" not in text
     assert f"- {first}: prefer small diffs" in text
     second = _lesson(capsys, "re-read the diff")

@@ -12,7 +12,7 @@ Notable changes to Foil, newest first.
 
 ### Changed
 - Skills and seat instructions use `foil mail read` and `foil mail list`
-  instead of reading the mail directory.
+  instead of direct mail file reads.
 
 ## [0.2.2] - 2026-09-30
 
