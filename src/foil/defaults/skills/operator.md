@@ -82,7 +82,7 @@ foil seat peek lead
 
 `foil seat list` prints each seat's name, template, state, and worktree. `foil seat list --json` prints those same facts. `foil seat peek lead` prints the raw tail of the lead's pane. `foil seat peek lead --lines 40` is the default. Do not decide from the pane whether the lead is busy, idle, or done.
 
-Read the lead's `status.md` in the Foil folder at `board/status.md`. That file is the lead's own report. Its contract is `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`.
+Read the lead's `status.md` in the Foil folder at `board/status.md`. That file is the lead's own report. Its contract is `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`. Seats in worktrees use `foil mail read` and `foil board read` commands to read board files without permission prompts.
 
 After each check-in, and whenever the human asks for status, tell the human in a few lines: `state` and `updated` as the file says them; how many checklist items are ticked out of the total, and the open items as written; any `questions`; and which seats `foil seat list` shows alive, dead, or killed. Quote the file. Do not guess progress from the pane. If `updated` has not changed over several check-ins, nudge the lead as below.
 

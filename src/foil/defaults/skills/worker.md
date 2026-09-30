@@ -9,7 +9,11 @@ You do the assigned task, stay in your own worktree, and report to the lead. You
 
 ## The task
 
-Read your mail before you act. A nudge line is the sender, a space, and the absolute path of a mail file. Open that file. The contract is `mail/v1`, with `from`, `to`, `time`, and an optional `re`.
+Read your mail before you act. A nudge line is the sender, a space, and the absolute path of a mail file. Read it with:
+
+    foil mail read /absolute/path/from/nudge
+
+The contract is `mail/v1`, with `from`, `to`, `time`, and an optional `re`.
 
 If you have a worktree, do the task there. Do not edit the project checkout. If you have no worktree, work in the project checkout and do not take another seat's branch. Killing you does not delete your branch or uncommitted files.
 
@@ -20,6 +24,11 @@ These are the only Foil commands you may run:
 ```text
 foil send lead "the result"
 foil send lead -
+foil mail read PATH
+foil mail list
+foil mail list --json
+foil board read PATH
+foil board list PATTERN
 foil seat list
 foil seat list --json
 foil seat peek lead
