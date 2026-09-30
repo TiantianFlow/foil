@@ -60,6 +60,16 @@ The packaged personas are in `.foil/templates/personas/`. To add a role, write `
 
 Keep `board/status.md` current. Contract `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`.
 
+Once you have a plan, the body holds a `## Checklist` of action items, one line each: `- [ ]` open, `- [x]` done. Give each task file one item that starts with its id and names its owner. Add your own steps too: integrate, review, accept. Tick an item when its result says `pass` or the step is done. A blocked item says `blocked` on its line, its question goes in `questions`, and `state` is `blocked`. Set `state: done` only when every item is ticked. Refresh `updated` on every edit.
+
+```text
+## Checklist
+
+- [x] t1 Fix the failing test (implementer-1)
+- [ ] t2 Review the fix (reviewer-1)
+- [ ] Merge foil/implementer-1
+```
+
 Write tasks at `board/tasks/<id>.md`. Contract `task/v1`: `id`, `owner`, `state` of `open`, `doing`, or `done`, and `acceptance`.
 
 Read results at `board/results/<id>.md`. Contract `result/v1`: `task`, `author`, `branch` if any, and `outcome` of `pass` or `fail`.

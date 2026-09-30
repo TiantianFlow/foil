@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shlex
 from pathlib import Path
@@ -166,3 +167,50 @@ def test_skill_commands_exist_in_section_6() -> None:
             assert not unknown, f"{name}: flags {sorted(unknown)} in {invocation}"
             seen.add(command)
         assert seen == allowed, f"{name}: commands {seen} != {allowed}"
+
+
+def test_lead_skill_keeps_a_checklist() -> None:
+    text = (SKILLS / "lead.md").read_text(encoding="utf-8")
+    assert "## Checklist" in text
+    assert "- [ ]" in text
+    assert "- [x]" in text
+    assert "every item is ticked" in text
+
+
+def test_operator_reports_the_checklist() -> None:
+    text = (SKILLS / "operator.md").read_text(encoding="utf-8")
+    section = text.split("## Check in", 1)[1].split("\n## ", 1)[0]
+    assert "checklist" in section
+    assert "whenever the human asks" in section
+    assert "guess progress from the pane" in section
+
+
+def test_requirements_define_the_checklist() -> None:
+    text = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
+    section_74 = text.split("### 7.4 Board files", 1)[1].split("### 7.5", 1)[0]
+    assert "## Checklist" in section_74
+    section_8 = text.split("## 8. Skills", 1)[1].split("## 9.", 1)[0]
+    rows = {
+        line.split("|", 2)[1].strip(): line
+        for line in section_8.splitlines()
+        if line.startswith("| `")
+    }
+    assert "checklist" in rows["`operator`"]
+    assert "checklist" in rows["`lead`"]
+
+
+def test_scenario_1_status_checklist_matches_the_demos() -> None:
+    fixture = json.loads(
+        (ROOT / "tests" / "fixtures" / "scenario-1" / "scripts" / "lead.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    written = next(
+        action["text"]
+        for step in fixture["steps"]
+        for action in step["do"]
+        if action.get("write") == "board/status.md"
+    )
+    body = written[written.index("## Checklist") :]
+    for relative in ("docs/demo.md", "docs/demo.zh-CN.md"):
+        assert body in (ROOT / relative).read_text(encoding="utf-8")
