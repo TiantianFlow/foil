@@ -8,6 +8,7 @@ from pathlib import Path
 
 from foil.board_ops import board_root, inside, read_text, split_front_matter
 from foil.errors import FoilError
+from foil.store import SAFE_ID
 
 
 def _fields(text: str, shown: str) -> tuple[dict[str, str | list[str]], str]:
@@ -43,6 +44,8 @@ def mail_list(*, as_json: bool = False) -> None:
     seat = os.environ.get("FOIL_SEAT_ID", "").strip()
     if not seat:
         raise FoilError("foil: FOIL_SEAT_ID not set (mail list needs a seat identity)")
+    if SAFE_ID.fullmatch(seat) is None:
+        raise FoilError("foil: invalid seat")
     directory = board_root() / "mail" / seat
     mails = []
     for path in directory.glob("*.md") if directory.is_dir() else ():
