@@ -77,6 +77,10 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert f"Board: `{board.resolve()}`." in text
     assert "FOIL_SEAT_ID" in text
     assert "foil seat spawn TEMPLATE" in text
+    assert "foil mail read PATH [--json]" in text
+    assert "foil mail list [--json]" in text
+    assert "foil board read PATH [--json]" in text
+    assert "foil board list PATTERN [--json]" in text
     assert "foil memory accept ID" in text
     assert "There is no ack command." in text
     assert "from path" in text
@@ -116,6 +120,11 @@ def test_worker_instruction_and_resume_refreshes_lessons(
     assert "Stay in your worktree." in text
     assert "Templates:" not in text
     assert "foil seat kill NAME" not in text
+    assert "foil mail read PATH [--json]" in text
+    assert "foil mail list [--json]" in text
+    assert "foil board read PATH [--json]" in text
+    assert "foil board list PATTERN [--json]" in text
+    assert "foil memory accept ID" not in text
     assert f"- {first}: prefer small diffs" in text
     second = _lesson(capsys, "re-read the diff")
     assert main(["seat", "resume", "implementer-1"]) == 0
@@ -168,7 +177,9 @@ def test_resume_uses_last_or_continue_and_restarts_otherwise(
     )
     mail = foil_root(repo) / "board" / "mail" / "reader"
     assert "You were restarted." in reader_text
-    assert f"Re-read `{mail.resolve()}/`." in reader_text
+    assert "List your mail with `foil mail list`" in reader_text
+    assert "read each file with `foil mail read`" in reader_text
+    assert f"Re-read `{mail.resolve()}/`" not in reader_text
     assert Path(reader["cwd"]) == repo.resolve()
     assert len(calls) == 6
     assert Path(coder["cwd"]) == Path(load_registry(repo)["seats"]["coder"]["worktree"])

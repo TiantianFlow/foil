@@ -33,7 +33,7 @@ stderr (N8). Writing stays with ordinary file tools and `foil send`.
 - `src/foil/mail_ops.py` and `src/foil/board_ops.py`, wired in `cli.py`.
 - The lead and worker skills name the new commands in place of "open that
   file". The command-surface and skill tests know the new commands.
-- `CHANGELOG.md`: a 0.3.0 entry.
+- `CHANGELOG.md`: an Unreleased entry, until 0.3.0 is released.
 
 ## Done when
 
