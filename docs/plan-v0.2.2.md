@@ -1,11 +1,10 @@
 # Foil v0.2.2 plan: a progress checklist
 
 Target: [requirements.md](requirements.md). Issue: TiantianFlow/foil #11
-(Progress report). Baseline: `main` at 0.2.0 plus the README work, with
-0.2.1 (issue #8, AI-native onboarding) expected to merge first. Requirement
+(Progress report). Baseline: v0.2.1 at `84602ec`. Requirement
 IDs (F, N, D) refer to the requirements document.
 
-Status: proposed, awaiting cross-review. Nothing below is implemented yet.
+Status: implemented and reviewed at `08a81fa`. An independent review asked for this doc refresh before merge.
 
 ## 1. What the issue asks for
 
@@ -40,8 +39,8 @@ progress from it.
 - Requirements text changes: 7.4 describes the checklist, and the
   section 8 operator and lead rows each gain one sentence (CONTRIBUTING
   rule 1).
-- Version 0.2.2 assumes 0.2.1 (#8) merges first. This work does not base on
-  the unmerged #8 branch.
+- Version 0.2.2 is based on v0.2.1 at `84602ec`, not on an unmerged #8
+  branch.
 - Out of scope: everything #8 and #10 own (onboarding, the `init` report,
   harness discovery and choice, personas and candidate roles, roster
   management).
@@ -173,6 +172,9 @@ The tests pass.
 
 ## 6. Overlap with 0.2.1 (#8)
 
+Done. This branch is rebased onto v0.2.1 at `84602ec`. The table records
+how each overlap was resolved.
+
 These files are edited by both releases. Keep each 0.2.2 hunk inside the
 named section so the R1 rebase stays mechanical.
 
@@ -200,15 +202,17 @@ not touched by 0.2.1 in the paragraphs this plan edits.
 
 ## 8. Definition of done
 
-- [ ] Q1 to Q3, S1 and S2, D1 to D5, T1 to T5, and R1 to R4 are done; S3
+- [x] Q1 to Q3, S1 and S2, D1 to D5, T1 to T5, and R1 to R4 are done; S3
       and D6 are confirmed unchanged.
-- [ ] The CONTRIBUTING checks pass: unit tests, fake-harness scenarios,
+- [x] The CONTRIBUTING checks pass: unit tests, fake-harness scenarios,
       lint, and build.
-- [ ] Section 6 of the requirements is unchanged, and
+- [x] Section 6 of the requirements is unchanged, and
       `tests/test_command_surface.py` passes without edits.
-- [ ] Against `main`, the only change to package `.py` files is the
+- [x] Against `main`, the only change to package `.py` files is the
       version string in `src/foil/__init__.py`.
-- [ ] The branch is rebased on a `main` that contains 0.2.1. If it is not
+- [x] The branch is rebased on a `main` that contains 0.2.1. If it is not
       there at acceptance, the work stops and the human is asked.
 - [ ] An independent reviewer accepts the result.
 - [ ] Nothing is pushed, merged, or tagged until the human asks.
+- [x] The 0.2.2 changelog has an Upgrading note for an existing project's skills.
+- [x] This plan names reviewed commit `08a81fa` and baseline v0.2.1 at `84602ec`.
