@@ -8,7 +8,7 @@ from pathlib import Path
 from foil.errors import FoilError
 from foil.presets import installed_harness, load_template
 from foil.project import foil_root
-from foil.store import SAFE_ID
+from foil.store import SAFE_ID, create_exclusive, write_bytes
 
 _PROTECTED_ROLES = {"lead", "implementer", "reviewer"}
 _TEMPLATE_FIELDS = {"harness", "model", "persona", "worktree", "permission"}
@@ -16,6 +16,28 @@ _TEMPLATE_FIELDS = {"harness", "model", "persona", "worktree", "permission"}
 
 def _shown(value: str) -> str:
     return value.replace("\n", "").replace("\r", "")
+
+
+def _refuse_symlink(path: Path) -> None:
+    if path.is_symlink():
+        raise FoilError("foil: refusing symlink")
+
+
+def _create_template_file(path: Path, content: str) -> None:
+    """Create a template without following a symlink out of the directory."""
+    _refuse_symlink(path)
+    if path.exists():
+        raise FoilError(f"foil: template '{path.stem}' already exists")
+    try:
+        create_exclusive(path, content.encode())
+    except FileExistsError:
+        _refuse_symlink(path)
+        raise FoilError(f"foil: template '{path.stem}' already exists") from None
+
+
+def _replace_template_file(path: Path, content: str) -> None:
+    _refuse_symlink(path)
+    write_bytes(path, content.encode())
 
 
 def _packaged_persona_names(toplevel: Path) -> list[str]:
@@ -110,7 +132,7 @@ def add_template(toplevel: Path, role: str, *, from_file: str | None = None) -> 
 
     templates_dir = foil_root(toplevel) / "templates"
     template_path = templates_dir / f"{role}.toml"
-
+    _refuse_symlink(template_path)
     if template_path.exists():
         raise FoilError(f"foil: template '{role}' already exists")
 
@@ -119,30 +141,32 @@ def add_template(toplevel: Path, role: str, *, from_file: str | None = None) -> 
         if not source.is_file():
             raise FoilError(f"foil: file not found: {from_file}")
         content = source.read_text(encoding="utf-8")
-        template_path.write_text(content, encoding="utf-8")
-        # Validate by loading
-        try:
-            load_template(toplevel, role)
-        except FoilError as exc:
-            template_path.unlink()
-            raise exc
     else:
         personas_dir = templates_dir / "personas"
         persona_file = personas_dir / f"{role}.md"
 
         if not persona_file.is_file():
             raise FoilError(
-                f"foil: persona file not found: personas/{role}.md\n"
-                f"Create the persona file first, or use --from FILE"
+                f"foil: persona file not found: personas/{role}.md. "
+                "Create the persona file first, or use --from FILE"
             )
 
-        # Create minimal template pointing to the persona
-        content = f"""harness = "{installed_harness(toplevel)}"
-persona = "personas/{role}.md"
-worktree = false
-permission = "ask"
-"""
-        template_path.write_text(content, encoding="utf-8")
+        content = (
+            f'harness = "{installed_harness(toplevel)}"\n'
+            f'persona = "personas/{role}.md"\n'
+            "worktree = false\n"
+            'permission = "ask"\n'
+        )
+
+    created = False
+    try:
+        _create_template_file(template_path, content)
+        created = True
+        load_template(toplevel, role)
+    except FoilError:
+        if created and template_path.is_file() and not template_path.is_symlink():
+            template_path.unlink()
+        raise
 
     print(f"foil: created template '{role}'")
 
@@ -153,17 +177,17 @@ def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
         raise FoilError(f"foil: unknown template '{_shown(role)}'")
 
     if field not in _TEMPLATE_FIELDS:
-        raise FoilError(
-            f"foil: invalid field '{field}'\n"
-            f"Valid fields: {', '.join(sorted(_TEMPLATE_FIELDS))}"
-        )
+        fields = ", ".join(sorted(_TEMPLATE_FIELDS))
+        raise FoilError(f"foil: invalid field '{field}'. Valid fields: {fields}")
 
     # Load existing template to validate it exists
     template = load_template(toplevel, role)
     template_path = template["path"]
+    _refuse_symlink(template_path)
 
     # Read current content
-    lines = template_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    original = template_path.read_text(encoding="utf-8")
+    lines = original.splitlines(keepends=True)
 
     # Parse and update
     updated = False
@@ -201,16 +225,15 @@ def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
             formatted = f'"{value}"'
         new_lines.append(f"{field} = {formatted}\n")
 
-    # Write back
-    template_path.write_text("".join(new_lines), encoding="utf-8")
+    # Write back atomically. A symlink is refused before this write.
+    _replace_template_file(template_path, "".join(new_lines))
 
     # Validate by loading
     try:
         load_template(toplevel, role)
-    except FoilError as exc:
-        # Restore original
-        template_path.write_text("".join(lines), encoding="utf-8")
-        raise exc
+    except FoilError:
+        _replace_template_file(template_path, original)
+        raise
 
     print(f"foil: updated template '{role}': {field} = {value}")
 
@@ -221,9 +244,9 @@ def remove_template(toplevel: Path, role: str) -> None:
         raise FoilError(f"foil: unknown template '{_shown(role)}'")
 
     if role in _PROTECTED_ROLES:
+        protected = ", ".join(sorted(_PROTECTED_ROLES))
         raise FoilError(
-            f"foil: cannot remove protected template '{role}'\n"
-            f"Protected: {', '.join(sorted(_PROTECTED_ROLES))}"
+            f"foil: cannot remove protected template '{role}'. Protected: {protected}"
         )
 
     # Load to validate it exists
