@@ -12,6 +12,10 @@ Notable changes to Foil, newest first.
 - The operator skill teaches the roster commands, first-run roster exploration, and adding a role from a Foil template file.
 - The lead skill teaches roster commands and how to provision new roles.
 
+### Fixed
+
+- An invalid field name and a missing `--from` path stay on one error line when that text contains a newline.
+
 ### Changed
 
 - Command surface expanded from eleven actions to sixteen: five new roster actions under `foil roster` (F1).

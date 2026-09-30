@@ -284,6 +284,27 @@ def test_roster_cli_errors_are_one_line(
     assert "persona file not found" in added
 
 
+def test_newline_in_field_and_from_stays_one_line(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A newline in the field or in --from does not split the error."""
+    lead = project / ".foil" / "templates" / "lead.toml"
+    before = lead.read_bytes()
+
+    assert main(["roster", "update", "lead", "bad\nfield=value"]) == 1
+    updated = capsys.readouterr().err
+    assert updated.count("\n") == 1
+    assert "invalid field 'badfield'" in updated
+    assert lead.read_bytes() == before
+
+    assert main(["roster", "add", "custom", "--from", "missing\nfile.toml"]) == 1
+    missing = capsys.readouterr().err
+    assert missing.count("\n") == 1
+    assert "file not found: missingfile.toml" in missing
+    assert not (project / ".foil" / "templates" / "custom.toml").exists()
+
+
 def test_roster_add_does_not_follow_a_symlink(project: Path) -> None:
     """A template symlink is not treated as a missing file."""
     outside = project / "escaped.toml"
