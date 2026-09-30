@@ -85,7 +85,8 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
         for path in persona_dir.glob("*.md")
         if path.is_file() and not path.is_symlink()
     )
-    template_names = {role for role in roles if (foil_root(toplevel) / "templates" / f"{role}.toml").exists()}
+    template_dir = foil_root(toplevel) / "templates"
+    template_names = {path.stem for path in template_dir.glob("*.toml")}
     available_personas = [name for name in personas if name not in template_names]
 
     print("Wrote templates: " + _names([role for role in roles if role not in had_templates]))

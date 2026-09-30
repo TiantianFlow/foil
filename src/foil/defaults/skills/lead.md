@@ -62,7 +62,7 @@ foil roster add researcher
 foil roster remove old-role
 ```
 
-To add a role whose persona file exists, use `foil roster add <role>`. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. To provision a custom role, ask the operator to create the persona file in `.foil/templates/personas/<role>.md` first, then add the template. A role that commits needs `worktree = true`.
+To add a role whose persona file exists, use `foil roster add <role>`. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. To provision a custom role, write its persona file in `.foil/templates/personas/<role>.md` first, then add the template. A role that commits needs `worktree = true`.
 
 You can still edit template files directly in `.foil/templates/` if you prefer. Do not overwrite a template the fleet is already using unless you mean to change the next spawn.
 

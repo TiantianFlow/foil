@@ -26,6 +26,11 @@ FLAGS = {
     ("memory", "accept"): set(),
     ("memory", "reject"): set(),
     ("memory", "list"): {"--all", "--json"},
+    ("roster", "list"): {"--json"},
+    ("roster", "show"): {"--json"},
+    ("roster", "add"): {"--from"},
+    ("roster", "update"): set(),
+    ("roster", "remove"): set(),
 }
 
 ROLE_COMMANDS = {
@@ -39,6 +44,10 @@ ROLE_COMMANDS = {
         ("memory", "list"),
         ("memory", "accept"),
         ("memory", "reject"),
+        ("roster", "list"),
+        ("roster", "show"),
+        ("roster", "add"),
+        ("roster", "update"),
     },
     "lead.md": {
         ("seat", "spawn"),
@@ -55,6 +64,11 @@ ROLE_COMMANDS = {
         ("memory", "list"),
         ("memory", "accept"),
         ("memory", "reject"),
+        ("roster", "list"),
+        ("roster", "show"),
+        ("roster", "add"),
+        ("roster", "update"),
+        ("roster", "remove"),
     },
     "worker.md": {
         ("send",),
@@ -96,7 +110,7 @@ def _invocations(text: str) -> list[str]:
 def _command(tokens: list[str]) -> tuple[str, ...]:
     if tokens[:2] == ["foil", "seat"]:
         return ("seat", tokens[2])
-    if tokens[1:2] in (["memory"], ["mail"], ["board"]):
+    if tokens[1:2] in (["memory"], ["mail"], ["board"], ["roster"]):
         return (tokens[1], tokens[2])
     return (tokens[1],)
 

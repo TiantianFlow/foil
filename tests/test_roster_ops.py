@@ -30,17 +30,6 @@ def project(tmp_path: Path) -> Path:
         check=True,
         capture_output=True,
     )
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "config", "user.name", "Test"],
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(tmp_path), "config", "user.email", "test@example.com"],
-        check=True,
-        capture_output=True,
-    )
-    
     # Initialize foil
     import os
     prev = os.getcwd()
@@ -53,7 +42,10 @@ def project(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def test_roster_list_shows_default_templates(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_list_shows_default_templates(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """list_roster shows the three default templates."""
     list_roster(project, as_json=False)
     out = capsys.readouterr().out
@@ -62,7 +54,10 @@ def test_roster_list_shows_default_templates(project: Path, capsys: pytest.Captu
     assert "reviewer [" in out
 
 
-def test_roster_list_shows_available_personas(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_list_shows_available_personas(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """list_roster shows personas without templates."""
     list_roster(project, as_json=False)
     out = capsys.readouterr().out
@@ -70,7 +65,7 @@ def test_roster_list_shows_available_personas(project: Path, capsys: pytest.Capt
     assert "+ documentation-writer" in out or "+ researcher" in out
 
 
-def test_roster_list_json_format(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_list_json_format(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """list_roster --json produces valid JSON."""
     list_roster(project, as_json=True)
     out = capsys.readouterr().out
@@ -81,7 +76,7 @@ def test_roster_list_json_format(project: Path, capsys: pytest.CaptureFixture) -
     assert isinstance(data["personas"], list)
 
 
-def test_roster_show_displays_template(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_show_displays_template(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """show_template displays one template's configuration."""
     show_template(project, "lead", as_json=False)
     out = capsys.readouterr().out
@@ -90,7 +85,7 @@ def test_roster_show_displays_template(project: Path, capsys: pytest.CaptureFixt
     assert "permission:" in out
 
 
-def test_roster_show_json_format(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_show_json_format(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """show_template --json produces valid JSON."""
     show_template(project, "implementer", as_json=True)
     out = capsys.readouterr().out
@@ -107,7 +102,10 @@ def test_roster_show_unknown_template_fails(project: Path) -> None:
         show_template(project, "nonexistent", as_json=False)
 
 
-def test_roster_add_creates_template_from_persona(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_add_creates_template_from_persona(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """add_template creates a template for an existing persona."""
     add_template(project, "researcher", from_file=None)
     out = capsys.readouterr().out
@@ -132,7 +130,11 @@ def test_roster_add_without_persona_fails(project: Path) -> None:
         add_template(project, "nonexistent", from_file=None)
 
 
-def test_roster_add_from_file(project: Path, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_add_from_file(
+    project: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """add_template creates a template from a TOML file."""
     toml_file = tmp_path / "custom.toml"
     toml_file.write_text(
@@ -160,7 +162,7 @@ def test_roster_add_invalid_role_name_fails(project: Path) -> None:
         add_template(project, "bad/name", from_file=None)
 
 
-def test_roster_update_harness(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_update_harness(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """update_template changes the harness field."""
     update_template(project, "lead", "harness", "codex")
     out = capsys.readouterr().out
@@ -171,7 +173,7 @@ def test_roster_update_harness(project: Path, capsys: pytest.CaptureFixture) -> 
     assert 'harness = "codex"' in content
 
 
-def test_roster_update_model(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_update_model(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """update_template changes the model field."""
     update_template(project, "implementer", "model", "claude-opus-5.5")
     out = capsys.readouterr().out
@@ -182,7 +184,7 @@ def test_roster_update_model(project: Path, capsys: pytest.CaptureFixture) -> No
     assert 'model = "claude-opus-5.5"' in content
 
 
-def test_roster_update_permission(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_update_permission(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """update_template changes the permission field."""
     update_template(project, "reviewer", "permission", "auto")
     out = capsys.readouterr().out
@@ -193,7 +195,7 @@ def test_roster_update_permission(project: Path, capsys: pytest.CaptureFixture) 
     assert 'permission = "auto"' in content
 
 
-def test_roster_update_worktree(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_update_worktree(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """update_template changes the worktree field."""
     update_template(project, "lead", "worktree", "true")
     out = capsys.readouterr().out
@@ -228,7 +230,7 @@ def test_roster_update_unknown_template_fails(project: Path) -> None:
         update_template(project, "nonexistent", "harness", "claude")
 
 
-def test_roster_remove_deletes_template(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_remove_deletes_template(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """remove_template deletes a non-protected template."""
     # First add a template
     add_template(project, "researcher", from_file=None)
@@ -261,7 +263,7 @@ def test_roster_remove_unknown_template_fails(project: Path) -> None:
         remove_template(project, "nonexistent")
 
 
-def test_roster_cli_list(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_cli_list(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """foil roster list command works."""
     code = main(["roster", "list"])
     assert code == 0
@@ -269,7 +271,7 @@ def test_roster_cli_list(project: Path, capsys: pytest.CaptureFixture) -> None:
     assert "lead [" in out
 
 
-def test_roster_cli_show(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_cli_show(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """foil roster show command works."""
     code = main(["roster", "show", "implementer"])
     assert code == 0
@@ -277,7 +279,7 @@ def test_roster_cli_show(project: Path, capsys: pytest.CaptureFixture) -> None:
     assert "role: implementer" in out
 
 
-def test_roster_cli_add(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_cli_add(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """foil roster add command works."""
     code = main(["roster", "add", "researcher"])
     assert code == 0
@@ -285,7 +287,7 @@ def test_roster_cli_add(project: Path, capsys: pytest.CaptureFixture) -> None:
     assert "created template 'researcher'" in out
 
 
-def test_roster_cli_update(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_cli_update(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """foil roster update command works."""
     code = main(["roster", "update", "lead", "model=claude-opus-5.5"])
     assert code == 0
@@ -293,7 +295,10 @@ def test_roster_cli_update(project: Path, capsys: pytest.CaptureFixture) -> None
     assert "updated template 'lead'" in out
 
 
-def test_roster_cli_update_without_equals_fails(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_cli_update_without_equals_fails(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """foil roster update without = in FIELD=VALUE fails."""
     code = main(["roster", "update", "lead", "model"])
     assert code == 1
@@ -301,7 +306,7 @@ def test_roster_cli_update_without_equals_fails(project: Path, capsys: pytest.Ca
     assert "FIELD=VALUE format required" in err
 
 
-def test_roster_cli_remove(project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_cli_remove(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """foil roster remove command works."""
     # First add a template
     main(["roster", "add", "researcher"])
@@ -314,7 +319,11 @@ def test_roster_cli_remove(project: Path, capsys: pytest.CaptureFixture) -> None
     assert "removed template 'researcher'" in out
 
 
-def test_roster_authority_worker_cannot_list(monkeypatch: pytest.MonkeyPatch, project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_authority_worker_cannot_list(
+    monkeypatch: pytest.MonkeyPatch,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Workers cannot use roster commands."""
     monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
     code = main(["roster", "list"])
@@ -323,7 +332,11 @@ def test_roster_authority_worker_cannot_list(monkeypatch: pytest.MonkeyPatch, pr
     assert "not allowed" in err
 
 
-def test_roster_authority_lead_can_list(monkeypatch: pytest.MonkeyPatch, project: Path, capsys: pytest.CaptureFixture) -> None:
+def test_roster_authority_lead_can_list(
+    monkeypatch: pytest.MonkeyPatch,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """Lead can use roster commands."""
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     code = main(["roster", "list"])
