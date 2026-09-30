@@ -2,6 +2,21 @@
 
 Notable changes to Foil, newest first.
 
+## [0.2.2] - 2026-09-30
+
+`foil --version` prints 0.2.2.
+[docs/requirements.md](docs/requirements.md) is the specification, and
+[docs/plan-v0.2.2.md](docs/plan-v0.2.2.md) is the plan for this release.
+The lead keeps a checklist in `status.md` of what is done and what is
+left, and the operator reports that checklist. No command, flag, or
+contract version was added.
+
+### Changed
+
+- Once the lead has a plan, the `status/v1` body holds a `## Checklist` of `- [ ]` and `- [x]` items. An item starts with its task id when it has one. `state: done` means every item is ticked. The front matter is unchanged, and Foil does not read the body.
+- The lead skill says how to keep the checklist. The operator skill says to report it at each check-in and whenever the human asks, quoting the file rather than the pane.
+- Both READMEs and both demos describe the checklist. The scenario 1 status sample includes a ticked checklist.
+
 ## [0.2.1] - 2026-09-29
 
 `foil --version` prints 0.2.1.
@@ -113,6 +128,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.2.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.2
 [0.2.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.1
 [0.2.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.0
 [0.1.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.1.1
