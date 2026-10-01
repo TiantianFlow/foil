@@ -46,21 +46,32 @@ def mail_list(*, as_json: bool = False) -> None:
         raise FoilError("foil: FOIL_SEAT_ID not set (mail list needs a seat identity)")
     if SAFE_ID.fullmatch(seat) is None:
         raise FoilError("foil: invalid seat")
-    directory = board_root() / "mail" / seat
+    mail_root = (board_root() / "mail").resolve()
+    directory = mail_root / seat
     mails = []
-    for path in directory.glob("*.md") if directory.is_dir() else ():
-        try:
-            fields, _ = _fields(path.read_text(encoding="utf-8"), str(path))
-        except (OSError, UnicodeDecodeError, FoilError):
-            continue
-        mails.append(
-            {
-                "from": fields.get("from", ""),
-                "to": fields.get("to", ""),
-                "time": fields.get("time", ""),
-                "path": str(path.resolve()),
-            }
-        )
+    if (
+        not directory.is_symlink()
+        and directory.is_dir()
+        and directory.resolve().is_relative_to(mail_root)
+    ):
+        for path in directory.glob("*.md"):
+            if path.is_symlink() or not path.is_file():
+                continue
+            resolved = path.resolve()
+            if not resolved.is_relative_to(mail_root):
+                continue
+            try:
+                fields, _ = _fields(path.read_text(encoding="utf-8"), str(path))
+            except (OSError, UnicodeDecodeError, FoilError):
+                continue
+            mails.append(
+                {
+                    "from": fields.get("from", ""),
+                    "to": fields.get("to", ""),
+                    "time": fields.get("time", ""),
+                    "path": str(resolved),
+                }
+            )
     mails.sort(key=lambda m: (m["time"], m["path"]), reverse=True)
     if as_json:
         print(json.dumps(mails))

@@ -117,14 +117,14 @@ harness you see its full screen. Foil never interprets what is there.
 ## 6. Read the mail and the lead's report
 
 ```sh
-ls .foil/board/mail/lead
-cat .foil/board/status.md
+foil board list 'mail/lead/*.md'
+foil board read status.md
 ```
 
 ```text
-20260928T005855Z-user-40eda840.md
-20260928T005856Z-implementer-1-df1d08d0.md
-20260928T005857Z-reviewer-1-d5045b2b.md
+mail/lead/20260928T005855Z-user-40eda840.md
+mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
 ```
 
 ```text
@@ -144,10 +144,11 @@ questions: []
 The tests pass.
 ```
 
-Every message is a file: your task, the implementer's report, and the
-reviewer's approval. `status.md` is the lead's own report. When the lead
-needs you, it lists questions there, and you answer with
-`foil send lead "..."`.
+Use `foil board list` and `foil board read` from outside the fleet; seats
+prefer `foil mail list` and `foil mail read` for their mailbox. Every
+message is still a file under `.foil/board/`. `status.md` is the lead's
+own report. When the lead needs you, it lists questions there, and you
+answer with `foil send lead "..."`.
 
 ## 7. Check the result
 
