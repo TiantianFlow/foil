@@ -10,6 +10,7 @@ import pytest
 from foil.cli import main
 from foil.errors import FoilError
 from foil.lifecycle import init_project
+from foil.presets import template_permission
 from foil.roster_ops import (
     add_template,
     list_roster,
@@ -587,6 +588,39 @@ def test_outside_caller_can_add_from_with_auto_permission(
     assert main(["roster", "add", "custom", "--from", str(source)]) == 0
     text = (project / ".foil" / "templates" / "custom.toml").read_text(encoding="utf-8")
     assert 'permission = "auto"' in text
+
+
+def test_lead_cannot_inject_permission_through_another_field(
+    monkeypatch: pytest.MonkeyPatch,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A quoted newline in another field must not set permission.
+
+    The source omits permission, which counts as ask. On the unfixed writer
+    the model value closes its string and adds permission = "auto".
+    """
+    source = _permission_source(project / "plain.toml", None)
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["roster", "add", "custom", "--from", str(source)]) == 0
+    capsys.readouterr()
+    path = project / ".foil" / "templates" / "custom.toml"
+    before = path.read_bytes()
+    injected = 'm"\npermission = "auto'
+    assert main(["roster", "update", "custom", f"model={injected}"]) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert "quote, a backslash, or a control character" in err
+    assert path.read_bytes() == before
+    assert template_permission(path.read_text(encoding="utf-8")) == "ask"
+
+
+def test_in_fleet_update_rolls_back_a_permission_change(project: Path) -> None:
+    path = project / ".foil" / "templates" / "lead.toml"
+    before = path.read_bytes()
+    with pytest.raises(FoilError, match="permission is outside the fleet only"):
+        update_template(project, "lead", "permission", "auto", in_fleet=True)
+    assert path.read_bytes() == before
 
 
 def test_lead_cannot_set_permission(

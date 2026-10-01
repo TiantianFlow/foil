@@ -33,6 +33,9 @@ flowchart TB
 
   lifecycle["<b>lifecycle.py</b><br/>init · spawn · kill · resume · list · peek<br/>instruction files · worktrees · calls git"]
   board["<b>board.py</b><br/>mail files · nudge"]
+  mail_ops["<b>mail_ops.py</b><br/>read one seat's mail"]
+  board_ops["<b>board_ops.py</b><br/>read and list board files"]
+  roster_ops["<b>roster_ops.py</b><br/>list · show · add · update · remove"]
   memory["<b>memory.py</b><br/>lessons"]
 
   presets["<b>presets.py</b><br/>templates · harness presets · argv"]
@@ -45,15 +48,28 @@ flowchart TB
 
   cli --> lifecycle
   cli --> board
+  cli --> mail_ops
+  cli --> board_ops
+  cli --> roster_ops
   cli --> memory
+  cli --> project
   lifecycle --> presets
   lifecycle --> board
   lifecycle --> tmuxmod
   lifecycle --> store
+  lifecycle --> project
   board --> tmuxmod
   board --> store
+  board --> project
+  mail_ops --> board_ops
+  mail_ops --> store
+  roster_ops --> presets
+  roster_ops --> project
+  roster_ops --> store
   memory --> store
+  memory --> project
   presets --> store
+  presets --> project
   store --> project
 
   classDef entry fill:#bfdbfe,stroke:#1d4ed8,color:#1f2937
@@ -61,7 +77,7 @@ flowchart TB
   classDef base fill:#e5e7eb,stroke:#374151,color:#1f2937
   classDef apart fill:#fde68a,stroke:#b45309,color:#1f2937
   class cli entry
-  class lifecycle,board,memory core
+  class lifecycle,board,mail_ops,board_ops,roster_ops,memory core
   class presets,tmuxmod,store,project base
   class runner apart
 ```
@@ -105,19 +121,19 @@ Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foi
 
 ## Where state lives
 
-`foil init` creates `.foil` in the Git toplevel and adds `/.foil/` to that repository's exclude file, so Foil's files stay out of `git status`. It prints a report: every installed eligible harness in id order, the id each default template was given and why, which templates and personas it wrote and which it left alone, a sentence about the permission setting, and the operator pointer line. A re-run prints the report again and overwrites nothing. The directory holds:
+`foil init` creates `.foil` in the Git toplevel and adds `/.foil/` to that repository's exclude file, so Foil's files stay out of `git status`. It prints a report: every installed eligible harness in id order, the id each default template was given and why, which templates and personas it wrote and which it left alone, `Available personas (use 'foil roster add')` when a persona has no template, a sentence about the permission setting, and the operator pointer line. A re-run prints the report again and overwrites nothing. The directory holds:
 
 - `templates/<role>.toml` — the roster. The file name is the role. Fields used by the loader are `harness`, `model`, `persona`, `worktree`, and `permission`. `foil roster` lists, shows, adds, updates, and removes these files. Add and update write atomically in this directory and refuse a symlink. Remove, and a harness change, fail while a seat of that role has a stored state other than `killed`.
 - `templates/personas/<role>.md` — every packaged persona, copied once, including candidate roles that have no template yet. A persona adds only specialization the role skill does not already state. A template may instead point `persona` at another Markdown file, which is left untouched, or it may hold inline text.
 - `harnesses/` — optional project presets.
 - `memory/<id>.json` — lessons. They belong to the project and stay when seats are killed.
-- `board/mail/<seat>/` — mail files. Seats read them with `foil mail read` and `foil mail list`, and read notes, tasks, results, and status with `foil board read` and `foil board list`. Foil does not interpret those files.
+- `board/mail/<seat>/` — mail files. Seats read them with `foil mail read` and `foil mail list`, and read notes, tasks, results, and status with `foil board read` and `foil board list`. Foil parses front matter only to print a file and does not act on contract fields.
 - `run/registry.json` — fleet id, tmux session name, lead name, and one record per seat: name, template, harness, window id, state, worktree, branch, and session id.
 - `run/instructions/<seat>.md` — generated when that seat is spawned or resumed. It includes the text of that seat's role skill.
 - `skills/operator.md`, `skills/lead.md`, and `skills/worker.md` — copied once from the package. Each file starts with a name and description. Init does not overwrite a file that is already there. The lead and worker skills are the role guidance for those seats.
 - `run/plans/<seat>.json` — the argv, working directory, and environment for the runner.
 
-A linked worktree does not contain `.foil`. From that worktree, discovery walks to the Git common directory and uses the parent that contains `.foil`, so a seat can run `foil send`, `foil mail`, `foil board`, and `foil memory` against the project.
+A linked worktree does not contain `.foil`. `foil send` and `foil memory` find the project through Git: when the worktree toplevel has no `.foil`, discovery uses the Git common directory's parent if that parent contains `.foil`. `foil mail` and `foil board` do not. `board_root()` walks up from the current directory and uses the first `.foil/board` it finds.
 
 ## Authority
 
@@ -165,4 +181,4 @@ Alive, dead, and killed come from the registry and from whether a tmux window wi
 
 ## What Foil does not do
 
-Foil does not parse pane contents, read `status.md`, or decide that an agent is idle. It does not store harness credentials. It does not delete a worktree or a branch when a seat is killed or when a launch fails after the worktree was created.
+Foil does not parse pane contents or decide that an agent is idle. It parses front matter only to print a file and does not act on contract fields. It does not store harness credentials. It does not delete a worktree or a branch when a seat is killed or when a launch fails after the worktree was created.

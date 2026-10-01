@@ -40,6 +40,25 @@ def _replace_template_file(path: Path, content: str) -> None:
     write_bytes(path, content.encode())
 
 
+def _formatted_value(field: str, value: str) -> str:
+    """Format one template field. String values cannot break out of a TOML string."""
+    if field == "worktree":
+        if value.lower() not in {"true", "false"}:
+            raise FoilError("foil: worktree must be 'true' or 'false'")
+        return value.lower()
+    if field == "permission":
+        if value not in {"ask", "auto"}:
+            raise FoilError("foil: permission must be 'ask' or 'auto'")
+        return f'"{value}"'
+    if any(char in value for char in '"\\') or any(
+        ord(char) < 32 or ord(char) == 127 for char in value
+    ):
+        raise FoilError(
+            "foil: value must not contain a quote, a backslash, or a control character"
+        )
+    return f'"{value}"'
+
+
 def _persona_inside(persona: str) -> None:
     if "\n" in persona or "\r" in persona or not persona.endswith(".md"):
         return
@@ -200,7 +219,14 @@ def add_template(
     print(f"foil: created template '{role}'")
 
 
-def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
+def update_template(
+    toplevel: Path,
+    role: str,
+    field: str,
+    value: str,
+    *,
+    in_fleet: bool = False,
+) -> None:
     """Update one field in a template."""
     if not SAFE_ID.fullmatch(role):
         raise FoilError(f"foil: unknown template '{_shown(role)}'")
@@ -216,8 +242,11 @@ def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
     if field == "harness":
         _in_use(toplevel, role)
 
-    # Read current content
+    # Read current content. Refuse a value that could escape its TOML string
+    # before any byte is replaced.
     original = template_path.read_text(encoding="utf-8")
+    previous_permission = template_permission(original)
+    formatted = _formatted_value(field, value)
     lines = original.splitlines(keepends=True)
 
     # Parse and update
@@ -226,17 +255,6 @@ def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
     for line in lines:
         stripped = line.strip()
         if stripped.startswith(f"{field} ="):
-            # Format the new value based on field type
-            if field == "worktree":
-                if value.lower() not in {"true", "false"}:
-                    raise FoilError("foil: worktree must be 'true' or 'false'")
-                formatted = value.lower()
-            elif field == "permission":
-                if value not in {"ask", "auto"}:
-                    raise FoilError("foil: permission must be 'ask' or 'auto'")
-                formatted = f'"{value}"'
-            else:
-                formatted = f'"{value}"'
             new_lines.append(f"{field} = {formatted}\n")
             updated = True
         else:
@@ -244,24 +262,18 @@ def update_template(toplevel: Path, role: str, field: str, value: str) -> None:
 
     # If field wasn't found, append it
     if not updated:
-        if field == "worktree":
-            if value.lower() not in {"true", "false"}:
-                raise FoilError("foil: worktree must be 'true' or 'false'")
-            formatted = value.lower()
-        elif field == "permission":
-            if value not in {"ask", "auto"}:
-                raise FoilError("foil: permission must be 'ask' or 'auto'")
-            formatted = f'"{value}"'
-        else:
-            formatted = f'"{value}"'
         new_lines.append(f"{field} = {formatted}\n")
 
     # Write back atomically. A symlink is refused before this write.
     _replace_template_file(template_path, "".join(new_lines))
 
-    # Validate by loading
+    # Validate by loading. An in-fleet caller must not change permission,
+    # including by a value that parses as a second assignment.
     try:
         _accept(toplevel, role)
+        written = template_path.read_text(encoding="utf-8")
+        if in_fleet and template_permission(written) != previous_permission:
+            raise FoilError("foil: permission is outside the fleet only")
     except FoilError:
         _replace_template_file(template_path, original)
         raise

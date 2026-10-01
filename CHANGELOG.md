@@ -35,8 +35,8 @@ This release adds mail and board reads (issue #12) and roster commands
 - Requirements F21 documents the five roster subcommands. It no longer says the roster is managed only by editing template files.
 - Skills and seat instructions use `foil mail read` and `foil mail list` instead of direct mail file reads.
 - The lead's generated instructions list the `foil roster` commands. Roster errors are one line. Roster writes are atomic and do not follow a template symlink.
-- Only a caller outside the fleet may set `permission`, including `add --from` when the file's permission is not `ask`. Remove and a harness change fail while a seat of that template has a stored state other than `killed`.
-- Package Python is 2,749 lines. N4's 2,500-line target is not a hard limit. The lines over the target are the mail, board, and roster modules this release adds.
+- Only a caller outside the fleet may set `permission`, including `add --from` when the file's permission is not `ask`. Remove and a harness change fail while a seat of that template has a stored state other than `killed`. A string value on `roster update` that contains a quote, a backslash, or a control character is refused, and an in-fleet update that changes `permission` is rolled back.
+- Package Python is 2,767 lines. N4's 2,500-line target is not a hard limit. The lines over the target are the mail, board, and roster modules this release adds.
 
 ### Upgrading
 

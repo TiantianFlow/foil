@@ -282,7 +282,13 @@ def _run(args: argparse.Namespace) -> int:
         field, value = args.FIELD_VALUE.split("=", 1)
         if field == "permission" and _caller() != OUTSIDE:
             raise FoilError("foil: permission is outside the fleet only")
-        update_template(root, args.ROLE, field, value)
+        update_template(
+            root,
+            args.ROLE,
+            field,
+            value,
+            in_fleet=_caller() != OUTSIDE,
+        )
     else:
         authorize("roster-remove")
         remove_template(root, args.ROLE)
