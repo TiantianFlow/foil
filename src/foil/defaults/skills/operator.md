@@ -140,18 +140,13 @@ foil seat kill --all
 
 That stops every seat. It does not delete branches or worktrees.
 
-## Importing from agency-agent
+## Adding a role
 
-To use a role from the agency-agent library or similar role libraries:
-
-1. Find the role definition (usually a TOML file)
-2. Add it with:
+Put the persona at `.foil/templates/personas/<role>.md`, then `foil roster add <role>`. Or use `--from` with a file already in Foil's template format:
 
 ```text
 foil roster add <role> --from /path/to/role.toml
 ```
-
-If the file format differs from Foil's template format, convert it to match the template structure: `harness`, `model`, `persona`, `worktree`, and `permission` fields. For roles with custom personas, create the persona file in `.foil/templates/personas/<role>.md` first, then add the template.
 
 ## What you do not do
 
