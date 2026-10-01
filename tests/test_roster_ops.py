@@ -590,6 +590,41 @@ def test_outside_caller_can_add_from_with_auto_permission(
     assert 'permission = "auto"' in text
 
 
+def test_lead_cannot_set_a_leading_dash_model(
+    monkeypatch: pytest.MonkeyPatch,
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """model=--yolo must not be written, or later placed as a harness flag."""
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    path = project / ".foil" / "templates" / "implementer.toml"
+    before = path.read_bytes()
+    assert main(["roster", "update", "implementer", "model=--yolo"]) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert "must not start with '-'" in err
+    assert path.read_bytes() == before
+    for field in ("persona", "harness"):
+        assert main(["roster", "update", "implementer", f"{field}=--yolo"]) == 1
+        assert path.read_bytes() == before
+    capsys.readouterr()
+
+
+def test_add_from_leading_dash_model_leaves_no_template(project: Path) -> None:
+    source = project / "dash.toml"
+    source.write_text(
+        'harness = "claude"\n'
+        'model = "--yolo"\n'
+        'persona = "personas/researcher.md"\n'
+        "worktree = false\n"
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(FoilError, match="invalid template"):
+        add_template(project, "custom", from_file=str(source))
+    assert not (project / ".foil" / "templates" / "custom.toml").exists()
+
+
 def test_lead_cannot_inject_permission_through_another_field(
     monkeypatch: pytest.MonkeyPatch,
     project: Path,

@@ -174,6 +174,44 @@ def test_user_harness_overrides_builtin(tmp_path: Path) -> None:
     ]
 
 
+def test_expand_argv_does_not_place_a_leading_dash_model(tmp_path: Path) -> None:
+    prompt = "Read /tmp/instructions.md first."
+    codex = load_preset(tmp_path, "codex")
+    with pytest.raises(FoilError, match="must not start with '-'"):
+        expand_argv(codex, model="--yolo", prompt=prompt, permission="ask")
+    placed = expand_argv(codex, model="gpt", prompt=prompt, permission="ask")
+    assert "--yolo" not in placed
+    assert placed[placed.index("--model") + 1] == "gpt"
+
+
+def test_load_template_rejects_a_leading_dash_model(tmp_path: Path) -> None:
+    templates = tmp_path / ".foil" / "templates"
+    templates.mkdir(parents=True)
+    path = templates / "lead.toml"
+    path.write_text(
+        'harness = "claude"\nmodel = "--yolo"\nworktree = false\npermission = "ask"\n',
+        encoding="utf-8",
+    )
+    before = path.read_bytes()
+    with pytest.raises(FoilError, match="invalid template"):
+        load_template(tmp_path, "lead")
+    assert path.read_bytes() == before
+    with pytest.raises(FoilError, match="invalid template"):
+        launch_command(tmp_path, "lead", prompt="go")
+    path.write_text(
+        'harness = "claude"\npersona = "--yolo"\nworktree = false\npermission = "ask"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(FoilError, match="invalid template"):
+        load_template(tmp_path, "lead")
+    path.write_text(
+        'harness = "--yolo"\nworktree = false\npermission = "ask"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(FoilError, match="invalid template"):
+        load_template(tmp_path, "lead")
+
+
 def test_unknown_placeholder_and_template_key_are_rejected(tmp_path: Path) -> None:
     builtin = (tmp_path / ".foil" / "harnesses")
     builtin.mkdir(parents=True)
