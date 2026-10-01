@@ -243,6 +243,34 @@ leaked
     assert "attacker" not in json.dumps(data)
 
 
+def test_mail_list_skips_symlinked_mail_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A symlink at board/mail must not list mail that lives outside the board."""
+    repo = _repo(tmp_path, monkeypatch)
+    outside = tmp_path / "outside-mail" / "worker-1"
+    outside.mkdir(parents=True)
+    (outside / "planted.md").write_text(
+        """---
+contract: mail/v1
+from: attacker
+to: worker-1
+time: 2026-09-30T13:00:00Z
+---
+
+leaked
+""",
+        encoding="utf-8",
+    )
+    mail = foil_root(repo) / "board" / "mail"
+    mail.rename(tmp_path / "real-mail")
+    mail.symlink_to(outside.parent)
+
+    monkeypatch.setenv("FOIL_SEAT_ID", "worker-1")
+    mail_list(as_json=True)
+    assert json.loads(capsys.readouterr().out) == []
+
+
 def test_mail_list_skips_symlinked_mailbox(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

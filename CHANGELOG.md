@@ -29,6 +29,7 @@ This release adds mail and board reads (issue #12) and roster commands
 ### Fixed
 
 - An invalid field name and a missing `--from` path stay on one error line when that text contains a newline.
+- A roster `harness`, `model`, or `persona` that starts with `-` is refused, so `expand_argv` cannot place it as a harness flag. A symlinked `.foil/board/mail` directory lists nothing.
 
 ### Changed
 

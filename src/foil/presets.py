@@ -135,6 +135,8 @@ def expand_argv(
 
     if permission not in {"ask", "auto"}:
         _fail("template")
+    if model is not None and model.startswith("-"):
+        raise FoilError("foil: model must not start with '-'")
     argv = preset["resume"] if resume else preset["command"]
     if not argv:
         _fail("preset")
@@ -168,7 +170,9 @@ def load_template(toplevel: Path, name: str) -> dict[str, Any]:
         or not isinstance(harness, str)
         or not SAFE_ID.fullmatch(harness)
         or not isinstance(model, str)
+        or model.startswith("-")
         or not isinstance(persona, str)
+        or persona.startswith("-")
         or not isinstance(worktree, bool)
         or permission not in {"ask", "auto"}
     ):
