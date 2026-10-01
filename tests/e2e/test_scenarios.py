@@ -526,7 +526,7 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
 
     try:
         version = foil("--version")
-        assert version.stdout.strip() == "foil 0.2.2", version.stderr
+        assert version.stdout.strip() == "foil 0.3.0", version.stderr
         assert Path(shutil.which("foil", path=environment["PATH"]) or "") == bindir / "foil"
         assert foil("init").returncode == 0
         templates = foil_root(repo) / "templates"

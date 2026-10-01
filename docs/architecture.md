@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes Foil 0.2.2 as implemented. It does not add requirements. The command list and the data layout are specified in [requirements.md](requirements.md).
+This document describes Foil 0.3.0 as implemented. It does not add requirements. The command list and the data layout are specified in [requirements.md](requirements.md).
 
 ## Components
 
@@ -16,6 +16,8 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/lifecycle.py` | Initializes a project and spawns, kills, resumes, lists, and peeks seats. It writes instruction files. |
 | `src/foil/tmux.py` | Creates, stops, and reads tmux windows by exact window id. |
 | `src/foil/board.py` | Writes mail files, then asks tmux to type the nudge line. |
+| `src/foil/mail_ops.py` | Reads one seat's mail. Paths must stay inside `.foil/board/mail/`. |
+| `src/foil/board_ops.py` | Reads and lists board files. Paths must stay inside `.foil/board/`. |
 | `src/foil/memory.py` | Stores project lessons as JSON files. |
 | `src/foil/runner.py` | Execs the argv in a launch plan. It does not choose that argv. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |

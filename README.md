@@ -1,7 +1,7 @@
 # Foil · 运筹
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.2-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.3.0-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -75,7 +75,7 @@ flowchart TB
 - **Operator agent**: any harness you like, with its normal interface. It follows the operator skill and never does the project work itself.
 - **foil**: this command-line tool. It launches seats in tmux, writes mail, and types a one-line nudge into the recipient's window. It runs no daemon and never interprets what is on a seat's screen.
 - **Lead, implementer, reviewer**: agent CLIs running headless in tmux windows, each started with its role's instructions. By default only the implementer gets its own Git worktree and branch.
-- **.foil/board**: mail, notes, and `status.md`, as plain files the seats read and write.
+- **.foil/board**: mail, notes, and `status.md`, as plain files. Seats read mail with `foil mail` and other board files with `foil board`.
 
 ## Built to stay out of the way
 
@@ -99,7 +99,7 @@ Install Foil from https://github.com/TiantianFlow/foil, onboard this repository 
 ```
 
 - The agent installs Foil and runs `foil init`.
-- It reads the report and sets `harness`, `model`, and `permission` on `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. `auto` on the lead alone does not let the workers run unattended.
+- It reads the report and sets `harness`, `model`, and `permission` with `foil roster`, or by editing `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. `auto` on the lead alone does not let the workers run unattended.
 - It runs the first-run check and sends the goal.
 - It never does the project work itself.
 
@@ -127,7 +127,7 @@ cd your-repo
 foil init
 ```
 
-Read the report, edit the three templates, then spawn the lead once:
+Read the report, set the three templates with `foil roster` or by editing the files, then spawn the lead once:
 
 ```sh
 foil seat spawn lead --task "Write board/status.md with state: done"
