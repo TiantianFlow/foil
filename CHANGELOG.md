@@ -2,11 +2,24 @@
 
 Notable changes to Foil, newest first.
 
-## [Unreleased]
+## [0.3.0] - 2026-09-30
+
+`foil --version` prints 0.3.0.
+[docs/requirements.md](docs/requirements.md) is the specification, and
+[docs/plan-v0.3.0.md](docs/plan-v0.3.0.md) is the plan for this release.
+This release adds mail and board reads (issue #12) and roster commands
+(issue #10). Both were developed on separate lines and ship together as
+0.3.0. There is no 0.3.1.
 
 ### Added
 
-- `foil roster` commands for managing role templates: `list` shows all templates and available personas, `show ROLE` displays one template's configuration, `add ROLE` creates a template from a TOML file, or from the persona of the same name, `update ROLE FIELD=VALUE` modifies a template field, and `remove ROLE` deletes a template (fails for lead/implementer/reviewer). Authority: outside the fleet and lead only (F21).
+- `foil mail read`, `foil mail list`, `foil board read`, and `foil board list`.
+  A seat in a worktree can read mail and board files without a permission
+  prompt. `mail read` takes an absolute path. JSON mail includes the
+  `mail/v1` contract. JSON board output keeps list front matter as arrays. (#12)
+- `foil mail list` rejects an unsafe seat id. An outside-fleet caller
+  gets `foil: not allowed`.
+- `foil roster` commands for managing role templates: `list` shows all templates and available personas, `show ROLE` displays one template's configuration, `add ROLE` creates a template from a TOML file, or from the persona of the same name, `update ROLE FIELD=VALUE` modifies a template field, and `remove ROLE` deletes a template (fails for lead/implementer/reviewer). Authority: outside the fleet and lead only (F21). (#10)
 - `foil roster list` and `foil roster show` accept `--json` for structured output.
 - `foil init` report now includes available personas (those without templates) with a note to use `foil roster add`.
 - The operator skill teaches the roster commands, first-run roster exploration, and adding a role from a Foil template file.
@@ -18,24 +31,16 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
-- Command surface expanded from eleven actions to sixteen: five new roster actions under `foil roster` (F1).
-- Requirements F21 changed from "The roster is managed by editing template files. There are no roster commands." to documenting the five roster subcommands.
+- The command surface is seven top-level commands and twenty actions: four mail and board reads, and five roster actions.
+- Requirements F21 documents the five roster subcommands. It no longer says the roster is managed only by editing template files.
+- Skills and seat instructions use `foil mail read` and `foil mail list` instead of direct mail file reads.
 - The lead's generated instructions list the `foil roster` commands. Roster errors are one line. Roster writes are atomic and do not follow a template symlink.
 - Only a caller outside the fleet may set `permission`, including `add --from` when the file's permission is not `ask`. Remove and a harness change fail while a seat of that template has a stored state other than `killed`.
+- Package Python is 2,749 lines. N4's 2,500-line target is not a hard limit. The lines over the target are the mail, board, and roster modules this release adds.
 
-## Unreleased
+### Upgrading
 
-### Added
-- `foil mail read`, `foil mail list`, `foil board read`, and `foil board list`.
-  A seat in a worktree can read mail and board files without a permission
-  prompt. `mail read` takes an absolute path. JSON mail includes the
-  `mail/v1` contract. JSON board output keeps list front matter as arrays. (#12)
-- `foil mail list` rejects an unsafe seat id. An outside-fleet caller
-  gets `foil: not allowed`.
-
-### Changed
-- Skills and seat instructions use `foil mail read` and `foil mail list`
-  instead of direct mail file reads.
+`foil init` does not replace an existing project's `.foil/skills/`. A project upgraded from 0.2.2 keeps the old lead, operator, and worker skills, so it does not get the mail, board, or roster guidance. Move `.foil/skills/lead.md`, `.foil/skills/operator.md`, and `.foil/skills/worker.md` aside, or delete them if they were never edited. Run `foil init` again, and re-copy any user-level copy of the operator skill. New and resumed seats then get the new text.
 
 ## [0.2.2] - 2026-09-30
 
@@ -167,6 +172,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.3.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.0
 [0.2.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.2
 [0.2.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.1
 [0.2.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.0
