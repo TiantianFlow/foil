@@ -54,14 +54,14 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 ## Role templates
 
-A template is a four-line file in `.foil/templates/`. The file name is the role. The fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. `init` copies every packaged persona there and writes only the three default templates. It overwrites nothing: re-running it after an edit changes no file.
+A template is a TOML file in `.foil/templates/`. The file name is the role. The five fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. `init` copies every packaged persona there and writes only the three default templates. It overwrites nothing: re-running it after an edit changes no file.
 
 View and modify templates with the roster commands:
 
 ```text
 foil roster list
 foil roster show implementer
-foil roster update implementer model=claude-sonnet-5.5
+foil roster update implementer model=claude-sonnet-4-5
 foil roster add researcher
 ```
 
