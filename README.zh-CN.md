@@ -1,7 +1,7 @@
 # 运筹 · Foil
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.2-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.3.0-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -75,7 +75,7 @@ flowchart TB
 - **操作员 Agent**：你喜欢的任何 harness，带着它原本的界面。它按操作员技能行事，自己从不做项目本身的工作。
 - **foil**：就是这个命令行工具。它在 tmux 里启动席位、写邮件，并往收件人的窗口里打一行提醒。它不跑守护进程，也从不解读席位屏幕上显示的内容。
 - **主座、实现者、审查者**：在 tmux 窗口里无界面运行的 Agent CLI，每个都带着自己角色的指令启动。默认只有实现者拥有自己的 Git worktree 和分支。
-- **.foil/board**：邮件、笔记和 `status.md`，都是席位读写的普通文件。
+- **.foil/board**：邮件、笔记和 `status.md`，都是普通文件。席位用 `foil mail` 读邮件，用 `foil board` 读板上的其他文件。
 
 ## 尽量不碍事的设计
 
@@ -99,7 +99,7 @@ Install Foil from https://github.com/TiantianFlow/foil, onboard this repository 
 ```
 
 - Agent 安装运筹并运行 `foil init`。
-- 它读报告，并在 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml` 里设置 `harness`、`model` 和 `permission`。只把主座改成 `auto` 不会让工人席位无人值守。
+- 它读报告，并用 `foil roster` 设置 `harness`、`model` 和 `permission`，也可以直接改 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml`。只把主座改成 `auto` 不会让工人席位无人值守。
 - 它做首次运行检查，然后把目标发出去。
 - 它自己从不做项目本身的工作。
 
@@ -127,7 +127,7 @@ cd your-repo
 foil init
 ```
 
-读报告，改那三个模板，然后只启动一次主座：
+读报告，用 `foil roster` 或直接改文件来设置那三个模板，然后只启动一次主座：
 
 ```sh
 foil seat spawn lead --task "Write board/status.md with state: done"

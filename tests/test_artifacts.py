@@ -205,7 +205,7 @@ def test_wheel_metadata_has_public_release_identity(built: Built) -> None:
     metadata = BytesParser().parsebytes(wheel[metadata_name])
 
     assert metadata["Name"] == "foil-orchestrator"
-    assert metadata["Version"] == "0.2.2"
+    assert metadata["Version"] == "0.3.0"
     assert metadata["Requires-Python"] == ">=3.11"
     assert metadata["Author-email"] == (
         "TiantianFlow <177855728+TiantianFlow@users.noreply.github.com>"
