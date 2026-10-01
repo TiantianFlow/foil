@@ -50,6 +50,8 @@ def _formatted_value(field: str, value: str) -> str:
         if value not in {"ask", "auto"}:
             raise FoilError("foil: permission must be 'ask' or 'auto'")
         return f'"{value}"'
+    if field in {"harness", "model", "persona"} and value.startswith("-"):
+        raise FoilError("foil: value must not start with '-'")
     if any(char in value for char in '"\\') or any(
         ord(char) < 32 or ord(char) == 127 for char in value
     ):
