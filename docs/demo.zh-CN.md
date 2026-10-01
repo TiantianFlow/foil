@@ -106,14 +106,14 @@ peek 原样打印那个窗口最下面的内容（这里有删节）。在 Agent
 ## 6. 读邮件和主座的报告
 
 ```sh
-ls .foil/board/mail/lead
-cat .foil/board/status.md
+foil board list 'mail/lead/*.md'
+foil board read status.md
 ```
 
 ```text
-20260928T005855Z-user-40eda840.md
-20260928T005856Z-implementer-1-df1d08d0.md
-20260928T005857Z-reviewer-1-d5045b2b.md
+mail/lead/20260928T005855Z-user-40eda840.md
+mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
 ```
 
 ```text
@@ -133,8 +133,10 @@ questions: []
 The tests pass.
 ```
 
-每条消息都是一个文件：你的任务、实现者的报告、审查者的批准。`status.md` 是主座
-自己写的报告。主座需要你时，会把问题列在里面，你用 `foil send lead "..."` 回答。
+在舰队外用 `foil board list` 和 `foil board read`；座位读自己的邮箱时优先用
+`foil mail list` 和 `foil mail read`。每条消息仍是 `.foil/board/` 下的文件。
+`status.md` 是主座自己写的报告。主座需要你时，会把问题列在里面，你用
+`foil send lead "..."` 回答。
 
 ## 7. 检查结果
 

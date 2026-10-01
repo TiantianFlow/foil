@@ -207,6 +207,77 @@ def test_mail_list_empty(
     assert captured.out.strip() == "[]"
 
 
+def test_mail_list_skips_outside_symlink_and_non_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """mail list does not follow outside symlinks or non-regular files."""
+    repo = _repo(tmp_path, monkeypatch)
+    real = _create_mail(repo, "worker-1", "lead", "Keep me.")
+    mailbox = foil_root(repo) / "board" / "mail" / "worker-1"
+    outside = tmp_path / "secret.md"
+    outside.write_text(
+        """---
+contract: mail/v1
+from: attacker
+to: worker-1
+time: 2026-09-30T13:00:00Z
+---
+
+leaked
+""",
+        encoding="utf-8",
+    )
+    (mailbox / "escape.md").symlink_to(outside)
+    fifo = mailbox / "block.md"
+    os.mkfifo(fifo)
+
+    monkeypatch.setenv("FOIL_SEAT_ID", "worker-1")
+    mail_list(as_json=True)
+    data = json.loads(capsys.readouterr().out)
+
+    assert len(data) == 1
+    assert data[0]["from"] == "lead"
+    assert data[0]["path"] == str(real.resolve())
+    assert "secret" not in data[0]["path"]
+    assert "escape" not in json.dumps(data)
+    assert "attacker" not in json.dumps(data)
+
+
+def test_mail_list_skips_symlinked_mailbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A mailbox directory that is a symlink outside the board lists nothing."""
+    repo = _repo(tmp_path, monkeypatch)
+    outside_dir = tmp_path / "outside-mailbox"
+    outside_dir.mkdir()
+    (outside_dir / "planted.md").write_text(
+        """---
+contract: mail/v1
+from: attacker
+to: worker-1
+time: 2026-09-30T13:00:00Z
+---
+
+leaked
+""",
+        encoding="utf-8",
+    )
+    mail_root = foil_root(repo) / "board" / "mail"
+    mail_root.mkdir(parents=True, exist_ok=True)
+    link = mail_root / "worker-1"
+    if link.exists():
+        # init may have created an empty seat dir; replace with a symlink
+        if link.is_dir() and not link.is_symlink():
+            link.rmdir()
+        else:
+            link.unlink()
+    link.symlink_to(outside_dir)
+
+    monkeypatch.setenv("FOIL_SEAT_ID", "worker-1")
+    mail_list(as_json=True)
+    assert json.loads(capsys.readouterr().out) == []
+
+
 # board read tests
 
 
@@ -321,6 +392,23 @@ def test_board_list_sorted_alphabetically(
     data = json.loads(captured.out)
 
     assert data["files"] == ["tasks/t1.md", "tasks/t2.md", "tasks/t3.md"]
+
+
+def test_board_list_skips_outside_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """board list does not surface symlink names that point outside the board."""
+    repo = _repo(tmp_path, monkeypatch)
+    _create_board_file(repo, "tasks/keep.md", "Keep")
+    outside = tmp_path / "outside-task.md"
+    outside.write_text("secret", encoding="utf-8")
+    board = foil_root(repo) / "board"
+    (board / "tasks" / "escape.md").symlink_to(outside)
+
+    board_list("tasks/*.md", as_json=True)
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["files"] == ["tasks/keep.md"]
 
 
 # CLI integration tests

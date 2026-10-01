@@ -9,14 +9,15 @@ Notable changes to Foil, newest first.
 [docs/plan-v0.3.0.md](docs/plan-v0.3.0.md) is the plan for this release.
 This release adds mail and board reads (issue #12) and roster commands
 (issue #10). Both were developed on separate lines and ship together as
-0.3.0. There is no 0.3.1.
+0.3.0.
 
 ### Added
 
 - `foil mail read`, `foil mail list`, `foil board read`, and `foil board list`.
-  A seat in a worktree can read mail and board files without a permission
-  prompt. `mail read` takes an absolute path. JSON mail includes the
-  `mail/v1` contract. JSON board output keeps list front matter as arrays. (#12)
+  A seat in a worktree can call `foil mail` and `foil board` as project
+  tools; some harnesses still ask for some commands. `mail read` takes an
+  absolute path. JSON mail includes the `mail/v1` contract. JSON board
+  output keeps list front matter as arrays. (#12)
 - `foil mail list` rejects an unsafe seat id. An outside-fleet caller
   gets `foil: not allowed`.
 - `foil roster` commands for managing role templates: `list` shows all templates and available personas, `show ROLE` displays one template's configuration, `add ROLE` creates a template from a TOML file, or from the persona of the same name, `update ROLE FIELD=VALUE` modifies a template field, and `remove ROLE` deletes a template (fails for lead/implementer/reviewer). Authority: outside the fleet and lead only (F21). (#10)

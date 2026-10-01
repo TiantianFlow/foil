@@ -57,7 +57,7 @@ The roster is the template files under `.foil/templates/`. View and modify templ
 ```text
 foil roster list
 foil roster show implementer
-foil roster update implementer model=claude-sonnet-5.5
+foil roster update implementer model=claude-sonnet-4-5
 foil roster add researcher
 foil roster remove old-role
 ```

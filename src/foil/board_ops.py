@@ -98,7 +98,13 @@ def board_list(pattern: str, *, as_json: bool = False) -> None:
         raise FoilError("foil: pattern must be relative and must not contain '..'")
     try:
         found = root.glob(pattern)
-        files = sorted(str(p.relative_to(root)) for p in found if p.is_file())
+        files = sorted(
+            str(p.relative_to(root))
+            for p in found
+            if not p.is_symlink()
+            and p.is_file()
+            and p.resolve().is_relative_to(root)
+        )
     except (ValueError, NotImplementedError):
         raise FoilError(f"foil: invalid pattern: {pattern}") from None
     if as_json:
