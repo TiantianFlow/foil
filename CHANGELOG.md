@@ -2,6 +2,12 @@
 
 Notable changes to Foil, newest first.
 
+## Unreleased
+
+### Added
+
+- Documents the worktree layout (flat, one level, under `.foil/worktrees`; the lead uses the project checkout), where Foil's project state and the board live, and how harness session storage is global and keyed by working directory. (#19)
+
 ## [0.3.1] - 2026-10-01
 
 `foil --version` prints 0.3.1.
