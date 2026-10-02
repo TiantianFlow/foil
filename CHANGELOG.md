@@ -2,7 +2,16 @@
 
 Notable changes to Foil, newest first.
 
-## Unreleased
+## [0.3.2] - 2026-10-02
+
+`foil --version` prints 0.3.2.
+This release is documentation only. It publishes the survey of which
+project files could move global
+([docs/issue-18-project-vs-global.md](docs/issue-18-project-vs-global.md),
+issue #18) and the architecture note on worktree layout and where project
+state lives ([docs/architecture.md](docs/architecture.md), issue #19).
+The two were developed on separate lines and ship together as 0.3.2.
+No product-code behavior changes.
 
 ### Added
 
@@ -209,6 +218,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.3.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.2
 [0.3.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.1
 [0.3.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.0
 [0.2.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.2
