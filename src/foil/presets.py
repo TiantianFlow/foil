@@ -10,9 +10,9 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from foil.errors import FoilError, assert_no_secret
+from foil.errors import FoilError, assert_no_secret, shown
 from foil.project import foil_root
-from foil.store import SAFE_ID, create_exclusive
+from foil.store import SAFE_ID, create_exclusive, scan, write_bytes
 
 _PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}")
 _PRESET_KEYS = {"id", "command", "permission", "resume", "session_id", "env", "unverified"}
@@ -32,10 +32,6 @@ def _permission_field(raw: dict[str, Any]) -> Any:
 def template_permission(text: str) -> Any:
     """Permission as load_template reads it. An omitted field is ask."""
     return _permission_field(_load_toml(text, "template"))
-
-
-def _shown(value: str) -> str:
-    return value.replace("\n", "").replace("\r", "")
 
 
 def _strings(value: Any, label: str) -> list[str]:
@@ -93,7 +89,7 @@ def _parse_preset(text: str, harness_id: str) -> dict[str, Any]:
 
 def load_preset(toplevel: Path, harness_id: str) -> dict[str, Any]:
     if not SAFE_ID.fullmatch(harness_id):
-        raise FoilError(f"foil: unknown harness '{_shown(harness_id)}'")
+        raise FoilError(f"foil: unknown harness '{shown(harness_id)}'")
     user = foil_root(toplevel) / "harnesses" / f"{harness_id}.toml"
     if user.is_symlink():
         raise FoilError("foil: refusing symlink")
@@ -155,7 +151,7 @@ def expand_argv(
 
 def load_template(toplevel: Path, name: str) -> dict[str, Any]:
     if not SAFE_ID.fullmatch(name):
-        raise FoilError(f"foil: unknown template '{_shown(name)}'")
+        raise FoilError(f"foil: unknown template '{shown(name)}'")
     path = foil_root(toplevel) / "templates" / f"{name}.toml"
     if path.is_symlink() or not path.is_file():
         raise FoilError(f"foil: unknown template '{name}'")
@@ -195,12 +191,56 @@ def persona_text(template: dict[str, Any]) -> str:
     relative = Path(persona)
     if relative.is_absolute() or ".." in relative.parts:
         raise FoilError(f"foil: persona path must stay inside .foil/templates: {persona}")
-    path = template["path"].parent / relative
+    base = template["path"].parent
+    path = base / relative
     if path.is_symlink():
         raise FoilError("foil: refusing symlink")
+    if not path.resolve().is_relative_to(base.resolve()):
+        raise FoilError(f"foil: persona path must stay inside .foil/templates: {persona}")
     if path.is_file():
         return path.read_text(encoding="utf-8")
     raise FoilError(f"foil: persona file not found: {persona}")
+
+
+def description_of(text: str) -> str:
+    stripped = (line.strip() for line in text.splitlines())
+    found = next((line for line in stripped if line and not line.startswith("#")), "")
+    try:
+        scan(found)
+    except FoilError:
+        return ""
+    return found.replace("\t", " ")
+
+
+def read_description(template: dict[str, Any]) -> str:
+    try:
+        return description_of(persona_text(template))
+    except (FoilError, OSError, UnicodeDecodeError):
+        return ""
+
+
+def path_description(path: Path) -> str:
+    try:
+        text = "" if path.is_symlink() or not path.is_file() else path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+    return description_of(text)
+
+
+def preset_source(toplevel: Path, harness_id: str) -> str:
+    try:
+        load_preset(toplevel, harness_id)
+    except (FoilError, OSError, UnicodeDecodeError):
+        return "invalid"
+    user = foil_root(toplevel) / "harnesses" / f"{harness_id}.toml"
+    return "user" if user.is_file() else "builtin"
+
+
+def persona_stems(directory: Path) -> list[str]:
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    paths = directory.glob("*.md")
+    return sorted(path.stem for path in paths if path.is_file() and not path.is_symlink())
 
 
 def launch_command(
@@ -270,12 +310,21 @@ def installed_harness(toplevel: Path | None = None) -> str:
     return found[0]["id"]
 
 
-def write_default_templates(toplevel: Path) -> None:
+def write_default_templates(toplevel: Path) -> list[str]:
+    """Replace the three skills when their bytes differ. Return the names written."""
+
+    updated: list[str] = []
+    skills: list[tuple[str, Path, bytes]] = []
     for name in ("operator.md", "lead.md", "worker.md"):
         target = foil_root(toplevel) / "skills" / name
-        if not target.exists() and not target.is_symlink():
-            with suppress(FileExistsError):
-                create_exclusive(target, _builtin("skills", name).encode())
+        if target.is_symlink():
+            raise FoilError("foil: refusing symlink")
+        skills.append((name, target, _builtin("skills", name).encode()))
+    for name, target, payload in skills:
+        if target.is_file() and target.read_bytes() == payload:
+            continue
+        write_bytes(target, payload)
+        updated.append(name.removesuffix(".md"))
     directory = foil_root(toplevel) / "templates"
     personas = directory / "personas"
     for name in _packaged_persona_names():
@@ -290,7 +339,7 @@ def write_default_templates(toplevel: Path) -> None:
         and not (directory / f"{role}.toml").exists()
     ]
     if not missing:
-        return
+        return updated
     found, _skipped = installed_presets(toplevel)
     if not found:
         raise FoilError("foil: no harness installed")
@@ -309,3 +358,4 @@ def write_default_templates(toplevel: Path) -> None:
         if not target.exists() and not target.is_symlink():
             with suppress(FileExistsError):
                 create_exclusive(target, body.encode())
+    return updated

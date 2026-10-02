@@ -9,7 +9,7 @@ import pytest
 
 from foil.cli import main
 from foil.errors import FoilError
-from foil.lifecycle import init_project
+from foil.lifecycle import init_project, list_seats
 from foil.presets import template_permission
 from foil.roster_ops import (
     add_template,
@@ -47,9 +47,9 @@ def test_roster_list_shows_default_templates(
     """list_roster shows the three default templates."""
     list_roster(project, as_json=False)
     out = capsys.readouterr().out
-    assert "lead [" in out
-    assert "implementer [" in out
-    assert "reviewer [" in out
+    assert "\tbuiltin\tYou are the lead seat of this fleet." in out
+    assert "\tbuiltin\tYou make the change the task asks for," in out
+    assert "\tbuiltin\tYou check the change the lead names" in out
 
 
 def test_roster_list_shows_available_personas(
@@ -72,6 +72,10 @@ def test_roster_list_json_format(project: Path, capsys: pytest.CaptureFixture[st
     assert "personas" in data
     assert len(data["templates"]) == 3  # lead, implementer, reviewer
     assert isinstance(data["personas"], list)
+    assert data["personas"]
+    assert {"name", "description"} <= set(data["personas"][0])
+    assert data["templates"][0]["preset"] in {"builtin", "user", "invalid"}
+    assert "description" in data["templates"][0]
 
 
 def test_roster_show_displays_template(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -81,6 +85,8 @@ def test_roster_show_displays_template(project: Path, capsys: pytest.CaptureFixt
     assert "role: lead" in out
     assert "harness:" in out
     assert "permission:" in out
+    assert "preset: builtin" in out
+    assert "description: You are the lead seat of this fleet." in out
 
 
 def test_roster_show_json_format(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -92,6 +98,8 @@ def test_roster_show_json_format(project: Path, capsys: pytest.CaptureFixture[st
     assert "harness" in data
     assert "worktree" in data
     assert data["worktree"] is True  # implementer has worktree
+    assert data["preset"] == "builtin"
+    assert data["description"].startswith("You make the change the task asks for,")
 
 
 def test_roster_show_unknown_template_fails(project: Path) -> None:
@@ -358,7 +366,7 @@ def test_roster_cli_list(project: Path, capsys: pytest.CaptureFixture[str]) -> N
     code = main(["roster", "list"])
     assert code == 0
     out = capsys.readouterr().out
-    assert "lead [" in out
+    assert "\tbuiltin\tYou are the lead seat of this fleet." in out
 
 
 def test_roster_cli_show(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -693,4 +701,224 @@ def test_roster_authority_lead_can_list(
     code = main(["roster", "list"])
     assert code == 0
     out = capsys.readouterr().out
-    assert "lead [" in out
+    assert "\tbuiltin\tYou are the lead seat of this fleet." in out
+
+
+def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    templates = project / ".foil" / "templates"
+    (templates / "quiet.toml").write_text(
+        'harness = "fake"\npersona = "personas/missing.md"\nworktree = false\n'
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    (templates / "stranger.toml").write_text(
+        'harness = "no-such"\npersona = "personas/researcher.md"\nworktree = false\n'
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    harnesses = project / ".foil" / "harnesses"
+    (harnesses / "local.toml").write_text(
+        'id = "local"\ncommand = ["true"]\nsession_id = "none"\n\n'
+        "[permission]\nask = []\nauto = []\n",
+        encoding="utf-8",
+    )
+    (templates / "local.toml").write_text(
+        'harness = "local"\npersona = "personas/researcher.md"\nworktree = false\n'
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    (harnesses / "badbytes.toml").write_bytes(b"\xff\xfe")
+    (templates / "r2.toml").write_text(
+        'harness = "badbytes"\npersona = "personas/researcher.md"\nworktree = false\n'
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    locked = templates / "personas" / "locked.md"
+    locked.write_text("# Locked\n\nYou cannot read this.\n", encoding="utf-8")
+    locked.chmod(0)
+    (templates / "sealed.toml").write_text(
+        'harness = "fake"\npersona = "personas/locked.md"\nworktree = false\n'
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    try:
+        assert main(["roster", "list"]) == 0
+        out = capsys.readouterr().out
+        assert "quiet\tfake\tbuiltin\t\n" in out
+        assert "stranger\tno-such\tinvalid\tYou answer a bounded question with evidence" in out
+        assert "local\tlocal\tuser\tYou answer a bounded question with evidence" in out
+        assert "r2\tbadbytes\tinvalid\tYou answer a bounded question with evidence" in out
+        assert "sealed\tfake\tbuiltin\t\n" in out
+        assert main(["roster", "list", "--json"]) == 0
+        data = json.loads(capsys.readouterr().out)
+        by_role = {item["role"]: item for item in data["templates"]}
+        assert by_role["quiet"]["description"] == ""
+        assert by_role["quiet"]["preset"] == "builtin"
+        assert by_role["stranger"]["preset"] == "invalid"
+        assert by_role["local"]["preset"] == "user"
+        assert by_role["r2"]["preset"] == "invalid"
+        assert by_role["sealed"]["description"] == ""
+        assert main(["roster", "show", "r2"]) == 0
+        assert "preset: invalid" in capsys.readouterr().out
+        assert main(["roster", "show", "sealed"]) == 0
+        shown = capsys.readouterr().out
+        assert "description: \n" in shown or shown.endswith("description:\n")
+        registry = load_registry(project)
+        registry["seats"]["sealed-1"] = {
+            "name": "sealed-1",
+            "template": "sealed",
+            "harness": "fake",
+            "model": "",
+            "window_id": "",
+            "state": "",
+            "worktree": "",
+            "branch": "",
+            "session_id": "",
+        }
+        save_registry(project, registry)
+        assert main(["seat", "list"]) == 0
+        assert "sealed-1\tsealed\tdead\t\tfake\t\n" in capsys.readouterr().out
+    finally:
+        locked.chmod(0o644)
+
+
+def test_unreadable_utf8_persona_lists_with_an_empty_description(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    templates = project / ".foil" / "templates"
+    (templates / "personas" / "bad.md").write_bytes(b"# Bad\n\xff\xfe")
+    (templates / "personas" / "garbled.md").write_bytes(b"\xff")
+    (templates / "bad.toml").write_text(
+        'harness = "fake"\npersona = "personas/bad.md"\nworktree = false\n'
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    list_roster(project, as_json=False)
+    out = capsys.readouterr().out
+    assert "bad\tfake\tbuiltin\t\n" in out
+    assert "+ garbled\t\n" in out
+    registry = load_registry(project)
+    registry["seats"]["bad-1"] = {
+        "name": "bad-1",
+        "template": "bad",
+        "harness": "fake",
+        "model": "",
+        "window_id": "",
+        "state": "",
+        "worktree": "",
+        "branch": "",
+        "session_id": "",
+    }
+    save_registry(project, registry)
+    list_seats(project)
+    listed = capsys.readouterr().out
+    assert "bad-1\tbad\tdead\t\tfake\t\n" in listed
+
+
+def test_seat_list_keeps_an_unreadable_template(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    templates = project / ".foil" / "templates"
+    (templates / "garbled.toml").write_bytes(b"\xff\xfe")
+    locked = templates / "locked.toml"
+    locked.write_text(
+        'harness = "fake"\npersona = "personas/lead.md"\nworktree = false\npermission = "ask"\n',
+        encoding="utf-8",
+    )
+    locked.chmod(0)
+    registry = load_registry(project)
+    for name, template in (("lead-1", "lead"), ("garbled-1", "garbled"), ("locked-1", "locked")):
+        registry["seats"][name] = {
+            "name": name,
+            "template": template,
+            "harness": "fake",
+            "model": "",
+            "window_id": "",
+            "state": "",
+            "worktree": "",
+            "branch": "",
+            "session_id": "",
+        }
+    save_registry(project, registry)
+    try:
+        assert main(["seat", "list"]) == 0
+        out = capsys.readouterr().out
+        assert "lead-1\tlead\tdead\t\tfake\tYou are the lead seat" in out
+        assert "garbled-1\tgarbled\tdead\t\tfake\t\n" in out
+        assert "locked-1\tlocked\tdead\t\tfake\t\n" in out
+    finally:
+        locked.chmod(0o644)
+
+
+def test_a_credential_shaped_persona_line_is_never_printed(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    templates = project / ".foil" / "templates"
+    (templates / "personas" / "leaky.md").write_text("# Leaky\n\nghp_canary\n", encoding="utf-8")
+    (templates / "personas" / "loose.md").write_text("# Loose\n\nghp_canary\n", encoding="utf-8")
+    (templates / "leaky.toml").write_text(
+        'harness = "fake"\npersona = "personas/leaky.md"\nworktree = false\n'
+        'permission = "ask"\n',
+        encoding="utf-8",
+    )
+    registry = load_registry(project)
+    registry["seats"]["leaky-1"] = {
+        "name": "leaky-1",
+        "template": "leaky",
+        "harness": "fake",
+        "model": "",
+        "window_id": "",
+        "state": "",
+        "worktree": "",
+        "branch": "",
+        "session_id": "",
+    }
+    save_registry(project, registry)
+    outputs = []
+    for argv in (
+        ["roster", "list"],
+        ["roster", "list", "--json"],
+        ["roster", "show", "leaky"],
+        ["roster", "show", "leaky", "--json"],
+        ["seat", "list"],
+        ["seat", "list", "--json"],
+    ):
+        assert main(argv) == 0
+        outputs.append(capsys.readouterr().out)
+    assert all("ghp_canary" not in out for out in outputs)
+    listed = json.loads(outputs[1])
+    leaky = next(item for item in listed["templates"] if item["role"] == "leaky")
+    assert leaky["description"] == ""
+    assert {"name": "loose", "description": ""} in listed["personas"]
+    assert "leaky\tfake\tbuiltin\t\n" in outputs[0]
+    assert "+ loose\t\n" in outputs[0]
+    assert json.loads(outputs[3])["description"] == ""
+    seat = next(row for row in json.loads(outputs[5]) if row["name"] == "leaky-1")
+    assert seat["description"] == ""
+
+
+def test_a_persona_through_a_symlinked_directory_is_refused(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    outside = project / "outside"
+    outside.mkdir()
+    (outside / "x.md").write_text("# X\n\nOutside text.\n", encoding="utf-8")
+    templates = project / ".foil" / "templates"
+    (templates / "ext").symlink_to(outside, target_is_directory=True)
+    (templates / "ext.toml").write_text(
+        'harness = "fake"\npersona = "ext/x.md"\nworktree = false\npermission = "ask"\n',
+        encoding="utf-8",
+    )
+    from foil.presets import load_template, persona_text
+
+    with pytest.raises(FoilError, match="persona path must stay inside .foil/templates"):
+        persona_text(load_template(project, "ext"))
+    assert main(["roster", "list"]) == 0
+    listed = capsys.readouterr().out
+    assert "ext\tfake\tbuiltin\t\n" in listed
+    assert main(["roster", "show", "ext", "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["description"] == ""
+    assert "Outside text" not in listed

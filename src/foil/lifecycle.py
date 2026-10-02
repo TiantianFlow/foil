@@ -10,15 +10,19 @@ import sys
 import uuid
 from pathlib import Path
 
-from foil.board import ensure_board, send_mail
-from foil.errors import FoilError
+from foil import __version__
+from foil.board import ensure_board, write_mail
+from foil.errors import FoilError, shown
 from foil.presets import (
+    BUILTIN_IDS,
     expand_argv,
     installed_harness,
     installed_presets,
     load_preset,
     load_template,
+    persona_stems,
     persona_text,
+    read_description,
     write_default_templates,
 )
 from foil.project import (
@@ -45,12 +49,34 @@ def _names(items: list[str]) -> str:
     return ", ".join(items) if items else "none"
 
 
-def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: set[str]) -> None:
+def _overridden_builtins(toplevel: Path) -> list[str]:
+    directory = foil_root(toplevel) / "harnesses"
+    names: list[str] = []
+    for harness_id in BUILTIN_IDS:
+        if harness_id == "fake":
+            continue
+        path = directory / f"{harness_id}.toml"
+        if path.is_symlink() or not path.is_file():
+            continue
+        names.append(harness_id)
+    return names
+
+
+def _print_init_report(
+    toplevel: Path,
+    had_templates: set[str],
+    had_personas: set[str],
+    updated_skills: list[str],
+) -> None:
+    print(f"foil {__version__}")
     presets, skipped = installed_presets(toplevel)
     found = [item["id"] for item in presets]
     first = found[0] if found else ""
     second = found[1] if len(found) > 1 else first
     print(f"Installed harnesses, in id order (a tiebreak, not a ranking): {_names(found)}")
+    overridden = _overridden_builtins(toplevel)
+    if overridden:
+        print("Built-in presets overridden by .foil/harnesses: " + _names(overridden))
     for path, reason in skipped:
         print(f"Skipped {path}: {reason}")
     roles = ("lead", "implementer", "reviewer")
@@ -79,13 +105,8 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
             "Two ids can still run the same program or model; "
             "set model on a template to choose one."
         )
-    persona_dir = foil_root(toplevel) / "templates" / "personas"
-    personas = sorted(
-        path.stem
-        for path in persona_dir.glob("*.md")
-        if path.is_file() and not path.is_symlink()
-    )
     template_dir = foil_root(toplevel) / "templates"
+    personas = persona_stems(template_dir / "personas")
     template_names = {path.stem for path in template_dir.glob("*.toml")}
     available_personas = [name for name in personas if name not in template_names]
 
@@ -98,6 +119,10 @@ def _print_init_report(toplevel: Path, had_templates: set[str], had_personas: se
     permissions = ", ".join(
         f"{role} {load_template(toplevel, role)['permission']}" for role in roles
     )
+    if updated_skills:
+        print("Updated skills: " + _names(updated_skills))
+    else:
+        print("Skills: current")
     print(f"permission: {permissions}.")
     print(
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
@@ -133,17 +158,9 @@ def init_project(directory: str | None) -> None:
     persona_dir = template_dir / "personas"
     roles = ("lead", "implementer", "reviewer")
     had_templates = {role for role in roles if (template_dir / f"{role}.toml").exists()}
-    had_personas = {
-        path.stem
-        for path in persona_dir.glob("*.md")
-        if path.is_file() and not path.is_symlink()
-    }
-    write_default_templates(toplevel)
-    _print_init_report(toplevel, had_templates, had_personas)
-
-
-def _shown(value: str) -> str:
-    return value.replace("\n", "").replace("\r", "")
+    had_personas = set(persona_stems(persona_dir))
+    updated_skills = write_default_templates(toplevel)
+    _print_init_report(toplevel, had_templates, had_personas, updated_skills)
 
 
 def _seat_name(registry: dict, template_name: str, requested: str | None) -> str:
@@ -158,10 +175,10 @@ def _seat_name(registry: dict, template_name: str, requested: str | None) -> str
     if not seats:
         raise FoilError("foil: the first seat must be the lead")
     if requested == "lead" or (requested is not None and requested in seats):
-        raise FoilError(f"foil: seat '{_shown(requested or '')}' already exists")
+        raise FoilError(f"foil: seat '{shown(requested or '')}' already exists")
     if requested:
         if not SAFE_ID.fullmatch(requested):
-            raise FoilError(f"foil: invalid name '{_shown(requested)}'")
+            raise FoilError(f"foil: invalid name '{shown(requested)}'")
         return requested
     for number in range(1, 10001):
         candidate = f"{template_name}-{number}"
@@ -266,7 +283,9 @@ def _persona_line(template: dict) -> str:
     return persona_text(template).strip() or "none"
 
 
-def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> str:
+def _instruction(
+    root: Path, seat: str, template: dict, *, restarted: bool, task: Path | None = None
+) -> str:
     board = (foil_root(root) / "board").resolve()
     lessons = _accepted(root)
     learned = "none yet"
@@ -282,6 +301,7 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
         else "You have no worktree. Killing you will not delete your branch."
     )
     lines = [
+        f"Written by foil {__version__}.",
         f"You are seat `{seat}`. Lead is `lead`.",
         f"Board: `{board}`.",
         f"Identity is `FOIL_SEAT_ID` (yours is `{seat}`). You cannot change it with flags.",
@@ -305,6 +325,13 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
             "You were restarted. List your mail with `foil mail list` "
             "and read each file with `foil mail read`."
         )
+    elif task is not None:
+        lines.append(
+            f"Your task is `{task.resolve()}`. Read it first with `foil mail read`. "
+            "Older mail in your mailbox may be from an earlier goal."
+        )
+    else:
+        lines.append("Run `foil mail list` and read your mail before you act.")
     if lead:
         roster = []
         directory = foil_root(root) / "templates"
@@ -328,9 +355,11 @@ def _instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> s
     return "\n".join(lines) + "\n"
 
 
-def _write_instruction(root: Path, seat: str, template: dict, *, restarted: bool) -> Path:
+def _write_instruction(
+    root: Path, seat: str, template: dict, *, restarted: bool, task: Path | None = None
+) -> Path:
     path = (foil_root(root) / "run" / "instructions" / f"{seat}.md").resolve()
-    body = _instruction(root, seat, template, restarted=restarted).rstrip("\n")
+    body = _instruction(root, seat, template, restarted=restarted, task=task).rstrip("\n")
     text = f"{body}\nRe-read `{path}` whenever you are woken.\n"
     scan(text)
     write_bytes(path, text.encode())
@@ -362,9 +391,10 @@ def _open(
     session_id: str,
     native: bool,
     restarted: bool,
+    task: Path | None = None,
 ) -> str:
     cwd = Path(worktree) if worktree else root
-    instruction = _write_instruction(root, seat, template, restarted=restarted)
+    instruction = _write_instruction(root, seat, template, restarted=restarted, task=task)
     prompt = instruction.read_text(encoding="utf-8")
     argv = expand_argv(
         preset,
@@ -437,23 +467,30 @@ def spawn_seat(
     preset = load_preset(root, loaded["harness"])
     native = str(uuid.uuid4()) if preset["session_id"] == "generated" else ""
     worktree, branch = _worktree(root, seat) if loaded["worktree"] else ("", "")
-    window = _open(
-        root,
-        registry,
-        seat,
-        loaded,
-        preset,
-        worktree=worktree,
-        session_id=native,
-        native=False,
-        restarted=False,
-    )
+    mailed = write_mail(root, seat, task) if task is not None else None
+    try:
+        window = _open(
+            root,
+            registry,
+            seat,
+            loaded,
+            preset,
+            worktree=worktree,
+            session_id=native,
+            native=False,
+            restarted=False,
+            task=mailed,
+        )
+    except Exception:
+        _drop_mail(mailed)
+        raise
     record = {key: "" for key in SEAT_FIELDS}
     record.update(
         {
             "name": seat,
             "template": loaded["name"],
             "harness": loaded["harness"],
+            "model": loaded["model"],
             "window_id": window,
             "worktree": worktree,
             "branch": branch,
@@ -474,14 +511,18 @@ def spawn_seat(
                 window_id=window,
             )
         )
+        _drop_mail(mailed)
         raise
-    if task is not None:
-        send_mail(root, seat, task)
+
+
+def _drop_mail(path: Path | None) -> None:
+    if path is not None and not path.is_symlink() and path.is_file():
+        path.unlink()
 
 
 def _known(registry: dict, name: str | None) -> dict[str, str]:
     if not name or not SAFE_ID.fullmatch(name) or name not in registry["seats"]:
-        raise FoilError(f"foil: unknown seat '{_shown(name or '')}'")
+        raise FoilError(f"foil: unknown seat '{shown(name or '')}'")
     return registry["seats"][name]
 
 
@@ -536,6 +577,7 @@ def _restart(root: Path, registry: dict, name: str) -> None:
     record["state"] = ""
     record["session_id"] = session
     record["harness"] = loaded["harness"]
+    record["model"] = loaded["model"]
     try:
         save_registry(root, registry)
     except Exception:
@@ -579,20 +621,32 @@ def resume_seats(root: Path, name: str | None) -> int:
 
 def list_seats(root: Path, *, as_json: bool = False) -> None:
     registry = load_registry(root)
-    rows = [
-        {
-            "name": seat_name,
-            "template": record["template"],
-            "state": _state(registry, seat_name, record),
-            "worktree": record["worktree"],
-        }
-        for seat_name, record in sorted(registry["seats"].items())
-    ]
+    rows = []
+    for seat_name, record in sorted(registry["seats"].items()):
+        try:
+            description = read_description(load_template(root, record["template"]))
+        except (FoilError, OSError, UnicodeDecodeError):
+            description = ""
+        rows.append(
+            {
+                "name": seat_name,
+                "template": record["template"],
+                "state": _state(registry, seat_name, record),
+                "worktree": record["worktree"],
+                "harness": record.get("harness", ""),
+                "model": record.get("model", ""),
+                "description": description,
+            }
+        )
     if as_json:
         print(json.dumps(rows, sort_keys=True))
         return
     for row in rows:
-        print(f"{row['name']}\t{row['template']}\t{row['state']}\t{row['worktree']}")
+        launched = f"{row['harness']}/{row['model']}" if row["model"] else row["harness"]
+        print(
+            f"{row['name']}\t{row['template']}\t{row['state']}\t"
+            f"{row['worktree']}\t{launched}\t{row['description']}"
+        )
 
 
 def peek_seat(root: Path, name: str, *, lines: int) -> None:

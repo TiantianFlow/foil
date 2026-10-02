@@ -4,8 +4,8 @@
 场景 1，用真实的 `foil` 命令、真实的 tmux 和真实的 Git 手动重放了一遍，只有
 Agent 是脚本扮演的。
 
-下面每条命令之后展示的，都是那次运行中运筹自己的输出。不管用哪个 harness，这些
-输出都一样；每个 Agent 在自己窗口里显示的内容会不同，而且换成真实 Agent 后，
+下面每条命令之后展示的，都是那次运行中运筹自己的输出，只是把测试用的 harness 换成了
+第 2 步里的 harness；每个 Agent 在自己窗口里显示的内容会不同，而且换成真实 Agent 后，
 整个过程要花几分钟而不是几秒。想在运筹的代码仓库里重放这次脚本化运行：
 
 ```sh
@@ -27,12 +27,14 @@ foil init
 ```
 
 ```text
+foil 0.3.1
+...
 Read .foil/skills/operator.md and follow it. My goal: <goal>.
-permission = "ask"
 ```
 
-`foil init` 会写出 `.foil/`，并让它不出现在 `git status` 里。输出的第一行，是你稍后要
-粘贴给自己的 Agent 的那句话；第二行是主座模板的权限设置。
+`foil init` 会写出 `.foil/`，并让它不出现在 `git status` 里。输出的第一行是版本号，
+中间的报告（这里有删节）列出已安装的 harness 和 init 写了什么；最后一行是你稍后要
+粘贴给自己的 Agent 的那句话。
 
 ## 2. 给每个角色选 harness 和权限
 
@@ -68,7 +70,8 @@ foil seat spawn lead --task "Make the tests pass."
 ```
 
 运筹会打开一个名为 `lead` 的 tmux 窗口，启动主座的 CLI，并把完整指令作为第一条提示。
-任务会写成一封邮件文件，运筹再往主座窗口里打一行提醒：发件人和那封邮件的路径。
+任务会在 CLI 启动前写成一封邮件文件，指令里写明这个文件并让主座先读它。运筹不会往新窗口里
+打任何字，所以一开始就弹出信任或更新对话框的 CLI 会停在那里等着。
 
 ## 4. 看着团队组建起来
 
@@ -77,14 +80,15 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	alive	/path/to/your-repo/.foil/worktrees/implementer-1
-lead	lead	alive
-reviewer-1	reviewer	alive
+implementer-1	implementer	alive	/path/to/your-repo/.foil/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
+lead	lead	alive		claude	You are the lead seat of this fleet. Your role guidance is the lead skill.
+reviewer-1	reviewer	alive		claude	You check the change the lead names and report findings, and you do not fix them.
 ```
 
 主座派出了一个实现者和一个审查者。实现者在自己的 worktree 里、在分支
 `foil/implementer-1` 上工作。`alive` 表示这个席位的 tmux 窗口还在，并且带着这个
-席位的标记；它不表示 Agent 是否在忙。
+席位的标记；它不表示 Agent 是否在忙。最后两列是这个席位启动时用的 harness（模板设了
+model 时写成 `harness/model`），以及它的角色 persona 的第一行。
 
 ## 5. 看一眼席位内部
 
@@ -164,9 +168,9 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	killed	/path/to/your-repo/.foil/worktrees/implementer-1
-lead	lead	killed
-reviewer-1	reviewer	killed
+implementer-1	implementer	killed	/path/to/your-repo/.foil/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
+lead	lead	killed		claude	You are the lead seat of this fleet. Your role guidance is the lead skill.
+reviewer-1	reviewer	killed		claude	You check the change the lead names and report findings, and you do not fix them.
 ```
 
 所有窗口都已关闭。分支和 worktree 会保留，`git status` 里也看不到任何运筹的文件。

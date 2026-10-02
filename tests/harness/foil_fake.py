@@ -36,12 +36,14 @@ def _log(path: Path, message: str) -> None:
         handle.write(message.rstrip() + "\n")
 
 
-def _steps(path: Path) -> list[dict]:
+def _script(path: Path) -> tuple[list[dict], bool]:
     if not path.is_file():
-        return []
+        return [], False
     payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return [], False
     steps = payload.get("steps", [])
-    return steps if isinstance(steps, list) else []
+    return (steps if isinstance(steps, list) else []), payload.get("exit_on_input") is True
 
 
 def _write_target(foil: Path, relative: str) -> Path:
@@ -129,7 +131,7 @@ def main() -> int:
     fake = foil / "run" / "fake"
     log_path = fake / f"{seat}.log"
     handled_path = fake / f"{seat}.handled"
-    steps = _steps(fake / f"{seat}.json")
+    steps, exit_on_input = _script(fake / f"{seat}.json")
     handled = set()
     if handled_path.is_file():
         for line in handled_path.read_text(encoding="utf-8").splitlines():
@@ -152,6 +154,8 @@ def main() -> int:
         line = raw.strip()
         if not line:
             continue
+        if exit_on_input:
+            return 0
         print(line, flush=True)
         _path = line.split(" ", 1)[1] if " " in line else ""
         if not _path:

@@ -12,6 +12,7 @@ SKILLS = ROOT / "skills"
 
 FLAGS = {
     ("init",): set(),
+    ("--version",): set(),
     ("seat", "spawn"): {"--name", "--task"},
     ("seat", "kill"): {"--all"},
     ("seat", "resume"): set(),
@@ -35,6 +36,7 @@ FLAGS = {
 
 ROLE_COMMANDS = {
     "operator.md": {
+        ("--version",),
         ("init",),
         ("seat", "spawn"),
         ("seat", "list"),

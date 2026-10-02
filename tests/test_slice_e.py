@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from foil import __version__
 from foil.cli import main
 from foil.lifecycle import _git
 from foil.project import foil_root
@@ -73,6 +74,7 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert main(["seat", "spawn", "lead"]) == 0
     text = (foil_root(repo) / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
     board = foil_root(repo) / "board"
+    assert f"Written by foil {__version__}." in text
     assert "You are seat `lead`. Lead is `lead`." in text
     assert f"Board: `{board.resolve()}`." in text
     assert "FOIL_SEAT_ID" in text
@@ -100,6 +102,7 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert "- implementer: harness claude, worktree yes" in text
     assert "- reviewer: harness codex, worktree no" in text
     assert "You are the lead seat of this fleet." in text
+    assert "Run `foil mail list` and read your mail before you act." in text
     assert "none yet" not in text
 
     second = _lesson(capsys, "re-read the diff")
@@ -308,6 +311,30 @@ def test_kill_authority_and_kill_all(
     assert capsys.readouterr().err == "foil: unknown seat 'missing'\n"
 
 
+def test_respawned_lead_is_pointed_at_the_new_task_mail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    _stop(monkeypatch)
+    mailbox = foil_root(repo) / "board" / "mail" / "lead"
+    instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
+    assert main(["seat", "spawn", "lead", "--task", "first goal"]) == 0
+    assert main(["seat", "kill", "--all"]) == 0
+    assert main(["seat", "spawn", "lead", "--task", "second goal"]) == 0
+    assert load_registry(repo)["seats"]["lead"]["state"] != "killed"
+    mails = sorted(mailbox.glob("*.md"))
+    assert len(mails) == 2
+    bodies = {path.read_text(encoding="utf-8").rstrip(): path for path in mails}
+    old = next(path for body, path in bodies.items() if body.endswith("first goal"))
+    new = next(path for body, path in bodies.items() if body.endswith("second goal"))
+    text = instruction.read_text(encoding="utf-8")
+    assert f"Your task is `{new.resolve()}`. Read it first" in text
+    assert str(old.resolve()) not in text
+    assert "may be from an earlier goal" in text
+    assert "Run `foil mail list` and read your mail before you act." not in text
+
+
 def test_list_and_peek_report_owned_facts_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -323,12 +350,16 @@ def test_list_and_peek_report_owned_facts_only(
     _alive(monkeypatch, {lead})
     assert main(["seat", "list"]) == 0
     listed = capsys.readouterr().out
-    assert "lead\tlead\talive\t\n" in listed
-    assert f"implementer-1\timplementer\tdead\t{worker['worktree']}\n" in listed
+    lead_row = load_registry(repo)["seats"]["lead"]
+    assert f"lead\tlead\talive\t\t{lead_row['harness']}\t" in listed
+    assert (
+        f"implementer-1\timplementer\tdead\t{worker['worktree']}\t{worker['harness']}\t" in listed
+    )
     assert "busy" not in listed and "window" not in listed
     assert main(["seat", "list", "--json"]) == 0
     rows = json.loads(capsys.readouterr().out)
-    assert [set(row) for row in rows] == [{"name", "state", "template", "worktree"}] * 2
+    fields = {"description", "harness", "model", "name", "state", "template", "worktree"}
+    assert [set(row) for row in rows] == [fields, fields]
     assert main(["seat", "peek", "lead"]) == 0
     assert capsys.readouterr().out == "pane-text\n"
     assert seen == [(lead, 40)]

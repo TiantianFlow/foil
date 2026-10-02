@@ -9,9 +9,8 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
-from foil.tmux import TmuxController
+from foil.tmux import TmuxController, TmuxTarget
 from tests.test_slice_b import _mail, _repo, _seed
-from tests.test_spawn import _launch
 
 
 def _keys(monkeypatch: pytest.MonkeyPatch, code: int = 0) -> list[list[str]]:
@@ -69,19 +68,29 @@ def test_missing_window_keeps_the_mail(
     assert "hello" not in calls[1][-1]
 
 
-def test_spawn_task_nudges_with_the_same_line(
+def test_spawn_task_writes_mail_before_launch_and_types_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
-    _launch(monkeypatch)
     calls = _keys(monkeypatch)
+    ready: list[str] = []
+
+    def launch(self: TmuxController, **kwargs: object) -> object:
+        del self
+        mail = _mail(repo, "lead")
+        assert mail, "task mail exists before the window"
+        ready.append(mail[0].read_text(encoding="utf-8"))
+        return TmuxTarget(
+            session_name=str(kwargs["session_name"]),
+            window_name=str(kwargs["window_name"]),
+            session_id="$1",
+            window_id="@21",
+        )
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.launch", launch)
     assert main(["seat", "spawn", "lead", "--task", "ship it"]) == 0
-    mail = _mail(repo, "lead")[0]
-    assert mail.read_text(encoding="utf-8").endswith("ship it\n")
-    assert calls[0][:4] == ["display-message", "-p", "-t", "@21"]
-    assert calls[1] == ["send-keys", "-l", "-t", "@21", "--", f"user {mail.resolve()}"]
-    assert "ship it" not in calls[1][-1]
-    assert calls[2] == ["send-keys", "-t", "@21", "Enter"]
+    assert ready[0].endswith("ship it\n")
+    assert all(call[0] != "send-keys" for call in calls)
 
 
 def test_send_does_not_type_into_a_foreign_window(

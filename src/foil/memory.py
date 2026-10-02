@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from foil.errors import FoilError
+from foil.errors import FoilError, shown
 from foil.project import foil_root
 from foil.store import SAFE_ID, actor, exclusive_lock, private_dir, read_json, scan, write_json
 
@@ -17,22 +17,18 @@ def _lock(toplevel: Path) -> Path:
     return foil_root(toplevel) / "run" / "memory.lock"
 
 
-def _shown(lesson_id: str) -> str:
-    return lesson_id.replace("\n", "").replace("\r", "")
-
-
 def _path(toplevel: Path, lesson_id: str) -> Path:
     if not SAFE_ID.fullmatch(lesson_id):
-        raise FoilError(f"foil: unknown lesson '{_shown(lesson_id)}'")
+        raise FoilError(f"foil: unknown lesson '{shown(lesson_id)}'")
     return foil_root(toplevel) / "memory" / f"{lesson_id}.json"
 
 
 def _load(path: Path, lesson_id: str) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
-        raise FoilError(f"foil: unknown lesson '{_shown(lesson_id)}'")
+        raise FoilError(f"foil: unknown lesson '{shown(lesson_id)}'")
     lesson = read_json(path)
     if lesson.get("id") != lesson_id:
-        raise FoilError(f"foil: unknown lesson '{_shown(lesson_id)}'")
+        raise FoilError(f"foil: unknown lesson '{shown(lesson_id)}'")
     return lesson
 
 
@@ -68,7 +64,7 @@ def _review(toplevel: Path, lesson_id: str, state: str) -> None:
     with exclusive_lock(_lock(toplevel)):
         lesson = _load(path, lesson_id)
         if lesson.get("state") != "proposed":
-            raise FoilError(f"foil: lesson '{_shown(lesson_id)}' is not proposed")
+            raise FoilError(f"foil: lesson '{shown(lesson_id)}' is not proposed")
         replaces = lesson.get("replaces") or ""
         target_path = None
         target = None

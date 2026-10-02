@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from foil import __version__
 from foil.cli import main
 from foil.project import EXCLUDE_PATTERN, SKELETON, foil_root
 
@@ -102,6 +103,8 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     assert main(["init"]) == 0
     first = capsys.readouterr()
     assert first.err == ""
+    assert first.out.startswith(f"foil {__version__}\n")
+    assert "Updated skills: operator, lead, worker" in first.out
     assert pointer in first.out
     assert ask in first.out
     assert rule in first.out
@@ -125,6 +128,8 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     second = capsys.readouterr()
     assert "Left templates: lead, implementer, reviewer" in second.out
     assert "Wrote templates: none" in second.out
+    assert second.out.startswith(f"foil {__version__}\n")
+    assert "Skills: current" in second.out
     assert ask in second.out
     assert lead.read_text(encoding="utf-8") == original
 

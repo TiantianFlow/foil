@@ -41,7 +41,7 @@ foil memory list
 foil memory list --json
 ```
 
-`foil send` writes mail to the lead and nudges that pane. The body is not typed into the pane. `foil seat list` shows name, template, state, and worktree. `foil seat peek` prints the raw pane tail. Do not treat that text as a status report. `foil memory add` proposes a lesson and prints its id. `foil memory list` shows lessons the lead has already accepted.
+`foil send` writes mail to the lead and nudges that pane. The body is not typed into the pane. `foil seat list` shows name, template, state, worktree, the harness and model recorded at launch, and the template's current description. `foil seat peek` prints the raw pane tail. Do not treat that text as a status report. `foil memory add` proposes a lesson and prints its id. `foil memory list` shows lessons the lead has already accepted.
 
 ## What you may not do
 

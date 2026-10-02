@@ -24,6 +24,7 @@ SEAT_FIELDS = (
     "name",
     "template",
     "harness",
+    "model",
     "window_id",
     "state",
     "worktree",
