@@ -31,6 +31,10 @@ foil seat resume implementer-1
 foil seat resume
 ```
 
+After you spawn or resume a seat, wait for its first mail or board file. If none comes in a few minutes, peek that seat. Do not answer a dialog. Set `board/status.md` to `state: blocked` and add a question that names the seat, its harness, and what the pane shows. Send that seat nothing until the human answers. Then kill it and spawn a new one.
+
+`foil seat list` adds the harness and model recorded at launch, and the template's current description.
+
 See the fleet and a pane without interpreting the pane:
 
 ```text

@@ -11,14 +11,20 @@ You are the human's harness. You start the fleet, check in, and relay. You never
 
 You perform onboarding. The human's part was one sentence. You install Foil, run `init`, read the report, set the roster, run the first-run check, and send the goal. You do not plan the goal, staff workers, integrate branches, or review the result.
 
-1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, ask the human to run each harness once in this repository and accept its folder-trust prompt as well as its first-run and opt-in dialogs, because trust is per folder, or to confirm that is already done. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. A dialog seen in `foil seat peek` is reported to the human, not answered by you.
-2. Install Foil if it is not installed, then in the repository run:
+1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, run `foil roster list`, name each distinct harness id the roster uses, and ask the human to run each of those once in the repository root and accept its folder-trust, update, first-run, and opt-in dialogs, or to confirm that is done. Trust is per harness per repository, and a seat worktree inherits it. Ask again when a role moves to a harness id that was not on that list. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. A dialog seen in `foil seat peek` is reported to the human, not answered by you.
+2. Install or update Foil. Run the install line even when foil is already installed; running it again updates it:
+
+```text
+uv tool install "git+https://github.com/TiantianFlow/foil.git"
+```
+
+Then check that `foil --version` prints the version you expect and that `command -v foil` is the path uv printed. Then, in the repository, run:
 
 ```text
 foil init
 ```
 
-Read the whole report. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, available personas without templates, and the permission sentence. Running it again does not overwrite a template or a persona.
+Read the whole report. The first line is the version. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, `Updated skills: …` or `Skills: current`, a built-in preset overridden by `.foil/harnesses`, available personas without templates, and the permission sentence. Running it again overwrites no template, persona, or preset. It replaces the three skills when their bytes differ from this version.
 
 After first init, run `foil roster list` to see all templates and available personas. Review with the human:
 
@@ -28,7 +34,7 @@ After first init, run `foil roster list` to see all templates and available pers
 
 Add roles as needed with `foil roster add <role>`. Update harness or model with `foil roster update <role> harness=<id>` or `foil roster update <role> model=<model>`.
 
-3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `ask` is the default: that seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With either setting, peek a new seat for an approval prompt.
+3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `ask` is the default: that seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`.
 4. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`. Do not copy skill text into the task.
 5. Check that the lead is working. Spawn the lead once, with this task, then wait a few minutes:
 
@@ -36,7 +42,7 @@ Add roles as needed with `foil roster add <role>`. Update harness or model with 
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-If `board/status.md` does not appear, peek the lead and tell the human whether the pane shows a login prompt, a folder-trust prompt, an approval prompt, or an error. You report that. You do not fix the project. Peek the same way after a seat is resumed, not only after it is spawned.
+Spawn writes the task as mail and types nothing into the new pane. A seat at a startup dialog waits there. If `board/status.md` is already there from an earlier goal, note its `updated` value before you spawn. The check passes only when `updated` changes and the file shows `state: done`. If `board/status.md` does not appear or `updated` does not change, peek the lead and tell the human whether the pane shows a login prompt, a folder-trust prompt, an update dialog, an approval prompt, or an error. You report that. You do not answer it, and you do not fix the project.
 
 ```text
 foil seat peek lead
@@ -54,7 +60,7 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 ## Role templates
 
-A template is a TOML file in `.foil/templates/`. The file name is the role. The five fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. `init` copies every packaged persona there and writes only the three default templates. It overwrites nothing: re-running it after an edit changes no file.
+A template is a TOML file in `.foil/templates/`. The file name is the role. The five fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the three skills when their bytes differ from this version.
 
 View and modify templates with the roster commands:
 
@@ -97,10 +103,10 @@ foil seat list
 foil seat peek lead
 ```
 
-`foil seat list` prints each seat's name, template, state, and worktree. `foil seat list --json` prints those same facts. `foil seat peek lead` prints the raw tail of the lead's pane. `foil seat peek lead --lines 40` is the default. Do not decide from the pane whether the lead is busy, idle, or done.
+`foil seat list` prints each seat's name, template, state, worktree, the harness and model recorded at launch, and the template's current description. `foil seat list --json` prints those same facts. `foil seat peek lead` prints the raw tail of the lead's pane. `foil seat peek lead --lines 40` is the default. Do not decide from the pane whether the lead is busy, idle, or done.
 
 Read the lead's `status.md` in the Foil folder at `board/status.md`. That file is the lead's own report. Its contract is `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`.
-After each check-in, and whenever the human asks for status, tell the human in a few lines: `state` and `updated` as the file says them; how many checklist items are ticked out of the total, and the open items as written; any `questions`; and which seats `foil seat list` shows alive, dead, or killed. Quote the file. Do not guess progress from the pane. If `updated` has not changed over several check-ins, nudge the lead as below.
+After each check-in, and whenever the human asks for status, tell the human in a few lines: `state` and `updated` as the file says them; how many checklist items are ticked out of the total, and the open items as written; any `questions`; and which seats `foil seat list` shows alive, dead, or killed. Quote the file. Do not guess progress from the pane. A blocked worker is named in `questions`. Do not peek workers to find one. If `updated` has not changed over several check-ins, nudge the lead as below.
 
 ## Relay and nudge
 
@@ -139,6 +145,18 @@ foil seat kill --all
 ```
 
 That stops every seat. It does not delete branches or worktrees.
+
+## Upgrading
+
+One foil install serves every project on this machine. Updating it changes the command under every live seat in every fleet. Each seat keeps the instructions it was started with until it is spawned again. Upgrade between goals:
+
+1. `foil seat kill --all` once the lead reports `state: done`.
+2. Run the install line, and check `foil --version`.
+3. Run `foil init` and read the report. It says which skills it updated.
+4. Re-copy any user-level copy of this skill.
+5. Note `updated` in `board/status.md`, then spawn the lead as in the first-run check. The previous goal's file already says `state: done`, so wait until `updated` changes.
+
+After `foil seat kill --all`, either case can occur, so check. Run `tmux ls`. If it lists any session, a server is running: a variable a harness preset names in `env` comes from that server. Set it with `tmux set-environment -g NAME VALUE` before you spawn. If it says no server is running, the next spawn starts a server from your shell.
 
 ## Adding a role
 

@@ -550,27 +550,84 @@ def test_init_rerun_with_no_harness_keeps_templates(
     assert after == before
 
 
-def test_init_writes_skills_and_leaves_edits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_init_refreshes_skills_and_leaves_templates_and_personas(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = tmp_path / "project"
     repo.mkdir()
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
+    capsys.readouterr()
     root = foil_root(repo) / "skills"
+    packaged: dict[str, bytes] = {}
     for name in ("operator.md", "lead.md", "worker.md"):
-        packaged = files("foil").joinpath("defaults", "skills", name).read_bytes()
+        packaged[name] = files("foil").joinpath("defaults", "skills", name).read_bytes()
         written = (root / name).read_bytes()
-        assert written == packaged
-        for copy in (packaged.decode(), written.decode()):
+        assert written == packaged[name]
+        for copy in (packaged[name].decode(), written.decode()):
             header = copy.split("---", 2)[1]
             assert "name:" in header
             assert "description:" in header
     edited = root / "operator.md"
     edited.write_text("edited operator\n", encoding="utf-8")
+    persona = foil_root(repo) / "templates" / "personas" / "lead.md"
+    persona.write_text("edited persona\n", encoding="utf-8")
+    template = foil_root(repo) / "templates" / "lead.toml"
+    template_bytes = template.read_bytes()
     assert main(["init"]) == 0
-    assert edited.read_text(encoding="utf-8") == "edited operator\n"
+    report = capsys.readouterr().out
+    assert "Updated skills: operator" in report
+    assert edited.read_bytes() == packaged["operator.md"]
+    assert (root / "lead.md").read_bytes() == packaged["lead.md"]
+    assert (root / "worker.md").read_bytes() == packaged["worker.md"]
+    assert persona.read_text(encoding="utf-8") == "edited persona\n"
+    assert template.read_bytes() == template_bytes
+    assert main(["init"]) == 0
+    assert "Skills: current" in capsys.readouterr().out
+
+
+def test_init_refuses_a_skill_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    outside = tmp_path / "outside.md"
+    outside.write_text("keep\n", encoding="utf-8")
+    skill = foil_root(repo) / "skills" / "worker.md"
+    skill.unlink()
+    skill.symlink_to(outside)
+    assert main(["init"]) == 1
+    assert capsys.readouterr().err == "foil: refusing symlink\n"
+    assert skill.is_symlink()
+    assert outside.read_text(encoding="utf-8") == "keep\n"
+
+
+def test_init_reports_an_overridden_builtin_and_leaves_the_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    harnesses = foil_root(repo) / "harnesses"
+    preset = files("foil").joinpath("defaults", "harnesses", "claude.toml").read_bytes()
+    (harnesses / "claude.toml").write_bytes(preset)
+    (harnesses / "grok.toml").write_bytes(
+        files("foil").joinpath("defaults", "harnesses", "grok.toml").read_bytes()
+    )
+    (harnesses / "fake.toml").write_text('id = "fake"\n', encoding="utf-8")
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert "Built-in presets overridden by .foil/harnesses: claude, grok\n" in report
+    assert "fake" not in report.split("Built-in presets overridden", 1)[1].split("\n", 1)[0]
+    assert (harnesses / "claude.toml").read_bytes() == preset
 
 
 def test_lead_persona_does_not_take_the_operator_role() -> None:
@@ -590,3 +647,15 @@ def test_lead_persona_does_not_take_the_operator_role() -> None:
         text = (personas / name).read_text(encoding="utf-8").lower()
         for word in ("foil send", "foil seat", "foil memory", "board/mail", "board/notes"):
             assert word not in text
+    for path in sorted(personas.glob("*.md")):
+        text = path.read_text(encoding="utf-8").lower()
+        assert "foil " not in text
+        assert "board/" not in text
+
+
+def test_reviewer_persona_does_not_edit_files() -> None:
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "src" / "foil" / "defaults" / "personas" / "reviewer.md").read_text(
+        encoding="utf-8"
+    )
+    assert "do not edit files" in text.lower()

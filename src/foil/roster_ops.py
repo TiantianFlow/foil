@@ -5,17 +5,22 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from foil.errors import FoilError
-from foil.presets import installed_harness, load_preset, load_template, template_permission
+from foil.errors import FoilError, shown
+from foil.presets import (
+    installed_harness,
+    load_preset,
+    load_template,
+    path_description,
+    persona_stems,
+    preset_source,
+    read_description,
+    template_permission,
+)
 from foil.project import foil_root
 from foil.store import SAFE_ID, create_exclusive, load_registry, write_bytes
 
 _PROTECTED_ROLES = {"lead", "implementer", "reviewer"}
 _TEMPLATE_FIELDS = {"harness", "model", "persona", "worktree", "permission"}
-
-
-def _shown(value: str) -> str:
-    return value.replace("\n", "").replace("\r", "")
 
 
 def _refuse_symlink(path: Path) -> None:
@@ -82,14 +87,6 @@ def _in_use(toplevel: Path, role: str) -> None:
             raise FoilError(f"foil: template '{role}' is still in use")
 
 
-def _packaged_persona_names(toplevel: Path) -> list[str]:
-    """List available packaged personas from templates/personas directory."""
-    personas_dir = foil_root(toplevel) / "templates" / "personas"
-    if not personas_dir.is_dir():
-        return []
-    return sorted(item.name[:-3] for item in personas_dir.glob("*.md"))
-
-
 def _template_names(toplevel: Path) -> list[str]:
     """List existing template names."""
     templates_dir = foil_root(toplevel) / "templates"
@@ -98,53 +95,58 @@ def _template_names(toplevel: Path) -> list[str]:
     return sorted(path.stem for path in templates_dir.glob("*.toml"))
 
 
+def _listed(toplevel: Path, name: str) -> dict | None:
+    try:
+        template = load_template(toplevel, name)
+    except FoilError:
+        return None
+    harness = str(template["harness"])
+    return {
+        "role": name,
+        "harness": harness,
+        "model": template.get("model", ""),
+        "worktree": template.get("worktree", False),
+        "permission": template.get("permission", "ask"),
+        "preset": preset_source(toplevel, harness),
+        "description": read_description(template),
+    }
+
+
 def list_roster(toplevel: Path, *, as_json: bool = False) -> None:
     """List all templates and available personas."""
-    templates = _template_names(toplevel)
-    personas = _packaged_persona_names(toplevel)
-
-    # Personas that don't have templates
-    available_personas = [p for p in personas if p not in templates]
-
+    names = _template_names(toplevel)
+    persona_dir = foil_root(toplevel) / "templates" / "personas"
+    available = [
+        {"name": item, "description": path_description(persona_dir / f"{item}.md")}
+        for item in persona_stems(persona_dir)
+        if item not in names
+    ]
+    loaded = [(name, _listed(toplevel, name)) for name in names]
     if as_json:
-        template_data = []
-        for name in templates:
-            try:
-                template = load_template(toplevel, name)
-                template_data.append({
-                    "role": name,
-                    "harness": template["harness"],
-                    "model": template.get("model", ""),
-                    "worktree": template.get("worktree", False),
-                    "permission": template.get("permission", "ask"),
-                })
-            except FoilError:
-                template_data.append({"role": name, "error": "invalid template"})
-
-        output = {
-            "templates": template_data,
-            "personas": available_personas,
-        }
-        print(json.dumps(output, indent=2))
-    else:
-        for name in templates:
-            try:
-                template = load_template(toplevel, name)
-                model = f"/{template['model']}" if template.get("model") else ""
-                print(f"{name} [{template['harness']}{model}]")
-            except FoilError:
-                print(f"{name} [invalid]")
-
-        for name in available_personas:
-            print(f"+ {name}")
+        missing = {"error": "invalid template", "preset": "invalid", "description": ""}
+        templates = [
+            row if row is not None else {"role": name, **missing} for name, row in loaded
+        ]
+        print(json.dumps({"templates": templates, "personas": available}, indent=2))
+        return
+    for name, row in loaded:
+        if row is None:
+            print(f"{name}\tinvalid\tinvalid\t")
+            continue
+        model = f"/{row['model']}" if row["model"] else ""
+        print(f"{name}\t{row['harness']}{model}\t{row['preset']}\t{row['description']}")
+    for person in available:
+        print(f"+ {person['name']}\t{person['description']}")
 
 
 def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
     """Show one template's configuration."""
     if not SAFE_ID.fullmatch(role):
-        raise FoilError(f"foil: unknown template '{_shown(role)}'")
+        raise FoilError(f"foil: unknown template '{shown(role)}'")
 
     template = load_template(toplevel, role)
+    preset = preset_source(toplevel, str(template["harness"]))
+    description = read_description(template)
 
     if as_json:
         output = {
@@ -154,6 +156,8 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
             "persona": template.get("persona", ""),
             "worktree": template.get("worktree", False),
             "permission": template.get("permission", "ask"),
+            "preset": preset,
+            "description": description,
         }
         print(json.dumps(output, indent=2))
     else:
@@ -165,6 +169,8 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
             print(f"persona: {template['persona']}")
         print(f"worktree: {template.get('worktree', False)}")
         print(f"permission: {template.get('permission', 'ask')}")
+        print(f"preset: {preset}")
+        print(f"description: {description}")
 
 
 def add_template(
@@ -176,7 +182,7 @@ def add_template(
 ) -> None:
     """Create a template from a TOML file or from the persona of the same name."""
     if not SAFE_ID.fullmatch(role):
-        raise FoilError(f"foil: invalid role name '{_shown(role)}'")
+        raise FoilError(f"foil: invalid role name '{shown(role)}'")
 
     templates_dir = foil_root(toplevel) / "templates"
     template_path = templates_dir / f"{role}.toml"
@@ -187,7 +193,7 @@ def add_template(
     if from_file:
         source = Path(from_file)
         if not source.is_file():
-            raise FoilError(f"foil: file not found: {_shown(from_file)}")
+            raise FoilError(f"foil: file not found: {shown(from_file)}")
         content = source.read_text(encoding="utf-8")
         if in_fleet and template_permission(content) != "ask":
             raise FoilError("foil: permission is outside the fleet only")
@@ -231,11 +237,11 @@ def update_template(
 ) -> None:
     """Update one field in a template."""
     if not SAFE_ID.fullmatch(role):
-        raise FoilError(f"foil: unknown template '{_shown(role)}'")
+        raise FoilError(f"foil: unknown template '{shown(role)}'")
 
     if field not in _TEMPLATE_FIELDS:
         fields = ", ".join(sorted(_TEMPLATE_FIELDS))
-        raise FoilError(f"foil: invalid field '{_shown(field)}'. Valid fields: {fields}")
+        raise FoilError(f"foil: invalid field '{shown(field)}'. Valid fields: {fields}")
 
     # Load existing template to validate it exists
     template = load_template(toplevel, role)
@@ -286,7 +292,7 @@ def update_template(
 def remove_template(toplevel: Path, role: str) -> None:
     """Delete a template (fails for protected roles)."""
     if not SAFE_ID.fullmatch(role):
-        raise FoilError(f"foil: unknown template '{_shown(role)}'")
+        raise FoilError(f"foil: unknown template '{shown(role)}'")
 
     if role in _PROTECTED_ROLES:
         protected = ", ".join(sorted(_PROTECTED_ROLES))

@@ -4,8 +4,8 @@ This is one real run, from `foil init` to a merged fix. It is the run the
 end-to-end suite checks as scenario 1, replayed by hand with the real
 `foil` command, real tmux, and real Git. Only the agents were scripted.
 
-Everything shown under a command below is Foil's own output from that run.
-It looks the same whatever harness you use. What each agent shows in its
+Everything shown under a command below is Foil's own output from that run,
+with the harnesses from step 2 in place of the test harness. What each agent shows in its
 own window will differ, and with real agents the run takes minutes rather
 than seconds. To replay the scripted run from a Foil checkout:
 
@@ -29,13 +29,15 @@ foil init
 ```
 
 ```text
+foil 0.3.1
+...
 Read .foil/skills/operator.md and follow it. My goal: <goal>.
-permission = "ask"
 ```
 
 `foil init` writes `.foil/` and keeps it out of `git status`. The first
-line of its output is what you paste into your own agent later. The second
-is the lead template's permission.
+line of its output is the version. The report in between (trimmed here)
+names the installed harnesses and what init wrote. The last line is what
+you paste into your own agent later.
 
 ## 2. Choose a harness and a permission for each role
 
@@ -75,9 +77,10 @@ foil seat spawn lead --task "Make the tests pass."
 ```
 
 Foil opens a tmux window named `lead` and starts the lead's CLI with its
-full instructions as the first prompt. The task becomes a mail file, and
-Foil types one nudge line into the lead's window: the sender and the path
-of that file.
+full instructions as the first prompt. The task becomes a mail file before
+the CLI starts, and the instructions name that file and tell the lead to
+read it first. Foil types nothing into the new window, so a CLI that opens
+on a trust or update dialog waits there.
 
 ## 4. Watch the team form
 
@@ -86,15 +89,17 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	alive	/path/to/your-repo/.foil/worktrees/implementer-1
-lead	lead	alive
-reviewer-1	reviewer	alive
+implementer-1	implementer	alive	/path/to/your-repo/.foil/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
+lead	lead	alive		claude	You are the lead seat of this fleet. Your role guidance is the lead skill.
+reviewer-1	reviewer	alive		claude	You check the change the lead names and report findings, and you do not fix them.
 ```
 
 The lead spawned an implementer and a reviewer. The implementer works in
 its own worktree on branch `foil/implementer-1`. `alive` means the seat's
 tmux window still exists and carries that seat's markers. It does not say
-whether the agent is busy.
+whether the agent is busy. The last two columns are the harness the seat
+was launched with, written `harness/model` when its template sets a model,
+and the first line of its role's persona.
 
 ## 5. Look inside a seat
 
@@ -176,9 +181,9 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	killed	/path/to/your-repo/.foil/worktrees/implementer-1
-lead	lead	killed
-reviewer-1	reviewer	killed
+implementer-1	implementer	killed	/path/to/your-repo/.foil/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
+lead	lead	killed		claude	You are the lead seat of this fleet. Your role guidance is the lead skill.
+reviewer-1	reviewer	killed		claude	You check the change the lead names and report findings, and you do not fix them.
 ```
 
 Every window is closed. Branches and worktrees stay, and nothing from

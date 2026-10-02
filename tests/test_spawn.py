@@ -398,6 +398,41 @@ def test_launch_failure_is_one_line(
     assert not (repo.parent / "project.foil").exists()
 
 
+def test_failed_launch_removes_the_task_mail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+
+    def boom(self: TmuxController, **kwargs: object) -> TmuxTarget:
+        del self, kwargs
+        raise TmuxError("hidden")
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.launch", boom)
+    assert main(["seat", "spawn", "lead", "--task", "ship it"]) == 1
+    assert capsys.readouterr().err == "foil: could not launch seat\n"
+    assert _mail(repo, "lead") == []
+    assert "lead" not in load_registry(repo)["seats"]
+
+
+def test_spawn_records_the_model_and_an_older_registry_still_loads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    template = foil_root(repo) / "templates" / "lead.toml"
+    original = template.read_text(encoding="utf-8")
+    template.write_text(original + 'model = "demo-model"\n', encoding="utf-8")
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert load_registry(repo)["seats"]["lead"]["model"] == "demo-model"
+    path = foil_root(repo) / "run" / "registry.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    del payload["seats"]["lead"]["model"]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    assert load_registry(repo)["seats"]["lead"]["model"] == ""
+    assert main(["seat", "list"]) == 0
+    assert "demo-model" not in capsys.readouterr().out
+
+
 def test_worktree_paths_outside_the_foil_folder_are_refused(tmp_path: Path) -> None:
     project = tmp_path / "project"
     allowed = project / ".foil" / "worktrees" / "implementer-1"

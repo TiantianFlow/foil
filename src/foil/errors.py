@@ -40,6 +40,10 @@ def die(message: str) -> None:
     raise FoilError(message if message.startswith("foil:") else f"foil: {message}")
 
 
+def shown(value: str) -> str:
+    return value.replace("\n", "").replace("\r", "")
+
+
 def assert_no_secret(value: Any) -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
