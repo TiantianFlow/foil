@@ -132,7 +132,54 @@ Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foi
 - `skills/operator.md`, `skills/lead.md`, and `skills/worker.md` — this version's three skills. `init` replaces one when its bytes differ, atomically, and refuses a symlink. The report says `Updated skills: …` or `Skills: current`. The lead and worker skills are the role guidance for those seats.
 - `run/plans/<seat>.json` — the argv, working directory, and environment for the runner.
 
-A linked worktree does not contain `.foil`. `foil send` and `foil memory` find the project through Git: when the worktree toplevel has no `.foil`, discovery uses the Git common directory's parent if that parent contains `.foil`. `foil mail` and `foil board` do not. `board_root()` walks up from the current directory and uses the first `.foil/board` it finds.
+A linked worktree does not contain `.foil`. How a seat still finds the project is described under "Worktrees, project state, and harness sessions".
+
+## Worktrees, project state, and harness sessions
+
+This is how Foil 0.3.1 creates worktrees. It is the current design, not a new requirement.
+
+Seat trees are flat, one level deep, under the project's `.foil`. There is no tree for the lead, and one agent's tree is never nested inside another's.
+
+```text
+<project>/                         the checkout where foil init ran; it holds .foil
+  .foil/
+    worktrees/
+      <label>/                     branch foil/<label>, sibling of every other seat tree
+      <label>-2/
+```
+
+`<project>` is the Git toplevel where `foil init` ran. It is usually the main checkout. It can itself be a linked worktree, if init ran there. The lead has no tree of its own: `lead.toml` ships with `worktree = false`, so the lead's working directory is `<project>`. Default roles are lead, implementer, and reviewer. By default only the reviewer, besides the lead, has `worktree = false` and shares that same directory.
+
+A template with `worktree = true` gets `<project>/.foil/worktrees/<label>` on a new branch `foil/<label>`. Spawn runs `git worktree add -b` with no start point, so the branch forks from whatever `<project>` has checked out at spawn time, not from `main`. A taken branch or directory uses `foil/<label>-2`, then `-3`, and so on. Spawn never uses `-B`. Every seat tree is a sibling, and all of them register in the same Git common dir. Spawn is lead-or-operator: the CLI allows it for the lead and for the operator outside the fleet. Project discovery falls back to the common dir's parent, so a spawn issued from inside a seat tree still lands in that same flat directory. A path under the repository's top-level `worktrees/`, or anywhere else in the project outside `.foil`, is refused. Killing a seat, or a launch that fails after the worktree exists, does not remove the worktree or the branch.
+
+Foil's own state exists only in `<project>/.foil`: `templates/`, `harnesses/`, `skills/`, `memory/`, `board/` (mail, notes, tasks, results, and status), `run/registry.json`, `run/instructions/`, and `run/plans/`. `foil init` writes `/.foil/` to `git rev-parse --git-path info/exclude`. That file is in the Git common dir, so the exclusion applies to every linked worktree too. Seat trees do not contain `.foil`.
+
+A seat reaches that state in two ways. `foil send`, `foil memory`, `foil seat`, and `foil roster` use Git toplevel discovery, and fall back to the common dir's parent when the worktree toplevel has no `.foil`. `foil mail` and `foil board` do not: `board_root()` walks up from the current directory and uses the first `.foil/board` it finds. That walk works only because seat trees sit under `<project>/.foil/worktrees/`.
+
+| File or directory | Which tree | Tracked? | How a seat reaches it |
+| --- | --- | --- | --- |
+| `.foil/` (templates, harnesses, skills, memory, board, run) | Project checkout only | No (`/.foil/` in the common dir's exclude) | Git toplevel discovery, or a walk up to `.foil/board` |
+| `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/`, and similar | Every tree, at that tree's commit | Yes | The seat reads its own checkout; a project-checkout edit arrives only once the seat's branch includes it |
+| A gitignored local file (for example a harness settings file) | Project checkout only | No | It does not. `git worktree add` does not copy it, so a worktree seat runs without it while the lead and other non-worktree seats have it |
+
+Foil stores only a session id per seat, in `run/registry.json`. Each harness keeps transcripts and trust under the user's home directory. Foil forwards `HOME`, so every seat writes into the same global store as the human. Those stores are keyed by working directory. Moving or renaming the project changes every key, and a harness that resumes by a directory lookup can then miss the old session. Foil's tmux session name hashes the resolved toplevel path, so a move is a new fleet anyway.
+
+| Preset | `session_id` | Resume argv | Scoped by | Verified |
+| --- | --- | --- | --- | --- |
+| claude | `generated` | `claude --resume {session_id}` | Explicit id | The argv is the preset. Directory-per-cwd storage under `~/.claude/projects/` is observed: names for earlier fleets' `.foil/worktrees/<seat>` paths remain after those seats were killed |
+| grok | `generated` | `grok --resume {session_id}` | Explicit id | The argv is the preset. Storage layout unverified |
+| fake | `generated` | `foil-fake --session {session_id}` | Explicit id | The argv is the preset |
+| codex | `none` | `codex resume --last` | Latest session for this directory | The argv is the preset. Whether "latest" is the exact cwd or the whole repository is unverified |
+| opencode | `none` | `opencode . --continue` | Latest session for this directory | The argv is the preset. Whether "latest" is the exact cwd or the whole repository is unverified |
+| gemini | `none` | `gemini --resume` | Neither an id nor a directory flag | The argv is the preset. It always starts fresh. The preset marks its flags unverified |
+
+An explicit id stays unambiguous when seats share a working directory. `--continue` and `--last` mean the latest session for this directory, so Foil refuses that native resume for a seat with no worktree and starts it fresh in the project directory. Trust is path-keyed too. A seat worktree inherits the project's trust because the tree is nested under the trusted project path. Observed for Claude: most seat paths have no trust entry of their own, and a few do.
+
+Keep `.foil`, board included, per project.
+
+1. Board discovery by walking up, and trust inheritance, both depend on seat trees being nested under the project. A global location breaks both.
+2. The registry, the tmux session name, and mail paths are per toplevel. A global board would need a project key everywhere, and a migration, which this design does not add.
+3. Harnesses keeping sessions globally is not a reason for Foil to do the same. Foil holds only ids, and those stores are already keyed by path, so per-project Foil state lines up with them.
 
 ## Authority
 
