@@ -1,7 +1,7 @@
 # Foil · 运筹
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.3.1-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -90,13 +90,15 @@ flowchart TB
 
 ## Get started
 
-You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Before your first fleet, run each CLI once in this repository and accept its folder-trust, first-run, and opt-in prompts. Trust is per folder. A seat waiting on one of those prompts looks, from outside, like a seat that is working. Your agent asks you to do this, or to confirm it is done, and it reports any prompt it sees rather than answering it. Another CLI can join with a small preset file.
+You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Before your first fleet, run each harness the roster uses once in this repository and accept its folder-trust, update, first-run, and opt-in prompts. Trust is per harness per repository, and a seat worktree inherits it. A seat waiting on one of those prompts looks, from outside, like a seat that is working. Your agent asks you to do this, or to confirm it is done, and it reports any prompt it sees rather than answering it. Another CLI can join with a small preset file.
 
 The human's part is one sentence, typed into the coding agent they already use, in the repository:
 
 ```text
 Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.
 ```
+
+To update between goals, run `foil seat kill --all` once the goal is done, run the install line again, run `foil init` in each project, then spawn the lead. The previous goal's `.foil/board/status.md` already says `state: done`, so note its `updated` line before you spawn and wait for it to change. After `foil seat kill --all`, either case can occur, so check: run `tmux ls`. If it lists any session, a named preset `env` variable comes from that server and is set with `tmux set-environment -g NAME VALUE` before spawn. If it says no server is running, the next spawn starts a server from your shell.
 
 - The agent installs Foil and runs `foil init`.
 - It reads the report and sets `harness`, `model`, and `permission` with `foil roster`, or by editing `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. `auto` on the lead alone does not let the workers run unattended.
@@ -133,7 +135,7 @@ Read the report, set the three templates with `foil roster` or by editing the fi
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-When `.foil/board/status.md` shows `state: done`, send the goal to that lead. Do not spawn the lead again. The lead's first prompt already carries its instructions, so a message holds only the goal or an answer.
+When `.foil/board/status.md` shows `state: done` with a new `updated` time, send the goal to that lead. Do not spawn the lead again. The lead's first prompt already carries its instructions, so a message holds only the goal or an answer.
 
 ```sh
 foil send lead "the goal"
@@ -145,7 +147,7 @@ foil seat peek lead
 
 ### If nothing happens
 
-Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually showing a login prompt, a folder-trust prompt, an approval prompt, or the harness's own first-run or opt-in dialog. Answer it in that window (`tmux ls` lists Foil's session and `tmux attach` opens it), or log in to that CLI once by hand, then `foil seat kill lead` and spawn it again.
+Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually showing a login prompt, a folder-trust prompt, an update dialog, an approval prompt, or the harness's own first-run or opt-in dialog. Answer it in that window (`tmux ls` lists Foil's session and `tmux attach` opens it), or log in to that CLI once by hand, then `foil seat kill lead` and spawn it again.
 
 ## Limits
 

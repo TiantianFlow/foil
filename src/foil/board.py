@@ -6,7 +6,7 @@ import secrets
 from datetime import UTC, datetime
 from pathlib import Path
 
-from foil.errors import FoilError
+from foil.errors import FoilError, shown
 from foil.project import foil_root
 from foil.store import (
     SAFE_ID,
@@ -60,13 +60,9 @@ def _message(sender: str, to: str, when: str, text: str) -> str:
     )
 
 
-def send_mail(toplevel: Path, to: str, text: str) -> None:
-    shown = to.replace("\n", "").replace("\r", "")
+def write_mail(toplevel: Path, to: str, text: str) -> Path:
     if not SAFE_ID.fullmatch(to):
-        raise FoilError(f"foil: unknown seat '{shown}'")
-    seat = find_seat(toplevel, to)
-    if seat is None:
-        raise FoilError(f"foil: unknown seat '{shown}'")
+        raise FoilError(f"foil: unknown seat '{shown(to)}'")
     scan(text)
     sender = actor()
     when = datetime.now(UTC)
@@ -84,15 +80,23 @@ def send_mail(toplevel: Path, to: str, text: str) -> None:
             create_exclusive(path, payload)
         except FileExistsError:
             continue
-        if seat["window_id"]:
-            registry = load_registry(toplevel)
-            nudge(
-                str(registry["fleet_id"]),
-                to,
-                str(registry.get("tmux_session") or ""),
-                seat["window_id"],
-                sender,
-                path.resolve(),
-            )
-        return
+        return path
     raise FoilError("foil: could not write mail")
+
+
+def send_mail(toplevel: Path, to: str, text: str) -> None:
+    seat = find_seat(toplevel, to)
+    if seat is None:
+        raise FoilError(f"foil: unknown seat '{shown(to)}'")
+    path = write_mail(toplevel, to, text)
+    if not seat["window_id"]:
+        return
+    registry = load_registry(toplevel)
+    nudge(
+        str(registry["fleet_id"]),
+        to,
+        str(registry.get("tmux_session") or ""),
+        seat["window_id"],
+        actor(),
+        path.resolve(),
+    )

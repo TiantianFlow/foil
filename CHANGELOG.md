@@ -2,6 +2,35 @@
 
 Notable changes to Foil, newest first.
 
+## [0.3.1] - 2026-10-01
+
+`foil --version` prints 0.3.1.
+[docs/requirements.md](docs/requirements.md) is the specification, and
+[docs/plan-v0.3.1.md](docs/plan-v0.3.1.md) is the plan for this release.
+This release shows the roster and the live fleet in the lists the operator
+already runs and stops spawn typing into a new pane (issue #15), refreshes
+the packaged skills on `foil init` and documents upgrading between goals
+(issue #14), and gives each packaged persona its own judgment (issue #17).
+The three were developed on separate lines and ship together as 0.3.1.
+
+### Added
+
+- `foil roster list` and `foil roster show` print a role description and a preset source (`builtin`, `user`, or `invalid`). `foil seat list` appends the harness and model recorded at launch, and the template's current description. A registry written before `model` existed still loads. (#15)
+
+### Changed
+
+- `roster list` JSON `personas` is a list of `{name, description}` objects. The 0.3.0 shape was a list of strings. (#15)
+- `foil seat spawn --task` writes the task as mail before launch and types nothing into the new pane. The first launch prompt names that mail file and tells the seat to read it first, so a lead spawned for a new goal does not take mail kept from an earlier goal as its task. Without `--task`, it tells the seat to run `foil mail list` and read its mail before it acts. (#15)
+- Trust is once per harness per repository. A seat worktree inherits it. The operator asks once per harness id, including update dialogs, and again when a role moves to a new id. (#15)
+- `foil init` prints its version first, replaces the three packaged skills when they differ from this version, and reports a built-in preset that a file in `.foil/harnesses` overrides. An instruction file names the Foil version that wrote it. Onboarding covers install-or-update and upgrading between goals. After `foil seat kill --all`, either case can occur, so check with `tmux ls`. If it lists any session, a named preset `env` variable comes from that server and is set with `tmux set-environment -g` before spawn. If it says no server is running, the next spawn starts a server from the caller shell. `PATH` comes from the spawning caller. (#14)
+- The packaged personas gained specialization. A project that already ran `init` keeps its old persona files, because `init` never overwrites them. (#17)
+- Package Python is 2,908 lines, up from 2,793 in 0.3.0. N4's 2,500-line target is not a hard limit. #15 adds 58 lines: shared helpers replaced the copied persona listing and the copied shown-text helpers, and what remains is the description and preset-source columns and writing the spawn mail before launch. #14 adds 39 lines for the skill refresh and the version and override lines in the init report. Naming the task mail in the first launch prompt adds 11, and the description scan and persona path check add 7. #17 changes no Python.
+
+### Fixed
+
+- A persona that is not valid UTF-8, or that cannot be opened, no longer makes `roster list`, `roster show`, or `seat list` fail. That role lists with an empty description. A preset file that cannot be read, including one that is not valid UTF-8, lists as `invalid`. A template that is not valid UTF-8, or that cannot be opened, no longer makes `seat list` fail. That seat lists with an empty description. (#15)
+- A persona line that looks like a credential is never printed as a description by `roster list`, `roster show`, or `seat list`; the description is empty. A persona path that resolves outside `.foil/templates`, for example through a symlinked directory, is refused.
+
 ## [0.3.0] - 2026-09-30
 
 `foil --version` prints 0.3.0.
@@ -174,6 +203,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.3.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.1
 [0.3.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.0
 [0.2.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.2
 [0.2.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.1
