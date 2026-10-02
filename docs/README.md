@@ -11,6 +11,7 @@
 | [architecture.md](architecture.md) | Components, data flow, and module boundaries of the implementation. |
 | [demo.md](demo.md) | A real run, from `foil init` to a merged fix, replayed from the end-to-end suite. Linked from the English README. |
 | [demo.zh-CN.md](demo.zh-CN.md) | The same demo in Chinese. Linked from the Chinese README. |
+| [issue-18-project-vs-global.md](issue-18-project-vs-global.md) | Which of the role templates, the board, and the skills stay in the project folder, and which should be read from the package (issue #18). |
 
 Outside this folder: [README.md](../README.md) for users,
 [CONTRIBUTING.md](../CONTRIBUTING.md) for contributors,
