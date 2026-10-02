@@ -33,11 +33,11 @@ Surveyed against this checkout (`foil/issue-18`, HEAD `78ab3f7`, foil 0.3.1).
 
 | Path today | Verdict | One-line reason |
 |---|---|---|
-| `.foil/templates/<role>.toml` (`lead`, `implementer`, `reviewer`, `verifier`, `architect`) | **keep-in-project** | Harness, model, permission, and worktree are per-repository choices, as F20 says ("Templates are per project"). This project's `architect.toml` uses a harness and model not in the defaults, and trust is asked once per harness per repository. |
-| `.foil/templates/personas/*.md` | **keep-in-project** | The global copy already exists at `src/foil/defaults/personas/`. The project file is the editable override that `persona = "personas/<role>.md"` resolves to. `persona_text` in `src/foil/presets.py` refuses paths outside `.foil/templates`. `personas/architect.md` here has no packaged source. |
+| `.foil/templates/<role>.toml` (`lead`, `implementer`, `reviewer`, `verifier`, `architect`) | **keep-in-project** | Harness, model, permission, and worktree are per-repository choices, as F20 says ("Templates are per project"). A project may customize a role's harness and model; architect is an example of a role a project can add. Trust is asked once per harness per repository. |
+| `.foil/templates/personas/*.md` | **keep-in-project** | The global copy already exists at `src/foil/defaults/personas/`. The project file is the editable override that `persona = "personas/<role>.md"` resolves to. `persona_text` in `src/foil/presets.py` refuses paths outside `.foil/templates`. A persona may exist only as a project override. |
 
-Note for the lead, not a recommendation for #18: 8 of the 9 persona files
-here are byte-identical to the packaged ones. Because `init` never
+Note for the lead, not a recommendation for #18: many project persona
+files may match the packaged ones. Because `init` never
 overwrites a persona (F20), an unedited copy goes stale after an upgrade.
 This is the same upgrade problem the 0.2.x skills had (see CHANGELOG). If
 it matters, it is its own ticket.
@@ -91,10 +91,9 @@ outcome.
 ## Outside the three named items (flagged, not recommended under #18)
 
 - `.foil/harnesses/*.toml` is the strongest real case for
-  *machine-global*. This project's `claude`, `grok`, and `opencode` files
-  override the built-ins, and `agent` and `agy` are user presets. They hold
-  machine-specific wrapper paths and env-name lists that have nothing to do
-  with this repository, so every new project needs the same copies. The
+  *machine-global*. A project may add harness presets, or override the
+  built-ins, with machine-local paths and env-name lists that are not
+  about the repository, so every new project may need the same copies. The
   issue does not name harnesses, and fixing this would need a new
   machine-global location (requirements §7.1 and F27). That is a separate
   ticket if the lead or human wants it.
