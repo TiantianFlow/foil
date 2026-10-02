@@ -61,8 +61,8 @@ plans), which is also runtime state.
 
 ## Smallest change if the lead takes the skills verdict
 
-- Requirements first: update §7.1 (`skills/<role>.md` becomes
-  `skills/operator.md` only), the `foil init` row in §6 ("the three skills"
+- Requirements first: update §7.1 (the `skills/` entry that names every
+  role becomes `skills/operator.md` only), the `foil init` row in §6 ("the three skills"
   becomes "the operator skill"), and §8 wherever it implies on-disk lead
   and worker skills.
 - `src/foil/lifecycle.py` `_instruction`: read `lead.md` and `worker.md`
