@@ -17,7 +17,7 @@ class TmuxTarget:
 
 _PROBE_FORMAT = (
     "#{session_id}\t#{window_id}\t"
-    "#{@foil-fleet-id}\t#{@foil-seat-id}"
+    "#{@foil-fleet-id}\t#{@foil-seat-id}\t#{pane_dead}"
 )
 _IDENTITY_FORMAT = "#{session_id}\t#{window_id}\t#{window_name}"
 
@@ -187,14 +187,18 @@ class TmuxController:
                 ["set-option", "-w", "-t", window_id, "@foil-seat-id", seat_id],
                 "window marker update",
             )
+            self._required(
+                ["set-option", "-w", "-t", window_id, "remain-on-exit", "on"],
+                "remain-on-exit",
+            )
             output = self._required(
                 ["display-message", "-p", "-t", window_id, _PROBE_FORMAT],
                 "identity capture",
             ).strip()
             observed = output.split("\t")
-            if len(observed) != 4:
+            if len(observed) != 5:
                 raise TmuxError("tmux returned malformed identity data")
-            observed_session, observed_window, observed_fleet, observed_seat = observed
+            observed_session, observed_window, observed_fleet, observed_seat = observed[:4]
             if observed_session != session_id or observed_window != window_id:
                 raise TmuxError("tmux identity capture drifted")
             if observed_fleet != fleet_id or observed_seat != seat_id:
@@ -227,9 +231,9 @@ class TmuxController:
         parts = result.stdout.strip().split("\t")
         if not any(parts):
             return ProbeResult(ProbeState.DEAD, False)
-        if len(parts) != 4:
+        if len(parts) != 5:
             return ProbeResult(ProbeState.UNKNOWN, None)
-        session_id, window_id, observed_fleet, observed_seat = parts
+        session_id, window_id, observed_fleet, observed_seat, pane_dead = parts
         observed = TmuxTarget(
             session_name=target.session_name,
             window_name=target.window_name,
@@ -243,7 +247,9 @@ class TmuxController:
             and session_ok
             and window_id == target.window_id
         )
-        return ProbeResult(ProbeState.ALIVE, matches, observed)
+        # #{pane_dead} is a tmux fact about the process, not a reading of the pane.
+        state = ProbeState.DEAD if pane_dead == "1" else ProbeState.ALIVE
+        return ProbeResult(state, matches, observed)
 
     def matches_window(
         self, fleet_id: str, seat_id: str, session_name: str, window_id: str
@@ -290,22 +296,38 @@ class TmuxController:
         if typed.returncode == 0:
             self._run(["send-keys", "-t", window_id, "Enter"])
 
+    def remove_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
+        """Remove this seat's window, including one whose process has exited.
+
+        The marker check is the same as a stop. A dead pane still belongs to
+        this seat, so the leftover window is removed. A window that is gone,
+        or that now carries another seat, is left alone.
+        """
+
+        probe = self.probe(fleet_id, seat_id, target)
+        # Only this seat's own window is removed. A stored id that now names
+        # another window, or a window that is already gone, is left alone.
+        if (
+            not probe.identity_matches
+            or probe.observed is None
+            or not probe.observed.window_id
+        ):
+            if probe.state is ProbeState.UNKNOWN:
+                raise TmuxError("refusing to stop an unverified tmux target")
+            return False
+        self._required(
+            ["kill-window", "-t", probe.observed.window_id],
+            "verified window stop",
+        )
+        return True
+
     def stop_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
         probe = self.probe(fleet_id, seat_id, target)
         if probe.state is ProbeState.DEAD:
             return False
         if probe.state is not ProbeState.ALIVE or not probe.identity_matches:
             raise TmuxError("refusing to stop an unverified tmux target")
-        kill_target = target.window_id or (
-            probe.observed.window_id if probe.observed is not None else None
-        )
-        if not kill_target:
-            raise TmuxError("refusing to stop an unverified tmux target")
-        self._required(
-            ["kill-window", "-t", kill_target],
-            "verified window stop",
-        )
-        return True
+        return self.remove_verified(fleet_id, seat_id, target)
 
     def abandon_window(self, target: TmuxTarget) -> None:
         """Best-effort kill of a window created during a failed spawn.

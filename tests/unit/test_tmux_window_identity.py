@@ -60,8 +60,9 @@ if args[0] == "display-message":
         ("fleet", "#{@foil-fleet-id}"),
         ("seat", "#{@foil-seat-id}"),
         ("name", "#{window_name}"),
+        ("dead", "#{pane_dead}"),
     ):
-        out = out.replace(token, window.get(key) or "")
+        out = out.replace(token, window.get(key) or ("0" if key == "dead" else ""))
     print(out)
 elif args[0] == "capture-pane":
     target = args[args.index("-t") + 1]
@@ -96,6 +97,7 @@ def _install_fake_tmux(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 "name": "lead",
                 "fleet": "fleet-1",
                 "seat": "lead",
+                "dead": "0",
             },
             "@1": {
                 "id": "@1",
@@ -206,6 +208,28 @@ def test_probe_with_a_wrong_recorded_window_id_is_not_verified(
 
     assert probe.state is ProbeState.ALIVE
     assert probe.identity_matches is False
+
+
+def test_a_dead_pane_is_dead_and_only_an_explicit_remove_stops_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    executable = _install_fake_tmux(tmp_path, monkeypatch)
+    state_path = tmp_path / "fake-tmux-state.json"
+    state = json.loads(state_path.read_text())
+    state["windows"]["@1"]["dead"] = "1"
+    state_path.write_text(json.dumps(state))
+    tmux = TmuxController(executable=str(executable))
+
+    probe = tmux.probe("fleet-1", "worker", _stale_worker_target())
+
+    assert probe.state is ProbeState.DEAD
+    assert probe.identity_matches is True
+    assert tmux.stop_verified("fleet-1", "worker", _stale_worker_target()) is False
+    assert _kills(tmp_path) == []
+    assert tmux.remove_verified("fleet-1", "worker", _stale_worker_target()) is True
+    assert _kills(tmp_path) == ["@1"]
+    assert "@0" in json.loads(state_path.read_text())["windows"]
 
 
 def test_stop_verified_treats_a_missing_stale_window_as_already_dead(
