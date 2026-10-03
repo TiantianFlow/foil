@@ -560,17 +560,19 @@ def test_init_refreshes_skills_and_leaves_templates_and_personas(
     assert main(["init"]) == 0
     capsys.readouterr()
     root = foil_root(repo) / "skills"
-    packaged: dict[str, bytes] = {}
-    for name in ("operator.md", "lead.md", "worker.md"):
-        packaged[name] = files("foil").joinpath("defaults", "skills", name).read_bytes()
-        written = (root / name).read_bytes()
-        assert written == packaged[name]
-        for copy in (packaged[name].decode(), written.decode()):
-            header = copy.split("---", 2)[1]
-            assert "name:" in header
-            assert "description:" in header
+    packaged = files("foil").joinpath("defaults", "skills", "operator.md").read_bytes()
+    written = (root / "operator.md").read_bytes()
+    assert written == packaged
+    for copy in (packaged.decode(), written.decode()):
+        header = copy.split("---", 2)[1]
+        assert "name:" in header
+        assert "description:" in header
+    assert not (root / "lead.md").exists()
+    assert not (root / "worker.md").exists()
     edited = root / "operator.md"
     edited.write_text("edited operator\n", encoding="utf-8")
+    stale = root / "lead.md"
+    stale.write_text("old lead\n", encoding="utf-8")
     persona = foil_root(repo) / "templates" / "personas" / "lead.md"
     persona.write_text("edited persona\n", encoding="utf-8")
     template = foil_root(repo) / "templates" / "lead.toml"
@@ -578,9 +580,9 @@ def test_init_refreshes_skills_and_leaves_templates_and_personas(
     assert main(["init"]) == 0
     report = capsys.readouterr().out
     assert "Updated skills: operator" in report
-    assert edited.read_bytes() == packaged["operator.md"]
-    assert (root / "lead.md").read_bytes() == packaged["lead.md"]
-    assert (root / "worker.md").read_bytes() == packaged["worker.md"]
+    assert edited.read_bytes() == packaged
+    assert stale.read_text(encoding="utf-8") == "old lead\n"
+    assert not (root / "worker.md").exists()
     assert persona.read_text(encoding="utf-8") == "edited persona\n"
     assert template.read_bytes() == template_bytes
     assert main(["init"]) == 0
@@ -598,7 +600,7 @@ def test_init_refuses_a_skill_symlink(
     capsys.readouterr()
     outside = tmp_path / "outside.md"
     outside.write_text("keep\n", encoding="utf-8")
-    skill = foil_root(repo) / "skills" / "worker.md"
+    skill = foil_root(repo) / "skills" / "operator.md"
     skill.unlink()
     skill.symlink_to(outside)
     assert main(["init"]) == 1

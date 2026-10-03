@@ -104,7 +104,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     first = capsys.readouterr()
     assert first.err == ""
     assert first.out.startswith(f"foil {__version__}\n")
-    assert "Updated skills: operator, lead, worker" in first.out
+    assert "Updated skills: operator" in first.out
     assert pointer in first.out
     assert ask in first.out
     assert rule in first.out

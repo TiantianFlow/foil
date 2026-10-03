@@ -15,6 +15,7 @@ from foil.board import ensure_board, write_mail
 from foil.errors import FoilError, shown
 from foil.presets import (
     BUILTIN_IDS,
+    _builtin,
     expand_argv,
     installed_harness,
     installed_presets,
@@ -292,8 +293,7 @@ def _instruction(
     if lessons:
         learned = "\n".join(f"- {item}: {text}" for item, text in lessons)
     lead = template["name"] == "lead"
-    skill = foil_root(root) / "skills" / ("lead.md" if lead else "worker.md")
-    skill_text = skill.read_text(encoding="utf-8").strip() if skill.is_file() else ""
+    skill_text = _builtin("skills", "lead.md" if lead else "worker.md").strip()
     work = (
         "Stay in your worktree. Do not modify the project toplevel. "
         "Killing you will not delete your branch."
@@ -316,8 +316,7 @@ def _instruction(
         "result/v1 (task, author, branch, outcome pass|fail).",
         f"Worktree: {work}",
         f"Persona:\n{_persona_line(template)}",
-        f"Skill: `{skill.resolve()}`.",
-        *([skill_text] if skill_text else []),
+        skill_text,
         f"Accepted lessons: {learned}",
     ]
     if restarted:

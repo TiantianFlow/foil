@@ -311,20 +311,16 @@ def installed_harness(toplevel: Path | None = None) -> str:
 
 
 def write_default_templates(toplevel: Path) -> list[str]:
-    """Replace the three skills when their bytes differ. Return the names written."""
+    """Replace the operator skill when its bytes differ. Return the names written."""
 
     updated: list[str] = []
-    skills: list[tuple[str, Path, bytes]] = []
-    for name in ("operator.md", "lead.md", "worker.md"):
-        target = foil_root(toplevel) / "skills" / name
-        if target.is_symlink():
-            raise FoilError("foil: refusing symlink")
-        skills.append((name, target, _builtin("skills", name).encode()))
-    for name, target, payload in skills:
-        if target.is_file() and target.read_bytes() == payload:
-            continue
+    target = foil_root(toplevel) / "skills" / "operator.md"
+    if target.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    payload = _builtin("skills", "operator.md").encode()
+    if not (target.is_file() and target.read_bytes() == payload):
         write_bytes(target, payload)
-        updated.append(name.removesuffix(".md"))
+        updated.append("operator")
     directory = foil_root(toplevel) / "templates"
     personas = directory / "personas"
     for name in _packaged_persona_names():
