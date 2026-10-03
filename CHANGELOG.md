@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Changed
+
+- `foil init` writes only the operator skill. The lead and worker skills are read from the package and inlined into the instruction file. An older `.foil/skills/lead.md` or `.foil/skills/worker.md` is left in place. (#18)
+
 ### Fixed
 
 - `foil seat kill` on a dead seat whose stored window id now names another window no longer raises, and no longer stops `foil seat kill --all`. The seat is marked killed and the other window is left alone.
