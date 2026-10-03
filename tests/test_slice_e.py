@@ -13,7 +13,7 @@ from foil.cli import main
 from foil.lifecycle import _git
 from foil.project import foil_root
 from foil.store import load_registry
-from foil.tmux import TmuxController, TmuxTarget
+from foil.tmux import ProbeResult, ProbeState, TmuxController, TmuxTarget
 from tests.test_spawn import _commit, _launch, _repo
 
 
@@ -68,12 +68,16 @@ def _pane(
         seen.append((window_id, lines))
         return "pane-text\n"
 
-    def window_exists(self: TmuxController, window_id: str) -> bool:
-        del self
-        return present is None or window_id in windows
+    def probe(
+        self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget
+    ) -> ProbeResult:
+        del self, fleet_id, seat_id
+        if present is None or target.window_id in windows:
+            return ProbeResult(ProbeState.ALIVE, True, target)
+        return ProbeResult(ProbeState.DEAD, False)
 
     monkeypatch.setattr("foil.lifecycle.TmuxController.capture_pane", capture)
-    monkeypatch.setattr("foil.lifecycle.TmuxController.window_exists", window_exists)
+    monkeypatch.setattr("foil.lifecycle.TmuxController.probe", probe)
     return seen, windows
 
 

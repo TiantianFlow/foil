@@ -219,7 +219,7 @@ Resume reads the harness from the template file now, not from the harness stored
 
 Alive, dead, and killed come from the registry and from the tmux window with the stored id. The seat is alive when that window exists, carries this fleet's and this seat's markers, and its pane process is still running. It is dead when the window is gone, when the markers do not match, or when tmux reports `#{pane_dead}` for that window. That flag is a tmux fact about the process, not a reading of the pane. List prints `name`, `template`, `state`, `worktree`, the harness and model recorded at the last launch, and the template's current description, tab-separated, or the same fields as JSON. The description is empty when the template is gone or cannot be read. It does not classify pane text.
 
-`foil seat peek NAME` runs `tmux capture-pane -p -t @<window id> -S -<N>` and writes that stdout unchanged. The default `N` is 40. It does this for an alive seat and for a dead seat whose window still exists, so a harness that exited at launch leaves an error line that can be read. A killed seat, or a dead seat whose window is gone, is an error. Peek does not interpret the text.
+`foil seat peek NAME` runs `tmux capture-pane -p -t @<window id> -S -<N>` and writes that stdout unchanged. The default `N` is 40. It does this for an alive seat and for a dead seat whose window still exists and still carries this fleet's and this seat's markers, so a harness that exited at launch leaves an error line that can be read. A killed seat, a dead seat whose window is gone, or a stored id that now names another window is an error. Peek does not interpret the text.
 
 ## Memory
 
