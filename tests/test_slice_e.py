@@ -53,20 +53,28 @@ def _stop(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         stopped.append(target.window_id or "")
         return True
 
-    monkeypatch.setattr("foil.lifecycle.TmuxController.stop_verified", stop)
+    monkeypatch.setattr("foil.lifecycle.TmuxController.remove_verified", stop)
     return stopped
 
 
-def _pane(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, int]]:
+def _pane(
+    monkeypatch: pytest.MonkeyPatch, present: set[str] | None = None
+) -> tuple[list[tuple[str, int]], set[str]]:
     seen: list[tuple[str, int]] = []
+    windows = set() if present is None else present
 
     def capture(self: TmuxController, window_id: str, lines: int) -> str:
         del self
         seen.append((window_id, lines))
         return "pane-text\n"
 
+    def window_exists(self: TmuxController, window_id: str) -> bool:
+        del self
+        return present is None or window_id in windows
+
     monkeypatch.setattr("foil.lifecycle.TmuxController.capture_pane", capture)
-    return seen
+    monkeypatch.setattr("foil.lifecycle.TmuxController.window_exists", window_exists)
+    return seen, windows
 
 
 def _lesson(capsys: pytest.CaptureFixture[str], text: str) -> str:
@@ -356,10 +364,11 @@ def test_list_and_peek_report_owned_facts_only(
     _commit(repo)
     _launch(monkeypatch)
     _stop(monkeypatch)
-    seen = _pane(monkeypatch)
+    seen, windows = _pane(monkeypatch, present=set())
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "implementer"]) == 0
     lead = load_registry(repo)["seats"]["lead"]["window_id"]
+    windows.add(lead)
     worker = load_registry(repo)["seats"]["implementer-1"]
     _alive(monkeypatch, {lead})
     assert main(["seat", "list"]) == 0

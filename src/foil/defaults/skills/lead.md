@@ -43,6 +43,8 @@ foil seat list --json
 foil seat peek implementer-1 --lines 40
 ```
 
+`foil seat peek` on a dead seat prints the pane that was left when the process exited, including an error from a harness that exited at launch. A dead seat whose window is already gone, and a killed seat, cannot be peeked. The text is still the pane, not a status.
+
 Send mail, which also nudges the recipient:
 
 ```text

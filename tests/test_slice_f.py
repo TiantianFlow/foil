@@ -27,7 +27,7 @@ def _keys(monkeypatch: pytest.MonkeyPatch, code: int = 0) -> list[list[str]]:
                 for name, record in registry["seats"].items()
                 if record.get("window_id") == window
             )
-            stdout = f"$0\t{window}\t{registry['fleet_id']}\t{seat}\n"
+            stdout = f"$0\t{window}\t{registry['fleet_id']}\t{seat}\t0\n"
             return subprocess.CompletedProcess(argv, 0, stdout, "")
         return subprocess.CompletedProcess(argv, code, "", "")
 
@@ -104,7 +104,7 @@ def test_send_does_not_type_into_a_foreign_window(
         del self
         calls.append(list(argv))
         if argv and argv[0] == "display-message":
-            return subprocess.CompletedProcess(argv, 0, "$0\t@12\tfleet\tother\n", "")
+            return subprocess.CompletedProcess(argv, 0, "$0\t@12\tfleet\tother\t0\n", "")
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     monkeypatch.setattr("foil.tmux.TmuxController._run", run)

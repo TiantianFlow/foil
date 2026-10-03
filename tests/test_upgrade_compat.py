@@ -35,7 +35,9 @@ def test_schema_markers_and_session_name_stay_at_the_0_2_0_contract(tmp_path: Pa
         "branch",
         "session_id",
     )
-    assert _PROBE_FORMAT == "#{session_id}\t#{window_id}\t#{@foil-fleet-id}\t#{@foil-seat-id}"
+    assert _PROBE_FORMAT.startswith(
+        "#{session_id}\t#{window_id}\t#{@foil-fleet-id}\t#{@foil-seat-id}"
+    )
     names = [tmp_path / "My Repo", tmp_path / "...", tmp_path / ("A" * 40)]
     for path in names:
         path.mkdir()
