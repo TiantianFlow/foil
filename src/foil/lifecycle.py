@@ -520,6 +520,28 @@ def _drop_mail(path: Path | None) -> None:
         path.unlink()
 
 
+def _target(registry: dict, root: Path, seat_name: str, window: str) -> TmuxTarget:
+    return TmuxTarget(
+        session_name=str(registry.get("tmux_session") or _session_name(root)),
+        window_name=seat_name,
+        session_id=None,
+        window_id=window,
+    )
+
+
+def _remove_leftover(registry: dict, root: Path, seat_name: str, window: str) -> None:
+    """Drop a dead seat's window before the record is killed or relaunched."""
+
+    if not window:
+        return
+    try:
+        TmuxController().remove_verified(
+            str(registry["fleet_id"]), seat_name, _target(registry, root, seat_name, window)
+        )
+    except TmuxError as exc:
+        raise FoilError("foil: could not stop seat") from exc
+
+
 def _known(registry: dict, name: str | None) -> dict[str, str]:
     if not name or not SAFE_ID.fullmatch(name) or name not in registry["seats"]:
         raise FoilError(f"foil: unknown seat '{shown(name or '')}'")
@@ -534,17 +556,8 @@ def kill_seats(
     for seat_name in names:
         record = registry["seats"][seat_name]
         window = record.get("window_id") or ""
-        if _state(registry, seat_name, record) == "alive" and window:
-            target = TmuxTarget(
-                session_name=str(registry.get("tmux_session") or _session_name(root)),
-                window_name=seat_name,
-                session_id=None,
-                window_id=window,
-            )
-            try:
-                TmuxController().stop_verified(str(registry["fleet_id"]), seat_name, target)
-            except TmuxError as exc:
-                raise FoilError("foil: could not stop seat") from exc
+        if _state(registry, seat_name, record) != "killed":
+            _remove_leftover(registry, root, seat_name, window)
         record["state"] = "killed"
         save_registry(root, registry)
 
@@ -562,6 +575,7 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         session = str(uuid.uuid4())
     else:
         session = ""
+    _remove_leftover(registry, root, name, record.get("window_id") or "")
     window = _open(
         root,
         registry,
@@ -655,10 +669,12 @@ def peek_seat(root: Path, name: str, *, lines: int) -> None:
     registry = load_registry(root)
     record = _known(registry, name)
     state = _state(registry, name, record)
-    if state != "alive":
+    window = record.get("window_id") or ""
+    # A dead seat keeps its window after the process exits, so the error is readable.
+    if state == "killed" or not window or not TmuxController().window_exists(window):
         raise FoilError(f"foil: seat '{name}' is {state}")
     try:
-        text = TmuxController().capture_pane(record["window_id"], lines)
+        text = TmuxController().capture_pane(window, lines)
     except TmuxError as exc:
         raise FoilError("foil: could not peek seat") from exc
     sys.stdout.write(text)
