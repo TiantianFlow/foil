@@ -8,12 +8,16 @@ onto the session's current window.
 from __future__ import annotations
 
 import json
+import os
 import stat
 from pathlib import Path
 
 import pytest
 
+from foil.cli import main
+from foil.store import empty_registry, save_registry
 from foil.tmux import ProbeState, TmuxController, TmuxError, TmuxTarget
+from tests.test_init import _init_git_repository
 
 FAKE_TMUX = """#!/usr/bin/env python3
 import json
@@ -246,6 +250,124 @@ def test_abandon_window_never_falls_back_onto_another_window(
     tmux.abandon_window(_stale_worker_target())
 
     assert _kills(tmp_path) == []
+
+
+def _project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    foil = repo / ".foil" / "run"
+    foil.mkdir(parents=True)
+    monkeypatch.chdir(repo)
+    return repo
+
+
+def _seat(name: str, window_id: str) -> dict[str, str]:
+    return {
+        "name": name,
+        "template": name.split("-", 1)[0],
+        "harness": "codex",
+        "model": "",
+        "window_id": window_id,
+        "state": "",
+        "worktree": "",
+        "branch": "",
+        "session_id": "",
+    }
+
+
+def _use_fake_tmux(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _install_fake_tmux(tmp_path, monkeypatch)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+
+
+def test_kill_of_a_live_seat_still_stops_its_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _use_fake_tmux(tmp_path, monkeypatch)
+    repo = _project(tmp_path, monkeypatch)
+    registry = empty_registry()
+    registry["fleet_id"] = "fleet-1"
+    registry["tmux_session"] = "foil-demo"
+    registry["seats"] = {"worker": _seat("worker", "@1")}
+    save_registry(repo, registry)
+
+    assert main(["seat", "kill", "worker"]) == 0
+    assert capsys.readouterr().err == ""
+    assert _kills(tmp_path) == ["@1"]
+    saved = json.loads((repo / ".foil" / "run" / "registry.json").read_text())
+    assert saved["seats"]["worker"]["state"] == "killed"
+
+
+def test_kill_of_a_dead_seat_does_not_stop_a_reused_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The worker record still names @1, but that id now belongs to a window
+    # carrying another seat. Killing the dead record must not stop it.
+    _use_fake_tmux(tmp_path, monkeypatch)
+    state_path = tmp_path / "fake-tmux-state.json"
+    state = json.loads(state_path.read_text())
+    state["windows"]["@1"]["seat"] = "intruder"
+    state_path.write_text(json.dumps(state))
+    repo = _project(tmp_path, monkeypatch)
+    registry = empty_registry()
+    registry["fleet_id"] = "fleet-1"
+    registry["tmux_session"] = "foil-demo"
+    registry["seats"] = {
+        "worker": _seat("worker", "@1"),
+        "other": _seat("other", "@0"),
+    }
+    save_registry(repo, registry)
+
+    assert main(["seat", "kill", "worker"]) == 0
+    assert capsys.readouterr().err == ""
+    assert _kills(tmp_path) == []
+    state = json.loads((tmp_path / "fake-tmux-state.json").read_text())
+    assert "@1" in state["windows"]
+    saved = json.loads((repo / ".foil" / "run" / "registry.json").read_text())
+    assert saved["seats"]["worker"]["state"] == "killed"
+    assert saved["seats"]["other"]["state"] == ""
+
+    # The other seat is dead too: its stored id names the worker's window.
+    # kill --all must mark every seat killed and still leave that window.
+    assert main(["seat", "kill", "--all"]) == 0
+    assert capsys.readouterr().err == ""
+    assert _kills(tmp_path) == []
+    state = json.loads((tmp_path / "fake-tmux-state.json").read_text())
+    assert set(state["windows"]) == {"@0", "@1"}
+    saved = json.loads((repo / ".foil" / "run" / "registry.json").read_text())
+    assert saved["seats"]["worker"]["state"] == "killed"
+    assert saved["seats"]["other"]["state"] == "killed"
+
+
+def test_kill_of_a_dead_seat_with_no_marker_leaves_the_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _use_fake_tmux(tmp_path, monkeypatch)
+    state_path = tmp_path / "fake-tmux-state.json"
+    state = json.loads(state_path.read_text())
+    state["windows"]["@1"]["fleet"] = ""
+    state["windows"]["@1"]["seat"] = ""
+    state_path.write_text(json.dumps(state))
+    repo = _project(tmp_path, monkeypatch)
+    registry = empty_registry()
+    registry["fleet_id"] = "fleet-1"
+    registry["tmux_session"] = "foil-demo"
+    registry["seats"] = {"worker": _seat("worker", "@1")}
+    save_registry(repo, registry)
+
+    assert main(["seat", "kill", "worker"]) == 0
+    assert capsys.readouterr().err == ""
+    assert _kills(tmp_path) == []
+    assert "@1" in json.loads(state_path.read_text())["windows"]
+    saved = json.loads((repo / ".foil" / "run" / "registry.json").read_text())
+    assert saved["seats"]["worker"]["state"] == "killed"
 
 
 def test_name_only_targets_require_exact_name_resolution(
