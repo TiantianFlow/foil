@@ -7,6 +7,7 @@ Notable changes to Foil, newest first.
 ### Fixed
 
 - `foil seat kill` on a dead seat whose stored window id now names another window no longer raises, and no longer stops `foil seat kill --all`. The seat is marked killed and the other window is left alone.
+- A harness that exits at launch leaves a peekable pane. The seat window stays after the process exits, `#{pane_dead}` makes that seat dead, and `foil seat peek` prints the pane when it still carries this seat's markers. `foil seat kill` and `foil seat resume` remove that leftover window first.
 
 ## [0.3.2] - 2026-10-02
 

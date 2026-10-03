@@ -98,7 +98,7 @@ human's part is one sentence; everything after step 2 is the agent's work.
 | F5 | A seat's identity comes from an environment variable Foil sets when launching it. A seat can't claim another identity through any flag. This protects against mistakes by cooperating agents, not against hostile processes, and the documentation says so. |
 | F6 | When a template asks for a worktree, spawning creates a git worktree on a new branch whose name is unique in the repository. Killing a seat never deletes its branch and never silently destroys uncommitted work. |
 | F7 | Files and worktrees Foil creates never appear as untracked or modified files in the user's repository. |
-| F8 | Seat state is `alive` (its exact tmux window exists), `dead` (the window is gone and the seat wasn't killed), or `killed` (stopped with `foil seat kill`). |
+| F8 | Seat state is `alive` (its exact tmux window exists and its pane process is still running), `dead` (the window is gone, or the pane process has exited, and the seat wasn't killed), or `killed` (stopped with `foil seat kill`). Whether the pane process has exited is tmux's `#{pane_dead}` fact, not a reading of the pane. A seat window stays after its process exits, so the pane can still be read. |
 | F9 | `seat resume` restarts `dead` seats, never `killed` ones. It uses the harness's own session resume when the preset supports it; otherwise it starts the seat fresh and tells it that it was restarted and should re-read its mail. A seat with no worktree resumes in the project directory. A seat that cannot be restarted is named in the error and does not stop the others. |
 
 ### Visibility
@@ -106,7 +106,7 @@ human's part is one sentence; everything after step 2 is the agent's work.
 | ID | Requirement |
 |---|---|
 | F10 | `seat list` reports only facts Foil owns: each seat's name, template, state, and worktree, plus the harness and model the registry recorded at that seat's last launch, and its template's current description. The description is empty when the template is gone, the template cannot be read, or the persona cannot be read. A seat record with no `model` field loads that field as empty. |
-| F11 | `seat peek` prints the raw last lines of one seat's pane, exactly as tmux captures them. |
+| F11 | `seat peek` prints the raw last lines of one seat's pane, exactly as tmux captures them. It does this for an alive seat and for a dead seat whose window still exists and still carries this fleet's and this seat's markers, so a process that exited at launch leaves an error that can be read. A killed seat, a dead seat whose window is gone, or a stored window id that now names another window is an error. |
 | F12 | Foil never parses, classifies, or interprets pane contents. Whether an agent is busy, idle, blocked, or done is stated by the agents themselves in board files. |
 
 ### Communication
@@ -192,7 +192,7 @@ accepts `--help`, and `foil --version` prints the version.
 | `foil seat kill NAME` | `--all` (no NAME) | Stops the seat's window and marks it `killed` (F6). `--all` stops every seat. |
 | `foil seat resume [NAME]` | none | Restarts `dead` seats (F9). |
 | `foil seat list` | `--json` | Lists seats (F10). Human: `<name>\t<template>\t<state>\t<worktree>\t<harness>[/<model>]\t<description>`. JSON adds `harness`, `model`, and `description`. |
-| `foil seat peek NAME` | `--lines N` (default 40) | Prints the pane tail (F11). |
+| `foil seat peek NAME` | `--lines N` (default 40) | Prints the pane tail (F11). A dead seat whose window still exists and still carries this seat's markers is printed the same way. A killed seat, a dead seat whose window is gone, or a stored window id that now names another window is an error. |
 | `foil send TO TEXT` | none; `TEXT` = `-` reads stdin | Writes mail and nudges the recipient (F13, F14). |
 | `foil mail read PATH` | `--json` | Reads mail file at PATH. PATH must be absolute and in `.foil/board/mail/`. Human output: body only. JSON: full contract + body. |
 | `foil mail list` | `--json` | Lists mail for current seat (FOIL_SEAT_ID required). A symlinked `board/mail` lists nothing. Sorted newest first. Human: `<time> <from> <path>` per line. JSON: array of mail metadata. |

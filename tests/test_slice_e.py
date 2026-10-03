@@ -13,7 +13,7 @@ from foil.cli import main
 from foil.lifecycle import _git
 from foil.project import foil_root
 from foil.store import load_registry
-from foil.tmux import TmuxController, TmuxTarget
+from foil.tmux import ProbeResult, ProbeState, TmuxController, TmuxTarget
 from tests.test_spawn import _commit, _launch, _repo
 
 
@@ -53,20 +53,32 @@ def _stop(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         stopped.append(target.window_id or "")
         return True
 
-    monkeypatch.setattr("foil.lifecycle.TmuxController.stop_verified", stop)
+    monkeypatch.setattr("foil.lifecycle.TmuxController.remove_verified", stop)
     return stopped
 
 
-def _pane(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, int]]:
+def _pane(
+    monkeypatch: pytest.MonkeyPatch, present: set[str] | None = None
+) -> tuple[list[tuple[str, int]], set[str]]:
     seen: list[tuple[str, int]] = []
+    windows = set() if present is None else present
 
     def capture(self: TmuxController, window_id: str, lines: int) -> str:
         del self
         seen.append((window_id, lines))
         return "pane-text\n"
 
+    def probe(
+        self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget
+    ) -> ProbeResult:
+        del self, fleet_id, seat_id
+        if present is None or target.window_id in windows:
+            return ProbeResult(ProbeState.ALIVE, True, target)
+        return ProbeResult(ProbeState.DEAD, False)
+
     monkeypatch.setattr("foil.lifecycle.TmuxController.capture_pane", capture)
-    return seen
+    monkeypatch.setattr("foil.lifecycle.TmuxController.probe", probe)
+    return seen, windows
 
 
 def _lesson(capsys: pytest.CaptureFixture[str], text: str) -> str:
@@ -356,10 +368,11 @@ def test_list_and_peek_report_owned_facts_only(
     _commit(repo)
     _launch(monkeypatch)
     _stop(monkeypatch)
-    seen = _pane(monkeypatch)
+    seen, windows = _pane(monkeypatch, present=set())
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "implementer"]) == 0
     lead = load_registry(repo)["seats"]["lead"]["window_id"]
+    windows.add(lead)
     worker = load_registry(repo)["seats"]["implementer-1"]
     _alive(monkeypatch, {lead})
     assert main(["seat", "list"]) == 0
