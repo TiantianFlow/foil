@@ -106,7 +106,7 @@ human's part is one sentence; everything after step 2 is the agent's work.
 | ID | Requirement |
 |---|---|
 | F10 | `seat list` reports only facts Foil owns: each seat's name, template, state, and worktree, plus the harness and model the registry recorded at that seat's last launch, and its template's current description. The description is empty when the template is gone, the template cannot be read, or the persona cannot be read. A seat record with no `model` field loads that field as empty. |
-| F11 | `seat peek` prints the raw last lines of one seat's pane, exactly as tmux captures them. It does this for an alive seat and for a dead seat whose window still exists, so a process that exited at launch leaves an error that can be read. A killed seat, or a dead seat whose window is gone, is an error. |
+| F11 | `seat peek` prints the raw last lines of one seat's pane, exactly as tmux captures them. It does this for an alive seat and for a dead seat whose window still exists and still carries this fleet's and this seat's markers, so a process that exited at launch leaves an error that can be read. A killed seat, a dead seat whose window is gone, or a stored window id that now names another window is an error. |
 | F12 | Foil never parses, classifies, or interprets pane contents. Whether an agent is busy, idle, blocked, or done is stated by the agents themselves in board files. |
 
 ### Communication
@@ -192,7 +192,7 @@ accepts `--help`, and `foil --version` prints the version.
 | `foil seat kill NAME` | `--all` (no NAME) | Stops the seat's window and marks it `killed` (F6). `--all` stops every seat. |
 | `foil seat resume [NAME]` | none | Restarts `dead` seats (F9). |
 | `foil seat list` | `--json` | Lists seats (F10). Human: `<name>\t<template>\t<state>\t<worktree>\t<harness>[/<model>]\t<description>`. JSON adds `harness`, `model`, and `description`. |
-| `foil seat peek NAME` | `--lines N` (default 40) | Prints the pane tail (F11). A dead seat whose window still exists is printed the same way. A killed seat, or a dead seat whose window is gone, is an error. |
+| `foil seat peek NAME` | `--lines N` (default 40) | Prints the pane tail (F11). A dead seat whose window still exists and still carries this seat's markers is printed the same way. A killed seat, a dead seat whose window is gone, or a stored window id that now names another window is an error. |
 | `foil send TO TEXT` | none; `TEXT` = `-` reads stdin | Writes mail and nudges the recipient (F13, F14). |
 | `foil mail read PATH` | `--json` | Reads mail file at PATH. PATH must be absolute and in `.foil/board/mail/`. Human output: body only. JSON: full contract + body. |
 | `foil mail list` | `--json` | Lists mail for current seat (FOIL_SEAT_ID required). A symlinked `board/mail` lists nothing. Sorted newest first. Human: `<time> <from> <path>` per line. JSON: array of mail metadata. |

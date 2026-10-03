@@ -670,11 +670,18 @@ def peek_seat(root: Path, name: str, *, lines: int) -> None:
     record = _known(registry, name)
     state = _state(registry, name, record)
     window = record.get("window_id") or ""
-    # A dead seat keeps its window after the process exits, so the error is readable.
-    if state == "killed" or not window or not TmuxController().window_exists(window):
+    controller = TmuxController()
+    probe = (
+        controller.probe(str(registry["fleet_id"]), name, _target(registry, root, name, window))
+        if window
+        else None
+    )
+    # A dead pane is still this seat's pane when the markers match.
+    owned = probe is not None and probe.observed is not None and bool(probe.identity_matches)
+    if state == "killed" or not owned:
         raise FoilError(f"foil: seat '{name}' is {state}")
     try:
-        text = TmuxController().capture_pane(window, lines)
+        text = controller.capture_pane(probe.observed.window_id or "", lines)
     except TmuxError as exc:
         raise FoilError("foil: could not peek seat") from exc
     sys.stdout.write(text)
