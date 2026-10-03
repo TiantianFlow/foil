@@ -24,7 +24,7 @@ Then check that `foil --version` prints the version you expect and that `command
 foil init
 ```
 
-Read the whole report. The first line is the version. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, `Updated skills: …` or `Skills: current`, a built-in preset overridden by `.foil/harnesses`, available personas without templates, and the permission sentence. Running it again overwrites no template, persona, or preset. It replaces the three skills when their bytes differ from this version.
+Read the whole report. The first line is the version. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, `Updated skills: …` or `Skills: current`, a built-in preset overridden by `.foil/harnesses`, available personas without templates, and the permission sentence. Running it again overwrites no template, persona, or preset. It replaces the operator skill when its bytes differ from this version.
 
 After first init, run `foil roster list` to see all templates and available personas. Review with the human:
 
@@ -60,7 +60,7 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 ## Role templates
 
-A template is a TOML file in `.foil/templates/`. The file name is the role. The five fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the three skills when their bytes differ from this version.
+A template is a TOML file in `.foil/templates/`. The file name is the role. The five fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the operator skill when its bytes differ from this version.
 
 View and modify templates with the roster commands:
 

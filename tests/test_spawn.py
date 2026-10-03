@@ -479,8 +479,8 @@ def test_instruction_points_at_the_role_skill(
     root = foil_root(repo)
     lead = (root / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
     reader = (root / "run" / "instructions" / "reader.md").read_text(encoding="utf-8")
-    assert f"Skill: `{(root / 'skills' / 'lead.md').resolve()}`." in lead
-    assert f"Skill: `{(root / 'skills' / 'worker.md').resolve()}`." in reader
+    assert ".foil/skills/" not in lead
+    assert ".foil/skills/" not in reader
     assert "You plan the goal, staff the fleet" in lead
     assert "You do the assigned task, stay in your own worktree" in reader
     assert "whenever you are woken." in lead
@@ -516,7 +516,8 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
         text = (foil_root(repo) / "run" / "instructions" / f"{seat}.md").read_text(encoding="utf-8")
         assert text in plan["argv"]
         skill = "lead.md" if seat == "lead" else "worker.md"
-        skill_text = (foil_root(repo) / "skills" / skill).read_text(encoding="utf-8").strip()
+        packaged = Path(__file__).resolve().parents[1] / "src" / "foil" / "defaults" / "skills"
+        skill_text = (packaged / skill).read_text(encoding="utf-8").strip()
         assert skill_text in text
         reread = (foil_root(repo) / "run" / "instructions" / f"{seat}.md").resolve()
         assert f"Re-read `{reread}`" in text
