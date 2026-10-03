@@ -534,7 +534,7 @@ def kill_seats(
     for seat_name in names:
         record = registry["seats"][seat_name]
         window = record.get("window_id") or ""
-        if record.get("state") != "killed" and window:
+        if _state(registry, seat_name, record) == "alive" and window:
             target = TmuxTarget(
                 session_name=str(registry.get("tmux_session") or _session_name(root)),
                 window_name=seat_name,

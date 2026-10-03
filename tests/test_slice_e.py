@@ -33,6 +33,20 @@ def _alive(monkeypatch: pytest.MonkeyPatch, windows: set[str]) -> None:
 
 def _stop(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     stopped: list[str] = []
+    # These tests stub the stop and do not create a window. Kill now asks
+    # whether the seat is alive first, and a spawned seat counts as alive.
+
+    def matches_window(
+        self: TmuxController,
+        fleet_id: str,
+        seat_id: str,
+        session_name: str,
+        window_id: str,
+    ) -> bool:
+        del self, fleet_id, seat_id, session_name, window_id
+        return True
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.matches_window", matches_window)
 
     def stop(self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
         del self, fleet_id, seat_id
