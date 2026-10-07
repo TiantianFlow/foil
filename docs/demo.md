@@ -55,10 +55,10 @@ permission = "auto"
 ```
 
 `worktree = true` gives each implementer its own Git worktree and branch.
-`permission = "ask"` makes a seat stop at its first approval prompt and
-wait for you in its window. For an unattended run, set
-`permission = "auto"` on every template whose seat should work alone.
-A harness may still ask before some commands, so peek new seats.
+Omitting `permission` means `auto`, and the seat runs unattended.
+`permission = "ask"` is the explicit choice: the seat stops at its first
+approval prompt and waits for you in its window. A harness may still ask
+before some commands, so peek new seats.
 
 ## 3. Hand over the goal
 
