@@ -2,11 +2,14 @@
 
 Notable changes to Foil, newest first.
 
-## [Unreleased]
+## [0.3.4] - 2026-10-07
+
+`foil --version` prints 0.3.4.
 
 ### Changed
 
-- An omitted permission, and `foil roster add` without `--from`, now default to `permission = "auto"`. `ask` remains the explicit choice, set from outside the fleet. The operator may send keystrokes only for an approval dialog. Foil still does not interpret pane contents. (#25)
+- An omitted permission, and `foil roster add` without `--from`, now default to `permission = "auto"`. `ask` remains the explicit choice, set from outside the fleet. The operator may send keystrokes only for an approval dialog (folder trust, login, or a prompt that blocks the seat until approved). Foil never interprets pane contents; it does not scrape a pane, decide a dialog is present, or send keys. (#25)
+- In-fleet `foil roster add --from` refuses a file that asks for `ask`. (#25)
 
 ## [0.3.3] - 2026-10-02
 
@@ -237,6 +240,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.3.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.4
 [0.3.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.3
 [0.3.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.2
 [0.3.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.1
