@@ -122,6 +122,7 @@ def test_roster_add_creates_template_from_persona(
     assert template_path.is_file()
     content = template_path.read_text()
     assert 'persona = "personas/researcher.md"' in content
+    assert 'permission = "auto"' in content
 
 
 def test_roster_add_duplicate_fails(project: Path) -> None:
@@ -560,12 +561,12 @@ def _permission_source(path: Path, permission: str | None) -> Path:
     return path
 
 
-def test_lead_cannot_add_from_with_non_ask_permission(
+def test_lead_cannot_add_from_with_ask_permission(
     monkeypatch: pytest.MonkeyPatch,
     project: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    source = _permission_source(project / "auto.toml", "auto")
+    source = _permission_source(project / "ask.toml", "ask")
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     assert main(["roster", "add", "custom", "--from", str(source)]) == 1
     err = capsys.readouterr().err
@@ -574,7 +575,7 @@ def test_lead_cannot_add_from_with_non_ask_permission(
     assert not (project / ".foil" / "templates" / "custom.toml").exists()
 
 
-def test_lead_can_add_from_when_permission_is_omitted(
+def test_lead_can_add_from_when_permission_is_auto(
     monkeypatch: pytest.MonkeyPatch,
     project: Path,
     capsys: pytest.CaptureFixture[str],
@@ -640,8 +641,8 @@ def test_lead_cannot_inject_permission_through_another_field(
 ) -> None:
     """A quoted newline in another field must not set permission.
 
-    The source omits permission, which counts as ask. On the unfixed writer
-    the model value closes its string and adds permission = "auto".
+    The source omits permission, which counts as auto. On the unfixed writer
+    the model value closes its string and adds permission = "ask".
     """
     source = _permission_source(project / "plain.toml", None)
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
@@ -649,20 +650,20 @@ def test_lead_cannot_inject_permission_through_another_field(
     capsys.readouterr()
     path = project / ".foil" / "templates" / "custom.toml"
     before = path.read_bytes()
-    injected = 'm"\npermission = "auto'
+    injected = 'm"\npermission = "ask'
     assert main(["roster", "update", "custom", f"model={injected}"]) == 1
     err = capsys.readouterr().err
     assert err.count("\n") == 1
     assert "quote, a backslash, or a control character" in err
     assert path.read_bytes() == before
-    assert template_permission(path.read_text(encoding="utf-8")) == "ask"
+    assert template_permission(path.read_text(encoding="utf-8")) == "auto"
 
 
 def test_in_fleet_update_rolls_back_a_permission_change(project: Path) -> None:
     path = project / ".foil" / "templates" / "lead.toml"
     before = path.read_bytes()
     with pytest.raises(FoilError, match="permission is outside the fleet only"):
-        update_template(project, "lead", "permission", "auto", in_fleet=True)
+        update_template(project, "lead", "permission", "ask", in_fleet=True)
     assert path.read_bytes() == before
 
 
@@ -674,7 +675,7 @@ def test_lead_cannot_set_permission(
     path = project / ".foil" / "templates" / "lead.toml"
     before = path.read_bytes()
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
-    assert main(["roster", "update", "lead", "permission=auto"]) == 1
+    assert main(["roster", "update", "lead", "permission=ask"]) == 1
     assert "permission is outside the fleet only" in capsys.readouterr().err
     assert path.read_bytes() == before
 
