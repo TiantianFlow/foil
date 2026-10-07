@@ -106,7 +106,7 @@ def _listed(toplevel: Path, name: str) -> dict | None:
         "harness": harness,
         "model": template.get("model", ""),
         "worktree": template.get("worktree", False),
-        "permission": template.get("permission", "ask"),
+        "permission": template.get("permission", "auto"),
         "preset": preset_source(toplevel, harness),
         "description": read_description(template),
     }
@@ -155,7 +155,7 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
             "model": template.get("model", ""),
             "persona": template.get("persona", ""),
             "worktree": template.get("worktree", False),
-            "permission": template.get("permission", "ask"),
+            "permission": template.get("permission", "auto"),
             "preset": preset,
             "description": description,
         }
@@ -168,7 +168,7 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
         if template.get("persona"):
             print(f"persona: {template['persona']}")
         print(f"worktree: {template.get('worktree', False)}")
-        print(f"permission: {template.get('permission', 'ask')}")
+        print(f"permission: {template.get('permission', 'auto')}")
         print(f"preset: {preset}")
         print(f"description: {description}")
 
