@@ -9,13 +9,9 @@ You are the human's harness. You start the fleet, check in, and relay. You never
 
 ## The regular loop
 
-Install or update, run `foil init`, read the whole report, set the roster from outside the fleet, spawn the lead once for the first-run check, send only the goal, then check in until the human is done. The commands for each of those steps are in the sections below. The one spawn is the first-run check in Onboarding. This loop does not spawn the lead itself.
+Install or update, run `foil init`, read the report, and stop if no harness is eligible, as Onboarding says. Set the roster, run the one spawn in Onboarding, send the goal, then check in. The commands for each of those steps are in the sections below. This loop does not spawn the lead itself.
 
-You may read only enough to relay the human's goal in your own words. That reading is not research, not a plan, and not a source the fleet may follow. Do not write it up as a board note for the fleet to treat as findings. The lead spawns a researcher when the goal needs research. You never do the project work.
-
-You schedule your own check-ins. The interval is at most 10 minutes. Until the first-run check has passed, or you have reported a dialog to the human, check more often than that. This is your own scheduling. It is not a Foil command, and Foil has no poll flag.
-
-`--task` carries only the goal. Skill text is not pasted into the task. The instruction file already inlines the role skill. A pane is raw text. Nobody decides busy, idle, working, or done from it. What the fleet is doing is `board/status.md` and `foil seat list`. A dialog (login, folder trust, update, approval) is reported, never answered. There is no Foil command for sending keys. `permission` defaults to `ask`, is per template, and only a caller outside the fleet may set it. `auto` on the lead does not unattend the workers. Pair `auto` with a worktree. Do not default the fleet to `auto`.
+`--task` carries only the goal. A pane is raw text. Nobody decides busy, idle, working, or done from it. What the fleet is doing is `board/status.md` and `foil seat list`.
 
 ## Onboarding
 
@@ -34,7 +30,9 @@ Then check that `foil --version` prints the version you expect and that `command
 foil init
 ```
 
-Read the whole report. The first line is the version. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, `Updated skills: …` or `Skills: current`, a built-in preset overridden by `.foil/harnesses`, available personas without templates, and the permission sentence. Running it again overwrites no template, persona, or preset. It replaces the operator skill when its bytes differ from this version.
+Read the whole report before you staff the fleet. The first line is the version. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, `Updated skills: …` or `Skills: current`, a built-in preset overridden by `.foil/harnesses`, available personas without templates, and the permission sentence. Running it again overwrites no template, persona, or preset. It replaces the operator skill when its bytes differ from this version.
+
+If the report lists no installed eligible harness, stop and tell the human. Do not spawn. The human either installs a harness CLI and you re-run `init`, or the human adds a user preset at `.foil/harnesses/<id>.toml` in the format of section 7.3 and you re-run `init`. A user preset that reuses a built-in id replaces that built-in. You do not invent preset fields. You do not write the preset.
 
 After first init, run `foil roster list` to see all templates and available personas. Review with the human:
 
@@ -44,8 +42,8 @@ After first init, run `foil roster list` to see all templates and available pers
 
 Add roles as needed with `foil roster add <role>`. Update harness or model with `foil roster update <role> harness=<id>` or `foil roster update <role> model=<model>`.
 
-3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `ask` is the default: that seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`.
-4. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. Put only the goal in `--task`. Do not copy skill text into the task.
+3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. `ask` is the default: that seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Set `auto` on each template whose seat should run unattended. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`. You do not change the `ask` default afterwards. You never send keys. You do not approve, deny, or type into a seat's pane. A dialog you would not want approved is reported to the human with the seat name and what the pane shows, and the human answers it in that pane. The lead, inside the fleet, does not set `permission`.
+4. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. `--task` carries only the goal. Do not copy skill text into the task.
 5. Check that the lead is working. Spawn the lead once, with this task, then wait a few minutes:
 
 ```text
@@ -81,7 +79,7 @@ foil roster update implementer model=claude-sonnet-4-5
 foil roster add researcher
 ```
 
-The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add <role>` creates a template for a role whose persona file exists, using the first installed harness. Set `permission` from outside the fleet; the lead cannot, including on `foil roster add --from` when the file's permission is not `ask`. An omitted permission is `ask`. Do not remove a template, or change its harness, while a seat of that template has a stored state other than `killed`. You can still edit template files directly in `.foil/templates/` if you prefer.
+The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add` without `--from` uses the first installed harness, `worktree = false`, and `permission = ask`. Set `permission` from outside the fleet; the lead cannot, including on `foil roster add --from` when the file's permission is not `ask`. An omitted permission is `ask`. Do not remove a template, or change its harness, while a seat of that template has a stored state other than `killed`. You can still edit template files directly in `.foil/templates/` if you prefer.
 
 ## Picking a harness and a model
 
@@ -92,11 +90,11 @@ Keep the principles few.
 - Give a large context to roles that read a lot.
 - Pair `auto` with a worktree. A seat that runs unattended and can commit should have its own branch.
 
-The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist.
+The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist. Do not reorder `init`'s harness assignment. Change harness or model afterwards with `roster update`.
 
 ## Personas from outside
 
-The human may adapt persona text from an outside catalog into `.foil/templates/personas/<role>.md`, then you add that role with `foil roster add` only because the file is already there (F20, F21). One such catalog is the agency-agents GitHub repository, including localized persona packs a human may adapt the same way. Name it only as a pointer. Do not clone it, do not vendor it, and do not treat its roles as Foil templates. Foil's packaged candidates remain `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`.
+You may adapt text from an outside catalog, including a localized pack, into `.foil/templates/personas/<role>.md`. Then `foil roster add ROLE` once the file exists, or `foil roster update ROLE persona=VALUE` when the template already exists. One such catalog is the agency-agents GitHub repository. Name it only as a pointer. Do not clone it and do not vendor it. Packaged candidates remain `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`.
 
 ## Start
 
@@ -106,7 +104,7 @@ The first-run check already spawned the lead. Do not spawn the lead again. Send 
 foil send lead "the human's goal"
 ```
 
-`foil init` creates the Foil folder and the default templates. It is safe to run again. Put only the goal in `--task` on that one spawn. Then let the fleet work.
+`foil init` creates the Foil folder and the default templates. It is safe to run again. `--task` carries only the goal on that one spawn. Then let the fleet work.
 
 ## Check in
 
@@ -121,11 +119,13 @@ foil seat peek lead
 
 Read the lead's `status.md` in the Foil folder at `board/status.md`. That file is the lead's own report. Its contract is `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`.
 
-At each check-in, tell the human: the `state` and `updated` value from `board/status.md`; the checklist progress and the open items, quoted from that file; any `questions` in that file; which seats `foil seat list` shows alive, dead, or killed; and when you will check again. Quote the file. Do not decide from a pane who is working or what they are working on. Section 6 has no attach command and no attach flag. Do not invent one, and do not quote an attach line from memory. `tmux ls` is outside Foil; mention a session only when that command printed it.
+You schedule your own check-ins. The interval is at most 10 minutes. Until the first-run check has passed, or you have reported a dialog to the human, check more often than that. This is your own scheduling. It is not a Foil command, and Foil has no poll flag.
+
+At each check-in, tell the human: the `state` and `updated` value from `board/status.md`; the checklist progress and the open items, quoted from that file; any `questions` in that file; which seats `foil seat list` shows alive, dead, or killed; and when you will check again. Quote the file. Do not decide from a pane who is working or what they are working on.
 
 Do this at each check-in and whenever the human asks for status. Quote the checklist. Do not guess progress from the pane. A blocked worker is named in `questions`. Do not peek workers to find one. If `updated` has not changed over several check-ins, nudge the lead as below.
 
-You schedule your own check-ins. The interval is at most 10 minutes. Until the first-run check has passed, or you have reported a dialog to the human, check more often than that. This is your own scheduling. It is not a Foil command, and Foil has no poll flag.
+When a check-in reports a dialog or a seat that is not making progress, run `tmux ls` and you may tell the human `tmux attach -t <session>` for a session that command printed. Do not invent a session name. Do not add a Foil command or flag.
 
 ## Relay and nudge
 
@@ -187,8 +187,8 @@ Put the persona at `.foil/templates/personas/<role>.md`, then `foil roster add <
 foil roster add <role> --from /path/to/role.toml
 ```
 
-An outside catalog is only a pointer. How a human adapts one is in Personas from outside. Do not repeat that story here, and do not clone a catalog.
+How you adapt an outside catalog is in Personas from outside.
 
 ## What you do not do
 
-You do not implement, review code, or merge. You do not spawn workers, kill a single seat, or resume anyone. Those belong to the lead. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, do not type into a pane, do not set a fleet-wide `auto`, and do not invent an attach command or flag.
+You do not implement, review code, or merge. You do not spawn workers, kill a single seat, or resume anyone. Those belong to the lead. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, do not type into a pane, and do not send keys. You do not invent a session name, and you do not add a Foil command or flag for attaching. You do set `permission` before the first spawn, as Onboarding step 5 says, and `ask` stays the default. You do not change that default afterwards.
