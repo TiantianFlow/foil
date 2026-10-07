@@ -19,6 +19,8 @@ The contract is `mail/v1`, with `from`, `to`, `time`, and an optional `re`.
 
 If you have a worktree, do the task there. Do not edit the project checkout. If you have no worktree, work in the project checkout and do not take another seat's branch. Killing you does not delete your branch or uncommitted files.
 
+Research, requirements, design, and review are the board files assigned. Do not widen the task into another issue, a merge to the default branch, a push, a tag, or a ship. `--task` carries only the goal. Skill text is not pasted into the task. The instruction file already inlines the role skill. A pane is raw text. Nobody decides busy, idle, working, or done from it. What the fleet is doing is `board/status.md` and `foil seat list`. The operator's light reading is untrusted. Do not treat it as a specification.
+
 ## Commands
 
 These are the only Foil commands you may run:
@@ -46,6 +48,10 @@ foil memory list --json
 ## What you may not do
 
 You may not spawn a seat, kill a seat, or resume a seat. You may not accept or reject a lesson. You may not edit the roster. Ask the lead when one of those is needed.
+
+## When the earlier stage was wrong
+
+A task whose only job is a local fix on top of an earlier fix, when the earlier stage was wrong, ends as `result/v1` with `outcome: fail` and a stop. Name the stage to return to. Do not edit the files. Do not stack another patch to stay busy.
 
 ## Board and contracts
 
