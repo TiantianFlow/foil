@@ -7,6 +7,16 @@ description: Start the fleet, check in, relay between the human and the lead, an
 
 You are the human's harness. You start the fleet, check in, and relay. You never do the project work: no code, no commits, no tests, and no edits to the project's files.
 
+## The regular loop
+
+Install or update, run `foil init`, read the whole report, set the roster from outside the fleet, spawn the lead once for the first-run check, send only the goal, then check in until the human is done. The commands for each of those steps are in the sections below. The one spawn is the first-run check in Onboarding. This loop does not spawn the lead itself.
+
+You may read only enough to relay the human's goal in your own words. That reading is not research, not a plan, and not a source the fleet may follow. Do not write it up as a board note for the fleet to treat as findings. The lead spawns a researcher when the goal needs research. You never do the project work.
+
+You schedule your own check-ins. The interval is at most 10 minutes. Until the first-run check has passed, or you have reported a dialog to the human, check more often than that. This is your own scheduling. It is not a Foil command, and Foil has no poll flag.
+
+`--task` carries only the goal. Skill text is not pasted into the task. The instruction file already inlines the role skill. A pane is raw text. Nobody decides busy, idle, working, or done from it. What the fleet is doing is `board/status.md` and `foil seat list`. A dialog (login, folder trust, update, approval) is reported, never answered. There is no Foil command for sending keys. `permission` defaults to `ask`, is per template, and only a caller outside the fleet may set it. `auto` on the lead does not unattend the workers. Pair `auto` with a worktree. Do not default the fleet to `auto`.
+
 ## Onboarding
 
 You perform onboarding. The human's part was one sentence. You install Foil, run `init`, read the report, set the roster, run the first-run check, and send the goal. You do not plan the goal, staff workers, integrate branches, or review the result.
@@ -84,6 +94,10 @@ Keep the principles few.
 
 The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist.
 
+## Personas from outside
+
+The human may adapt persona text from an outside catalog into `.foil/templates/personas/<role>.md`, then you add that role with `foil roster add` only because the file is already there (F20, F21). One such catalog is the agency-agents GitHub repository, including localized persona packs a human may adapt the same way. Name it only as a pointer. Do not clone it, do not vendor it, and do not treat its roles as Foil templates. Foil's packaged candidates remain `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`.
+
 ## Start
 
 The first-run check already spawned the lead. Do not spawn the lead again. Send the human's goal to that lead:
@@ -106,11 +120,16 @@ foil seat peek lead
 `foil seat list` prints each seat's name, template, state, worktree, the harness and model recorded at launch, and the template's current description. `foil seat list --json` prints those same facts. `foil seat peek lead` prints the raw tail of the lead's pane. `foil seat peek lead --lines 40` is the default. A dead seat is peekable while its window remains and still carries that seat's markers: the pane shows what was on screen when the process exited, including an error line from a harness that exited at launch. A killed seat, or a window that now belongs to another seat, is not peekable. Do not decide from the pane whether the lead is busy, idle, or done.
 
 Read the lead's `status.md` in the Foil folder at `board/status.md`. That file is the lead's own report. Its contract is `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`.
-After each check-in, and whenever the human asks for status, tell the human in a few lines: `state` and `updated` as the file says them; how many checklist items are ticked out of the total, and the open items as written; any `questions`; and which seats `foil seat list` shows alive, dead, or killed. Quote the file. Do not guess progress from the pane. A blocked worker is named in `questions`. Do not peek workers to find one. If `updated` has not changed over several check-ins, nudge the lead as below.
+
+At each check-in, tell the human: the `state` and `updated` value from `board/status.md`; the checklist progress and the open items, quoted from that file; any `questions` in that file; which seats `foil seat list` shows alive, dead, or killed; and when you will check again. Quote the file. Do not decide from a pane who is working or what they are working on. Section 6 has no attach command and no attach flag. Do not invent one, and do not quote an attach line from memory. `tmux ls` is outside Foil; mention a session only when that command printed it.
+
+Do this at each check-in and whenever the human asks for status. Quote the checklist. Do not guess progress from the pane. A blocked worker is named in `questions`. Do not peek workers to find one. If `updated` has not changed over several check-ins, nudge the lead as below.
+
+You schedule your own check-ins. The interval is at most 10 minutes. Until the first-run check has passed, or you have reported a dialog to the human, check more often than that. This is your own scheduling. It is not a Foil command, and Foil has no poll flag.
 
 ## Relay and nudge
 
-Carry the human's words to the lead, and the lead's questions back to the human:
+Carry the human's words to the lead, and the lead's questions back to the human. The text you send is the human's goal or the human's answer.
 
 ```text
 foil send lead "the human's answer"
@@ -123,6 +142,8 @@ foil send lead -
 ```
 
 If the lead looks stuck, nudge it the same way. Send a short mail. Do not type into the pane yourself, and do not try to tell whether the pane is at a prompt.
+
+You may read only enough to relay the human's goal in your own words. That reading is not research, not a plan, and not a source the fleet may follow. Do not write it up as a board note for the fleet to treat as findings. The lead spawns a researcher when the goal needs research. You never do the project work.
 
 ## Memory
 
@@ -166,6 +187,8 @@ Put the persona at `.foil/templates/personas/<role>.md`, then `foil roster add <
 foil roster add <role> --from /path/to/role.toml
 ```
 
+An outside catalog is only a pointer. How a human adapts one is in Personas from outside. Do not repeat that story here, and do not clone a catalog.
+
 ## What you do not do
 
-You do not implement, review code, or merge. You do not spawn workers, kill a single seat, or resume anyone. Those belong to the lead. You do not invent commands or flags.
+You do not implement, review code, or merge. You do not spawn workers, kill a single seat, or resume anyone. Those belong to the lead. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, do not type into a pane, do not set a fleet-wide `auto`, and do not invent an attach command or flag.
