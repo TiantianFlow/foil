@@ -153,9 +153,9 @@ Run `foil seat peek lead`, and do the same for a seat that was just spawned or r
 
 Foil is cooperative protection for seats that follow instructions. It is not isolation from a hostile process. A seat's identity is the `FOIL_SEAT_ID` environment variable Foil sets when it launches that seat. There is no flag a seat can pass to claim another seat. Anything you can do on this machine, a process running as you can do too.
 
-Templates default to `permission = "ask"`, so the harness asks before it acts. Setting `permission = "auto"` inserts that preset's auto flags. For Claude, those flags are `--permission-mode` and `auto`. Claude Code's auto mode can still ask before some commands, so an `auto` seat may stop on an approval prompt. Peek new seats. That seat is still you.
+Templates default to `permission = "auto"`. An omitted permission runs the seat unattended. Setting `permission = "ask"` is how a template opts back into prompts: that seat stops at its first approval prompt. Setting `permission = "auto"` inserts that preset's auto flags. For Claude, those flags are `--permission-mode` and `auto`. Claude Code's auto mode can still ask before some commands, so an `auto` seat may stop on an approval prompt. Peek new seats. That seat is still you.
 
-Foil never interprets what is on a seat's screen. `foil seat peek` prints the raw tmux capture, and `foil seat list` reports `alive`, `dead`, or `killed` from whether the seat's window still exists, not from what is on its screen. Agents say whether they are blocked or done in board files.
+Foil never interprets what is on a seat's screen. `foil seat peek` prints the raw tmux capture, and `foil seat list` reports `alive`, `dead`, or `killed` from whether the seat's window still exists, not from what is on its screen. Agents say whether they are blocked or done in board files. Foil does not scrape a pane, does not decide that a dialog is present, and does not send the keys.
 
 A nudge is typed even when the window is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path, then Enter. The message body is never typed. If the agent is not waiting for input, those keystrokes still go into the window. Foil does not look at the screen to decide.
 

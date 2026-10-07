@@ -19,7 +19,7 @@ The contract is `mail/v1`, with `from`, `to`, `time`, and an optional `re`.
 
 If you have a worktree, do the task there. Do not edit the project checkout. If you have no worktree, work in the project checkout and do not take another seat's branch. Killing you does not delete your branch or uncommitted files.
 
-The task is the goal and nothing else. Do not widen it into another issue, a merge to the default branch, a push, a tag, or a ship. A pane is raw text. Nobody decides busy, idle, working, or done from it. What the fleet is doing is `board/status.md` and `foil seat list`.
+The task is the goal and nothing else. Do not widen it into another issue, a merge to the default branch, a push, a tag, or a ship. A pane is raw text. Nobody decides busy, idle, working, or done from it. You do not type into a pane, and you do not answer a dialog. What the fleet is doing is `board/status.md` and `foil seat list`.
 
 ## Commands
 

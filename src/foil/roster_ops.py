@@ -195,7 +195,7 @@ def add_template(
         if not source.is_file():
             raise FoilError(f"foil: file not found: {shown(from_file)}")
         content = source.read_text(encoding="utf-8")
-        if in_fleet and template_permission(content) != "ask":
+        if in_fleet and template_permission(content) != "auto":
             raise FoilError("foil: permission is outside the fleet only")
     else:
         personas_dir = templates_dir / "personas"
@@ -211,7 +211,7 @@ def add_template(
             f'harness = "{installed_harness(toplevel)}"\n'
             f'persona = "personas/{role}.md"\n'
             "worktree = false\n"
-            'permission = "ask"\n'
+            'permission = "auto"\n'
         )
 
     created = False

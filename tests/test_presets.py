@@ -247,7 +247,7 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
         template = load_template(repo, role)
         assert template["harness"] == ("codex" if role == "reviewer" else "claude")
         assert template["worktree"] is worktree
-        assert template["permission"] == "ask"
+        assert template["permission"] == "auto"
         packaged = files("foil").joinpath("defaults", "personas", f"{role}.md").read_text(
             encoding="utf-8"
         )

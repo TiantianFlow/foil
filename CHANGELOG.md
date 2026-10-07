@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Changed
+
+- An omitted permission, and `foil roster add` without `--from`, now default to `permission = "auto"`. `ask` remains the explicit choice, set from outside the fleet. The operator may send keystrokes only for an approval dialog. Foil still does not interpret pane contents. (#25)
+
 ## [0.3.3] - 2026-10-02
 
 `foil --version` prints 0.3.3.
