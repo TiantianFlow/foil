@@ -26,11 +26,11 @@ def _fail(label: str) -> None:
 
 
 def _permission_field(raw: dict[str, Any]) -> Any:
-    return raw.get("permission", "ask")
+    return raw.get("permission", "auto")
 
 
 def template_permission(text: str) -> Any:
-    """Permission as load_template reads it. An omitted field is ask."""
+    """Permission as load_template reads it. An omitted field is auto."""
     return _permission_field(_load_toml(text, "template"))
 
 
@@ -348,7 +348,7 @@ def write_default_templates(toplevel: Path) -> list[str]:
             f'harness = "{harness}"\n'
             f'persona = "personas/{role}.md"\n'
             f"worktree = {worktree}\n"
-            'permission = "ask"\n'
+            'permission = "auto"\n'
         )
         target = directory / f"{role}.toml"
         if not target.exists() and not target.is_symlink():

@@ -91,14 +91,14 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
     pointer = "Read .foil/skills/operator.md and follow it. My goal: <goal>."
-    ask = "permission: lead ask, implementer ask, reviewer ask."
+    ask = "permission: lead auto, implementer auto, reviewer auto."
     rule = (
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
         "approval prompts, though some harnesses still ask for some commands. "
         "Set it in each .foil/templates/<role>.toml; auto on the lead alone does not "
         "let the workers run unattended."
     )
-    auto = "permission: lead auto, implementer ask, reviewer ask."
+    auto = "permission: lead ask, implementer auto, reviewer auto."
 
     assert main(["init"]) == 0
     first = capsys.readouterr()
@@ -122,7 +122,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     assert "documentation-writer" in first.out
     lead = foil_root(repo) / "templates" / "lead.toml"
     original = lead.read_text(encoding="utf-8")
-    assert 'permission = "ask"\n' in original
+    assert 'permission = "auto"\n' in original
 
     assert main(["init"]) == 0
     second = capsys.readouterr()
@@ -133,7 +133,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     assert ask in second.out
     assert lead.read_text(encoding="utf-8") == original
 
-    edited = original.replace('permission = "ask"', 'permission = "auto"')
+    edited = original.replace('permission = "auto"', 'permission = "ask"', 1)
     lead.write_text(edited, encoding="utf-8")
     assert main(["init"]) == 0
     third = capsys.readouterr()
