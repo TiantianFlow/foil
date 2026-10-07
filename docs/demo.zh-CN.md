@@ -49,9 +49,9 @@ worktree = true
 permission = "auto"
 ```
 
-`worktree = true` 让每个实现者拥有自己的 Git worktree 和分支。`permission = "ask"`
-会让席位停在第一个审批提示上，在自己的窗口里等你处理。想让它们无人值守地运行，就在
-每个需要独立工作的席位模板里设置 `permission = "auto"`。
+`worktree = true` 让每个实现者拥有自己的 Git worktree 和分支。省略 `permission` 时
+取值是 `auto`，席位无人值守地运行。`permission = "ask"` 是显式选择：
+席位会停在第一个审批提示上，在自己的窗口里等你处理。
 有些 harness 仍会在执行某些命令前请求批准，所以要看一眼新席位。
 
 ## 3. 交出目标
