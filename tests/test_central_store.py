@@ -177,6 +177,34 @@ def test_init_adopts_an_orphaned_record_and_repairs_worktrees(
     listed = _git(moved, "worktree", "list", "--porcelain")
     assert str(worktree) in listed.stdout
     assert _git(worktree, "status", "--porcelain").stdout == ""
+    registry = json.loads((adopted / "run" / "registry.json").read_text(encoding="utf-8"))
+    assert registry["seats"]["implementer-1"]["worktree"] == str(worktree)
+    plan = json.loads(
+        (adopted / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8")
+    )
+    assert plan["cwd"] == str(worktree)
+    instruction = (adopted / "run" / "instructions" / "implementer-1.md").read_text(
+        encoding="utf-8"
+    )
+    assert str(old_root) not in instruction
+    assert str(adopted) in instruction
+
+    monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
+    monkeypatch.setattr(
+        "foil.lifecycle.TmuxController.matches_window",
+        lambda self, fleet_id, seat_id, session_name, window_id: False,
+    )
+    monkeypatch.setattr(
+        "foil.lifecycle.TmuxController.remove_verified",
+        lambda self, fleet_id, seat_id, target: True,
+    )
+    capsys.readouterr()
+    assert main(["seat", "resume", "implementer-1"]) == 0
+    resumed = json.loads(
+        (adopted / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8")
+    )
+    assert Path(resumed["cwd"]) == worktree
+    assert worktree.is_dir()
 
 
 def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
