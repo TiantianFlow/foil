@@ -209,3 +209,43 @@ def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
     assert _INSTRUCTION in capsys.readouterr().out
     assert kept.is_dir()
     assert not (foil_root(busy) / "board" / "marker.txt").exists()
+
+
+def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "project", monkeypatch)
+    _commit(repo)
+    legacy = repo / ".foil"
+    (legacy / "board" / "notes").mkdir(parents=True)
+    (legacy / "run").mkdir()
+    (legacy / "templates").mkdir()
+    (legacy / "board" / "notes" / "keep.txt").write_text("kept\n", encoding="utf-8")
+    seat = legacy / "worktrees" / "implementer-1"
+    _git(repo, "worktree", "add", "--quiet", "-b", "foil/implementer-1", str(seat))
+    gitdir = (seat / ".git").read_text(encoding="utf-8")
+    store = foil_root(repo)
+    (store / "run").mkdir(parents=True)
+    (store / "templates").mkdir()
+    (store / "run" / "owned.txt").write_text("store\n", encoding="utf-8")
+
+    assert main(["init"]) == 0
+    assert _INSTRUCTION in capsys.readouterr().out
+    assert (legacy / "board" / "notes" / "keep.txt").read_text(encoding="utf-8") == "kept\n"
+    assert (legacy / "run").is_dir()
+    assert (legacy / "templates").is_dir()
+    assert (seat / ".git").read_text(encoding="utf-8") == gitdir
+    assert not (store / "board" / "notes" / "keep.txt").exists()
+    assert not (store / "worktrees").exists()
+    assert (store / "run" / "owned.txt").read_text(encoding="utf-8") == "store\n"
+    listed = _git(repo, "worktree", "list", "--porcelain")
+    assert str(seat) in listed.stdout
+    assert "prunable" not in listed.stdout
+    assert _git(seat, "status", "--porcelain").stdout == ""
+
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    assert _INSTRUCTION in capsys.readouterr().out
+    assert (legacy / "board" / "notes" / "keep.txt").is_file()
+    assert (seat / ".git").is_file()

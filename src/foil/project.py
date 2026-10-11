@@ -205,12 +205,26 @@ def _simple_legacy(legacy: Path) -> bool:
 
 
 def _move_legacy(legacy: Path, root: Path, toplevel: Path) -> None:
-    for child in legacy.iterdir():
-        target = root / child.name
-        if target.exists():
-            raise FoilError(_MIGRATION)
-        shutil.move(str(child), str(target))
-    legacy.rmdir()
+    """Move every child, or put back anything already moved.
+
+    A name that already exists in the store is a collision. The old
+    directory is left as it was, including any seat worktree.
+    """
+
+    moved: list[tuple[Path, Path]] = []
+    try:
+        for child in list(legacy.iterdir()):
+            target = root / child.name
+            if target.exists():
+                raise FoilError(_MIGRATION)
+            shutil.move(str(child), str(target))
+            moved.append((target, legacy / child.name))
+        legacy.rmdir()
+    except (OSError, FoilError):
+        for target, source in reversed(moved):
+            if target.exists() and not source.exists():
+                shutil.move(str(target), str(source))
+        raise
     _repair_worktrees(root, toplevel)
 
 
