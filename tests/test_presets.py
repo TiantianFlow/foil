@@ -420,7 +420,7 @@ def test_scan_skips_one_invalid_user_preset_and_returns_the_valid_one(
     ids = [preset["id"] for preset in found]
     assert "ok-agent" in ids
     assert "zz" not in ids
-    assert (".foil/harnesses/zz.toml", "invalid preset") in skipped
+    assert ("harnesses/zz.toml", "invalid preset") in skipped
 
 
 def _fresh_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -627,7 +627,7 @@ def test_init_reports_an_overridden_builtin_and_leaves_the_preset(
     (harnesses / "fake.toml").write_text('id = "fake"\n', encoding="utf-8")
     assert main(["init"]) == 0
     report = capsys.readouterr().out
-    assert "Built-in presets overridden by .foil/harnesses: claude, grok\n" in report
+    assert "Built-in presets overridden by harnesses: claude, grok\n" in report
     assert "fake" not in report.split("Built-in presets overridden", 1)[1].split("\n", 1)[0]
     assert (harnesses / "claude.toml").read_bytes() == preset
 

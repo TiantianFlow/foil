@@ -6,14 +6,17 @@ import json
 from pathlib import Path
 
 from foil.errors import FoilError
+from foil.project import discover_project, foil_root, is_initialized
 
 
 def board_root() -> Path:
-    for candidate in (Path.cwd(), *Path.cwd().parents):
-        board = candidate / ".foil" / "board"
-        if board.is_dir():
-            return board.resolve()
-    raise FoilError("foil: not in a foil project")
+    try:
+        toplevel = discover_project()
+    except FoilError as exc:
+        raise FoilError("foil: not in a foil project") from exc
+    if not is_initialized(toplevel):
+        raise FoilError("foil: not in a foil project")
+    return (foil_root(toplevel) / "board").resolve()
 
 
 def _flow_list(value: str) -> list[str] | None:

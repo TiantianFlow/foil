@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
+from foil.project import foil_root
 from foil.tmux import TmuxController, TmuxTarget
 from tests.test_slice_b import _mail, _repo, _seed
 
@@ -21,7 +22,9 @@ def _keys(monkeypatch: pytest.MonkeyPatch, code: int = 0) -> list[list[str]]:
         calls.append(list(argv))
         if argv and argv[0] == "display-message":
             window = argv[argv.index("-t") + 1]
-            registry = json.loads(Path(".foil/run/registry.json").read_text(encoding="utf-8"))
+            registry = json.loads(
+                (foil_root(Path.cwd()) / "run" / "registry.json").read_text(encoding="utf-8")
+            )
             seat = next(
                 name
                 for name, record in registry["seats"].items()

@@ -526,7 +526,7 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
 
     try:
         version = foil("--version")
-        assert version.stdout.strip() == "foil 0.3.4", version.stderr
+        assert version.stdout.strip() == "foil 0.4.0", version.stderr
         assert Path(shutil.which("foil", path=environment["PATH"]) or "") == bindir / "foil"
         assert foil("init").returncode == 0
         templates = foil_root(repo) / "templates"
@@ -685,7 +685,9 @@ def test_scenario_7_ai_native_onboarding(
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
         assert "HOME" in plan["env_forward"]
         assert "HOME" not in plan["env"]
-        assert plan["env"] == {"FOIL_SEAT_ID": "lead"}
+        assert plan["env"]["FOIL_SEAT_ID"] == "lead"
+        assert plan["env"]["FOIL_PROJECT"]
+        assert "FOIL_HOME" in plan["env"]
 
         # The instruction file carries the persona's own words, not only a
         # pointer to the persona file.
