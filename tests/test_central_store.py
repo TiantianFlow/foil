@@ -262,6 +262,63 @@ def test_init_says_when_several_orphans_match(
     assert (created / "project.json").is_file()
 
 
+def test_lead_only_adopt_and_legacy_move_rewrite_stored_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "orig" / "project", monkeypatch, origin=_ORIGIN)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["init"]) == 0
+    assert main(["seat", "spawn", "lead"]) == 0
+    old_root = foil_root(repo)
+    old_checkout = str(repo.resolve())
+    lead_plan = json.loads((old_root / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    assert lead_plan["cwd"] == old_checkout
+    moved = tmp_path / "moved" / "project"
+    moved.parent.mkdir()
+    monkeypatch.chdir(tmp_path)
+    shutil.move(str(repo), str(moved))
+    monkeypatch.chdir(moved)
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    adopted = foil_root(moved)
+    plan = json.loads((adopted / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    assert plan["cwd"] == str(moved.resolve())
+    instruction = (adopted / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
+    assert str(old_root) not in instruction
+    assert str(adopted) in instruction
+    registry = json.loads((adopted / "run" / "registry.json").read_text(encoding="utf-8"))
+    assert str(old_root) not in json.dumps(registry)
+
+    legacy_repo = _repo(tmp_path / "legacy", monkeypatch)
+    _commit(legacy_repo)
+    legacy = legacy_repo / ".foil"
+    (legacy / "board").mkdir(parents=True)
+    (legacy / "run" / "plans").mkdir(parents=True)
+    (legacy / "run" / "instructions").mkdir()
+    (legacy / "templates").mkdir()
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps({"seats": {"lead": {"state": "killed", "worktree": ""}}}) + "\n",
+        encoding="utf-8",
+    )
+    (legacy / "run" / "plans" / "lead.json").write_text(
+        json.dumps({"cwd": str(legacy_repo.resolve())}) + "\n", encoding="utf-8"
+    )
+    (legacy / "run" / "instructions" / "lead.md").write_text(
+        f"Board: `{legacy / 'board'}`.\n", encoding="utf-8"
+    )
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    store = foil_root(legacy_repo)
+    assert not legacy.exists()
+    moved_instruction = (store / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
+    assert ".foil/board" not in moved_instruction
+    assert str(store / "board") in moved_instruction
+    moved_plan = json.loads((store / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    assert moved_plan["cwd"] == str(legacy_repo.resolve())
+
+
 def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
