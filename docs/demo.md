@@ -29,25 +29,27 @@ foil init
 ```
 
 ```text
-foil 0.3.1
+foil 0.4.0
 ...
-Read .foil/skills/operator.md and follow it. My goal: <goal>.
+Project folder: /var/foil/projects/your-repo-1a2b3c
+Read /var/foil/projects/your-repo-1a2b3c/skills/operator.md and follow it. My goal: <goal>.
 ```
 
-`foil init` writes `.foil/` and keeps it out of `git status`. The first
+`foil init` writes that project folder outside the repository and writes
+nothing into the working tree, so `git status` stays clean. The first
 line of its output is the version. The report in between (trimmed here)
 names the installed harnesses and what init wrote. The last line is what
-you paste into your own agent later.
+you paste into your own agent later. The path is the one the report printed.
 
 ## 2. Choose a harness and a permission for each role
 
-Each role is a template in `.foil/templates/`. Init picks one installed
-CLI for all three. You can give each role a different one, for example a
-strong planner for the lead and a model from another vendor for the
-reviewer:
+Each role is a template in the project folder's `templates/`. Init picks
+one installed CLI for all three. You can give each role a different one,
+for example a strong planner for the lead and a model from another vendor
+for the reviewer:
 
 ```toml
-# .foil/templates/implementer.toml
+# <project folder>/templates/implementer.toml
 harness = "codex"
 persona = "personas/implementer.md"
 worktree = true
@@ -66,7 +68,7 @@ In your own agent (Claude Code, Codex, or any other), in the repository,
 paste the line from `foil init` with your goal:
 
 ```text
-Read .foil/skills/operator.md and follow it. My goal: make the tests pass.
+Read <project folder>/skills/operator.md and follow it. My goal: make the tests pass.
 ```
 
 That agent becomes the operator. It checks that a lead can start, then
@@ -89,7 +91,7 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	alive	/path/to/your-repo/.foil/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
+implementer-1	implementer	alive	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
 lead	lead	alive		claude	You are the lead seat of this fleet. Your role guidance is the lead skill.
 reviewer-1	reviewer	alive		claude	You check the change the lead names and report findings, and you do not fix them.
 ```
@@ -109,9 +111,9 @@ foil seat peek lead --lines 8
 
 ```text
 ...
-implementer-1 /path/to/your-repo/.foil/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+implementer-1 /var/foil/projects/your-repo-1a2b3c/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
 ...
-reviewer-1 /path/to/your-repo/.foil/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
+reviewer-1 /var/foil/projects/your-repo-1a2b3c/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
 ```
 
 Peek prints the raw bottom of that window (trimmed here). Among the
@@ -151,7 +153,7 @@ The tests pass.
 
 Use `foil board list` and `foil board read` from outside the fleet; seats
 prefer `foil mail list` and `foil mail read` for their mailbox. Every
-message is still a file under `.foil/board/`. `status.md` is the lead's
+message is still a file under the project folder's `board/`. `status.md` is the lead's
 own report. When the lead needs you, it lists questions there, and you
 answer with `foil send lead "..."`.
 
@@ -181,13 +183,16 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	killed	/path/to/your-repo/.foil/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
+implementer-1	implementer	killed	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
 lead	lead	killed		claude	You are the lead seat of this fleet. Your role guidance is the lead skill.
 reviewer-1	reviewer	killed		claude	You check the change the lead names and report findings, and you do not fix them.
 ```
 
 Every window is closed. Branches and worktrees stay, and nothing from
-Foil shows up in `git status`.
+Foil shows up in `git status`. A leftover seat worktree is
+`<project folder>/worktrees/<label>`. Remove one that is clean with
+`git worktree remove <path>`. A dirty tree needs `--force`, and that
+discards uncommitted work.
 
 ## If nothing happens
 
@@ -196,8 +201,9 @@ showing one of these:
 
 - a login prompt: log in to that CLI once by hand, then
   `foil seat kill lead` and spawn it again;
-- a folder-trust prompt: accept it in that window, or run the CLI once
-  in the repository before the first fleet;
+- a folder-trust prompt: accept it in that window. A seat worktree lives
+  outside the repository, so trusting the repository does not cover it.
+  Each seat label needs that trust once per harness;
 - an approval prompt: approve it in that window (`tmux ls` lists Foil's
   session, and `tmux attach` opens it), or set `permission = "auto"`;
 - the harness's own first-run or opt-in dialog: answer it the same way.

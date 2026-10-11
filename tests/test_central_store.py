@@ -193,7 +193,8 @@ def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
     moved = capsys.readouterr().out
     assert f"Moved {legacy} into {foil_root(quiet)}" in moved
     assert not legacy.exists()
-    assert (foil_root(quiet) / "board" / "notes" / "keep.txt").read_text(encoding="utf-8") == "kept\n"
+    kept = foil_root(quiet) / "board" / "notes" / "keep.txt"
+    assert kept.read_text(encoding="utf-8") == "kept\n"
 
     busy = _repo(tmp_path / "busy", monkeypatch)
     kept = busy / ".foil"
