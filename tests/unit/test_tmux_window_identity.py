@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
+from foil.project import foil_root, prepare_project
 from foil.store import empty_registry, save_registry
 from foil.tmux import ProbeState, TmuxController, TmuxError, TmuxTarget
 from tests.test_init import _init_git_repository
@@ -280,8 +281,7 @@ def _project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo = tmp_path / "project"
     repo.mkdir()
     _init_git_repository(repo)
-    foil = repo / ".foil" / "run"
-    foil.mkdir(parents=True)
+    prepare_project(repo)
     monkeypatch.chdir(repo)
     return repo
 
@@ -321,7 +321,7 @@ def test_kill_of_a_live_seat_still_stops_its_window(
     assert main(["seat", "kill", "worker"]) == 0
     assert capsys.readouterr().err == ""
     assert _kills(tmp_path) == ["@1"]
-    saved = json.loads((repo / ".foil" / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
     assert saved["seats"]["worker"]["state"] == "killed"
 
 
@@ -352,7 +352,7 @@ def test_kill_of_a_dead_seat_does_not_stop_a_reused_window(
     assert _kills(tmp_path) == []
     state = json.loads((tmp_path / "fake-tmux-state.json").read_text())
     assert "@1" in state["windows"]
-    saved = json.loads((repo / ".foil" / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
     assert saved["seats"]["worker"]["state"] == "killed"
     assert saved["seats"]["other"]["state"] == ""
 
@@ -363,7 +363,7 @@ def test_kill_of_a_dead_seat_does_not_stop_a_reused_window(
     assert _kills(tmp_path) == []
     state = json.loads((tmp_path / "fake-tmux-state.json").read_text())
     assert set(state["windows"]) == {"@0", "@1"}
-    saved = json.loads((repo / ".foil" / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
     assert saved["seats"]["worker"]["state"] == "killed"
     assert saved["seats"]["other"]["state"] == "killed"
 
@@ -390,7 +390,7 @@ def test_kill_of_a_dead_seat_with_no_marker_leaves_the_window(
     assert capsys.readouterr().err == ""
     assert _kills(tmp_path) == []
     assert "@1" in json.loads(state_path.read_text())["windows"]
-    saved = json.loads((repo / ".foil" / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
     assert saved["seats"]["worker"]["state"] == "killed"
 
 

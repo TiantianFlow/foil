@@ -110,7 +110,7 @@ def test_misspelled_persona_leaves_no_implementer_branch_or_worktree(
     capsys.readouterr()
     assert main(["seat", "spawn", "implementer"]) == 1
     assert not _branch_exists(repo, "foil/implementer-1")
-    assert not (repo / ".foil" / "worktrees" / "implementer-1").exists()
+    assert not (foil_root(repo) / "worktrees" / "implementer-1").exists()
     assert "implementer-1" not in load_registry(repo)["seats"]
     captured = capsys.readouterr()
     assert captured.err == "foil: persona file not found: personas/implementr.md\n"
@@ -139,7 +139,7 @@ def test_persona_path_outside_templates_leaves_no_implementer_branch(
     capsys.readouterr()
     assert main(["seat", "spawn", "implementer"]) == 1
     assert not _branch_exists(repo, "foil/implementer-1")
-    assert not (repo / ".foil" / "worktrees" / "implementer-1").exists()
+    assert not (foil_root(repo) / "worktrees" / "implementer-1").exists()
     assert "implementer-1" not in load_registry(repo)["seats"]
     captured = capsys.readouterr()
     assert captured.err == "foil: persona path must stay inside .foil/templates: ../verifier.md\n"
@@ -222,7 +222,10 @@ def test_spawn_writes_plan_identity_and_window_id(
         "foil.runner",
     ]
     plan = json.loads(Path(calls[0]["runner_argv"][3]).read_text(encoding="utf-8"))
-    assert plan["env"] == {"FOIL_SEAT_ID": "lead"}
+    assert plan["env"]["FOIL_SEAT_ID"] == "lead"
+    assert plan["env"]["FOIL_PROJECT"]
+    assert "FOIL_HOME" in plan["env"]
+    assert "HOME" not in plan["env"]
     assert plan["cwd"] == str(repo.resolve())
     assert "PATH" in plan["env_forward"]
     assert "HOME" in plan["env_forward"]
@@ -255,7 +258,10 @@ def test_launch_plan_forwards_home_for_a_user_preset_with_empty_env(
     assert main(["seat", "spawn", "lead"]) == 0
     plan = json.loads(Path(calls[0]["runner_argv"][3]).read_text(encoding="utf-8"))
     assert plan["argv"][0] == "grok"
-    assert plan["env"] == {"FOIL_SEAT_ID": "lead"}
+    assert plan["env"]["FOIL_SEAT_ID"] == "lead"
+    assert plan["env"]["FOIL_PROJECT"]
+    assert "FOIL_HOME" in plan["env"]
+    assert "HOME" not in plan["env"]
     assert "HOME" in plan["env_forward"]
     assert "PATH" in plan["env_forward"]
     assert plan["env_forward"].count("HOME") == 1
@@ -283,8 +289,8 @@ def test_worktree_names_stay_inside_the_foil_folder(
     assert capsys.readouterr().err == ""
 
     registry = load_registry(repo)
-    first = repo / ".foil" / "worktrees" / "implementer-1"
-    second = repo / ".foil" / "worktrees" / "implementer-2"
+    first = foil_root(repo) / "worktrees" / "implementer-1"
+    second = foil_root(repo) / "worktrees" / "implementer-2"
     assert Path(registry["seats"]["implementer-1"]["worktree"]) == first.resolve()
     assert registry["seats"]["implementer-1"]["branch"] == "foil/implementer-1"
     assert registry["seats"]["implementer-2"]["branch"] == "foil/implementer-2"
@@ -363,13 +369,13 @@ def test_existing_worktree_directory_uses_the_same_suffix(
     _commit(repo)
     _launch(monkeypatch)
     assert main(["seat", "spawn", "lead"]) == 0
-    natural = repo / ".foil" / "worktrees" / "implementer-1"
+    natural = foil_root(repo) / "worktrees" / "implementer-1"
     natural.mkdir(parents=True)
     assert main(["seat", "spawn", "implementer"]) == 0
     assert capsys.readouterr().err == ""
     seat = load_registry(repo)["seats"]["implementer-1"]
     assert seat["branch"] == "foil/implementer-1-2"
-    worktree = repo / ".foil" / "worktrees" / "implementer-1-2"
+    worktree = foil_root(repo) / "worktrees" / "implementer-1-2"
     assert Path(seat["worktree"]) == worktree.resolve()
     assert natural.is_dir()
     assert not (repo.parent / "project.foil").exists()
@@ -394,7 +400,7 @@ def test_launch_failure_is_one_line(
     assert "Traceback" not in captured.err
     assert "hidden" not in captured.err
     assert "implementer-1" not in load_registry(repo)["seats"]
-    assert (repo / ".foil" / "worktrees" / "implementer-1").is_dir()
+    assert (foil_root(repo) / "worktrees" / "implementer-1").is_dir()
     assert not (repo.parent / "project.foil").exists()
 
 
