@@ -149,9 +149,22 @@ def _origin(toplevel: Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def _checkout_path(root: Path, toplevel: Path) -> Path:
+    """The main checkout, not the linked or seat worktree init was run from.
+
+    An existing recorded path stays. Otherwise the parent of the Git
+    common dir is the main checkout.
+    """
+
+    recorded = project_record(root).get("path", "")
+    if recorded and Path(recorded).exists():
+        return Path(recorded)
+    return _common_dir(toplevel).parent
+
+
 def _write_record(root: Path, toplevel: Path, *, created: str) -> None:
     payload = {
-        "path": str(toplevel.resolve()),
+        "path": str(_checkout_path(root, toplevel).resolve()),
         "origin": _origin(toplevel),
         "created": created,
     }
