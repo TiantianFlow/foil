@@ -235,7 +235,11 @@ def _repair_worktrees(root: Path, toplevel: Path, *, relocated: Path | None = No
         check=False,
     )
     if result.returncode != 0:
-        return
+        detail = (result.stderr or result.stdout).strip()
+        message = "foil: could not repair worktrees"
+        if detail:
+            message = f"{message}: {detail}"
+        raise FoilError(message)
     _rewrite_worktree_paths(root, pairs)
 
 
@@ -270,7 +274,6 @@ def _move_legacy(legacy: Path, root: Path, toplevel: Path) -> None:
             if target.exists() and not source.exists():
                 shutil.move(str(target), str(source))
         raise
-    _repair_worktrees(root, toplevel, relocated=legacy)
 
 
 def prepare_project(toplevel: Path) -> Path:
@@ -293,9 +296,11 @@ def prepare_project(toplevel: Path) -> Path:
         if not _seat_alive(legacy) and _simple_legacy(legacy):
             try:
                 _move_legacy(legacy, root, toplevel)
-                print(f"Moved {legacy} into {root}")
             except (OSError, FoilError):
                 print(_MIGRATION)
+            else:
+                print(f"Moved {legacy} into {root}")
+                _repair_worktrees(root, toplevel, relocated=legacy)
         else:
             print(_MIGRATION)
     return root
