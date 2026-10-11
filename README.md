@@ -46,7 +46,7 @@ flowchart TB
   end
 
   subgraph disk["On disk"]
-    board[("<b>.foil/board</b><br/>mail · status.md")]
+    board[("<b>project folder/board</b><br/>mail · status.md")]
     tree[("<b>Git worktree</b><br/>branch foil/implementer-1")]
   end
 
@@ -75,7 +75,7 @@ flowchart TB
 - **Operator agent**: any harness you like, with its normal interface. It follows the operator skill and never does the project work itself.
 - **foil**: this command-line tool. It launches seats in tmux, writes mail, and types a one-line nudge into the recipient's window. It runs no daemon and never interprets what is on a seat's screen.
 - **Lead, implementer, reviewer**: agent CLIs running headless in tmux windows, each started with its role's instructions. By default only the implementer gets its own Git worktree and branch.
-- **.foil/board**: mail, notes, and `status.md`, as plain files. Seats read mail with `foil mail` and other board files with `foil board`.
+- **Board**: mail, notes, and `status.md`, as plain files in the project folder `foil init` prints. That folder is outside the repository. Seats read mail with `foil mail` and other board files with `foil board`.
 
 ## Built to stay out of the way
 
@@ -90,7 +90,7 @@ flowchart TB
 
 ## Get started
 
-You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Before your first fleet, run each harness the roster uses once in this repository and accept its folder-trust, update, first-run, and opt-in prompts. Trust is per harness per repository, and a seat worktree inherits it. A seat waiting on one of those prompts looks, from outside, like a seat that is working. Your agent asks you to do this, or to confirm it is done, and it reports any prompt it sees rather than answering it. Another CLI can join with a small preset file.
+You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Before your first fleet, run each harness the roster uses once in this repository and accept its folder-trust, update, first-run, and opt-in prompts. Trust is per harness per path. A seat worktree lives in the project folder, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. A seat waiting on one of those prompts looks, from outside, like a seat that is working. Your agent asks you to do this, or to confirm it is done, and it reports any prompt it sees rather than answering it. Another CLI can join with a small preset file.
 
 The human's part is one sentence, typed into the coding agent they already use, in the repository:
 
@@ -98,17 +98,17 @@ The human's part is one sentence, typed into the coding agent they already use, 
 Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.
 ```
 
-To update between goals, run `foil seat kill --all` once the goal is done, run the install line again, run `foil init` in each project, then spawn the lead. The previous goal's `.foil/board/status.md` already says `state: done`, so note its `updated` line before you spawn and wait for it to change. After `foil seat kill --all`, either case can occur, so check: run `tmux ls`. If it lists any session, a named preset `env` variable comes from that server and is set with `tmux set-environment -g NAME VALUE` before spawn. If it says no server is running, the next spawn starts a server from your shell.
+To update between goals, run `foil seat kill --all` once the goal is done, run the install line again, run `foil init` in each project, then spawn the lead. The previous goal's `board/status.md`, in the project folder the report prints, already says `state: done`, so note its `updated` line before you spawn and wait for it to change. After `foil seat kill --all`, either case can occur, so check: run `tmux ls`. If it lists any session, a named preset `env` variable comes from that server and is set with `tmux set-environment -g NAME VALUE` before spawn. If it says no server is running, the next spawn starts a server from your shell.
 
 - The agent installs Foil and runs `foil init`.
-- It reads the report and sets `harness`, `model`, and `permission` with `foil roster`, or by editing `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. `auto` on the lead alone does not let the workers run unattended.
+- It reads the report and sets `harness`, `model`, and `permission` with `foil roster`, or by editing `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml` in the project folder the report printed. `auto` on the lead alone does not let the workers run unattended.
 - It runs the first-run check and sends the goal.
 - It never does the project work itself.
 
 An agent that was started without that sentence uses this pointer line instead:
 
 ```text
-Read .foil/skills/operator.md and follow it. My goal: <goal>.
+Read <project folder>/skills/operator.md and follow it. My goal: <goal>.
 ```
 
 A persistent install of the operator skill is optional. Copy it where that harness discovers skills, at user level, so it stays out of `git status`. No path below was checked against that harness's current docs.
@@ -135,7 +135,7 @@ Read the report, set the three templates with `foil roster` or by editing the fi
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-When `.foil/board/status.md` shows `state: done` with a new `updated` time, send the goal to that lead. Do not spawn the lead again. The lead's first prompt already carries its instructions, so a message holds only the goal or an answer.
+When `board/status.md` in the project folder shows `state: done` with a new `updated` time, send the goal to that lead. Do not spawn the lead again. The lead's first prompt already carries its instructions, so a message holds only the goal or an answer.
 
 ```sh
 foil send lead "the goal"
@@ -143,7 +143,7 @@ foil seat list
 foil seat peek lead
 ```
 
-`.foil/board/status.md` is the lead's own report, including any questions for you; answer them with `foil send lead "..."`. It carries a checklist of what is done and what is left, and the operator reports it at each check-in and whenever the human asks. When you are done, `foil seat kill --all` stops every seat and leaves branches and worktrees in place.
+`board/status.md` in the project folder is the lead's own report, including any questions for you; answer them with `foil send lead "..."`. It carries a checklist of what is done and what is left, and the operator reports it at each check-in and whenever the human asks. When you are done, `foil seat kill --all` stops every seat and leaves branches and worktrees in place. A leftover seat worktree is `<project folder>/worktrees/<label>`. Remove one that is clean with `git worktree remove <path>`. A dirty tree needs `--force`, and that discards uncommitted work.
 
 ### If nothing happens
 

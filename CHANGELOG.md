@@ -2,6 +2,16 @@
 
 Notable changes to Foil, newest first.
 
+## [0.4.0] - 2026-10-11
+
+`foil --version` prints 0.4.0.
+
+### Breaking
+
+- Project state no longer lives in the repository. `foil init` creates `<store>/projects/<key>/` and writes nothing into the working tree, including no `info/exclude` entry. The store root is `$FOIL_HOME` when that is set, otherwise `$XDG_DATA_HOME/foil`, otherwise `~/.local/share/foil`. `<key>` is a readable slug of the realpath of the Git common dir plus a short hash, so the main checkout, a linked worktree, and a seat worktree share one folder. `project.json` records the repository path, the origin remote when there is one, and the creation time. Seat worktrees are `<store>/projects/<key>/worktrees/<label>`, and a seat's environment includes `FOIL_PROJECT`. (#23)
+- `foil init` adopts one stored project whose origin remote matches and whose recorded path is gone, then runs `git worktree repair`. An in-repo `.foil/` with no live seat is moved into the store when that move is simple. Otherwise init prints one instruction line and leaves the old directory in place. Both layouts are not supported together. (#23)
+- A seat worktree no longer inherits the repository's folder trust. Each seat label needs that trust once per harness. `foil seat kill` still does not delete a branch or uncommitted work. A clean leftover worktree is removed with `git worktree remove`. (#23)
+
 ## [0.3.4] - 2026-10-07
 
 `foil --version` prints 0.3.4.
@@ -240,6 +250,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.4.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.0
 [0.3.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.4
 [0.3.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.3
 [0.3.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.2

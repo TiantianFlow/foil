@@ -17,7 +17,7 @@ Install or update, run `foil init`, read the report, and stop if no harness is e
 
 You perform onboarding. The human's part was one sentence. You install Foil, run `init`, read the report, set the roster, run the first-run check, and send the goal. You do not plan the goal, staff workers, integrate branches, or review the result.
 
-1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, run `foil roster list`, name each distinct harness id the roster uses, and ask the human to run each of those once in the repository root and accept its folder-trust, update, first-run, and opt-in dialogs, or to confirm that is done. Trust is per harness per repository, and a seat worktree inherits it. Ask again when a role moves to a harness id that was not on that list. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. Trust before the first spawn stays the human's job. A dialog seen in `foil seat peek` is answered only when it is an approval dialog, as step 3 bounds it. Every other dialog is reported to the human and not answered.
+1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, run `foil roster list`, name each distinct harness id the roster uses, and ask the human to run each of those once in the repository root and accept its folder-trust, update, first-run, and opt-in dialogs, or to confirm that is done. Trust is per harness per path. A seat worktree lives in the store, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. Ask again when a role moves to a harness id that was not on that list. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. Trust before the first spawn stays the human's job. A dialog seen in `foil seat peek` is answered only when it is an approval dialog, as step 3 bounds it. Every other dialog is reported to the human and not answered.
 2. Install or update Foil. Run the install line even when foil is already installed; running it again updates it:
 
 ```text
@@ -30,7 +30,7 @@ Then check that `foil --version` prints the version you expect and that `command
 foil init
 ```
 
-Read the whole report before you staff the fleet. The first line is the version. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, `Updated skills: …` or `Skills: current`, a built-in preset overridden by `.foil/harnesses`, available personas without templates, and the permission sentence. Running it again overwrites no template, persona, or preset. It replaces the operator skill when its bytes differ from this version.
+Read the whole report before you staff the fleet. The first line is the version. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, `Updated skills: …` or `Skills: current`, a built-in preset overridden by `.foil/harnesses`, available personas without templates, the permission sentence, and a `Project folder:` line. That folder is outside the repository. Running it again overwrites no template, persona, or preset. It replaces the operator skill when its bytes differ from this version.
 
 If the report lists no installed eligible harness, stop and tell the human. Do not spawn. The human either installs a harness CLI and you re-run `init`, or the human adds a user preset at `.foil/harnesses/<id>.toml` in the format of section 7.3 and you re-run `init`. A user preset that reuses a built-in id replaces that built-in. You do not invent preset fields. You do not write the preset.
 
@@ -42,7 +42,7 @@ After first init, run `foil roster list` to see all templates and available pers
 
 Add roles as needed with `foil roster add <role>`. Update harness or model with `foil roster update <role> harness=<id>` or `foil roster update <role> model=<model>`.
 
-3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Each has its own permission. An omitted permission, and `roster add` without `--from`, are `auto`. `auto` asks the harness to skip approval prompts, though some harnesses still ask. `ask` is what a caller outside the fleet sets when a seat must stop for the human, with `foil roster update ROLE permission=ask`. That seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Pair `auto` with a worktree when that seat can commit. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`. You may set `permission` before the first spawn and again later with `foil roster update ROLE permission=VALUE`. A later change applies to the next spawn of that template, not to a seat already alive. The lead, inside the fleet, does not set `permission`. You may send keystrokes only for an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, an opt-in, an error, and ordinary output are reported and not answered. You look at the raw text `foil seat peek` printed. You do not scrape the pane, and you do not decide from it who is working. A prompt you will not approve is reported to the human with the seat name and what the pane shows. You do not send a denial sequence unless that sequence is the dialog's own reject key, and you tell the human first.
+3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml`. Those files are in the project folder the report printed, not in the repository. Each has its own permission. An omitted permission, and `roster add` without `--from`, are `auto`. `auto` asks the harness to skip approval prompts, though some harnesses still ask. `ask` is what a caller outside the fleet sets when a seat must stop for the human, with `foil roster update ROLE permission=ask`. That seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Pair `auto` with a worktree when that seat can commit. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`. You may set `permission` before the first spawn and again later with `foil roster update ROLE permission=VALUE`. A later change applies to the next spawn of that template, not to a seat already alive. The lead, inside the fleet, does not set `permission`. You may send keystrokes only for an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, an opt-in, an error, and ordinary output are reported and not answered. You look at the raw text `foil seat peek` printed. You do not scrape the pane, and you do not decide from it who is working. A prompt you will not approve is reported to the human with the seat name and what the pane shows. You do not send a denial sequence unless that sequence is the dialog's own reject key, and you tell the human first.
 4. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. `--task` carries only the goal. Do not copy skill text into the task.
 5. Check that the lead is working. Spawn the lead once, with this task, then wait a few minutes:
 
@@ -68,7 +68,7 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 ## Role templates
 
-A template is a TOML file in `.foil/templates/`. The file name is the role. The five fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the operator skill when its bytes differ from this version.
+A template is a TOML file in `.foil/templates/`. The file name is the role. The five fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in `.foil/templates/personas/`. That directory is the project folder the report printed, not a directory in the repository. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the operator skill when its bytes differ from this version.
 
 View and modify templates with the roster commands:
 
@@ -79,7 +79,7 @@ foil roster update implementer model=claude-sonnet-4-5
 foil roster add researcher
 ```
 
-The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add` without `--from` uses the first installed harness, `worktree = false`, and `permission = auto`. Set `permission` from outside the fleet; the lead cannot, including on `foil roster add --from` when the file's permission is not `auto`. An omitted permission is `auto`. Do not remove a template, or change its harness, while a seat of that template has a stored state other than `killed`. You can still edit template files directly in `.foil/templates/` if you prefer.
+The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add` without `--from` uses the first installed harness, `worktree = false`, and `permission = auto`. Set `permission` from outside the fleet; the lead cannot, including on `foil roster add --from` when the file's permission is not `auto`. An omitted permission is `auto`. Do not remove a template, or change its harness, while a seat of that template has a stored state other than `killed`. You can still edit template files directly in `.foil/templates/` if you prefer. That path is inside the project folder.
 
 ## Picking a harness and a model
 
@@ -94,7 +94,7 @@ The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist
 
 ## Personas from outside
 
-You may adapt text from an outside catalog, including a localized pack, into `.foil/templates/personas/<role>.md`. Then `foil roster add ROLE` once the file exists, or `foil roster update ROLE persona=VALUE` when the template already exists. One such catalog is the agency-agents GitHub repository. Name it only as a pointer. Do not clone it and do not vendor it. Packaged candidates remain `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`.
+You may adapt text from an outside catalog, including a localized pack, into `.foil/templates/personas/<role>.md` in the project folder. Then `foil roster add ROLE` once the file exists, or `foil roster update ROLE persona=VALUE` when the template already exists. One such catalog is the agency-agents GitHub repository. Name it only as a pointer. Do not clone it and do not vendor it. Packaged candidates remain `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`.
 
 ## Start
 
@@ -163,7 +163,7 @@ When the human is done:
 foil seat kill --all
 ```
 
-That stops every seat. It does not delete branches or worktrees.
+That stops every seat. It does not delete branches or worktrees. A leftover seat worktree is `<project folder>/worktrees/<label>`. Remove one that is clean with `git worktree remove <path>`. A dirty tree needs `--force`, and that discards uncommitted work.
 
 ## Upgrading
 
@@ -179,7 +179,7 @@ After `foil seat kill --all`, either case can occur, so check. Run `tmux ls`. If
 
 ## Adding a role
 
-Put the persona at `.foil/templates/personas/<role>.md`, then `foil roster add <role>`. Or use `--from` with a file already in Foil's template format:
+Put the persona at `.foil/templates/personas/<role>.md` in the project folder, then `foil roster add <role>`. Or use `--from` with a file already in Foil's template format:
 
 ```text
 foil roster add <role> --from /path/to/role.toml

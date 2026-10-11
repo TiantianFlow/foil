@@ -27,22 +27,23 @@ foil init
 ```
 
 ```text
-foil 0.3.1
+foil 0.4.0
 ...
-Read .foil/skills/operator.md and follow it. My goal: <goal>.
+Project folder: /var/foil/projects/your-repo-1a2b3c
+Read /var/foil/projects/your-repo-1a2b3c/skills/operator.md and follow it. My goal: <goal>.
 ```
 
-`foil init` 会写出 `.foil/`，并让它不出现在 `git status` 里。输出的第一行是版本号，
-中间的报告（这里有删节）列出已安装的 harness 和 init 写了什么；最后一行是你稍后要
-粘贴给自己的 Agent 的那句话。
+`foil init` 把项目目录写在仓库之外，工作区里什么都不写，所以 `git status` 保持干净。
+输出的第一行是版本号，中间的报告（这里有删节）列出已安装的 harness 和 init 写了什么；
+最后一行是你稍后要粘贴给自己的 Agent 的那句话。路径以报告打印的为准。
 
 ## 2. 给每个角色选 harness 和权限
 
-每个角色是 `.foil/templates/` 里的一个模板。init 会给三个模板选同一个已安装的 CLI。
+每个角色是项目目录 `templates/` 里的一个模板。init 会给三个模板选同一个已安装的 CLI。
 你可以给每个角色换一个，比如主座用擅长规划的模型，审查者用另一家厂商的模型：
 
 ```toml
-# .foil/templates/implementer.toml
+# <项目目录>/templates/implementer.toml
 harness = "codex"
 persona = "personas/implementer.md"
 worktree = true
@@ -60,7 +61,7 @@ permission = "auto"
 `foil init` 给出的那一行，并写上你的目标：
 
 ```text
-Read .foil/skills/operator.md and follow it. My goal: make the tests pass.
+Read <project folder>/skills/operator.md and follow it. My goal: make the tests pass.
 ```
 
 这个 Agent 就成了操作员。它先确认主座能正常启动，再把目标发给主座。手动做同样的事：
@@ -80,7 +81,7 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	alive	/path/to/your-repo/.foil/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
+implementer-1	implementer	alive	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
 lead	lead	alive		claude	You are the lead seat of this fleet. Your role guidance is the lead skill.
 reviewer-1	reviewer	alive		claude	You check the change the lead names and report findings, and you do not fix them.
 ```
@@ -98,9 +99,9 @@ foil seat peek lead --lines 8
 
 ```text
 ...
-implementer-1 /path/to/your-repo/.foil/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+implementer-1 /var/foil/projects/your-repo-1a2b3c/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
 ...
-reviewer-1 /path/to/your-repo/.foil/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
+reviewer-1 /var/foil/projects/your-repo-1a2b3c/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
 ```
 
 peek 原样打印那个窗口最下面的内容（这里有删节）。在 Agent 自己的输出中间，有两行
@@ -138,7 +139,7 @@ The tests pass.
 ```
 
 在舰队外用 `foil board list` 和 `foil board read`；座位读自己的邮箱时优先用
-`foil mail list` 和 `foil mail read`。每条消息仍是 `.foil/board/` 下的文件。
+`foil mail list` 和 `foil mail read`。每条消息仍是项目目录 `board/` 下的文件。
 `status.md` 是主座自己写的报告。主座需要你时，会把问题列在里面，你用
 `foil send lead "..."` 回答。
 
@@ -168,19 +169,21 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	killed	/path/to/your-repo/.foil/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
+implementer-1	implementer	killed	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
 lead	lead	killed		claude	You are the lead seat of this fleet. Your role guidance is the lead skill.
 reviewer-1	reviewer	killed		claude	You check the change the lead names and report findings, and you do not fix them.
 ```
 
 所有窗口都已关闭。分支和 worktree 会保留，`git status` 里也看不到任何运筹的文件。
+留下的席位工作树在 `<项目目录>/worktrees/<label>`。干净的用 `git worktree remove <path>`
+删掉。不干净的需要 `--force`，那会丢掉未提交的工作。
 
 ## 如果什么都没发生
 
 运行 `foil seat peek lead`。一个没有进展的席位，通常停在下面某一种画面上：
 
 - 登录提示：先手动登录一次那个 CLI，然后 `foil seat kill lead`，再重新启动主座；
-- 文件夹信任提示：在那个窗口里接受它，或者在舰队开始之前先在本仓库里把这个 CLI 运行一次；
+- 文件夹信任提示：在那个窗口里接受它。席位工作树在仓库之外，信任仓库一次覆盖不到它。每个席位标签对每个 harness 都要信任一次；
 - 审批提示：在那个窗口里批准（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入），
   或者设置 `permission = "auto"`；
 - harness 自己的首次运行或意见征集对话框：用同样的办法回答它。
