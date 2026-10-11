@@ -31,6 +31,7 @@ _MIGRATION = (
     "foil: an old .foil/ is still in this repository; "
     "move it aside and run foil init again"
 )
+_RESOLVED_HOME: dict[str, Path] = {}
 
 
 def require_host_tools() -> None:
@@ -79,7 +80,14 @@ def _git_line(start: Path | None, flag: str) -> str:
 def store_root() -> Path:
     override = os.environ.get("FOIL_HOME", "").strip()
     if override:
-        return Path(override).expanduser()
+        path = Path(override).expanduser()
+        if path.is_absolute():
+            return path.resolve()
+        cached = _RESOLVED_HOME.get(override)
+        if cached is None:
+            cached = path.resolve()
+            _RESOLVED_HOME[override] = cached
+        return cached
     xdg = os.environ.get("XDG_DATA_HOME", "").strip()
     base = Path(xdg).expanduser() if xdg else Path.home() / ".local" / "share"
     return base / "foil"

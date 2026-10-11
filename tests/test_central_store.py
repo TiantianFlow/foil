@@ -81,6 +81,15 @@ def test_store_root_uses_foil_home_then_xdg_then_the_default(
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     assert store_root() == Path.home() / ".local" / "share" / "foil"
 
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("FOIL_HOME", "relative-home")
+    resolved = store_root()
+    assert resolved == (tmp_path / "relative-home").resolve()
+    monkeypatch.chdir(elsewhere)
+    assert store_root() == resolved
+
 
 def test_init_uses_the_foil_home_override(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
