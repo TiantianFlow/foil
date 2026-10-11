@@ -46,7 +46,7 @@ flowchart TB
   end
 
   subgraph disk["磁盘上"]
-    board[("<b>.foil/board</b><br/>邮件 · status.md")]
+    board[("<b>项目目录/board</b><br/>邮件 · status.md")]
     tree[("<b>Git worktree</b><br/>分支 foil/implementer-1")]
   end
 
@@ -75,7 +75,7 @@ flowchart TB
 - **操作员 Agent**：你喜欢的任何 harness，带着它原本的界面。它按操作员技能行事，自己从不做项目本身的工作。
 - **foil**：就是这个命令行工具。它在 tmux 里启动席位、写邮件，并往收件人的窗口里打一行提醒。它不跑守护进程，也从不解读席位屏幕上显示的内容。
 - **主座、实现者、审查者**：在 tmux 窗口里无界面运行的 Agent CLI，每个都带着自己角色的指令启动。默认只有实现者拥有自己的 Git worktree 和分支。
-- **.foil/board**：邮件、笔记和 `status.md`，都是普通文件。席位用 `foil mail` 读邮件，用 `foil board` 读板上的其他文件。
+- **看板**：邮件、笔记和 `status.md`，都是普通文件，放在 `foil init` 报告打印的项目目录里。这个目录在仓库之外。席位用 `foil mail` 读邮件，用 `foil board` 读板上的其他文件。
 
 ## 尽量不碍事的设计
 
@@ -90,7 +90,7 @@ flowchart TB
 
 ## 开始使用
 
-你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。在舰队开始之前，先在本仓库里把花名册用到的每个 harness 运行一次，接受它的文件夹信任、更新、首次运行和意见征集对话框，因为信任是按每个 harness、每个仓库生效的，席位的工作树沿用这次信任。停在这些提示上的席位，从外面看就像一个正在工作的席位。你的 Agent 会请你去做这件事，或者请你确认已经完成，并且报告它看到的任何提示，而不是替你回答。其他 CLI 只要一个小小的预设文件就能接入。
+你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。在舰队开始之前，先在本仓库里把花名册用到的每个 harness 运行一次，接受它的文件夹信任、更新、首次运行和意见征集对话框。信任按每个 harness、每条路径生效。席位的工作树在项目目录里、仓库之外，所以不会沿用仓库的信任。每个席位标签对每个 harness 都要信任一次。停在这些提示上的席位，从外面看就像一个正在工作的席位。你的 Agent 会请你去做这件事，或者请你确认已经完成，并且报告它看到的任何提示，而不是替你回答。其他 CLI 只要一个小小的预设文件就能接入。
 
 人要做的只有一句话。在仓库里，把它交给你已经在用的编程 Agent：
 
@@ -98,17 +98,17 @@ flowchart TB
 Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.
 ```
 
-要在两个目标之间更新：目标完成后运行 `foil seat kill --all`，再运行一次安装命令，然后在每个项目里运行 `foil init`，再启动主座。上一个目标留下的 `.foil/board/status.md` 已经写着 `state: done`，所以启动前先记下它的 `updated` 行，等它变化。`foil seat kill --all` 之后两种情况都可能出现，所以要检查：运行 `tmux ls`。如果列出了任何会话，预设里点名的 `env` 变量来自该服务器，启动前用 `tmux set-environment -g NAME VALUE` 设置。如果它说没有服务器在运行，下一次启动会从你的 shell 拉起服务器。
+要在两个目标之间更新：目标完成后运行 `foil seat kill --all`，再运行一次安装命令，然后在每个项目里运行 `foil init`，再启动主座。上一个目标留在报告打印的项目目录里的 `board/status.md` 已经写着 `state: done`，所以启动前先记下它的 `updated` 行，等它变化。`foil seat kill --all` 之后两种情况都可能出现，所以要检查：运行 `tmux ls`。如果列出了任何会话，预设里点名的 `env` 变量来自该服务器，启动前用 `tmux set-environment -g NAME VALUE` 设置。如果它说没有服务器在运行，下一次启动会从你的 shell 拉起服务器。
 
 - Agent 安装运筹并运行 `foil init`。
-- 它读报告，并用 `foil roster` 设置 `harness`、`model` 和 `permission`，也可以直接改 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml`。只把主座改成 `auto` 不会让工人席位无人值守。
+- 它读报告，并用 `foil roster` 设置 `harness`、`model` 和 `permission`，也可以直接改报告打印的项目目录里的 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml`。只把主座改成 `auto` 不会让工人席位无人值守。
 - 它做首次运行检查，然后把目标发出去。
 - 它自己从不做项目本身的工作。
 
 没有拿到那句话就启动的 Agent，改用这行指针：
 
 ```text
-Read .foil/skills/operator.md and follow it. My goal: <goal>.
+Read <project folder>/skills/operator.md and follow it. My goal: <goal>.
 ```
 
 持久安装操作员技能是可选的。把它复制到该 harness 发现技能的位置，放在用户级，这样它不会出现在 `git status` 里。下面的路径都没有对照该 harness 的当前文档核对过。
@@ -135,7 +135,7 @@ foil init
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-当 `.foil/board/status.md` 里出现 `state: done`，且 `updated` 时间是新的，把目标发给这个主座。不要再启动一次主座。主座的第一条提示已经带上了它的指令，所以消息里只放目标或回答。
+当项目目录里的 `board/status.md` 出现 `state: done`，且 `updated` 时间是新的，把目标发给这个主座。不要再启动一次主座。主座的第一条提示已经带上了它的指令，所以消息里只放目标或回答。
 
 ```sh
 foil send lead "the goal"
@@ -143,7 +143,7 @@ foil seat list
 foil seat peek lead
 ```
 
-`.foil/board/status.md` 是主座自己的报告，也会列出要问你的问题；用 `foil send lead "..."` 回答。它带有一份清单，写明已经完成的和还剩下的，操作员在每次查看时、以及你问起时，报告这份清单。结束时，`foil seat kill --all` 会停掉每个席位，分支和 worktree 都会保留。
+项目目录里的 `board/status.md` 是主座自己的报告，也会列出要问你的问题；用 `foil send lead "..."` 回答。它带有一份清单，写明已经完成的和还剩下的，操作员在每次查看时、以及你问起时，报告这份清单。结束时，`foil seat kill --all` 会停掉每个席位，分支和 worktree 都会保留。留下的席位工作树在 `<项目目录>/worktrees/<label>`。干净的用 `git worktree remove <path>` 删掉。不干净的需要 `--force`，那会丢掉未提交的工作。
 
 ### 如果什么都没发生
 

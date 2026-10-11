@@ -1,9 +1,11 @@
 #!/bin/sh
 set -eu
 id=$(python3 -c '
+import os
 from pathlib import Path
 found = ""
-for path in sorted(Path(".foil/board/mail/lead").glob("*.md")):
+root = Path(os.environ["FOIL_HOME"]) / "projects" / os.environ["FOIL_PROJECT"]
+for path in sorted((root / "board/mail/lead").glob("*.md")):
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("proposed "):
             found = line.split()[1]

@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
-from foil.project import foil_root
 from foil.errors import FoilError
 from foil.lifecycle import init_project, list_seats
 from foil.presets import template_permission
+from foil.project import foil_root
 from foil.roster_ops import (
     add_template,
     list_roster,

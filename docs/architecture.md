@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes Foil 0.3.1 as implemented. It does not add requirements. The command list and the data layout are specified in [requirements.md](requirements.md).
+This document describes Foil 0.4.0 as implemented. It does not add requirements. The command list and the data layout are specified in [requirements.md](requirements.md).
 
 ## Components
 
@@ -9,15 +9,15 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | Module | Role |
 |---|---|
 | `src/foil/cli.py` | Parses the command line, decides who the caller is, and dispatches. It does not talk to tmux. |
-| `src/foil/project.py` | Finds the Git toplevel and the `.foil` directory. |
+| `src/foil/project.py` | Finds the Git toplevel and the project folder in the per-user store. |
 | `src/foil/store.py` | Writes JSON atomically, loads the registry, and rejects credential-shaped text. |
 | `src/foil/presets.py` | Loads harness presets and role templates, scans which eligible presets are installed, and expands launch argv. It does not start a process. |
 | `src/foil/roster_ops.py` | Lists, shows, adds, updates, and removes role templates. Writes are atomic and refuse a symlink. |
 | `src/foil/lifecycle.py` | Initializes a project and spawns, kills, resumes, lists, and peeks seats. It writes instruction files. |
 | `src/foil/tmux.py` | Creates, stops, and reads tmux windows by exact window id. |
 | `src/foil/board.py` | Writes mail files, then asks tmux to type the nudge line. |
-| `src/foil/mail_ops.py` | Reads one seat's mail. Paths must stay inside `.foil/board/mail/`. |
-| `src/foil/board_ops.py` | Reads and lists board files. Paths must stay inside `.foil/board/`. |
+| `src/foil/mail_ops.py` | Reads one seat's mail. Paths must stay inside the project folder's `board/mail/`. |
+| `src/foil/board_ops.py` | Reads and lists board files. Paths must stay inside the project folder's `board/`. |
 | `src/foil/memory.py` | Stores project lessons as JSON files. |
 | `src/foil/runner.py` | Execs the argv in a launch plan. It does not choose that argv. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |
@@ -42,7 +42,7 @@ flowchart TB
   tmuxmod["<b>tmux.py</b><br/>windows by exact id and markers<br/>calls tmux"]
   store["<b>store.py</b><br/>atomic JSON · registry · secret scan"]
 
-  project["<b>project.py</b><br/>find the repo and .foil · calls git"]
+  project["<b>project.py</b><br/>find the repo and its store folder · calls git"]
 
   runner["<b>runner.py</b><br/>runs inside each tmux window<br/>execs the harness · imports nothing from foil"]
 
@@ -96,7 +96,7 @@ sequenceDiagram
   participant T as tmux
   participant R as runner
   participant H as Harness CLI
-  participant B as .foil/board
+  participant B as project folder/board
 
   Note over C,H: foil seat spawn implementer --task "…"
   C->>F: seat spawn implementer
@@ -116,11 +116,11 @@ sequenceDiagram
   H->>B: the seat reads the mail file itself
 ```
 
-Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foil/defaults/personas`, including the candidate roles. A project file `.foil/harnesses/<id>.toml` overrides the preset with the same id, so that id is counted once. `init` scans every eligible preset whose own `command[0]` is on `PATH`, skips `fake`, and sorts the ids by Unicode code point with case preserved. That order is a tiebreak, not a ranking. `lead` and `implementer` get the first installed id. `reviewer` gets the second when one exists, and the first otherwise. The report then counts the distinct harness ids stored in those three templates. Two ids can still run the same program or model; set model on a template to choose one. Tests put `foil-fake` on `PATH` and point templates at it themselves.
+Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foil/defaults/personas`, including the candidate roles. A project file `harnesses/<id>.toml` in the project folder overrides the preset with the same id, so that id is counted once. `init` scans every eligible preset whose own `command[0]` is on `PATH`, skips `fake`, and sorts the ids by Unicode code point with case preserved. That order is a tiebreak, not a ranking. `lead` and `implementer` get the first installed id. `reviewer` gets the second when one exists, and the first otherwise. The report then counts the distinct harness ids stored in those three templates. Two ids can still run the same program or model; set model on a template to choose one. Tests put `foil-fake` on `PATH` and point templates at it themselves.
 
 ## Where state lives
 
-`foil init` creates `.foil` in the Git toplevel and adds `/.foil/` to that repository's exclude file, so Foil's files stay out of `git status`. The report starts with the version. It then lists every installed eligible harness in id order, the id each default template was given and why, which templates and personas it wrote and which it left alone, `Available personas (use 'foil roster add')` when a persona has no template, `Updated skills: …` or `Skills: current`, a built-in preset overridden by `.foil/harnesses` when one is, a sentence about the permission setting, and the operator pointer line. A re-run prints the report again. It overwrites no template, persona, or preset, and it replaces the operator skill when its bytes differ from this version. It does not write the lead or worker skill, and it does not delete an older copy of either. The directory holds:
+`foil init` creates the project folder in the per-user store and prints its path. The store root is `$FOIL_HOME` when that is set, otherwise `$XDG_DATA_HOME/foil`, otherwise `~/.local/share/foil`. The folder is `<root>/projects/<key>/`, where `<key>` is a readable slug of the realpath of the Git common dir plus a short hash. It writes nothing into the working tree and no exclude entry. When one stored project has the same origin remote and its recorded path is gone, init adopts that record, renames the folder to the new key, and runs `git worktree repair` on each seat worktree. An in-repo `.foil/` with no live seat is moved into the store when the move is simple; otherwise init prints one instruction line. The report starts with the version. It then lists every installed eligible harness in id order, the id each default template was given and why, which templates and personas it wrote and which it left alone, `Available personas (use 'foil roster add')` when a persona has no template, `Updated skills: …` or `Skills: current`, a built-in preset overridden by `harnesses/` when one is, a sentence about the permission setting, the project folder path, and the operator pointer line. A re-run prints the report again. It overwrites no template, persona, or preset, and it replaces the operator skill when its bytes differ from this version. It does not write the lead or worker skill, and it does not delete an older copy of either. The directory holds:
 
 - `templates/<role>.toml` — the roster. The file name is the role. Fields used by the loader are `harness`, `model`, `persona`, `worktree`, and `permission`. Template and preset keys are added, never renamed, and a new key is optional. `foil roster` lists, shows, adds, updates, and removes these files. Add and update write atomically in this directory and refuse a symlink. Remove, and a harness change, fail while a seat of that role has a stored state other than `killed`.
 - `templates/personas/<role>.md` — every packaged persona, copied once, including candidate roles that have no template yet. A persona adds only specialization the role skill does not already state. A template may instead point `persona` at another Markdown file, which is left untouched, or it may hold inline text.
@@ -132,54 +132,45 @@ Shipped presets are `src/foil/defaults/harnesses`. Shipped personas are `src/foi
 - `skills/operator.md` — the operator skill. `init` replaces it when its bytes differ, atomically, and refuses a symlink. The report says `Updated skills: …` or `Skills: current`. The lead and worker skills are read from the package and inlined into the instruction file. An older copy of either in this directory is left unread.
 - `run/plans/<seat>.json` — the argv, working directory, and environment for the runner.
 
-A linked worktree does not contain `.foil`. How a seat still finds the project is described under "Worktrees, project state, and harness sessions".
+A checkout does not contain the project folder. How a seat still finds it is described under "Worktrees, project state, and harness sessions".
 
 ## Worktrees, project state, and harness sessions
 
-This is how Foil 0.3.1 creates worktrees. It is the current design, not a new requirement.
-
-Seat trees are flat, one level deep, under the project's `.foil`. There is no tree for the lead, and one agent's tree is never nested inside another's.
+Seat trees are flat, one level deep, under the project folder in the store. There is no tree for the lead, and one agent's tree is never nested inside another's.
 
 ```text
-<project>/                         the checkout where foil init ran; it holds .foil
-  .foil/
-    worktrees/
-      <label>/                     branch foil/<label>, sibling of every other seat tree
-      <label>-2/
+<root>/projects/<key>/             one folder for this Git common dir
+  worktrees/
+    <label>/                       branch foil/<label>, sibling of every other seat tree
+    <label>-2/
 ```
 
 `<project>` is the Git toplevel where `foil init` ran. It is usually the main checkout. It can itself be a linked worktree, if init ran there. The lead has no tree of its own: `lead.toml` ships with `worktree = false`, so the lead's working directory is `<project>`. Default roles are lead, implementer, and reviewer. By default only the reviewer, besides the lead, has `worktree = false` and shares that same directory.
 
-A template with `worktree = true` gets `<project>/.foil/worktrees/<label>` on a new branch `foil/<label>`. Spawn runs `git worktree add -b` with no start point, so the branch forks from whatever `<project>` has checked out at spawn time, not from `main`. A taken branch or directory uses `foil/<label>-2`, then `-3`, and so on. Spawn never uses `-B`. Every seat tree is a sibling, and all of them register in the same Git common dir. Spawn is lead-or-operator: the CLI allows it for the lead and for the operator outside the fleet. `discover_project` calls `git_toplevel`. That returns the Git toplevel when the toplevel already contains `.foil`. Otherwise it returns the parent of `git rev-parse --git-common-dir` when that parent contains `.foil`, and otherwise the toplevel. For a seat tree under `<project>/.foil/worktrees/`, that toplevel does not contain `.foil`, and the common dir's parent is the main checkout. That parent is `<project>` only when `<project>` is the main checkout. When `foil init` ran in a linked worktree, the parent is a different checkout, so a spawn from the seat tree can report "not initialized" or use that other checkout's `.foil`. It does not always land in `<project>`. A path under the repository's top-level `worktrees/`, or anywhere else in the project outside `.foil`, is refused. Killing a seat, or a launch that fails after the worktree exists, does not remove the worktree or the branch.
+A template with `worktree = true` gets `<root>/projects/<key>/worktrees/<label>` on a new branch `foil/<label>`. Spawn runs `git worktree add -b` with no start point, so the branch forks from whatever `<project>` has checked out at spawn time, not from `main`. A taken branch or directory uses `foil/<label>-2`, then `-3`, and so on. Spawn never uses `-B`. Every seat tree is a sibling, and all of them register in the same Git common dir. Spawn is lead-or-operator: the CLI allows it for the lead and for the operator outside the fleet. Every command, including `foil mail` and `foil board`, resolves the project the same way. `FOIL_PROJECT`, when it names a store folder that has `project.json`, selects that folder's recorded repository path. Otherwise the command uses the Git toplevel of the working directory. The folder is then `<root>/projects/<key>/` for the realpath of that repository's Git common dir. The main checkout, a linked worktree, and a seat worktree share that common dir, so they share one folder. Spawn refuses a seat worktree path that would land inside the repository, including under a top-level `worktrees/` directory. Killing a seat, or a launch that fails after the worktree exists, does not remove the worktree or the branch. The worktree is outside the repository. Remove one that is clean with `git worktree remove <path>`; a dirty tree needs `--force`, and that discards uncommitted work.
 
-Foil's own state exists only in `<project>/.foil`: `templates/`, `harnesses/`, `skills/`, `memory/`, `board/` (mail, notes, tasks, results, and status), `run/registry.json`, `run/instructions/`, and `run/plans/`. `foil init` writes `/.foil/` to `git rev-parse --git-path info/exclude`. That file is in the Git common dir, so the exclusion applies to every linked worktree too. Seat trees do not contain `.foil`.
-
-A seat reaches that state in two ways. `foil send`, `foil memory`, `foil seat`, and `foil roster` use the same `git_toplevel` discovery. They see `<project>/.foil` from a seat tree only when the common dir's parent is `<project>` and that parent contains `.foil`. Otherwise they see the seat tree's own toplevel, which has no `.foil`, and report "not initialized", or they see another checkout's `.foil`. `foil mail` and `foil board` do not: `board_root()` walks up from the current directory and uses the first `.foil/board` it finds. That walk works only because seat trees sit under `<project>/.foil/worktrees/`.
+Foil's own state is the project folder: `project.json`, `templates/`, `harnesses/`, `skills/`, `memory/`, `board/` (mail, notes, tasks, results, and status), `run/registry.json`, `run/instructions/`, and `run/plans/`. Nothing Foil owns is written into the working tree, and init writes no exclude entry. An older `/.foil/` line left in `info/exclude` is unused.
 
 | File or directory | Which tree | Tracked? | How a seat reaches it |
 | --- | --- | --- | --- |
-| `.foil/` (templates, harnesses, skills, memory, board, run) | Project checkout only | No (`/.foil/` in the common dir's exclude) | Git toplevel discovery, or a walk up to `.foil/board` |
+| Project folder (templates, harnesses, skills, memory, board, run, worktrees) | Store, not a checkout | No (it is outside the repository) | `FOIL_PROJECT`, or the Git common dir |
 | `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/`, and similar | Every tree, at that tree's commit | Yes | The seat reads its own checkout; a project-checkout edit arrives only once the seat's branch includes it |
 | A gitignored local file (for example a harness settings file) | Project checkout only | No | It does not. `git worktree add` does not copy it, so a worktree seat runs without it while the lead and other non-worktree seats have it |
 
-Foil stores only a session id per seat, in `run/registry.json`. Each harness keeps transcripts and trust under the user's home directory. Foil forwards `HOME`, so every seat writes into the same global store as the human. Those stores are keyed by working directory. Moving or renaming the project changes every key, and a harness that resumes by a directory lookup can then miss the old session. Foil's tmux session name hashes the resolved toplevel path, so a move is a new fleet anyway.
+Foil stores only a session id per seat, in `run/registry.json`. Each harness keeps transcripts and trust under the user's home directory. Foil forwards `HOME`, so every seat writes into the same global store as the human. Those stores are keyed by working directory. Moving or renaming the project changes every key, and a harness that resumes by a directory lookup can then miss the old session. Foil's tmux session name hashes the resolved toplevel path, so a move is a new fleet anyway. `foil init` in the new location adopts the old project folder when the origin remote matches and the recorded path is gone.
 
 | Preset | `session_id` | Resume argv | Scoped by | Verified |
 | --- | --- | --- | --- | --- |
-| claude | `generated` | `claude --resume {session_id}` | Explicit id | The argv is the preset. Directory-per-cwd storage under `~/.claude/projects/` is observed: names for earlier fleets' `.foil/worktrees/<seat>` paths remain after those seats were killed |
+| claude | `generated` | `claude --resume {session_id}` | Explicit id | The argv is the preset. Directory-per-cwd storage under `~/.claude/projects/` is observed: names for earlier fleets' seat-worktree paths remain after those seats were killed |
 | grok | `generated` | `grok --resume {session_id}` | Explicit id | The argv is the preset. Storage layout unverified |
 | fake | `generated` | `foil-fake --session {session_id}` | Explicit id | The argv is the preset |
 | codex | `none` | `codex resume --last` | Latest session for this directory | The argv is the preset. Whether "latest" is the exact cwd or the whole repository is unverified |
 | opencode | `none` | `opencode . --continue` | Latest session for this directory | The argv is the preset. Whether "latest" is the exact cwd or the whole repository is unverified |
 | gemini | `none` | `gemini --resume` | Neither an id nor a directory flag | The argv is the preset. It always starts fresh. The preset marks its flags unverified |
 
-An explicit id stays unambiguous when seats share a working directory. `--continue` and `--last` mean the latest session for this directory, so Foil refuses that native resume for a seat with no worktree and starts it fresh in the project directory. Trust is path-keyed too. A seat worktree inherits the project's trust because the tree is nested under the trusted project path. Observed for Claude: most seat paths have no trust entry of their own, and a few do.
+An explicit id stays unambiguous when seats share a working directory. `--continue` and `--last` mean the latest session for this directory, so Foil refuses that native resume for a seat with no worktree and starts it fresh in the project directory. Trust is path-keyed too. A seat worktree lives in the store, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness.
 
-Keep `.foil`, board included, per project.
-
-1. Board discovery by walking up, and trust inheritance, both depend on seat trees being nested under the project. A global location breaks both.
-2. The registry, the tmux session name, and mail paths are per toplevel. A global board would need a project key everywhere, and a migration, which this design does not add.
-3. Harnesses keeping sessions globally is not a reason for Foil to do the same. Foil holds only ids, and those stores are already keyed by path, so per-project Foil state lines up with them.
+Templates, skills, harnesses, and the board stay per project, inside that project's store folder. There is no user-level layer above the project. The folder is outside the working tree so `git status` stays clean without an exclude entry. The key is the Git common dir, which a linked worktree and a seat worktree already share.
 
 ## Authority
 
@@ -189,9 +180,9 @@ The caller is outside the fleet when `FOIL_SEAT_ID` is unset. The lead is the pr
 
 `foil seat spawn TEMPLATE` loads that template and its preset. The lead seat is always named `lead`, and it has to be the first seat. Later seats are named `<template>-1`, `<template>-2`, and so on, unless `--name` is given. A name that is already in the registry is not reused. A generated name that cannot fit the registry's id rule is skipped; if none fit, spawn stops before it creates a worktree or a window.
 
-When the template sets `worktree` true, spawn runs `git worktree add -b` on `foil/<seat>` in `.foil/worktrees/<label>`. If that branch or its directory is taken, it uses `foil/<seat>-2`, then `foil/<seat>-3`, and so on, and the directory uses the same suffix. The branch is new. Spawn does not use `-B` and does not reset an existing branch. A path under the repository's top-level `worktrees/` directory, or anywhere else inside the project outside the Foil folder, is refused. On a later failure it does not remove that worktree or delete the branch. Killing a seat does not either.
+When the template sets `worktree` true, spawn runs `git worktree add -b` on `foil/<seat>` in the project folder's `worktrees/<label>`. If that branch or its directory is taken, it uses `foil/<seat>-2`, then `foil/<seat>-3`, and so on, and the directory uses the same suffix. The branch is new. Spawn does not use `-B` and does not reset an existing branch. A destination inside the repository, including one under a top-level `worktrees/` directory, is refused. On a later failure it does not remove that worktree or delete the branch. Killing a seat does not either.
 
-Spawn writes the instruction file, then a plan, then a tmux window. The window runs `python -m foil.runner` on the plan. The runner changes to the plan's directory and execs the harness. The plan's own environment sets `FOIL_SEAT_ID` to the seat name. Other variables are listed by name in `env_forward` and copied from the window's environment at exec time, so their values are not stored in the plan. `PATH` and `HOME` are always forwarded, and a preset's `env` names any further variables. A variable a preset names takes its value from the tmux server's environment. `PATH` comes from the spawning caller. The first launch prompt is the instruction file's full text. With `--task`, it names that task's mail file and tells the seat to read it first; without `--task`, it tells the seat to run `foil mail list` and read its mail before it acts. Placeholders in the preset are `{model}`, `{prompt}`, and `{session_id}`. A missing value drops that token and a flag that only introduced it. A model that starts with `-` is invalid and is not placed in that argv. Permission extras are inserted for both a fresh start and a resume.
+Spawn writes the instruction file, then a plan, then a tmux window. The window runs `python -m foil.runner` on the plan. The runner changes to the plan's directory and execs the harness. The plan's own environment sets `FOIL_SEAT_ID` to the seat name and `FOIL_PROJECT` to the project key. It also stores `FOIL_HOME` or `XDG_DATA_HOME` when the spawning process had that variable set, so the seat resolves the same store. Other variables are listed by name in `env_forward` and copied from the window's environment at exec time, so their values are not stored in the plan. `PATH` and `HOME` are always forwarded, and a preset's `env` names any further variables. A variable a preset names takes its value from the tmux server's environment. `PATH` comes from the spawning caller. The first launch prompt is the instruction file's full text. With `--task`, it names that task's mail file and tells the seat to read it first; without `--task`, it tells the seat to run `foil mail list` and read its mail before it acts. Placeholders in the preset are `{model}`, `{prompt}`, and `{session_id}`. A missing value drops that token and a flag that only introduced it. A model that starts with `-` is invalid and is not placed in that argv. Permission extras are inserted for both a fresh start and a resume.
 
 The instruction file includes the persona's text. When the template points at a Markdown file, that file is read and inlined; the file itself is left unchanged.
 
