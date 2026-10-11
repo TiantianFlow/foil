@@ -140,6 +140,20 @@ def test_main_linked_and_seat_worktrees_share_one_project(
     assert foil_root(Path.cwd()) == root
     assert main(["board", "list", "notes/*"]) == 0
 
+    monkeypatch.chdir(linked)
+    assert main(["init"]) == 0
+    again = json.loads((root / "project.json").read_text(encoding="utf-8"))
+    assert again["path"] == str(repo.resolve())
+
+    fresh = tmp_path / "fresh"
+    _git(repo, "worktree", "add", "--quiet", "-b", "foil/side", str(fresh), "HEAD")
+    side_home = tmp_path / "side-home"
+    monkeypatch.setenv("FOIL_HOME", str(side_home))
+    monkeypatch.chdir(fresh)
+    assert main(["init"]) == 0
+    side = json.loads((foil_root(fresh) / "project.json").read_text(encoding="utf-8"))
+    assert side["path"] == str(repo.resolve())
+
 
 def test_init_adopts_an_orphaned_record_and_repairs_worktrees(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

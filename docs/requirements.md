@@ -231,8 +231,10 @@ The store root is `$FOIL_HOME` when that is set, otherwise
 folder is `<root>/projects/<key>/`. `<key>` is a readable slug of the
 realpath of the Git common dir plus a short hash. The main checkout, a
 linked worktree, and a seat worktree share that common dir, so they
-share one folder. `project.json` records the repository path, the origin
-remote when there is one, and the creation time. After adopt or a
+share one folder. `project.json` records the main checkout, the origin
+remote when there is one, and the creation time. Init keeps a recorded
+path that still exists. Otherwise it records the parent of the Git
+common dir, including when init runs from a linked or seat worktree. After adopt or a
 legacy move, absolute paths in `run/registry.json`, `run/plans/`, and
 `run/instructions/` are rewritten from the old folder to the new one. A seat's environment
 includes `FOIL_PROJECT` set to that key. It also includes `FOIL_HOME`
