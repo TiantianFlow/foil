@@ -71,7 +71,9 @@ def _persona_inside(persona: str) -> None:
         return
     relative = Path(persona)
     if relative.is_absolute() or ".." in relative.parts:
-        raise FoilError(f"foil: persona path must stay inside .foil/templates: {persona}")
+        raise FoilError(
+            f"foil: persona path must stay inside the project templates: {persona}"
+        )
 
 
 def _accept(toplevel: Path, role: str) -> None:
