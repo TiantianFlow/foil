@@ -226,7 +226,8 @@ A caller inside the fleet cannot set `permission` on update, and cannot `roster 
 ### 7.1 Layout
 
 Everything for one project lives in one folder in a per-user store (F7).
-The store root is `$FOIL_HOME` when that is set, otherwise
+The store root is `$FOIL_HOME` when that is set, made absolute so a
+relative value does not follow a later working directory, otherwise
 `$XDG_DATA_HOME/foil`, otherwise `~/.local/share/foil`. The project
 folder is `<root>/projects/<key>/`. `<key>` is a readable slug of the
 realpath of the Git common dir plus a short hash. The main checkout, a
