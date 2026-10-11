@@ -142,7 +142,10 @@ def test_persona_path_outside_templates_leaves_no_implementer_branch(
     assert not (foil_root(repo) / "worktrees" / "implementer-1").exists()
     assert "implementer-1" not in load_registry(repo)["seats"]
     captured = capsys.readouterr()
-    assert captured.err == "foil: persona path must stay inside .foil/templates: ../verifier.md\n"
+    assert (
+        captured.err
+        == "foil: persona path must stay inside the project templates: ../verifier.md\n"
+    )
     assert captured.out == ""
     assert "should not be read" not in captured.err
 

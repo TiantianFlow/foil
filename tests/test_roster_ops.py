@@ -915,7 +915,7 @@ def test_a_persona_through_a_symlinked_directory_is_refused(
     )
     from foil.presets import load_template, persona_text
 
-    with pytest.raises(FoilError, match="persona path must stay inside .foil/templates"):
+    with pytest.raises(FoilError, match="persona path must stay inside the project templates"):
         persona_text(load_template(project, "ext"))
     assert main(["roster", "list"]) == 0
     listed = capsys.readouterr().out
