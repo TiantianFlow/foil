@@ -179,19 +179,51 @@ def _seat_alive(root: Path) -> bool:
     )
 
 
-def _repair_worktrees(root: Path, toplevel: Path) -> None:
-    worktrees = root / "worktrees"
-    paths = []
-    if worktrees.is_dir():
-        paths.extend(str(child) for child in worktrees.iterdir() if (child / ".git").exists())
-    if not paths:
+def _rewrite_worktree_paths(root: Path, pairs: list[tuple[str, str]]) -> None:
+    """Point stored seat paths at each worktree's new directory."""
+
+    if not pairs:
         return
-    subprocess.run(
-        ["git", "-C", str(toplevel), "worktree", "repair", *paths],
+    run = root / "run"
+    targets = [run / "registry.json"]
+    for folder in ("plans", "instructions"):
+        directory = run / folder
+        if directory.is_dir():
+            targets.extend(
+                path for path in directory.iterdir() if path.is_file() and not path.is_symlink()
+            )
+    for path in targets:
+        if path.is_symlink() or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        replaced = text
+        for old, new in pairs:
+            if old == new:
+                continue
+            replaced = replaced.replace(old, new)
+        if replaced != text:
+            path.write_text(replaced, encoding="utf-8")
+
+
+def _repair_worktrees(root: Path, toplevel: Path, *, relocated: Path | None = None) -> None:
+    worktrees = root / "worktrees"
+    seats = []
+    if worktrees.is_dir():
+        seats = [child for child in worktrees.iterdir() if (child / ".git").exists()]
+    if not seats:
+        return
+    pairs: list[tuple[str, str]] = []
+    if relocated is not None:
+        pairs.append((str(relocated.resolve()), str(root.resolve())))
+    result = subprocess.run(
+        ["git", "-C", str(toplevel), "worktree", "repair", *[str(seat) for seat in seats]],
         capture_output=True,
         text=True,
         check=False,
     )
+    if result.returncode != 0:
+        return
+    _rewrite_worktree_paths(root, pairs)
 
 
 def _simple_legacy(legacy: Path) -> bool:
@@ -225,7 +257,7 @@ def _move_legacy(legacy: Path, root: Path, toplevel: Path) -> None:
             if target.exists() and not source.exists():
                 shutil.move(str(target), str(source))
         raise
-    _repair_worktrees(root, toplevel)
+    _repair_worktrees(root, toplevel, relocated=legacy)
 
 
 def prepare_project(toplevel: Path) -> Path:
@@ -280,6 +312,6 @@ def _adopt(projects: Path, toplevel: Path) -> Path | None:
         return None
     target.parent.mkdir(parents=True, exist_ok=True)
     chosen.rename(target)
-    _repair_worktrees(target, toplevel)
+    _repair_worktrees(target, toplevel, relocated=chosen)
     print(f"Adopted {chosen.name} as {target}")
     return target
