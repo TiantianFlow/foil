@@ -253,6 +253,85 @@ def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
     assert not (foil_root(busy) / "board" / "marker.txt").exists()
 
 
+def test_init_repairs_a_killed_seat_worktree_during_a_legacy_move(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "project", monkeypatch)
+    _commit(repo)
+    legacy = repo / ".foil"
+    (legacy / "board").mkdir(parents=True)
+    (legacy / "run").mkdir()
+    (legacy / "templates").mkdir()
+    seat = legacy / "worktrees" / "implementer-1"
+    _git(repo, "worktree", "add", "--quiet", "-b", "foil/implementer-1", str(seat))
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps(
+            {
+                "seats": {
+                    "implementer-1": {
+                        "state": "killed",
+                        "worktree": str(seat),
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (legacy / "run" / "plans").mkdir()
+    (legacy / "run" / "plans" / "implementer-1.json").write_text(
+        json.dumps({"cwd": str(seat)}) + "\n", encoding="utf-8"
+    )
+
+    assert main(["init"]) == 0
+    assert f"Moved {legacy} into {foil_root(repo)}" in capsys.readouterr().out
+    assert not legacy.exists()
+    moved = foil_root(repo) / "worktrees" / "implementer-1"
+    listed = _git(repo, "worktree", "list", "--porcelain")
+    assert str(moved) in listed.stdout
+    assert "prunable" not in listed.stdout
+    assert _git(moved, "status", "--porcelain").stdout == ""
+    registry = json.loads(
+        (foil_root(repo) / "run" / "registry.json").read_text(encoding="utf-8")
+    )
+    assert registry["seats"]["implementer-1"]["worktree"] == str(moved)
+    plan = json.loads(
+        (foil_root(repo) / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8")
+    )
+    assert plan["cwd"] == str(moved)
+
+
+def test_init_reports_a_failed_worktree_repair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "project", monkeypatch)
+    _commit(repo)
+    legacy = repo / ".foil"
+    (legacy / "board").mkdir(parents=True)
+    (legacy / "run").mkdir()
+    (legacy / "templates").mkdir()
+    seat = legacy / "worktrees" / "implementer-1"
+    _git(repo, "worktree", "add", "--quiet", "-b", "foil/implementer-1", str(seat))
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps({"seats": {"implementer-1": {"state": "killed"}}}),
+        encoding="utf-8",
+    )
+    real_run = subprocess.run
+
+    def broken(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if "repair" in command:
+            return subprocess.CompletedProcess(command, 1, "", "repair failed")
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr("foil.project.subprocess.run", broken)
+    assert main(["init"]) == 1
+    assert "foil: could not repair worktrees" in capsys.readouterr().err
+    moved = foil_root(repo) / "worktrees" / "implementer-1"
+    assert moved.is_dir()
+    assert not legacy.exists()
+
+
 def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
