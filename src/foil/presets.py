@@ -295,7 +295,7 @@ def installed_presets(
             preset = load_preset(toplevel, harness_id)
         except FoilError as exc:
             skipped.append(
-                (f".foil/harnesses/{harness_id}.toml", str(exc).removeprefix("foil: "))
+                (f"harnesses/{harness_id}.toml", str(exc).removeprefix("foil: "))
             )
             continue
         if shutil.which(preset["command"][0]):

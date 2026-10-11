@@ -14,6 +14,7 @@ def _harness_stubs(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
     monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
+    monkeypatch.setenv("FOIL_HOME", str(tmp_path_factory.mktemp("foil-home")))
     bindir = tmp_path_factory.mktemp("harnesses")
     for name in _HARNESSES:
         binary = bindir / name

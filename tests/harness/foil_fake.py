@@ -13,21 +13,24 @@ from pathlib import Path
 
 
 def _foil_root(prompt: str) -> Path:
-    marker = ".foil/run/instructions/"
+    marker = "/run/instructions/"
     index = prompt.find(marker)
     if index >= 0:
         left = index
         while left > 0 and prompt[left - 1] not in " \n\t`\"'":
             left -= 1
-        right = index + len(marker)
-        while right < len(prompt) and prompt[right] not in " \n\t`\"'":
-            right += 1
-        return Path(prompt[left:right]).parents[2]
+        return Path(prompt[left:index])
+    named = os.environ.get("FOIL_PROJECT", "").strip()
+    home = os.environ.get("FOIL_HOME", "").strip()
+    if named and home:
+        candidate = Path(home) / "projects" / named
+        if candidate.is_dir():
+            return candidate
     for parent in (Path.cwd(), *Path.cwd().parents):
         candidate = parent / ".foil"
         if candidate.is_dir():
             return candidate
-    raise SystemExit("foil-fake: cannot find .foil")
+    raise SystemExit("foil-fake: cannot find the project folder")
 
 
 def _log(path: Path, message: str) -> None:

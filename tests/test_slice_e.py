@@ -170,7 +170,9 @@ def test_worker_instruction_and_resume_refreshes_lessons(
     assert f"- {second}: re-read the diff" in refreshed
     plan = json.loads(Path(calls[-1]["runner_argv"][3]).read_text(encoding="utf-8"))
     assert plan["cwd"] == load_registry(repo)["seats"]["implementer-1"]["worktree"]
-    assert plan["env"] == {"FOIL_SEAT_ID": "implementer-1"}
+    assert plan["env"]["FOIL_SEAT_ID"] == "implementer-1"
+    assert plan["env"]["FOIL_PROJECT"]
+    assert "FOIL_HOME" in plan["env"]
     assert "--resume" in plan["argv"]
     assert "You were restarted" not in refreshed
 

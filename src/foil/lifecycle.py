@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -28,9 +29,11 @@ from foil.presets import (
 )
 from foil.project import (
     SKELETON,
-    ensure_exclude,
+    common_dir,
     foil_root,
     git_toplevel,
+    prepare_project,
+    project_key,
     require_host_tools,
 )
 from foil.store import (
@@ -77,7 +80,7 @@ def _print_init_report(
     print(f"Installed harnesses, in id order (a tiebreak, not a ranking): {_names(found)}")
     overridden = _overridden_builtins(toplevel)
     if overridden:
-        print("Built-in presets overridden by .foil/harnesses: " + _names(overridden))
+        print("Built-in presets overridden by harnesses: " + _names(overridden))
     for path, reason in skipped:
         print(f"Skipped {path}: {reason}")
     roles = ("lead", "implementer", "reviewer")
@@ -128,10 +131,12 @@ def _print_init_report(
     print(
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
         "approval prompts, though some harnesses still ask for some commands. "
-        "Set it in each .foil/templates/<role>.toml; auto on the lead alone does not "
+        "Set it in each templates/<role>.toml in the project folder; "
+        "auto on the lead alone does not "
         "let the workers run unattended."
     )
-    print("Read .foil/skills/operator.md and follow it. My goal: <goal>.")
+    print(f"Project folder: {foil_root(toplevel)}")
+    print(f"Read {foil_root(toplevel) / 'skills' / 'operator.md'} and follow it. My goal: <goal>.")
 
 
 def init_project(directory: str | None) -> None:
@@ -146,13 +151,11 @@ def init_project(directory: str | None) -> None:
         for role in ("lead", "implementer", "reviewer")
     ):
         installed_harness(toplevel)
-    root.mkdir(mode=0o700, exist_ok=True)
-    root.chmod(0o700)
+    root = prepare_project(toplevel)
     for relative in SKELETON:
         path = root / relative
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
-    ensure_exclude(toplevel)
     ensure_board(toplevel)
     ensure_registry(toplevel)
     template_dir = root / "templates"
@@ -408,10 +411,15 @@ def _open(
         if name not in forward:
             forward.append(name)
     plan_path = (foil_root(root) / "run" / "plans" / f"{seat}.json").resolve()
+    environment = {"FOIL_SEAT_ID": seat, "FOIL_PROJECT": project_key(common_dir(root))}
+    for name in ("FOIL_HOME", "XDG_DATA_HOME"):
+        value = os.environ.get(name)
+        if value:
+            environment[name] = value
     plan = {
         "argv": argv,
         "cwd": str(cwd.resolve()),
-        "env": {"FOIL_SEAT_ID": seat},
+        "env": environment,
         "env_forward": forward,
     }
     scan(plan)

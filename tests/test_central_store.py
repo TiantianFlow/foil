@@ -1,0 +1,210 @@
+"""Central per-user store: one project folder for every checkout of a repo."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from foil.cli import main
+from foil.project import common_dir, foil_root, project_key, store_root
+
+_ORIGIN = "https://github.com/TiantianFlow/foil.git"
+_INSTRUCTION = (
+    "foil: an old .foil/ is still in this repository; "
+    "move it aside and run foil init again"
+)
+
+
+def _git_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "Foil Test")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "foil-test@localhost")
+    monkeypatch.setenv("GIT_COMMITTER_NAME", "Foil Test")
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "foil-test@localhost")
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _repo(path: Path, monkeypatch: pytest.MonkeyPatch, *, origin: str = "") -> Path:
+    path.mkdir(parents=True)
+    _git(path, "init", "--quiet")
+    if origin:
+        _git(path, "remote", "add", "origin", origin)
+    monkeypatch.chdir(path)
+    return path
+
+
+def _commit(repo: Path) -> None:
+    (repo / "README.md").write_text("store\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    _git(repo, "commit", "--quiet", "-m", "start")
+
+
+def _launch(monkeypatch: pytest.MonkeyPatch) -> None:
+    def launch(self: object, **kwargs: object) -> SimpleNamespace:
+        del self, kwargs
+        return SimpleNamespace(window_id="@7")
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.launch", launch)
+
+
+def _exclude(repo: Path) -> str:
+    result = _git(repo, "rev-parse", "--git-path", "info/exclude")
+    raw = result.stdout.strip()
+    path = Path(raw) if Path(raw).is_absolute() else repo / raw
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
+
+
+def test_store_root_uses_foil_home_then_xdg_then_the_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    custom = tmp_path / "custom"
+    xdg = tmp_path / "xdg"
+    monkeypatch.setenv("FOIL_HOME", str(custom))
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg))
+    assert store_root() == custom
+    monkeypatch.setenv("FOIL_HOME", "")
+    assert store_root() == xdg / "foil"
+    monkeypatch.delenv("FOIL_HOME")
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    assert store_root() == Path.home() / ".local" / "share" / "foil"
+
+
+def test_init_uses_the_foil_home_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git_env(monkeypatch)
+    first = os.environ["FOIL_HOME"]
+    override = tmp_path / "override"
+    monkeypatch.setenv("FOIL_HOME", str(override))
+    repo = _repo(tmp_path / "project", monkeypatch)
+    assert main(["init"]) == 0
+    root = foil_root(repo)
+    assert root.is_relative_to(override / "projects")
+    assert not root.is_relative_to(Path(first))
+    assert (root / "project.json").is_file()
+    assert not (repo / ".foil").exists()
+
+
+def test_main_linked_and_seat_worktrees_share_one_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "project", monkeypatch, origin=_ORIGIN)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["init"]) == 0
+    root = foil_root(repo)
+    key = project_key(common_dir(repo))
+    assert root.name == key
+    record = json.loads((root / "project.json").read_text(encoding="utf-8"))
+    assert record["path"] == str(repo.resolve())
+    assert record["origin"] == _ORIGIN
+    assert record["created"]
+
+    assert main(["seat", "spawn", "lead"]) == 0
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["seat", "spawn", "implementer"]) == 0
+    monkeypatch.delenv("FOIL_SEAT_ID")
+    seat = json.loads((root / "run" / "registry.json").read_text(encoding="utf-8"))
+    worktree = Path(seat["seats"]["implementer-1"]["worktree"])
+    plan = json.loads((root / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8"))
+    assert worktree.is_dir()
+    assert root in worktree.parents
+    assert plan["env"]["FOIL_PROJECT"] == key
+    assert plan["env"]["FOIL_HOME"] == os.environ["FOIL_HOME"]
+    status = _git(repo, "status", "--porcelain")
+    assert status.stdout == ""
+    assert "/.foil/" not in _exclude(repo).splitlines()
+
+    linked = tmp_path / "linked"
+    _git(repo, "worktree", "add", "--quiet", str(linked), "HEAD")
+    monkeypatch.chdir(linked)
+    assert foil_root(Path.cwd()) == root
+    assert main(["seat", "list"]) == 0
+
+    monkeypatch.chdir(worktree)
+    assert common_dir(Path.cwd()) == common_dir(repo)
+    assert foil_root(Path.cwd()) == root
+    assert main(["board", "list", "notes/*"]) == 0
+
+
+def test_init_adopts_an_orphaned_record_and_repairs_worktrees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "orig" / "project", monkeypatch, origin=_ORIGIN)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["init"]) == 0
+    assert main(["seat", "spawn", "lead"]) == 0
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["seat", "spawn", "implementer"]) == 0
+    monkeypatch.delenv("FOIL_SEAT_ID")
+    old_root = foil_root(repo)
+    label = Path(
+        json.loads((old_root / "run" / "registry.json").read_text(encoding="utf-8"))["seats"][
+            "implementer-1"
+        ]["worktree"]
+    ).name
+    moved = tmp_path / "moved" / "project"
+    moved.parent.mkdir()
+    monkeypatch.chdir(tmp_path)
+    shutil.move(str(repo), str(moved))
+    monkeypatch.chdir(moved)
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    adopted = foil_root(moved)
+    assert f"Adopted {old_root.name} as {adopted}" in report
+    assert not old_root.exists()
+    record = json.loads((adopted / "project.json").read_text(encoding="utf-8"))
+    assert record["path"] == str(moved.resolve())
+    assert record["origin"] == _ORIGIN
+    worktree = adopted / "worktrees" / label
+    listed = _git(moved, "worktree", "list", "--porcelain")
+    assert str(worktree) in listed.stdout
+    assert _git(worktree, "status", "--porcelain").stdout == ""
+
+
+def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    quiet = _repo(tmp_path / "quiet", monkeypatch)
+    legacy = quiet / ".foil"
+    (legacy / "board" / "notes").mkdir(parents=True)
+    (legacy / "run").mkdir()
+    (legacy / "templates").mkdir()
+    (legacy / "board" / "notes" / "keep.txt").write_text("kept\n", encoding="utf-8")
+    assert main(["init"]) == 0
+    moved = capsys.readouterr().out
+    assert f"Moved {legacy} into {foil_root(quiet)}" in moved
+    assert not legacy.exists()
+    assert (foil_root(quiet) / "board" / "notes" / "keep.txt").read_text(encoding="utf-8") == "kept\n"
+
+    busy = _repo(tmp_path / "busy", monkeypatch)
+    kept = busy / ".foil"
+    (kept / "board").mkdir(parents=True)
+    (kept / "run").mkdir()
+    (kept / "templates").mkdir()
+    (kept / "run" / "registry.json").write_text(
+        json.dumps({"seats": {"lead": {"state": ""}}}), encoding="utf-8"
+    )
+    (kept / "board" / "marker.txt").write_text("stay\n", encoding="utf-8")
+    assert main(["init"]) == 0
+    assert _INSTRUCTION in capsys.readouterr().out
+    assert kept.is_dir()
+    assert not (foil_root(busy) / "board" / "marker.txt").exists()

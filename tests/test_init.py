@@ -12,7 +12,7 @@ import pytest
 
 from foil import __version__
 from foil.cli import main
-from foil.project import EXCLUDE_PATTERN, SKELETON, foil_root
+from foil.project import SKELETON, foil_root
 
 
 @pytest.fixture(autouse=True)
@@ -53,10 +53,10 @@ def _exclude_text(repo: Path) -> str:
     )
     raw = result.stdout.strip()
     path = Path(raw) if Path(raw).is_absolute() else repo / raw
-    return path.read_text(encoding="utf-8")
+    return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
-def test_init_creates_foil_folder_and_exclude(
+def test_init_creates_the_store_and_leaves_git_status_clean(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "project"
@@ -67,9 +67,11 @@ def test_init_creates_foil_folder_and_exclude(
     assert main(["init"]) == 0
     root = foil_root(repo)
     assert root.is_dir()
+    assert not (repo / ".foil").exists()
+    assert root.resolve() != (repo / ".foil").resolve()
     for relative in SKELETON:
         assert (root / relative).is_dir()
-    assert EXCLUDE_PATTERN in _exclude_text(repo).splitlines()
+    assert "/.foil/" not in _exclude_text(repo).splitlines()
 
     tracked = subprocess.run(
         ["git", "-C", str(repo), "status", "--porcelain"],
@@ -77,10 +79,10 @@ def test_init_creates_foil_folder_and_exclude(
         capture_output=True,
         text=True,
     )
-    assert ".foil" not in tracked.stdout
+    assert tracked.stdout == ""
 
     assert main(["init"]) == 0
-    assert EXCLUDE_PATTERN in _exclude_text(repo).splitlines()
+    assert "/.foil/" not in _exclude_text(repo).splitlines()
 
 
 def test_init_prints_the_pointer_and_the_lead_permission(
@@ -90,12 +92,15 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     repo.mkdir()
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
-    pointer = "Read .foil/skills/operator.md and follow it. My goal: <goal>."
+    pointer = (
+        f"Read {foil_root(repo) / 'skills' / 'operator.md'} and follow it. My goal: <goal>."
+    )
     ask = "permission: lead auto, implementer auto, reviewer auto."
     rule = (
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
         "approval prompts, though some harnesses still ask for some commands. "
-        "Set it in each .foil/templates/<role>.toml; auto on the lead alone does not "
+        "Set it in each templates/<role>.toml in the project folder; "
+        "auto on the lead alone does not "
         "let the workers run unattended."
     )
     auto = "permission: lead ask, implementer auto, reviewer auto."
@@ -105,6 +110,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     assert first.err == ""
     assert first.out.startswith(f"foil {__version__}\n")
     assert "Updated skills: operator" in first.out
+    assert f"Project folder: {foil_root(repo)}" in first.out
     assert pointer in first.out
     assert ask in first.out
     assert rule in first.out
@@ -215,14 +221,15 @@ def test_init_skips_one_invalid_user_preset(
     repo.mkdir()
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
-    harnesses = repo / ".foil" / "harnesses"
-    harnesses.mkdir(parents=True)
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    harnesses = foil_root(repo) / "harnesses"
     (harnesses / "zz.toml").write_text('id = "zz"\n', encoding="utf-8")
 
     assert main(["init"]) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert "Skipped .foil/harnesses/zz.toml: invalid preset" in captured.out
+    assert "Skipped harnesses/zz.toml: invalid preset" in captured.out
 
 
 def test_init_closed_pipe_prints_nothing_on_stderr(tmp_path: Path) -> None:
