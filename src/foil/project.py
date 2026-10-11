@@ -227,27 +227,30 @@ def _rewrite_worktree_paths(root: Path, pairs: list[tuple[str, str]]) -> None:
 
 
 def _repair_worktrees(root: Path, toplevel: Path, *, relocated: Path | None = None) -> None:
+    pairs: list[tuple[str, str]] = []
+    if relocated is not None:
+        pairs.append((str(relocated.resolve()), str(root.resolve())))
+    recorded = project_record(root).get("path", "")
+    checkout = str(_common_dir(toplevel).parent.resolve())
+    if recorded and recorded != checkout and not Path(recorded).exists():
+        pairs.append((recorded, checkout))
     worktrees = root / "worktrees"
     seats = []
     if worktrees.is_dir():
         seats = [child for child in worktrees.iterdir() if (child / ".git").exists()]
-    if not seats:
-        return
-    pairs: list[tuple[str, str]] = []
-    if relocated is not None:
-        pairs.append((str(relocated.resolve()), str(root.resolve())))
-    result = subprocess.run(
-        ["git", "-C", str(toplevel), "worktree", "repair", *[str(seat) for seat in seats]],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
-        message = "foil: could not repair worktrees"
-        if detail:
-            message = f"{message}: {detail}"
-        raise FoilError(message)
+    if seats:
+        result = subprocess.run(
+            ["git", "-C", str(toplevel), "worktree", "repair", *[str(seat) for seat in seats]],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            message = "foil: could not repair worktrees"
+            if detail:
+                message = f"{message}: {detail}"
+            raise FoilError(message)
     _rewrite_worktree_paths(root, pairs)
 
 
