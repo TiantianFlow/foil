@@ -101,7 +101,7 @@ Install Foil from https://github.com/TiantianFlow/foil, onboard this repository 
 To update between goals, run `foil seat kill --all` once the goal is done, run the install line again, run `foil init` in each project, then spawn the lead. The previous goal's `board/status.md`, in the project folder the report prints, already says `state: done`, so note its `updated` line before you spawn and wait for it to change. After `foil seat kill --all`, either case can occur, so check: run `tmux ls`. If it lists any session, a named preset `env` variable comes from that server and is set with `tmux set-environment -g NAME VALUE` before spawn. If it says no server is running, the next spawn starts a server from your shell.
 
 - The agent installs Foil and runs `foil init`.
-- It reads the report and sets `harness`, `model`, and `permission` with `foil roster`, or by editing `.foil/templates/lead.toml`, `.foil/templates/implementer.toml`, and `.foil/templates/reviewer.toml` in the project folder the report printed. `auto` on the lead alone does not let the workers run unattended.
+- It reads the report and sets `harness`, `model`, and `permission` with `foil roster`, or by editing `templates/lead.toml`, `templates/implementer.toml`, and `templates/reviewer.toml` in the project folder the report printed. `auto` on the lead alone does not let the workers run unattended.
 - It runs the first-run check and sends the goal.
 - It never does the project work itself.
 

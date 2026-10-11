@@ -101,7 +101,7 @@ Install Foil from https://github.com/TiantianFlow/foil, onboard this repository 
 要在两个目标之间更新：目标完成后运行 `foil seat kill --all`，再运行一次安装命令，然后在每个项目里运行 `foil init`，再启动主座。上一个目标留在报告打印的项目目录里的 `board/status.md` 已经写着 `state: done`，所以启动前先记下它的 `updated` 行，等它变化。`foil seat kill --all` 之后两种情况都可能出现，所以要检查：运行 `tmux ls`。如果列出了任何会话，预设里点名的 `env` 变量来自该服务器，启动前用 `tmux set-environment -g NAME VALUE` 设置。如果它说没有服务器在运行，下一次启动会从你的 shell 拉起服务器。
 
 - Agent 安装运筹并运行 `foil init`。
-- 它读报告，并用 `foil roster` 设置 `harness`、`model` 和 `permission`，也可以直接改报告打印的项目目录里的 `.foil/templates/lead.toml`、`.foil/templates/implementer.toml` 和 `.foil/templates/reviewer.toml`。只把主座改成 `auto` 不会让工人席位无人值守。
+- 它读报告，并用 `foil roster` 设置 `harness`、`model` 和 `permission`，也可以直接改报告打印的项目目录里的 `templates/lead.toml`、`templates/implementer.toml` 和 `templates/reviewer.toml`。只把主座改成 `auto` 不会让工人席位无人值守。
 - 它做首次运行检查，然后把目标发出去。
 - 它自己从不做项目本身的工作。
 

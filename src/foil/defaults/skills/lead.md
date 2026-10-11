@@ -70,7 +70,7 @@ Implementation belongs in a seat whose template sets `worktree` to true. That se
 
 ## Roster
 
-The roster is the template files under `.foil/templates/`. View and modify templates:
+The roster is the template files under `templates/` in the project folder. That folder is outside the repository. View and modify templates:
 
 ```text
 foil roster list
@@ -80,11 +80,11 @@ foil roster add researcher
 foil roster remove old-role
 ```
 
-To add a role whose persona file exists, use `foil roster add <role>`. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. Personas live in `.foil/templates/personas/`. A role that commits needs `worktree = true`.
+To add a role whose persona file exists, use `foil roster add <role>`. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. Personas live in the project folder's `templates/personas/`. A role that commits needs `worktree = true`.
 
 `foil roster add ROLE` creates a template when `personas/ROLE.md` is already on disk. A role you add arrives as `auto`, and you cannot set `permission`. A caller outside the fleet sets `ask` when a seat must stop for the human. `foil roster update ROLE model=VALUE` changes the model, so a researcher or reviewer can be given a stronger model for that ask. `foil roster update ROLE persona=VALUE` points an existing template at a persona file. Neither command sets `permission`. A new spawn picks up the change. A seat already alive does not.
 
-You can still edit template files directly in `.foil/templates/` if you prefer. Do not overwrite a template the fleet is already using unless you mean to change the next spawn. You cannot set `permission`, including adding a file whose permission is not `auto`; only a caller outside the fleet can. An omitted permission is `auto`. You cannot remove a template, or change its harness, while a seat of that template has a stored state other than `killed`.
+You can still edit template files directly in the project folder's `templates/` if you prefer. Do not overwrite a template the fleet is already using unless you mean to change the next spawn. You cannot set `permission`, including adding a file whose permission is not `auto`; only a caller outside the fleet can. An omitted permission is `auto`. You cannot remove a template, or change its harness, while a seat of that template has a stored state other than `killed`.
 
 ## Board and contracts
 
