@@ -230,6 +230,38 @@ def test_init_adopts_an_orphaned_record_and_repairs_worktrees(
     assert worktree.is_dir()
 
 
+def test_init_says_when_several_orphans_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    home = Path(os.environ["FOIL_HOME"])
+    projects = home / "projects"
+    for name in ("one", "two"):
+        folder = projects / name
+        (folder / "board").mkdir(parents=True)
+        (folder / "project.json").write_text(
+            json.dumps(
+                {
+                    "path": str(tmp_path / "gone" / name),
+                    "origin": _ORIGIN,
+                    "created": "2026-10-10T00:00:00Z",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    repo = _repo(tmp_path / "project", monkeypatch, origin=_ORIGIN)
+    _commit(repo)
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert "several stored projects match this origin" in report
+    assert (projects / "one").is_dir()
+    assert (projects / "two").is_dir()
+    created = foil_root(repo)
+    assert created.name not in {"one", "two"}
+    assert (created / "project.json").is_file()
+
+
 def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

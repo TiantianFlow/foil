@@ -329,6 +329,11 @@ def _adopt(projects: Path, toplevel: Path) -> Path | None:
         if recorded and not Path(recorded).exists():
             matches.append(folder)
     if len(matches) != 1:
+        if len(matches) > 1:
+            print(
+                "foil: several stored projects match this origin and their "
+                "recorded paths are gone"
+            )
         return None
     chosen = matches[0]
     target = foil_root(toplevel)
