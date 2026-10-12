@@ -488,6 +488,68 @@ def test_init_refuses_a_stale_seat_without_creating_a_store(
     assert (foil_root(repo) / "board" / "marker.txt").read_text(encoding="utf-8") == "stay\n"
 
 
+def test_a_command_names_the_upgrade_when_a_legacy_folder_remains(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Issue 29 item 6: PATH already points at 0.4 while .foil/ is still in-repo."""
+
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "stranded", monkeypatch)
+    _commit(repo)
+    legacy = repo / ".foil"
+    (legacy / "board").mkdir(parents=True)
+    (legacy / "run").mkdir()
+    (legacy / "templates").mkdir()
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps(
+            {
+                "seats": {
+                    "lead": {"state": ""},
+                    "implementer-1": {"state": "dead"},
+                    "reviewer-1": {"state": "killed"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(["seat", "list"]) == 1
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["mail", "list"]) == 1
+    assert main(["board", "list", "*"]) == 1
+    monkeypatch.delenv("FOIL_SEAT_ID")
+    error = capsys.readouterr().err
+    assert error.count("foil: an old .foil/") == 3
+    assert "not initialized" not in error
+    assert "unknown seat" not in error
+    assert "lead" in error
+    assert "implementer-1" in error
+    assert "reviewer-1" not in error
+    assert "stale seat" in error
+    assert _ORDER in error
+    assert "move it aside" not in error
+    assert "move the" not in error
+    assert legacy.is_dir()
+    assert not foil_root(repo).exists()
+
+    registry = json.loads((legacy / "run" / "registry.json").read_text(encoding="utf-8"))
+    for record in registry["seats"].values():
+        record["state"] = "killed"
+    (legacy / "run" / "registry.json").write_text(json.dumps(registry), encoding="utf-8")
+    assert main(["send", "lead", "still here"]) == 1
+    quiet = capsys.readouterr().err
+    assert quiet.startswith("foil: an old .foil/")
+    assert "not initialized" not in quiet
+    assert _ORDER in quiet
+    assert "move it aside" not in quiet
+    assert "move the" not in quiet
+    assert legacy.is_dir()
+
+    assert main(["init"]) == 0
+    assert f"Moved {legacy} into {foil_root(repo)}" in capsys.readouterr().out
+    assert not legacy.exists()
+
+
 def _legacy_seat(repo: Path, label: str) -> tuple[Path, str]:
     legacy = repo / ".foil"
     (legacy / "board").mkdir(parents=True, exist_ok=True)
