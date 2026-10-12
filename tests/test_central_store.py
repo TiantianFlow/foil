@@ -15,9 +15,13 @@ from foil.cli import main
 from foil.project import common_dir, foil_root, project_key, store_root
 
 _ORIGIN = "https://github.com/TiantianFlow/foil.git"
-_INSTRUCTION = (
+_COLLISION = (
     "foil: an old .foil/ is still in this repository; "
-    "move it aside and run foil init again"
+    "a stored project already uses one of its names"
+)
+_UPGRADE = (
+    "Kill them with the old foil (foil seat kill --all), including a stale "
+    "seat whose tmux window is already gone, then upgrade, then foil init."
 )
 
 
@@ -345,10 +349,54 @@ def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
         json.dumps({"seats": {"lead": {"state": ""}}}), encoding="utf-8"
     )
     (kept / "board" / "marker.txt").write_text("stay\n", encoding="utf-8")
-    assert main(["init"]) == 0
-    assert _INSTRUCTION in capsys.readouterr().out
+    assert main(["init"]) == 1
+    error = capsys.readouterr().err
+    assert "lead" in error
+    assert _UPGRADE in error
+    assert "move it aside" not in error
     assert kept.is_dir()
+    assert not foil_root(busy).exists()
     assert not (foil_root(busy) / "board" / "marker.txt").exists()
+
+
+def test_init_refuses_a_stale_seat_without_creating_a_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "stale", monkeypatch)
+    legacy = repo / ".foil"
+    (legacy / "board").mkdir(parents=True)
+    (legacy / "run").mkdir()
+    (legacy / "templates").mkdir()
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps(
+            {
+                "seats": {
+                    "lead": {"state": ""},
+                    "implementer-1": {"state": "killed"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (legacy / "board" / "marker.txt").write_text("stay\n", encoding="utf-8")
+
+    assert main(["init"]) == 1
+    error = capsys.readouterr().err
+    assert "lead" in error
+    assert "implementer-1" not in error
+    assert _UPGRADE in error
+    assert "move it aside" not in error
+    assert legacy.is_dir()
+    assert not foil_root(repo).exists()
+
+    registry = json.loads((legacy / "run" / "registry.json").read_text(encoding="utf-8"))
+    registry["seats"]["lead"]["state"] = "killed"
+    (legacy / "run" / "registry.json").write_text(json.dumps(registry), encoding="utf-8")
+    assert main(["init"]) == 0
+    assert f"Moved {legacy} into {foil_root(repo)}" in capsys.readouterr().out
+    assert not legacy.exists()
+    assert (foil_root(repo) / "board" / "marker.txt").read_text(encoding="utf-8") == "stay\n"
 
 
 def test_init_repairs_a_killed_seat_worktree_during_a_legacy_move(
@@ -450,7 +498,9 @@ def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
     (store / "run" / "owned.txt").write_text("store\n", encoding="utf-8")
 
     assert main(["init"]) == 0
-    assert _INSTRUCTION in capsys.readouterr().out
+    collision = capsys.readouterr().out
+    assert _COLLISION in collision
+    assert "move it aside" not in collision
     assert (legacy / "board" / "notes" / "keep.txt").read_text(encoding="utf-8") == "kept\n"
     assert (legacy / "run").is_dir()
     assert (legacy / "templates").is_dir()
@@ -465,6 +515,6 @@ def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
 
     capsys.readouterr()
     assert main(["init"]) == 0
-    assert _INSTRUCTION in capsys.readouterr().out
+    assert _COLLISION in capsys.readouterr().out
     assert (legacy / "board" / "notes" / "keep.txt").is_file()
     assert (seat / ".git").is_file()
