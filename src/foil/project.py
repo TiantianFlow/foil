@@ -31,7 +31,9 @@ _OLD_FOIL = (
     "install 0.3.4 beside it, which does not replace the foil on PATH: "
     "UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "
     '"git+https://github.com/TiantianFlow/foil.git@v0.3.4", '
-    "then run DIR/bin/foil seat kill --all"
+    "then run DIR/bin/foil seat kill --all. With pipx: "
+    "PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "
+    '"git+https://github.com/TiantianFlow/foil.git@v0.3.4"'
 )
 _UPGRADE = (
     "kill them with the old foil (foil seat kill --all), then upgrade, "
@@ -319,7 +321,12 @@ def _run_files(root: Path) -> list[Path]:
 
 
 def _swap_prefix(text: str, old: str, new: str) -> str:
-    """Replace ``old`` only where it is a whole path, not a path's stem."""
+    """Replace ``old`` only as a whole path, bounded on both sides.
+
+    A boundary before the match stops ``/tmp/x`` matching inside
+    ``/private/tmp/x``. A boundary after it stops ``/.foil`` matching
+    ``/.foil-home`` or ``/.foilrc``.
+    """
 
     boundary = "/\\\"' \n\t`"
     pieces: list[str] = []
@@ -330,7 +337,9 @@ def _swap_prefix(text: str, old: str, new: str) -> str:
             pieces.append(text[start:])
             return "".join(pieces)
         after = found + len(old)
-        if after == len(text) or text[after] in boundary:
+        before_ok = found == 0 or text[found - 1] in boundary
+        after_ok = after == len(text) or text[after] in boundary
+        if before_ok and after_ok:
             pieces.append(text[start:found])
             pieces.append(new)
         else:
@@ -355,10 +364,7 @@ def _replace_text(root: Path, pairs: list[tuple[str, str]]) -> None:
                 replaced, json.dumps(old)[1:-1], json.dumps(new)[1:-1]
             )
         if replaced != text:
-            if path.suffix == ".json":
-                _write_json(path, replaced if replaced.endswith("\n") else replaced + "\n")
-            else:
-                path.write_text(replaced, encoding="utf-8")
+            _write_json(path, replaced if replaced.endswith("\n") else replaced + "\n")
 
 
 def _texts_in_run(root: Path) -> list[str]:
@@ -395,26 +401,41 @@ def _string_values(value: object) -> list[str]:
     return []
 
 
+def _accepted_foil(text: str) -> str:
+    """``<checkout>/.foil`` when it ends on a path boundary and is gone.
+
+    ``/.foil-home`` and ``/.foilrc`` do not end at ``/.foil``. A prefix
+    whose parent still exists is a live checkout and is not rewritten.
+    """
+
+    marker = "/.foil"
+    start = 0
+    while True:
+        at = text.find(marker, start)
+        if at < 0:
+            return ""
+        after = at + len(marker)
+        bounded = after == len(text) or text[after] in "/\\\"' \n\t`"
+        begin = at
+        while begin > 0 and text[begin - 1] not in " \n\t\"'`":
+            begin -= 1
+        foil = text[begin:after]
+        if bounded and foil.startswith("/") and not Path(foil).parent.exists():
+            return foil
+        start = after
+
+
 def _foil_prefix_in_run(root: Path) -> str:
-    """An old ``<checkout>/.foil`` named in ``run/`` that no longer exists.
+    """An old ``<checkout>/.foil`` named in ``run/`` whose checkout is gone.
 
     A rename with no seat worktree leaves no gitdir to read. The stored
     board and instruction paths still name the old directory.
     """
 
     for text in _texts_in_run(root):
-        start = 0
-        while True:
-            at = text.find("/.foil", start)
-            if at < 0:
-                break
-            begin = at
-            while begin > 0 and text[begin - 1] not in " \n\t\"'`":
-                begin -= 1
-            foil = text[begin : at + len("/.foil")]
-            if foil.startswith("/") and not Path(foil).exists():
-                return foil
-            start = at + len("/.foil")
+        foil = _accepted_foil(text)
+        if foil:
+            return foil
     return ""
 
 
@@ -446,46 +467,83 @@ def _missing_checkout(root: Path, checkout: str) -> str:
     return ""
 
 
-def _old_foil_prefix(toplevel: Path) -> str:
-    """The old ``<repo>/.foil`` prefix, taken from a worktree's gitdir text.
+def _seat_gitdir(toplevel: Path, root: Path) -> str:
+    """A Foil seat gitdir, never a worktree the user created.
 
-    That text is ``<old checkout>/.foil/worktrees/<label>/.git``. Stripping
-    ``/worktrees/<label>/.git`` leaves the old ``.foil`` directory, which is
-    the prefix of every stored path that was not a worktree.
+    A seat lives under ``.foil/worktrees/<label>`` or under the store's
+    ``worktrees/<label>``, and that label is a directory in the store.
+    A user's own worktree at ``<checkout>/worktrees/<name>`` is ignored.
     """
 
+    labels = set()
+    seats = root / "worktrees"
+    if seats.is_dir():
+        labels = {child.name for child in seats.iterdir() if child.is_dir()}
     admin = _common_dir(toplevel) / "worktrees"
     if not admin.is_dir():
         return ""
     for child in admin.iterdir():
+        if child.name not in labels:
+            continue
         recorded = child / "gitdir"
         if recorded.is_symlink() or not recorded.is_file():
             continue
         text = recorded.read_text(encoding="utf-8").strip()
-        suffix = f"/worktrees/{child.name}/.git"
-        if text.endswith(suffix):
-            return text.removesuffix(suffix)
+        for marker in (f"/.foil/worktrees/{child.name}/.git", f"/worktrees/{child.name}/.git"):
+            if text.endswith(marker) and "/.foil/worktrees/" in text:
+                return text
+            if text.endswith(marker) and text.removesuffix(marker).endswith("/worktrees"):
+                return text
     return ""
 
 
-def _stale_worktrees(toplevel: Path) -> dict[str, str]:
-    """Worktree directory name to the path Git still records, before repair.
+def _old_foil_prefix(toplevel: Path, root: Path) -> str:
+    """The old ``<repo>/.foil`` prefix, taken from a Foil seat's gitdir.
 
-    A renamed repository leaves that path in the common dir. The worktree's
-    own ``.git`` file still points at the old common dir, so it cannot be
-    followed.
+    That text is ``<old checkout>/.foil/worktrees/<label>/.git``. Stripping
+    ``/worktrees/<label>/.git`` leaves the old ``.foil`` directory. The
+    result is used only when it ends at ``/.foil`` and its parent is gone.
+    """
+
+    text = _seat_gitdir(toplevel, root)
+    suffix = "/.git"
+    if not text.endswith(suffix):
+        return ""
+    parent = text.removesuffix(suffix)
+    marker = "/worktrees/"
+    if marker not in parent:
+        return ""
+    foil = parent[: parent.rfind(marker)]
+    marker_end = "/.foil"
+    if not foil.endswith(marker_end):
+        return ""
+    return foil
+
+
+def _stale_worktrees(toplevel: Path, root: Path) -> dict[str, str]:
+    """Foil seat name to the path Git still records, before repair.
+
+    A renamed repository leaves that path in the common dir. Only a seat
+    whose label exists under the store is considered, so a user's own
+    worktree is not rewritten.
     """
 
     admin = _common_dir(toplevel) / "worktrees"
     found: dict[str, str] = {}
+    seats = root / "worktrees"
+    labels: set[str] = set()
+    if seats.is_dir():
+        labels = {child.name for child in seats.iterdir() if child.is_dir()}
     if not admin.is_dir():
         return found
     for child in admin.iterdir():
+        if child.name not in labels:
+            continue
         recorded = child / "gitdir"
         if recorded.is_symlink() or not recorded.is_file():
             continue
         text = recorded.read_text(encoding="utf-8").strip()
-        if text.endswith("/.git"):
+        if text.endswith("/.git") and "/worktrees/" in text:
             found[child.name] = text.removesuffix("/.git")
     return found
 
@@ -519,13 +577,13 @@ def _rewrite_worktree_paths(
                 pairs.append((old, str(seat.resolve())))
     if not old_foil:
         old_foil = _foil_prefix_in_run(root)
-    if old_foil:
+    if old_foil and _accepted_foil(old_foil) == old_foil:
         pairs.append((old_foil, str(root.resolve())))
         if old_foil.endswith("/.foil"):
             pairs.append((old_foil.removesuffix("/.foil"), checkout))
     elif relocated is not None:
         pairs.append((str(relocated), str(root.resolve())))
-    if not any(old == checkout or old.startswith(checkout) for old, _new in pairs):
+    if not any(new == checkout or new.startswith(f"{checkout}/") for _old, new in pairs):
         missing = _missing_checkout(root, checkout)
         if missing:
             pairs.append((missing, checkout))
@@ -553,11 +611,26 @@ def _rewrite_project_keys(root: Path, toplevel: Path) -> None:
         _write_json(path, json.dumps(payload) + "\n")
 
 
+def _repair_pending(root: Path, toplevel: Path) -> bool:
+    """A repair or rewrite that an earlier init did not finish.
+
+    The folder is already in place, so adopt and the legacy move do not
+    run again. A recorded checkout that no longer exists, or a seat gitdir
+    that still names a path other than the store worktree, is the leftover.
+    """
+
+    checkout = str(_common_dir(toplevel).parent.resolve())
+    recorded = project_record(root).get("path", "")
+    if recorded and recorded != checkout and not Path(recorded).exists():
+        return True
+    return any(not Path(old).exists() for old in _stale_worktrees(toplevel, root).values())
+
+
 def _repair_worktrees(
     root: Path, toplevel: Path, *, relocated: Path | None = None, previous: str = ""
 ) -> None:
-    stale = _stale_worktrees(toplevel)
-    old_foil = _old_foil_prefix(toplevel)
+    stale = _stale_worktrees(toplevel, root)
+    old_foil = _old_foil_prefix(toplevel, root)
     worktrees = root / "worktrees"
     seats = []
     if worktrees.is_dir():
@@ -704,6 +777,8 @@ def prepare_project(toplevel: Path) -> Path:
                 "real directories. Make them real directories, then run "
                 "foil init again."
             )
+    elif _repair_pending(root, toplevel):
+        _repair_worktrees(root, toplevel, previous=previous)
     return root
 
 
@@ -762,8 +837,8 @@ def _adopt(projects: Path, toplevel: Path) -> Path | None:
         elif not identified and matches:
             shown = ", ".join(str(folder) for folder in matches)
             print(
-                "foil: an orphaned store record could not be adopted "
-                f"({shown}); no second project was created"
+                "foil: an orphaned store record was not adopted "
+                f"({shown}); a new project folder was created"
             )
             return None
     if len(matches) != 1:
