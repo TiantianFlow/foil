@@ -233,7 +233,8 @@ folder is `<root>/projects/<key>/`. `<key>` is a readable slug of the
 realpath of the Git common dir plus a short hash. The main checkout, a
 linked worktree, and a seat worktree share that common dir, so they
 share one folder. `project.json` records the main checkout, the origin
-remote when there is one, and the creation time. Init keeps a recorded
+remote when there is one, the root commit when there is exactly one, and
+the creation time. Init keeps a recorded
 path that still exists. Otherwise it records the parent of the Git
 common dir, including when init runs from a linked or seat worktree. After adopt or a
 legacy move, absolute paths in `run/registry.json`, `run/plans/`, and
@@ -257,7 +258,7 @@ are fixed; exact names may vary.
 
 ```text
 <root>/projects/<key>/
-  project.json                 path, origin, created
+  project.json                 path, origin, root, created
   templates/<role>.toml        role templates (the roster)
   templates/personas/<role>.md every packaged persona, including
                                candidate roles with no template yet

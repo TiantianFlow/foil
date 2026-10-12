@@ -126,7 +126,7 @@ def project_record(root: Path) -> dict[str, str]:
         return {}
     if not isinstance(payload, dict):
         return {}
-    return {key: str(payload.get(key, "")) for key in ("path", "origin", "created")}
+    return {key: str(payload.get(key, "")) for key in ("path", "origin", "root", "created")}
 
 
 def is_initialized(toplevel: Path) -> bool:
@@ -157,6 +157,24 @@ def _origin(toplevel: Path) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def _root_commit(toplevel: Path) -> str:
+    """The first commit, used as an identity when the repo has no origin."""
+
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(toplevel), "rev-list", "--max-parents=0", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    commits = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return commits[0] if len(commits) == 1 else ""
+
+
 def _checkout_path(root: Path, toplevel: Path) -> Path:
     """The main checkout, not the linked or seat worktree init was run from.
 
@@ -174,6 +192,7 @@ def _write_record(root: Path, toplevel: Path, *, created: str) -> None:
     payload = {
         "path": str(_checkout_path(root, toplevel).resolve()),
         "origin": _origin(toplevel),
+        "root": _root_commit(toplevel),
         "created": created,
     }
     path = root / "project.json"
@@ -354,26 +373,47 @@ def prepare_project(toplevel: Path) -> Path:
     return root
 
 
-def _adopt(projects: Path, toplevel: Path) -> Path | None:
-    origin = _origin(toplevel)
-    if not origin or not projects.is_dir():
-        return None
-    matches: list[Path] = []
+def _gone_records(projects: Path) -> list[tuple[Path, dict[str, str]]]:
+    gone: list[tuple[Path, dict[str, str]]] = []
+    if not projects.is_dir():
+        return gone
     for folder in projects.iterdir():
         if not folder.is_dir():
             continue
         record = project_record(folder)
-        if record.get("origin") != origin:
-            continue
         recorded = record.get("path", "")
         if recorded and not Path(recorded).exists():
-            matches.append(folder)
+            gone.append((folder, record))
+    return gone
+
+
+def _adopt(projects: Path, toplevel: Path) -> Path | None:
+    origin = _origin(toplevel)
+    gone = _gone_records(projects)
+    if origin:
+        matches = [folder for folder, record in gone if record.get("origin") == origin]
+        several = (
+            "foil: several stored projects match this origin and their "
+            "recorded paths are gone"
+        )
+    else:
+        root = _root_commit(toplevel)
+        if not root:
+            matches = []
+        else:
+            matches = [folder for folder, record in gone if record.get("root") == root]
+        several = (
+            "foil: several stored projects match this repository and their "
+            "recorded paths are gone"
+        )
+    if not matches and gone and not origin:
+        raise FoilError(
+            "foil: an orphaned store record exists and was not adopted; "
+            "no second project was created"
+        )
     if len(matches) != 1:
         if len(matches) > 1:
-            print(
-                "foil: several stored projects match this origin and their "
-                "recorded paths are gone"
-            )
+            print(several)
         return None
     chosen = matches[0]
     target = foil_root(toplevel)
