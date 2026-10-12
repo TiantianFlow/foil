@@ -361,6 +361,91 @@ def _replace_text(root: Path, pairs: list[tuple[str, str]]) -> None:
                 path.write_text(replaced, encoding="utf-8")
 
 
+def _texts_in_run(root: Path) -> list[str]:
+    texts: list[str] = []
+    for path in _run_files(root):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        texts.append(raw)
+        if path.suffix != ".json":
+            continue
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        texts.extend(_string_values(payload))
+    return texts
+
+
+def _string_values(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        found: list[str] = []
+        for item in value.values():
+            found.extend(_string_values(item))
+        return found
+    if isinstance(value, list):
+        found = []
+        for item in value:
+            found.extend(_string_values(item))
+        return found
+    return []
+
+
+def _foil_prefix_in_run(root: Path) -> str:
+    """An old ``<checkout>/.foil`` named in ``run/`` that no longer exists.
+
+    A rename with no seat worktree leaves no gitdir to read. The stored
+    board and instruction paths still name the old directory.
+    """
+
+    for text in _texts_in_run(root):
+        start = 0
+        while True:
+            at = text.find("/.foil", start)
+            if at < 0:
+                break
+            begin = at
+            while begin > 0 and text[begin - 1] not in " \n\t\"'`":
+                begin -= 1
+            foil = text[begin : at + len("/.foil")]
+            if foil.startswith("/") and not Path(foil).exists():
+                return foil
+            start = at + len("/.foil")
+    return ""
+
+
+def _missing_checkout(root: Path, checkout: str) -> str:
+    """The one plan cwd that is an absolute path and no longer exists.
+
+    This is the old checkout when no seat worktree recorded it. Several
+    distinct missing directories are left alone.
+    """
+
+    found: set[str] = set()
+    for path in _run_files(root):
+        if path.parent.name != "plans" or path.suffix != ".json":
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        cwd = payload.get("cwd") if isinstance(payload, dict) else None
+        if (
+            isinstance(cwd, str)
+            and cwd.startswith("/")
+            and cwd != checkout
+            and not Path(cwd).exists()
+        ):
+            found.add(cwd)
+    if len(found) == 1:
+        return found.pop()
+    return ""
+
+
 def _old_foil_prefix(toplevel: Path) -> str:
     """The old ``<repo>/.foil`` prefix, taken from a worktree's gitdir text.
 
@@ -412,6 +497,7 @@ def _rewrite_worktree_paths(
     relocated: Path | None,
     stale: dict[str, str],
     old_foil: str,
+    previous: str,
 ) -> None:
     """Point stored paths at the store, using prefixes read before repair.
 
@@ -420,22 +506,29 @@ def _rewrite_worktree_paths(
     """
 
     pairs: list[tuple[str, str]] = []
-    recorded = project_record(root).get("path", "")
+    recorded = previous or project_record(root).get("path", "")
     checkout = str(_common_dir(toplevel).parent.resolve())
     if recorded and recorded != checkout and not Path(recorded).exists():
         pairs.append((recorded, checkout))
+        pairs.append((f"{recorded}/.foil", str(root.resolve())))
     worktrees = root / "worktrees"
     if worktrees.is_dir():
         for seat in worktrees.iterdir():
             old = stale.get(seat.name, "")
             if old:
                 pairs.append((old, str(seat.resolve())))
+    if not old_foil:
+        old_foil = _foil_prefix_in_run(root)
     if old_foil:
         pairs.append((old_foil, str(root.resolve())))
         if old_foil.endswith("/.foil"):
             pairs.append((old_foil.removesuffix("/.foil"), checkout))
     elif relocated is not None:
         pairs.append((str(relocated), str(root.resolve())))
+    if not any(old == checkout or old.startswith(checkout) for old, _new in pairs):
+        missing = _missing_checkout(root, checkout)
+        if missing:
+            pairs.append((missing, checkout))
     _replace_text(root, pairs)
 
 
@@ -460,7 +553,9 @@ def _rewrite_project_keys(root: Path, toplevel: Path) -> None:
         _write_json(path, json.dumps(payload) + "\n")
 
 
-def _repair_worktrees(root: Path, toplevel: Path, *, relocated: Path | None = None) -> None:
+def _repair_worktrees(
+    root: Path, toplevel: Path, *, relocated: Path | None = None, previous: str = ""
+) -> None:
     stale = _stale_worktrees(toplevel)
     old_foil = _old_foil_prefix(toplevel)
     worktrees = root / "worktrees"
@@ -470,7 +565,12 @@ def _repair_worktrees(root: Path, toplevel: Path, *, relocated: Path | None = No
     if seats:
         _repair_git(toplevel, seats)
     _rewrite_worktree_paths(
-        root, toplevel, relocated=relocated, stale=stale, old_foil=old_foil
+        root,
+        toplevel,
+        relocated=relocated,
+        stale=stale,
+        old_foil=old_foil,
+        previous=previous,
     )
     _rewrite_project_keys(root, toplevel)
 
@@ -583,6 +683,7 @@ def prepare_project(toplevel: Path) -> Path:
         if adopted is not None:
             root = adopted
             record = project_record(root)
+    previous = record.get("path", "")
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     root.chmod(0o700)
     created = record.get("created") or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -595,7 +696,7 @@ def prepare_project(toplevel: Path) -> Path:
                 print(exc if isinstance(exc, FoilError) else f"foil: {exc}")
             else:
                 print(f"Moved {legacy} into {root}")
-                _repair_worktrees(root, toplevel, relocated=legacy)
+                _repair_worktrees(root, toplevel, relocated=legacy, previous=previous)
         else:
             print(
                 "foil: an old .foil/ is still in this repository and is not "
@@ -670,6 +771,7 @@ def _adopt(projects: Path, toplevel: Path) -> Path | None:
             print(several)
         return None
     chosen = matches[0]
+    previous = project_record(chosen).get("path", "")
     target = foil_root(toplevel)
     if chosen.resolve() == target.resolve():
         return chosen
@@ -677,6 +779,6 @@ def _adopt(projects: Path, toplevel: Path) -> Path | None:
         return None
     target.parent.mkdir(parents=True, exist_ok=True)
     chosen.rename(target)
-    _repair_worktrees(target, toplevel, relocated=chosen)
+    _repair_worktrees(target, toplevel, relocated=chosen, previous=previous)
     print(f"Adopted {chosen.name} as {target}")
     return target
