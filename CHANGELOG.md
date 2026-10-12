@@ -2,6 +2,12 @@
 
 Notable changes to Foil, newest first.
 
+## [Unreleased]
+
+### Breaking
+
+- Upgrading a 0.3.x project is kill, then upgrade, then `foil init`. Kill the fleet with the old `foil` (`foil seat kill --all`), including a stale seat whose tmux window is already gone, before replacing the command on `PATH`. A refused `foil init` creates nothing in the store. Its message names the blocking seats and that order, and it never says to move the directory aside. A repository with no origin is adopted when one store record has a recorded path that is gone and a matching repo identity, such as the root commit. Otherwise init warns that an orphan exists and does not silently create a second empty project. After adopt or a legacy move, absolute paths in `run/registry.json`, `run/plans/`, and `run/instructions/` are rewritten to the store worktree paths no matter what the old absolute prefix was, and a stale `FOIL_PROJECT` value in `run/plans/*.json` is rewritten or removed. A 0.4.x command that finds an in-repo legacy `.foil/` prints that upgrade order instead of `foil: not initialized`. (#29)
+
 ## [0.4.0] - 2026-10-10
 
 `foil --version` prints 0.4.0.
