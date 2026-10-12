@@ -488,6 +488,108 @@ def test_init_refuses_a_stale_seat_without_creating_a_store(
     assert (foil_root(repo) / "board" / "marker.txt").read_text(encoding="utf-8") == "stay\n"
 
 
+def _legacy_seat(repo: Path, label: str) -> tuple[Path, str]:
+    legacy = repo / ".foil"
+    (legacy / "board").mkdir(parents=True, exist_ok=True)
+    (legacy / "run" / "plans").mkdir(parents=True, exist_ok=True)
+    (legacy / "run" / "instructions").mkdir(exist_ok=True)
+    (legacy / "templates").mkdir(exist_ok=True)
+    seat = legacy / "worktrees" / label
+    _git(repo, "worktree", "add", "--quiet", "-b", f"foil/{label}", str(seat))
+    recorded = (repo / ".git" / "worktrees" / label / "gitdir").read_text(encoding="utf-8")
+    return seat, recorded.strip().removesuffix("/.git")
+
+
+def test_a_renamed_repository_rewrites_the_old_worktree_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "project", monkeypatch)
+    _commit(repo)
+    _seat, old_seat = _legacy_seat(repo, "implementer-1")
+    legacy = repo / ".foil"
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "fleet_id": "fleet",
+                "tmux_session": "",
+                "lead": "",
+                "seats": {
+                    "implementer-1": {
+                        "name": "implementer-1",
+                        "template": "implementer",
+                        "harness": "fake",
+                        "model": "",
+                        "window_id": "",
+                        "state": "killed",
+                        "worktree": old_seat,
+                        "branch": "foil/implementer-1",
+                        "session_id": "",
+                    }
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (legacy / "run" / "plans" / "implementer-1.json").write_text(
+        json.dumps({"cwd": old_seat}) + "\n", encoding="utf-8"
+    )
+    (legacy / "run" / "instructions" / "implementer-1.md").write_text(
+        f"Worktree: `{old_seat}`.\n", encoding="utf-8"
+    )
+    renamed = tmp_path / "project-renamed"
+    monkeypatch.chdir(tmp_path)
+    shutil.move(str(repo), str(renamed))
+    monkeypatch.chdir(renamed)
+
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    store = foil_root(renamed)
+    moved = store / "worktrees" / "implementer-1"
+    capsys.readouterr()
+    assert main(["seat", "list"]) == 0
+    listed = capsys.readouterr().out
+    assert str(moved) in listed
+    assert old_seat not in listed
+    stored = "".join(
+        path.read_text(encoding="utf-8")
+        for path in (store / "run").rglob("*")
+        if path.is_file()
+    )
+    assert old_seat not in stored
+    assert str(moved) in stored
+
+
+def test_adopt_rewrites_a_stale_foil_project_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "orig" / "project", monkeypatch, origin=_ORIGIN)
+    _commit(repo)
+    assert main(["init"]) == 0
+    old = foil_root(repo)
+    stale = "old-project-key"
+    (old / "run" / "plans").mkdir(parents=True, exist_ok=True)
+    (old / "run" / "plans" / "lead.json").write_text(
+        json.dumps({"cwd": str(repo.resolve()), "env": {"FOIL_PROJECT": stale}}) + "\n",
+        encoding="utf-8",
+    )
+    moved = tmp_path / "moved" / "project"
+    moved.parent.mkdir()
+    monkeypatch.chdir(tmp_path)
+    shutil.move(str(repo), str(moved))
+    monkeypatch.chdir(moved)
+
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    adopted = foil_root(moved)
+    plan = json.loads((adopted / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    assert plan["env"]["FOIL_PROJECT"] == project_key(common_dir(moved))
+    assert stale not in (adopted / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+
+
 def test_init_repairs_a_killed_seat_worktree_during_a_legacy_move(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
