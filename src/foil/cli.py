@@ -186,8 +186,8 @@ def _text_arg(value: str) -> str:
 
 def _require_project() -> Path:
     root = discover_project()
+    refuse_legacy_layout(root)
     if not is_initialized(root):
-        refuse_legacy_layout(root)
         raise FoilError("foil: not initialized")
     return root
 

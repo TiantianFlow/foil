@@ -134,15 +134,45 @@ def is_initialized(toplevel: Path) -> bool:
     return root.is_dir() and (root / "project.json").is_file()
 
 
-def refuse_legacy_layout(toplevel: Path) -> None:
-    """Name the upgrade when a 0.4 command still sees an in-repo ``.foil/``."""
+def main_checkout(start: Path | None = None) -> Path:
+    """The main checkout, even when the command runs inside a worktree.
 
-    legacy = toplevel / FOIL_DIRNAME
+    A 0.3.x seat worktree's own toplevel is that worktree, which has no
+    ``.foil/``. The directory does, and it is the parent of the Git common dir.
+    """
+
+    cwd = Path.cwd() if start is None else start
+    return _common_dir(cwd).parent
+
+
+def legacy_dir(start: Path | None = None) -> Path | None:
+    """An in-repo ``.foil/`` in the main checkout, when it is not the store."""
+
     try:
-        store = foil_root(toplevel)
+        checkout = main_checkout(start)
+    except FoilError:
+        return None
+    legacy = checkout / FOIL_DIRNAME
+    if legacy.is_symlink() or not legacy.is_dir():
+        return None
+    try:
+        store = foil_root(checkout)
     except FoilError:
         store = legacy
-    if not legacy.is_dir() or legacy.is_symlink() or legacy.resolve() == store.resolve():
+    if legacy.resolve() == store.resolve():
+        return None
+    return legacy
+
+
+def refuse_legacy_layout(toplevel: Path) -> None:
+    """Name the upgrade when a 0.4 command still sees an in-repo ``.foil/``.
+
+    The directory is the main checkout's, not the current toplevel, so a
+    command run from a 0.3.x seat worktree still finds it.
+    """
+
+    legacy = legacy_dir(toplevel)
+    if legacy is None:
         return
     blocking = _blocking_seats(legacy)
     if blocking:
@@ -410,10 +440,8 @@ def prepare_project(toplevel: Path) -> Path:
     """
 
     root = foil_root(toplevel)
-    legacy = toplevel / FOIL_DIRNAME
-    legacy_here = (
-        legacy.is_dir() and not legacy.is_symlink() and legacy.resolve() != root.resolve()
-    )
+    legacy = legacy_dir(toplevel)
+    legacy_here = legacy is not None
     if legacy_here:
         blocking = _blocking_seats(legacy)
         if blocking:

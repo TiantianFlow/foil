@@ -14,8 +14,8 @@ def board_root() -> Path:
         toplevel = discover_project()
     except FoilError as exc:
         raise FoilError("foil: not in a foil project") from exc
+    refuse_legacy_layout(toplevel)
     if not is_initialized(toplevel):
-        refuse_legacy_layout(toplevel)
         raise FoilError("foil: not in a foil project")
     return (foil_root(toplevel) / "board").resolve()
 
