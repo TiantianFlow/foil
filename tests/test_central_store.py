@@ -720,9 +720,13 @@ def test_a_renamed_repository_rewrites_the_old_worktree_prefix(
         json.dumps({"cwd": old_seat}) + "\n", encoding="utf-8"
     )
     (legacy / "run" / "instructions" / "implementer-1.md").write_text(
-        f"Worktree: `{old_seat}`.\n", encoding="utf-8"
+        f"Worktree: `{old_seat}`.\nBoard: `{legacy / 'board'}`.\n", encoding="utf-8"
     )
-    renamed = tmp_path / "project-renamed"
+    (legacy / "run" / "plans" / "lead.json").write_text(
+        json.dumps({"cwd": str(repo.resolve())}, ensure_ascii=True) + "\n",
+        encoding="utf-8",
+    )
+    renamed = tmp_path / "重命名"
     monkeypatch.chdir(tmp_path)
     shutil.move(str(repo), str(renamed))
     monkeypatch.chdir(renamed)
@@ -743,6 +747,11 @@ def test_a_renamed_repository_rewrites_the_old_worktree_prefix(
     )
     assert old_seat not in stored
     assert str(moved) in stored
+    old_repo = str(repo.resolve())
+    assert old_repo not in stored
+    assert json.dumps(old_repo)[1:-1] not in stored
+    lead = json.loads((store / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    assert lead["cwd"] == str(renamed.resolve())
 
 
 def test_adopt_rewrites_a_stale_foil_project_key(

@@ -298,6 +298,14 @@ def _refuse_live_legacy(names: list[str]) -> None:
     )
 
 
+def _write_json(path: Path, text: str) -> None:
+    """Replace a JSON file atomically (N7)."""
+
+    from foil.store import write_bytes
+
+    write_bytes(path, text.encode())
+
+
 def _run_files(root: Path) -> list[Path]:
     run = root / "run"
     targets = [run / "registry.json"]
@@ -310,17 +318,69 @@ def _run_files(root: Path) -> list[Path]:
     return [path for path in targets if path.is_file() and not path.is_symlink()]
 
 
+def _swap_prefix(text: str, old: str, new: str) -> str:
+    """Replace ``old`` only where it is a whole path, not a path's stem."""
+
+    boundary = "/\\\"' \n\t`"
+    pieces: list[str] = []
+    start = 0
+    while True:
+        found = text.find(old, start)
+        if found < 0:
+            pieces.append(text[start:])
+            return "".join(pieces)
+        after = found + len(old)
+        if after == len(text) or text[after] in boundary:
+            pieces.append(text[start:found])
+            pieces.append(new)
+        else:
+            pieces.append(text[start:after])
+        start = after
+
+
 def _replace_text(root: Path, pairs: list[tuple[str, str]]) -> None:
-    usable = [(old, new) for old, new in pairs if old and old != new]
+    usable = sorted(
+        ((old, new) for old, new in pairs if old and old != new),
+        key=lambda pair: len(pair[0]),
+        reverse=True,
+    )
     if not usable:
         return
     for path in _run_files(root):
         text = path.read_text(encoding="utf-8")
         replaced = text
         for old, new in usable:
-            replaced = replaced.replace(old, new)
+            replaced = _swap_prefix(replaced, old, new)
+            replaced = _swap_prefix(
+                replaced, json.dumps(old)[1:-1], json.dumps(new)[1:-1]
+            )
         if replaced != text:
-            path.write_text(replaced, encoding="utf-8")
+            if path.suffix == ".json":
+                _write_json(path, replaced if replaced.endswith("\n") else replaced + "\n")
+            else:
+                path.write_text(replaced, encoding="utf-8")
+
+
+def _old_foil_prefix(toplevel: Path) -> str:
+    """The old ``<repo>/.foil`` prefix, taken from a worktree's gitdir text.
+
+    That text is ``<old checkout>/.foil/worktrees/<label>/.git``. Stripping
+    ``/worktrees/<label>/.git`` leaves the old ``.foil`` directory, which is
+    the prefix of every stored path that was not a worktree.
+    """
+
+    admin = _common_dir(toplevel) / "worktrees"
+    if not admin.is_dir():
+        return ""
+    for child in admin.iterdir():
+        recorded = child / "gitdir"
+        if recorded.is_symlink() or not recorded.is_file():
+            continue
+        text = recorded.read_text(encoding="utf-8").strip()
+        suffix = f"/worktrees/{child.name}/.git"
+        if text.endswith(suffix):
+            return text.removesuffix(suffix)
+    return ""
 
 
 def _stale_worktrees(toplevel: Path) -> dict[str, str]:
@@ -345,23 +405,37 @@ def _stale_worktrees(toplevel: Path) -> dict[str, str]:
     return found
 
 
-def _rewrite_worktree_paths(root: Path, toplevel: Path, *, relocated: Path | None) -> None:
-    """Point stored paths at the store worktrees, whatever the old prefix was."""
+def _rewrite_worktree_paths(
+    root: Path,
+    toplevel: Path,
+    *,
+    relocated: Path | None,
+    stale: dict[str, str],
+    old_foil: str,
+) -> None:
+    """Point stored paths at the store, using prefixes read before repair.
+
+    Repair rewrites the gitdir text, so the old prefix has to be captured
+    first. The rewrite itself runs only after repair succeeds.
+    """
 
     pairs: list[tuple[str, str]] = []
-    if relocated is not None:
-        pairs.append((str(relocated.resolve()), str(root.resolve())))
     recorded = project_record(root).get("path", "")
     checkout = str(_common_dir(toplevel).parent.resolve())
     if recorded and recorded != checkout and not Path(recorded).exists():
         pairs.append((recorded, checkout))
     worktrees = root / "worktrees"
     if worktrees.is_dir():
-        stale = _stale_worktrees(toplevel)
         for seat in worktrees.iterdir():
             old = stale.get(seat.name, "")
             if old:
                 pairs.append((old, str(seat.resolve())))
+    if old_foil:
+        pairs.append((old_foil, str(root.resolve())))
+        if old_foil.endswith("/.foil"):
+            pairs.append((old_foil.removesuffix("/.foil"), checkout))
+    elif relocated is not None:
+        pairs.append((str(relocated), str(root.resolve())))
     _replace_text(root, pairs)
 
 
@@ -383,18 +457,25 @@ def _rewrite_project_keys(root: Path, toplevel: Path) -> None:
         if not isinstance(stored, str) or stored == current:
             continue
         env["FOIL_PROJECT"] = current
-        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        _write_json(path, json.dumps(payload) + "\n")
 
 
 def _repair_worktrees(root: Path, toplevel: Path, *, relocated: Path | None = None) -> None:
-    _rewrite_worktree_paths(root, toplevel, relocated=relocated)
-    _rewrite_project_keys(root, toplevel)
+    stale = _stale_worktrees(toplevel)
+    old_foil = _old_foil_prefix(toplevel)
     worktrees = root / "worktrees"
     seats = []
     if worktrees.is_dir():
         seats = [child for child in worktrees.iterdir() if (child / ".git").exists()]
-    if not seats:
-        return
+    if seats:
+        _repair_git(toplevel, seats)
+    _rewrite_worktree_paths(
+        root, toplevel, relocated=relocated, stale=stale, old_foil=old_foil
+    )
+    _rewrite_project_keys(root, toplevel)
+
+
+def _repair_git(toplevel: Path, seats: list[Path]) -> None:
     result = subprocess.run(
         ["git", "-C", str(toplevel), "worktree", "repair", *[str(seat) for seat in seats]],
         capture_output=True,
