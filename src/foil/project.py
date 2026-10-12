@@ -395,6 +395,22 @@ def _repair_worktrees(root: Path, toplevel: Path, *, relocated: Path | None = No
         raise FoilError(message)
 
 
+def _remove_empty_tree(path: Path) -> None:
+    children = sorted(path.rglob("*"), key=lambda item: len(item.parts), reverse=True)
+    for child in children:
+        child.rmdir()
+    path.rmdir()
+
+
+def _empty_dir(path: Path) -> bool:
+    if path.is_symlink() or not path.is_dir():
+        return False
+    for child in path.rglob("*"):
+        if child.is_symlink() or not child.is_dir():
+            return False
+    return True
+
+
 def _simple_legacy(legacy: Path) -> bool:
     if legacy.is_symlink() or not legacy.is_dir():
         return False
@@ -405,22 +421,43 @@ def _simple_legacy(legacy: Path) -> bool:
     return True
 
 
+def _fresh_skeleton(root: Path) -> bool:
+    """True when the store holds only empty directories and project.json.
+
+    A refused 0.4.0 init left exactly that. Those empty directories are
+    not a collision: the legacy children replace them.
+    """
+
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            return False
+        if path.is_file() and path.name != "project.json":
+            return False
+        if path.is_dir() and any(child.is_symlink() for child in path.iterdir()):
+            return False
+    return (root / "project.json").is_file()
+
+
 def _move_legacy(legacy: Path, root: Path, toplevel: Path) -> None:
     """Move every child, or put back anything already moved.
 
-    A name that already exists in the store is a collision. The old
-    directory is left as it was, including any seat worktree.
+    A name that already exists in the store is a collision, unless the
+    store holds only a fresh skeleton. The old directory is left as it
+    was, including any seat worktree.
     """
 
+    skeleton = _fresh_skeleton(root)
     moved: list[tuple[Path, Path]] = []
     try:
         for child in list(legacy.iterdir()):
             target = root / child.name
-            if target.exists():
+            if target.exists() and not (skeleton and _empty_dir(target)):
                 raise FoilError(
                     "foil: an old .foil/ is still in this repository and "
                     f"a stored name is already taken; {_UPGRADE}"
                 )
+            if target.exists():
+                _remove_empty_tree(target)
             shutil.move(str(child), str(target))
             moved.append((target, legacy / child.name))
         legacy.rmdir()
