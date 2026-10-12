@@ -134,6 +134,22 @@ def is_initialized(toplevel: Path) -> bool:
     return root.is_dir() and (root / "project.json").is_file()
 
 
+def refuse_legacy_layout(toplevel: Path) -> None:
+    """Name the upgrade when a 0.4 command still sees an in-repo ``.foil/``."""
+
+    legacy = toplevel / FOIL_DIRNAME
+    try:
+        store = foil_root(toplevel)
+    except FoilError:
+        store = legacy
+    if not legacy.is_dir() or legacy.is_symlink() or legacy.resolve() == store.resolve():
+        return
+    blocking = _blocking_seats(legacy)
+    if blocking:
+        _refuse_live_legacy(blocking)
+    raise FoilError(f"foil: an old .foil/ is still in this repository. {_UPGRADE}")
+
+
 def discover_project(start: Path | None = None) -> Path:
     require_host_tools()
     named = os.environ.get("FOIL_PROJECT", "").strip()
