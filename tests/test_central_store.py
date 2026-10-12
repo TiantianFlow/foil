@@ -701,6 +701,52 @@ def _legacy_seat(repo: Path, label: str) -> tuple[Path, str]:
     return seat, recorded.strip().removesuffix("/.git")
 
 
+def test_a_renamed_repository_with_no_seat_worktree_rewrites_the_old_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No .foil/worktrees seat, so the gitdir text cannot supply the old prefix."""
+
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "project", monkeypatch)
+    _commit(repo)
+    legacy = repo / ".foil"
+    (legacy / "board").mkdir(parents=True)
+    (legacy / "run" / "plans").mkdir(parents=True)
+    (legacy / "run" / "instructions").mkdir()
+    (legacy / "templates").mkdir()
+    old = str(repo.resolve())
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps({"seats": {"lead": {"state": "killed", "worktree": ""}}}) + "\n",
+        encoding="utf-8",
+    )
+    (legacy / "run" / "plans" / "lead.json").write_text(
+        json.dumps({"cwd": old}) + "\n", encoding="utf-8"
+    )
+    (legacy / "run" / "instructions" / "lead.md").write_text(
+        f"Board: `{legacy / 'board'}`.\n", encoding="utf-8"
+    )
+    renamed = tmp_path / "renamed"
+    monkeypatch.chdir(tmp_path)
+    shutil.move(str(repo), str(renamed))
+    monkeypatch.chdir(renamed)
+
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    store = foil_root(renamed)
+    stored = "".join(
+        path.read_text(encoding="utf-8")
+        for path in (store / "run").rglob("*")
+        if path.is_file()
+    )
+    assert old not in stored
+    assert json.dumps(old)[1:-1] not in stored
+    assert str(legacy) not in stored
+    plan = json.loads((store / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    assert plan["cwd"] == str(renamed.resolve())
+    instruction = (store / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
+    assert str(store / "board") in instruction
+
+
 def test_a_renamed_repository_rewrites_the_old_worktree_prefix(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
