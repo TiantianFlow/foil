@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-11
+
+`foil --version` prints 0.4.1.
+
 ### Breaking
 
 - Upgrading a 0.3.x project is kill, then upgrade, then `foil init`. Kill the fleet with the old `foil` (`foil seat kill --all`), including a stale seat whose tmux window is already gone, before replacing the command on `PATH`. A refused `foil init` creates nothing in the store. Its message names the blocking seats and that order, and it never says to move the directory aside. A repository with no origin is adopted when one store record has a recorded path that is gone and a matching repo identity, such as the root commit. Otherwise init warns that an orphan exists and does not silently create a second empty project. After adopt or a legacy move, absolute paths in `run/registry.json`, `run/plans/`, and `run/instructions/` are rewritten to the store worktree paths no matter what the old absolute prefix was, and a stale `FOIL_PROJECT` value in `run/plans/*.json` is rewritten to the current project key. A 0.4.x command that finds an in-repo legacy `.foil/` prints that upgrade order instead of `foil: not initialized`. (#29)
@@ -256,6 +260,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.4.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.1
 [0.4.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.0
 [0.3.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.4
 [0.3.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.3
