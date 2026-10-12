@@ -643,6 +643,24 @@ def test_a_command_names_the_upgrade_when_a_legacy_folder_remains(
     assert not legacy.exists()
 
 
+def test_an_unreadable_legacy_registry_names_the_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "garbled", monkeypatch)
+    _commit(repo)
+    legacy = repo / ".foil"
+    (legacy / "board").mkdir(parents=True)
+    (legacy / "run").mkdir()
+    (legacy / "templates").mkdir()
+    (legacy / "run" / "registry.json").write_text("{", encoding="utf-8")
+    assert main(["init"]) == 1
+    error = capsys.readouterr().err
+    assert "registry that cannot be read" in error
+    assert "unknown" not in error
+    assert not foil_root(repo).exists()
+
+
 def test_a_command_inside_a_legacy_seat_worktree_finds_the_main_checkout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -843,7 +861,9 @@ def test_init_reports_a_failed_worktree_repair(
     seat = legacy / "worktrees" / "implementer-1"
     _git(repo, "worktree", "add", "--quiet", "-b", "foil/implementer-1", str(seat))
     (legacy / "run" / "registry.json").write_text(
-        json.dumps({"seats": {"implementer-1": {"state": "killed"}}}),
+        json.dumps(
+            {"seats": {"implementer-1": {"state": "killed", "worktree": str(seat)}}}
+        ),
         encoding="utf-8",
     )
     real_run = subprocess.run
@@ -859,6 +879,9 @@ def test_init_reports_a_failed_worktree_repair(
     moved = foil_root(repo) / "worktrees" / "implementer-1"
     assert moved.is_dir()
     assert not legacy.exists()
+    stored = (foil_root(repo) / "run" / "registry.json").read_text(encoding="utf-8")
+    assert str(seat) in stored
+    assert str(moved) not in stored
 
 
 def test_a_legacy_move_replaces_a_fresh_skeleton(
