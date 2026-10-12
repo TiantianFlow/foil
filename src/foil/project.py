@@ -525,6 +525,23 @@ def _gone_records(projects: Path) -> list[tuple[Path, dict[str, str]]]:
     return gone
 
 
+def _could_be(record: dict[str, str], root: str) -> bool:
+    """A gone record that might be this no-origin repository.
+
+    A matching root commit is one. A 0.4.0 record has no root field, and a
+    repository with no commits has none either, so a record with no root
+    and no origin is the other. A record that names some other root, or
+    any origin, belongs to a different repository.
+    """
+
+    if record.get("origin"):
+        return False
+    recorded = record.get("root", "")
+    if root and recorded == root:
+        return True
+    return not recorded
+
+
 def _adopt(projects: Path, toplevel: Path) -> Path | None:
     origin = _origin(toplevel)
     gone = _gone_records(projects)
@@ -536,19 +553,23 @@ def _adopt(projects: Path, toplevel: Path) -> Path | None:
         )
     else:
         root = _root_commit(toplevel)
-        if not root:
-            matches = []
-        else:
-            matches = [folder for folder, record in gone if record.get("root") == root]
+        matches = [folder for folder, record in gone if _could_be(record, root)]
         several = (
             "foil: several stored projects match this repository and their "
             "recorded paths are gone"
         )
-    if not matches and gone and not origin:
-        raise FoilError(
-            "foil: an orphaned store record exists and was not adopted; "
-            "no second project was created"
-        )
+        identified = [
+            folder for folder in matches if root and project_record(folder).get("root") == root
+        ]
+        if len(identified) == 1:
+            matches = identified
+        elif not identified and matches:
+            shown = ", ".join(str(folder) for folder in matches)
+            print(
+                "foil: an orphaned store record could not be adopted "
+                f"({shown}); no second project was created"
+            )
+            return None
     if len(matches) != 1:
         if len(matches) > 1:
             print(several)

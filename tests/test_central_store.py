@@ -262,6 +262,26 @@ def test_init_adopts_a_moved_repo_with_no_origin_by_root_commit(
     projects = Path(os.environ["FOIL_HOME"]) / "projects"
     assert [child.name for child in projects.iterdir()] == [adopted.name]
 
+    blank = adopted.parent / "blank"
+    blank.mkdir()
+    (blank / "project.json").write_text(
+        json.dumps({"path": str(tmp_path / "removed"), "origin": "", "created": "old"})
+        + "\n",
+        encoding="utf-8",
+    )
+    again = tmp_path / "again" / "project"
+    again.parent.mkdir()
+    monkeypatch.chdir(tmp_path)
+    shutil.move(str(moved), str(again))
+    monkeypatch.chdir(again)
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    second = capsys.readouterr().out
+    assert f"Adopted {adopted.name} as {foil_root(again)}" in second
+    assert "orphaned" not in second
+    assert blank.is_dir()
+    assert not adopted.exists()
+
 
 def test_init_adopts_none_when_several_root_commits_match(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -312,11 +332,81 @@ def test_init_warns_instead_of_creating_a_second_project_for_an_orphan(
     repo = _repo(tmp_path / "project", monkeypatch)
     _commit(repo)
     capsys.readouterr()
-    assert main(["init"]) == 1
-    report = capsys.readouterr()
-    assert "orphaned store record" in report.err
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert "orphaned store record" in report
+    assert str(orphan) in report
     assert (orphan / "board" / "notes" / "kept.md").is_file()
-    assert [child.name for child in projects.iterdir()] == ["old"]
+    created = foil_root(repo)
+    assert created.is_dir()
+    assert created.name != "old"
+    assert (created / "project.json").is_file()
+    assert {child.name for child in projects.iterdir()} == {"old", created.name}
+
+
+def test_init_warns_and_names_an_orphan_with_no_root_field(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A 0.4.0 record stored no root, and this repository has no origin."""
+
+    _git_env(monkeypatch)
+    home = Path(os.environ["FOIL_HOME"])
+    projects = home / "projects"
+    orphan = projects / "old"
+    orphan.mkdir(parents=True)
+    (orphan / "project.json").write_text(
+        json.dumps(
+            {
+                "path": str(tmp_path / "removed"),
+                "origin": "",
+                "created": "2026-10-10T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    repo = _repo(tmp_path / "project", monkeypatch)
+    _commit(repo)
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert "orphaned store record" in report
+    assert str(orphan) in report
+    created = foil_root(repo)
+    assert created.name != "old"
+    assert (created / "project.json").is_file()
+    assert (orphan / "project.json").is_file()
+
+
+def test_init_of_a_fresh_repo_ignores_an_unrelated_orphan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No commits, and the leftover record belongs to some other origin."""
+
+    _git_env(monkeypatch)
+    home = Path(os.environ["FOIL_HOME"])
+    projects = home / "projects"
+    orphan = projects / "other"
+    orphan.mkdir(parents=True)
+    (orphan / "project.json").write_text(
+        json.dumps(
+            {
+                "path": str(tmp_path / "deleted"),
+                "origin": _ORIGIN,
+                "root": "abc123",
+                "created": "2026-10-10T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _repo(tmp_path / "fresh", monkeypatch)
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert "orphaned" not in report
+    assert (orphan / "project.json").is_file()
+    assert (foil_root(Path.cwd()) / "project.json").is_file()
 
 
 def test_init_says_when_several_orphans_match(
