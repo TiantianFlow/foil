@@ -550,6 +550,34 @@ def test_a_command_names_the_upgrade_when_a_legacy_folder_remains(
     assert not legacy.exists()
 
 
+def test_a_command_inside_a_legacy_seat_worktree_finds_the_main_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A 0.3.x seat runs in .foil/worktrees/<label>, whose toplevel has no .foil/."""
+
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "stranded", monkeypatch)
+    _commit(repo)
+    seat, _recorded = _legacy_seat(repo, "implementer-1")
+    legacy = repo / ".foil"
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps(
+            {"seats": {"lead": {"state": ""}, "implementer-1": {"state": "dead"}}}
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(seat)
+    assert main(["seat", "list"]) == 1
+    assert main(["board", "list", "*"]) == 1
+    error = capsys.readouterr().err
+    assert error.count("foil: an old .foil/") == 2
+    assert "not initialized" not in error
+    assert "lead" in error
+    assert "implementer-1" in error
+    assert legacy.is_dir()
+    assert not foil_root(repo).exists()
+
+
 def _legacy_seat(repo: Path, label: str) -> tuple[Path, str]:
     legacy = repo / ".foil"
     (legacy / "board").mkdir(parents=True, exist_ok=True)
@@ -729,6 +757,105 @@ def test_init_reports_a_failed_worktree_repair(
     moved = foil_root(repo) / "worktrees" / "implementer-1"
     assert moved.is_dir()
     assert not legacy.exists()
+
+
+def _seed_store(repo: Path) -> Path:
+    """A store folder that already has project.json, as a refused 0.4.0 init left."""
+
+    store = foil_root(repo)
+    (store / "board").mkdir(parents=True)
+    (store / "project.json").write_text(
+        json.dumps(
+            {
+                "path": str(repo.resolve()),
+                "origin": "",
+                "created": "2026-10-10T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return store
+
+
+def test_a_premature_store_still_refuses_a_legacy_fleet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """0.4.0 wrote project.json before it refused, so the store is already initialized."""
+
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "premature", monkeypatch)
+    _commit(repo)
+    legacy = repo / ".foil"
+    (legacy / "board").mkdir(parents=True)
+    (legacy / "run").mkdir()
+    (legacy / "templates").mkdir()
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps({"seats": {"lead": {"state": ""}}}), encoding="utf-8"
+    )
+    store = _seed_store(repo)
+    assert main(["seat", "list"]) == 1
+    error = capsys.readouterr().err
+    assert "foil: an old .foil/" in error
+    assert "lead" in error
+    assert "unknown seat" not in error
+    assert "not initialized" not in error
+    assert legacy.is_dir()
+    assert (store / "project.json").is_file()
+
+
+def test_a_colliding_store_still_names_the_legacy_fleet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "collision", monkeypatch)
+    _commit(repo)
+    legacy = repo / ".foil"
+    (legacy / "board").mkdir(parents=True)
+    (legacy / "run").mkdir()
+    (legacy / "templates").mkdir()
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps({"seats": {"implementer-1": {"state": "dead"}}}),
+        encoding="utf-8",
+    )
+    store = _seed_store(repo)
+    (store / "board" / "notes").mkdir(parents=True)
+    assert main(["init"]) == 1
+    collision = capsys.readouterr()
+    assert "foil: an old .foil/" in collision.out + collision.err
+    assert "implementer-1" in collision.out + collision.err
+    assert legacy.is_dir()
+    assert (store / "project.json").is_file()
+    assert main(["board", "list", "*"]) == 1
+    again = capsys.readouterr().err
+    assert "foil: an old .foil/" in again
+    assert "implementer-1" in again
+    assert "unknown seat" not in again
+
+
+def test_a_non_simple_legacy_still_blocks_later_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "odd", monkeypatch)
+    _commit(repo)
+    legacy = repo / ".foil"
+    (legacy / "board").mkdir(parents=True)
+    (legacy / "templates").mkdir()
+    (legacy / "run").symlink_to(legacy / "board")
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps({"seats": {"lead": {"state": "killed"}}}), encoding="utf-8"
+    )
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert "not a simple directory tree" in report
+    assert (foil_root(repo) / "project.json").is_file()
+    assert legacy.is_dir()
+    assert main(["seat", "list"]) == 1
+    error = capsys.readouterr().err
+    assert "foil: an old .foil/" in error
+    assert "not initialized" not in error
+    assert "unknown seat" not in error
 
 
 def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
