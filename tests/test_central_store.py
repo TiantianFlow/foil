@@ -759,6 +759,59 @@ def test_init_reports_a_failed_worktree_repair(
     assert not legacy.exists()
 
 
+def test_a_legacy_move_replaces_a_fresh_skeleton(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A 0.4.0 refusal left empty skeleton directories and project.json."""
+
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "skeleton", monkeypatch)
+    _commit(repo)
+    legacy = repo / ".foil"
+    (legacy / "board" / "notes").mkdir(parents=True)
+    (legacy / "run").mkdir()
+    (legacy / "templates").mkdir()
+    (legacy / "board" / "notes" / "kept.md").write_text("state\n", encoding="utf-8")
+    (legacy / "run" / "registry.json").write_text(
+        json.dumps({"seats": {"lead": {"state": "killed"}}}) + "\n",
+        encoding="utf-8",
+    )
+    store = foil_root(repo)
+    for relative in (
+        "templates/personas",
+        "harnesses",
+        "memory",
+        "board/mail",
+        "board/notes",
+        "board/tasks",
+        "board/results",
+        "run/instructions",
+        "run/plans",
+        "run/fake",
+        "skills",
+    ):
+        (store / relative).mkdir(parents=True)
+    (store / "project.json").write_text(
+        json.dumps(
+            {
+                "path": str(repo.resolve()),
+                "origin": "",
+                "created": "2026-10-10T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert f"Moved {legacy} into {store}" in report
+    assert "already taken" not in report
+    assert not legacy.exists()
+    assert (store / "board" / "notes" / "kept.md").read_text(encoding="utf-8") == "state\n"
+    record = json.loads((store / "project.json").read_text(encoding="utf-8"))
+    assert record["path"] == str(repo.resolve())
+
+
 def _seed_store(repo: Path) -> Path:
     """A store folder that already has project.json, as a refused 0.4.0 init left."""
 
