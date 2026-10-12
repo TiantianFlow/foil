@@ -500,10 +500,7 @@ def _remove_empty_tree(path: Path) -> None:
 def _empty_dir(path: Path) -> bool:
     if path.is_symlink() or not path.is_dir():
         return False
-    for child in path.rglob("*"):
-        if child.is_symlink() or not child.is_dir():
-            return False
-    return True
+    return all(not (child.is_symlink() or not child.is_dir()) for child in path.rglob("*"))
 
 
 def _simple_legacy(legacy: Path) -> bool:
