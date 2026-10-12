@@ -230,6 +230,95 @@ def test_init_adopts_an_orphaned_record_and_repairs_worktrees(
     assert worktree.is_dir()
 
 
+def test_init_adopts_a_moved_repo_with_no_origin_by_root_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "orig" / "project", monkeypatch)
+    _commit(repo)
+    (repo / "notes.txt").write_text("keep\n", encoding="utf-8")
+    _git(repo, "add", "notes.txt")
+    _git(repo, "commit", "--quiet", "-m", "notes")
+    root_commit = _git(repo, "rev-list", "--max-parents=0", "HEAD").stdout.strip()
+    assert main(["init"]) == 0
+    old_root = foil_root(repo)
+    (old_root / "board" / "notes" / "kept.md").write_text("state\n", encoding="utf-8")
+    moved = tmp_path / "moved" / "project"
+    moved.parent.mkdir()
+    monkeypatch.chdir(tmp_path)
+    shutil.move(str(repo), str(moved))
+    monkeypatch.chdir(moved)
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    adopted = foil_root(moved)
+    assert f"Adopted {old_root.name} as {adopted}" in report
+    assert not old_root.exists()
+    assert (adopted / "board" / "notes" / "kept.md").read_text(encoding="utf-8") == "state\n"
+    record = json.loads((adopted / "project.json").read_text(encoding="utf-8"))
+    assert record["path"] == str(moved.resolve())
+    assert record["origin"] == ""
+    assert record["root"] == root_commit
+    projects = Path(os.environ["FOIL_HOME"]) / "projects"
+    assert [child.name for child in projects.iterdir()] == [adopted.name]
+
+
+def test_init_adopts_none_when_several_root_commits_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "orig" / "project", monkeypatch)
+    _commit(repo)
+    assert main(["init"]) == 0
+    old = foil_root(repo)
+    other = old.parent / "other"
+    shutil.copytree(old, other)
+    moved = tmp_path / "moved" / "project"
+    moved.parent.mkdir()
+    monkeypatch.chdir(tmp_path)
+    shutil.move(str(repo), str(moved))
+    monkeypatch.chdir(moved)
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    assert "several stored projects match this repository" in report
+    assert old.is_dir()
+    assert other.is_dir()
+    created = foil_root(moved)
+    assert created.name not in {old.name, other.name}
+    assert (created / "project.json").is_file()
+
+
+def test_init_warns_instead_of_creating_a_second_project_for_an_orphan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    home = Path(os.environ["FOIL_HOME"])
+    projects = home / "projects"
+    orphan = projects / "old"
+    (orphan / "board" / "notes").mkdir(parents=True)
+    (orphan / "board" / "notes" / "kept.md").write_text("state\n", encoding="utf-8")
+    (orphan / "project.json").write_text(
+        json.dumps(
+            {
+                "path": str(tmp_path / "missing"),
+                "origin": "",
+                "created": "2026-10-10T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    repo = _repo(tmp_path / "project", monkeypatch)
+    _commit(repo)
+    capsys.readouterr()
+    assert main(["init"]) == 1
+    report = capsys.readouterr()
+    assert "orphaned store record" in report.err
+    assert (orphan / "board" / "notes" / "kept.md").is_file()
+    assert [child.name for child in projects.iterdir()] == ["old"]
+
+
 def test_init_says_when_several_orphans_match(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
