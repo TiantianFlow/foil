@@ -22,7 +22,7 @@ from foil.lifecycle import (
 )
 from foil.mail_ops import mail_list, mail_read
 from foil.memory import accept_lesson, add_lesson, list_lessons, reject_lesson
-from foil.project import discover_project, is_initialized
+from foil.project import discover_project, is_initialized, refuse_legacy_layout
 from foil.roster_ops import (
     add_template,
     list_roster,
@@ -187,6 +187,7 @@ def _text_arg(value: str) -> str:
 def _require_project() -> Path:
     root = discover_project()
     if not is_initialized(root):
+        refuse_legacy_layout(root)
         raise FoilError("foil: not initialized")
     return root
 

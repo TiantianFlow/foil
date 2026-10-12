@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from foil.errors import FoilError
-from foil.project import discover_project, foil_root, is_initialized
+from foil.project import discover_project, foil_root, is_initialized, refuse_legacy_layout
 
 
 def board_root() -> Path:
@@ -15,6 +15,7 @@ def board_root() -> Path:
     except FoilError as exc:
         raise FoilError("foil: not in a foil project") from exc
     if not is_initialized(toplevel):
+        refuse_legacy_layout(toplevel)
         raise FoilError("foil: not in a foil project")
     return (foil_root(toplevel) / "board").resolve()
 
