@@ -238,11 +238,7 @@ def _refuse_live_legacy(names: list[str]) -> None:
     )
 
 
-def _rewrite_worktree_paths(root: Path, pairs: list[tuple[str, str]]) -> None:
-    """Point stored seat paths at each worktree's new directory."""
-
-    if not pairs:
-        return
+def _run_files(root: Path) -> list[Path]:
     run = root / "run"
     targets = [run / "registry.json"]
     for folder in ("plans", "instructions"):
@@ -251,20 +247,47 @@ def _rewrite_worktree_paths(root: Path, pairs: list[tuple[str, str]]) -> None:
             targets.extend(
                 path for path in directory.iterdir() if path.is_file() and not path.is_symlink()
             )
-    for path in targets:
-        if path.is_symlink() or not path.is_file():
-            continue
+    return [path for path in targets if path.is_file() and not path.is_symlink()]
+
+
+def _replace_text(root: Path, pairs: list[tuple[str, str]]) -> None:
+    usable = [(old, new) for old, new in pairs if old and old != new]
+    if not usable:
+        return
+    for path in _run_files(root):
         text = path.read_text(encoding="utf-8")
         replaced = text
-        for old, new in pairs:
-            if old == new:
-                continue
+        for old, new in usable:
             replaced = replaced.replace(old, new)
         if replaced != text:
             path.write_text(replaced, encoding="utf-8")
 
 
-def _repair_worktrees(root: Path, toplevel: Path, *, relocated: Path | None = None) -> None:
+def _stale_worktrees(toplevel: Path) -> dict[str, str]:
+    """Worktree directory name to the path Git still records, before repair.
+
+    A renamed repository leaves that path in the common dir. The worktree's
+    own ``.git`` file still points at the old common dir, so it cannot be
+    followed.
+    """
+
+    admin = _common_dir(toplevel) / "worktrees"
+    found: dict[str, str] = {}
+    if not admin.is_dir():
+        return found
+    for child in admin.iterdir():
+        recorded = child / "gitdir"
+        if recorded.is_symlink() or not recorded.is_file():
+            continue
+        text = recorded.read_text(encoding="utf-8").strip()
+        if text.endswith("/.git"):
+            found[child.name] = text.removesuffix("/.git")
+    return found
+
+
+def _rewrite_worktree_paths(root: Path, toplevel: Path, *, relocated: Path | None) -> None:
+    """Point stored paths at the store worktrees, whatever the old prefix was."""
+
     pairs: list[tuple[str, str]] = []
     if relocated is not None:
         pairs.append((str(relocated.resolve()), str(root.resolve())))
@@ -273,23 +296,57 @@ def _repair_worktrees(root: Path, toplevel: Path, *, relocated: Path | None = No
     if recorded and recorded != checkout and not Path(recorded).exists():
         pairs.append((recorded, checkout))
     worktrees = root / "worktrees"
+    if worktrees.is_dir():
+        stale = _stale_worktrees(toplevel)
+        for seat in worktrees.iterdir():
+            old = stale.get(seat.name, "")
+            if old:
+                pairs.append((old, str(seat.resolve())))
+    _replace_text(root, pairs)
+
+
+def _rewrite_project_keys(root: Path, toplevel: Path) -> None:
+    """Replace a stale ``FOIL_PROJECT`` value with the current project key."""
+
+    current = project_key(_common_dir(toplevel))
+    for path in _run_files(root):
+        if path.parent.name != "plans" or path.suffix != ".json":
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        env = payload.get("env") if isinstance(payload, dict) else None
+        if not isinstance(env, dict):
+            continue
+        stored = env.get("FOIL_PROJECT")
+        if not isinstance(stored, str) or stored == current:
+            continue
+        env["FOIL_PROJECT"] = current
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+
+def _repair_worktrees(root: Path, toplevel: Path, *, relocated: Path | None = None) -> None:
+    _rewrite_worktree_paths(root, toplevel, relocated=relocated)
+    _rewrite_project_keys(root, toplevel)
+    worktrees = root / "worktrees"
     seats = []
     if worktrees.is_dir():
         seats = [child for child in worktrees.iterdir() if (child / ".git").exists()]
-    if seats:
-        result = subprocess.run(
-            ["git", "-C", str(toplevel), "worktree", "repair", *[str(seat) for seat in seats]],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout).strip()
-            message = "foil: could not repair worktrees"
-            if detail:
-                message = f"{message}: {detail}"
-            raise FoilError(message)
-    _rewrite_worktree_paths(root, pairs)
+    if not seats:
+        return
+    result = subprocess.run(
+        ["git", "-C", str(toplevel), "worktree", "repair", *[str(seat) for seat in seats]],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        message = "foil: could not repair worktrees"
+        if detail:
+            message = f"{message}: {detail}"
+        raise FoilError(message)
 
 
 def _simple_legacy(legacy: Path) -> bool:
