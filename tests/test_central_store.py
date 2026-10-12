@@ -19,6 +19,8 @@ _ORDER = (
     "kill them with the old foil (foil seat kill --all), then upgrade, "
     "then foil init"
 )
+_OLD_FOIL = "UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install"
+_STALE = "A stale seat whose tmux window is already gone also counts"
 
 
 def _git_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -527,7 +529,7 @@ def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
     assert main(["init"]) == 1
     error = capsys.readouterr().err
     assert "lead" in error
-    assert "stale seat" in error
+    assert _STALE in error
     assert _ORDER in error
     assert "move it aside" not in error
     assert "move the" not in error
@@ -562,7 +564,7 @@ def test_init_refuses_a_stale_seat_without_creating_a_store(
     error = capsys.readouterr().err
     assert "lead" in error
     assert "implementer-1" not in error
-    assert "stale seat" in error
+    assert _STALE in error
     assert _ORDER in error
     assert "move it aside" not in error
     assert "move the" not in error
@@ -615,7 +617,7 @@ def test_a_command_names_the_upgrade_when_a_legacy_folder_remains(
     assert "lead" in error
     assert "implementer-1" in error
     assert "reviewer-1" not in error
-    assert "stale seat" in error
+    assert _STALE in error
     assert _ORDER in error
     assert "move it aside" not in error
     assert "move the" not in error
@@ -630,7 +632,8 @@ def test_a_command_names_the_upgrade_when_a_legacy_folder_remains(
     quiet = capsys.readouterr().err
     assert quiet.startswith("foil: an old .foil/")
     assert "not initialized" not in quiet
-    assert _ORDER in quiet
+    assert "Run foil init." in quiet
+    assert "kill them" not in quiet
     assert "move it aside" not in quiet
     assert "move the" not in quiet
     assert legacy.is_dir()
@@ -941,6 +944,8 @@ def test_a_premature_store_still_refuses_a_legacy_fleet(
     error = capsys.readouterr().err
     assert "foil: an old .foil/" in error
     assert "lead" in error
+    assert _STALE in error
+    assert _OLD_FOIL in error
     assert "unknown seat" not in error
     assert "not initialized" not in error
     assert legacy.is_dir()
@@ -973,6 +978,7 @@ def test_a_colliding_store_still_names_the_legacy_fleet(
     again = capsys.readouterr().err
     assert "foil: an old .foil/" in again
     assert "implementer-1" in again
+    assert _STALE in again
     assert "unknown seat" not in again
 
 
@@ -992,6 +998,8 @@ def test_a_non_simple_legacy_still_blocks_later_commands(
     assert main(["init"]) == 0
     report = capsys.readouterr().out
     assert "not a simple directory tree" in report
+    assert "real directories" in report
+    assert "kill them" not in report
     assert (foil_root(repo) / "project.json").is_file()
     assert legacy.is_dir()
     assert main(["seat", "list"]) == 1
@@ -1022,8 +1030,9 @@ def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
 
     assert main(["init"]) == 0
     collision = capsys.readouterr().out
-    assert _ORDER in collision
-    assert "already taken" in collision
+    assert "already taken" not in collision
+    assert "the store already has '" in collision
+    assert "kill them" not in collision
     assert "move it aside" not in collision
     assert (legacy / "board" / "notes" / "keep.txt").read_text(encoding="utf-8") == "kept\n"
     assert (legacy / "run").is_dir()
@@ -1039,6 +1048,6 @@ def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
 
     capsys.readouterr()
     assert main(["init"]) == 0
-    assert _ORDER in capsys.readouterr().out
+    assert "the store already has '" in capsys.readouterr().out
     assert (legacy / "board" / "notes" / "keep.txt").is_file()
     assert (seat / ".git").is_file()

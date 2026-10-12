@@ -27,9 +27,15 @@ SKELETON = (
     "run/fake",
     "skills",
 )
+_OLD_FOIL = (
+    "install 0.3.4 beside it, which does not replace the foil on PATH: "
+    "UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "
+    '"git+https://github.com/TiantianFlow/foil.git@v0.3.4", '
+    "then run DIR/bin/foil seat kill --all"
+)
 _UPGRADE = (
     "kill them with the old foil (foil seat kill --all), then upgrade, "
-    "then foil init"
+    f"then foil init. When that foil is no longer on PATH, {_OLD_FOIL}"
 )
 _RESOLVED_HOME: dict[str, Path] = {}
 
@@ -177,7 +183,9 @@ def refuse_legacy_layout(toplevel: Path) -> None:
     blocking = _blocking_seats(legacy)
     if blocking:
         _refuse_live_legacy(blocking)
-    raise FoilError(f"foil: an old .foil/ is still in this repository. {_UPGRADE}")
+    raise FoilError(
+        "foil: an old .foil/ is still in this repository. Run foil init."
+    )
 
 
 def discover_project(start: Path | None = None) -> Path:
@@ -252,8 +260,8 @@ def _write_record(root: Path, toplevel: Path, *, created: str) -> None:
 def _blocking_seats(root: Path) -> list[str]:
     """Seats that were never killed, even when their tmux window is gone.
 
-    An unreadable registry blocks under the name ``unknown`` rather than
-    being treated as an empty fleet.
+    An unreadable registry is reported as unreadable rather than as a
+    seat named unknown.
     """
 
     registry = root / "run" / "registry.json"
@@ -262,10 +270,16 @@ def _blocking_seats(root: Path) -> list[str]:
     try:
         payload = json.loads(registry.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return ["unknown"]
+        raise FoilError(
+            "foil: an old .foil/ has a registry that cannot be read. "
+            "Fix run/registry.json in that directory, then run foil init."
+        ) from None
     seats = payload.get("seats") if isinstance(payload, dict) else None
     if not isinstance(seats, dict):
-        return ["unknown"]
+        raise FoilError(
+            "foil: an old .foil/ has a registry that cannot be read. "
+            "Fix run/registry.json in that directory, then run foil init."
+        )
     return sorted(
         name
         for name, record in seats.items()
@@ -279,8 +293,8 @@ def _refuse_live_legacy(names: list[str]) -> None:
     shown = ", ".join(names) if names else "unknown"
     raise FoilError(
         "foil: an old .foil/ still has seats that were not killed "
-        f"({shown}), including a stale seat whose tmux window is already "
-        f"gone; {_UPGRADE}"
+        f"({shown}). A stale seat whose tmux window is already gone also "
+        f"counts. {_UPGRADE}"
     )
 
 
@@ -454,7 +468,8 @@ def _move_legacy(legacy: Path, root: Path, toplevel: Path) -> None:
             if target.exists() and not (skeleton and _empty_dir(target)):
                 raise FoilError(
                     "foil: an old .foil/ is still in this repository and "
-                    f"a stored name is already taken; {_UPGRADE}"
+                    f"the store already has '{target.name}'. Remove that "
+                    "stored entry, then run foil init again."
                 )
             if target.exists():
                 _remove_empty_tree(target)
@@ -506,7 +521,9 @@ def prepare_project(toplevel: Path) -> Path:
         else:
             print(
                 "foil: an old .foil/ is still in this repository and is not "
-                f"a simple directory tree. {_UPGRADE}"
+                "a simple directory tree. board, run, and templates must be "
+                "real directories. Make them real directories, then run "
+                "foil init again."
             )
     return root
 
