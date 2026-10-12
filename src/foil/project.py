@@ -28,8 +28,8 @@ SKELETON = (
     "skills",
 )
 _UPGRADE = (
-    "Kill them with the old foil (foil seat kill --all), including a stale "
-    "seat whose tmux window is already gone, then upgrade, then foil init."
+    "kill them with the old foil (foil seat kill --all), then upgrade, "
+    "then foil init"
 )
 _RESOLVED_HOME: dict[str, Path] = {}
 
@@ -214,7 +214,8 @@ def _refuse_live_legacy(names: list[str]) -> None:
     shown = ", ".join(names) if names else "unknown"
     raise FoilError(
         "foil: an old .foil/ still has seats that were not killed "
-        f"({shown}). {_UPGRADE}"
+        f"({shown}), including a stale seat whose tmux window is already "
+        f"gone; {_UPGRADE}"
     )
 
 
@@ -295,8 +296,8 @@ def _move_legacy(legacy: Path, root: Path, toplevel: Path) -> None:
             target = root / child.name
             if target.exists():
                 raise FoilError(
-                    "foil: an old .foil/ is still in this repository; "
-                    "a stored project already uses one of its names"
+                    "foil: an old .foil/ is still in this repository and "
+                    f"a stored name is already taken; {_UPGRADE}"
                 )
             shutil.move(str(child), str(target))
             moved.append((target, legacy / child.name))

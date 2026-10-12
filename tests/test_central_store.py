@@ -15,13 +15,9 @@ from foil.cli import main
 from foil.project import common_dir, foil_root, project_key, store_root
 
 _ORIGIN = "https://github.com/TiantianFlow/foil.git"
-_COLLISION = (
-    "foil: an old .foil/ is still in this repository; "
-    "a stored project already uses one of its names"
-)
-_UPGRADE = (
-    "Kill them with the old foil (foil seat kill --all), including a stale "
-    "seat whose tmux window is already gone, then upgrade, then foil init."
+_ORDER = (
+    "kill them with the old foil (foil seat kill --all), then upgrade, "
+    "then foil init"
 )
 
 
@@ -352,8 +348,10 @@ def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
     assert main(["init"]) == 1
     error = capsys.readouterr().err
     assert "lead" in error
-    assert _UPGRADE in error
+    assert "stale seat" in error
+    assert _ORDER in error
     assert "move it aside" not in error
+    assert "move the" not in error
     assert kept.is_dir()
     assert not foil_root(busy).exists()
     assert not (foil_root(busy) / "board" / "marker.txt").exists()
@@ -385,8 +383,10 @@ def test_init_refuses_a_stale_seat_without_creating_a_store(
     error = capsys.readouterr().err
     assert "lead" in error
     assert "implementer-1" not in error
-    assert _UPGRADE in error
+    assert "stale seat" in error
+    assert _ORDER in error
     assert "move it aside" not in error
+    assert "move the" not in error
     assert legacy.is_dir()
     assert not foil_root(repo).exists()
 
@@ -499,7 +499,8 @@ def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
 
     assert main(["init"]) == 0
     collision = capsys.readouterr().out
-    assert _COLLISION in collision
+    assert _ORDER in collision
+    assert "already taken" in collision
     assert "move it aside" not in collision
     assert (legacy / "board" / "notes" / "keep.txt").read_text(encoding="utf-8") == "kept\n"
     assert (legacy / "run").is_dir()
@@ -515,6 +516,6 @@ def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
 
     capsys.readouterr()
     assert main(["init"]) == 0
-    assert _COLLISION in capsys.readouterr().out
+    assert _ORDER in capsys.readouterr().out
     assert (legacy / "board" / "notes" / "keep.txt").is_file()
     assert (seat / ".git").is_file()
