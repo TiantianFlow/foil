@@ -27,9 +27,9 @@ SKELETON = (
     "run/fake",
     "skills",
 )
-_MIGRATION = (
-    "foil: an old .foil/ is still in this repository; "
-    "move it aside and run foil init again"
+_UPGRADE = (
+    "Kill them with the old foil (foil seat kill --all), including a stale "
+    "seat whose tmux window is already gone, then upgrade, then foil init."
 )
 _RESOLVED_HOME: dict[str, Path] = {}
 
@@ -184,19 +184,37 @@ def _write_record(root: Path, toplevel: Path, *, created: str) -> None:
     path.chmod(0o600)
 
 
-def _seat_alive(root: Path) -> bool:
+def _blocking_seats(root: Path) -> list[str]:
+    """Seats that were never killed, even when their tmux window is gone.
+
+    An unreadable registry blocks under the name ``unknown`` rather than
+    being treated as an empty fleet.
+    """
+
     registry = root / "run" / "registry.json"
     if registry.is_symlink() or not registry.is_file():
-        return False
+        return []
     try:
         payload = json.loads(registry.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return True
+        return ["unknown"]
     seats = payload.get("seats") if isinstance(payload, dict) else None
     if not isinstance(seats, dict):
-        return True
-    return any(
-        isinstance(record, dict) and record.get("state") != "killed" for record in seats.values()
+        return ["unknown"]
+    return sorted(
+        name
+        for name, record in seats.items()
+        if isinstance(name, str)
+        and isinstance(record, dict)
+        and record.get("state") != "killed"
+    )
+
+
+def _refuse_live_legacy(names: list[str]) -> None:
+    shown = ", ".join(names) if names else "unknown"
+    raise FoilError(
+        "foil: an old .foil/ still has seats that were not killed "
+        f"({shown}). {_UPGRADE}"
     )
 
 
@@ -276,7 +294,10 @@ def _move_legacy(legacy: Path, root: Path, toplevel: Path) -> None:
         for child in list(legacy.iterdir()):
             target = root / child.name
             if target.exists():
-                raise FoilError(_MIGRATION)
+                raise FoilError(
+                    "foil: an old .foil/ is still in this repository; "
+                    "a stored project already uses one of its names"
+                )
             shutil.move(str(child), str(target))
             moved.append((target, legacy / child.name))
         legacy.rmdir()
@@ -288,9 +309,22 @@ def _move_legacy(legacy: Path, root: Path, toplevel: Path) -> None:
 
 
 def prepare_project(toplevel: Path) -> Path:
-    """Create or adopt the store folder. Print one line when a move is unsafe."""
+    """Create or adopt the store folder.
+
+    A legacy folder that still has a seat which was never killed refuses
+    before any store directory is created. A collision after that point
+    prints one instruction line and leaves both trees in place.
+    """
 
     root = foil_root(toplevel)
+    legacy = toplevel / FOIL_DIRNAME
+    legacy_here = (
+        legacy.is_dir() and not legacy.is_symlink() and legacy.resolve() != root.resolve()
+    )
+    if legacy_here:
+        blocking = _blocking_seats(legacy)
+        if blocking:
+            _refuse_live_legacy(blocking)
     projects = root.parent
     record = project_record(root) if root.is_dir() else {}
     if not record:
@@ -302,18 +336,20 @@ def prepare_project(toplevel: Path) -> Path:
     root.chmod(0o700)
     created = record.get("created") or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     _write_record(root, toplevel, created=created)
-    legacy = toplevel / FOIL_DIRNAME
-    if legacy.is_dir() and not legacy.is_symlink() and legacy.resolve() != root.resolve():
-        if not _seat_alive(legacy) and _simple_legacy(legacy):
+    if legacy_here:
+        if _simple_legacy(legacy):
             try:
                 _move_legacy(legacy, root, toplevel)
-            except (OSError, FoilError):
-                print(_MIGRATION)
+            except (OSError, FoilError) as exc:
+                print(exc if isinstance(exc, FoilError) else f"foil: {exc}")
             else:
                 print(f"Moved {legacy} into {root}")
                 _repair_worktrees(root, toplevel, relocated=legacy)
         else:
-            print(_MIGRATION)
+            print(
+                "foil: an old .foil/ is still in this repository and is not "
+                f"a simple directory tree. {_UPGRADE}"
+            )
     return root
 
 
