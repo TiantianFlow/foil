@@ -169,7 +169,7 @@ That stops every seat. It does not delete branches or worktrees. A leftover seat
 
 One foil install serves every project on this machine. Updating it changes the command under every live seat in every fleet. Each seat keeps the instructions it was started with until it is spawned again. The order is kill, then upgrade, then `foil init`:
 
-1. `foil seat kill --all` once the lead reports `state: done`. A project that still has an in-repo `.foil/` from 0.3.x is killed with that older command before you upgrade, including a stale seat whose tmux window is already gone. Do not run `foil init` while those seats remain, and do not move that directory aside.
+1. `foil seat kill --all` once the lead reports `state: done`. A project that still has an in-repo `.foil/` from 0.3.x is killed with that older command before you upgrade. A stale seat whose tmux window is already gone also counts. When that older command is no longer on `PATH`, install 0.3.4 beside the current one, which does not replace it: `UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then run `DIR/bin/foil seat kill --all`. Do not run `foil init` while those seats remain, and do not move that directory aside.
 2. Run the install line, and check `foil --version`.
 3. Run `foil init` and read the report. It says which skills it updated. A refused init creates nothing in the store. The refusal names the blocking seats and this same order.
 4. Re-copy any user-level copy of this skill.
