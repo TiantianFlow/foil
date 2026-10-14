@@ -152,14 +152,15 @@ def init_project(directory: str | None) -> None:
         for role in ("lead", "implementer", "reviewer")
     ):
         installed_harness(toplevel)
-    root, previous = prepare_project(toplevel)
+    root, previous, rewritten = prepare_project(toplevel)
     for relative in SKELETON:
         path = root / relative
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
-    # The first rewrite runs before these directories exist. A path written
-    # into one of them afterwards still names the old location.
-    rewrite_stored_paths(root, toplevel, previous=previous)
+    # Only after a move, an adopt, or a retry. A healthy re-init leaves run/
+    # alone, including a plan whose seat worktree the user has deleted.
+    if rewritten:
+        rewrite_stored_paths(root, toplevel, previous=previous)
     ensure_board(toplevel)
     ensure_registry(toplevel)
     template_dir = root / "templates"
