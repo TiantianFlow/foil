@@ -4,7 +4,7 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
-## [0.4.1] - 2026-10-11
+## [0.4.1] - 2026-10-14
 
 `foil --version` prints 0.4.1.
 
