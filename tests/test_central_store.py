@@ -12,13 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from foil.cli import main
-from foil.project import (
-    _rewrite_worktree_paths,
-    common_dir,
-    foil_root,
-    project_key,
-    store_root,
-)
+from foil.project import common_dir, foil_root, project_key, store_root
 
 _ORIGIN = "https://github.com/TiantianFlow/foil.git"
 _ORDER = (
@@ -1028,65 +1022,101 @@ def test_a_second_init_finishes_a_repair_the_first_run_failed(
     assert "prunable" not in _git(repo, "worktree", "list", "--porcelain").stdout
 
 
-def test_a_second_init_rewrites_a_recorded_checkout_with_no_stale_gitdir(
+def test_a_plain_reinit_leaves_a_missing_seat_plan_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The checkout recorded before the write is the trigger, not the gitdir.
-
-    The first init records the new checkout and leaves the old prefix in
-    run/. No seat gitdir is stale, so only that recorded path can retry.
-    """
+    """A deleted seat worktree is not a leftover for a healthy re-init."""
 
     _git_env(monkeypatch)
     repo = _repo(tmp_path / "project", monkeypatch)
     _commit(repo)
-    legacy = repo / ".foil"
-    (legacy / "board").mkdir(parents=True)
-    (legacy / "run" / "plans").mkdir(parents=True)
-    (legacy / "run" / "instructions").mkdir()
-    (legacy / "templates").mkdir()
-    old = str(repo.resolve())
-    (legacy / "run" / "registry.json").write_text(
-        json.dumps({"seats": {"lead": {"state": "killed", "worktree": ""}}}) + "\n",
-        encoding="utf-8",
+    assert main(["init"]) == 0
+    store = foil_root(repo)
+    missing = store / "worktrees" / "implementer-1"
+    (store / "run" / "plans").mkdir(parents=True, exist_ok=True)
+    (store / "run" / "plans" / "implementer-1.json").write_text(
+        json.dumps({"cwd": str(missing)}) + "\n", encoding="utf-8"
     )
-    (legacy / "run" / "plans" / "lead.json").write_text(
-        json.dumps({"cwd": old}) + "\n", encoding="utf-8"
+    before = {
+        path.relative_to(store / "run"): path.read_bytes()
+        for path in (store / "run").rglob("*")
+        if path.is_file()
+    }
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    after = {
+        path.relative_to(store / "run"): path.read_bytes()
+        for path in (store / "run").rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+    plan = json.loads(
+        (store / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8")
     )
-    (legacy / "run" / "instructions" / "lead.md").write_text(
-        f"Board: `{legacy / 'board'}`.\n", encoding="utf-8"
+    assert plan["cwd"] == str(missing)
+
+
+def test_a_failed_adopt_retries_from_the_checkout_recorded_before_the_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A failed adopt leaves the old checkout in project.json.
+
+    The implementer worktree makes repair run. After it fails, the gitdir
+    is repaired by hand, so the second init can only notice the checkout
+    that was recorded before the write.
+    """
+
+    _git_env(monkeypatch)
+    repo = _repo(tmp_path / "orig" / "project", monkeypatch, origin=_ORIGIN)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["init"]) == 0
+    assert main(["seat", "spawn", "lead"]) == 0
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["seat", "spawn", "implementer"]) == 0
+    monkeypatch.delenv("FOIL_SEAT_ID")
+    old = foil_root(repo)
+    (old / "run" / "plans").mkdir(parents=True, exist_ok=True)
+    (old / "run" / "instructions").mkdir(exist_ok=True)
+    (old / "run" / "plans" / "lead.json").write_text(
+        json.dumps({"cwd": str(repo.resolve())}) + "\n", encoding="utf-8"
     )
-    renamed = tmp_path / "renamed"
+    (old / "run" / "instructions" / "lead.md").write_text(
+        f"Board: `{old / 'board'}`.\n", encoding="utf-8"
+    )
+    moved = tmp_path / "moved" / "project"
+    moved.parent.mkdir()
     monkeypatch.chdir(tmp_path)
-    shutil.move(str(repo), str(renamed))
-    monkeypatch.chdir(renamed)
+    shutil.move(str(repo), str(moved))
+    monkeypatch.chdir(moved)
+    real_run = subprocess.run
 
-    original = _rewrite_worktree_paths
-    calls = {"rewrite": 0}
+    def fail_repair(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        if "repair" in command:
+            return subprocess.CompletedProcess(command, 1, "", "repair failed")
+        return real_run(command, **kwargs)
 
-    def skip_first_init(*args: object, **kwargs: object) -> None:
-        calls["rewrite"] += 1
-        # prepare_project and the pass after the skeleton are both this init.
-        if calls["rewrite"] <= 2:
-            return None
-        return original(*args, **kwargs)
+    monkeypatch.setattr("foil.project.subprocess.run", fail_repair)
+    capsys.readouterr()
+    assert main(["init"]) == 1
+    adopted = foil_root(moved)
+    record = json.loads((adopted / "project.json").read_text(encoding="utf-8"))
+    assert record["path"] == str(repo.resolve())
+    assert str(old) in _stored_run(adopted)
 
-    monkeypatch.setattr("foil.project._rewrite_worktree_paths", skip_first_init)
+    seat = adopted / "worktrees" / "implementer-1"
+    _git(moved, "worktree", "repair", str(seat))
+    monkeypatch.setattr("foil.project.subprocess.run", real_run)
     capsys.readouterr()
     assert main(["init"]) == 0
-    store = foil_root(renamed)
-    assert old in _stored_run(store)
-    record = json.loads((store / "project.json").read_text(encoding="utf-8"))
-    assert record["path"] == str(renamed.resolve())
-
-    capsys.readouterr()
-    assert main(["init"]) == 0
-    stored = _stored_run(store)
-    assert old not in stored
-    assert str(legacy) not in stored
-    assert str(store / "board") in stored
-    plan = json.loads((store / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
-    assert plan["cwd"] == str(renamed.resolve())
+    stored = _stored_run(adopted)
+    assert str(repo.resolve()) not in stored
+    assert str(old) not in stored
+    assert str(adopted / "board") in stored
+    plan = json.loads((adopted / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    assert plan["cwd"] == str(moved.resolve())
+    again = json.loads((adopted / "project.json").read_text(encoding="utf-8"))
+    assert again["path"] == str(moved.resolve())
 
 
 def test_init_repairs_a_killed_seat_worktree_during_a_legacy_move(
