@@ -1105,8 +1105,21 @@ def test_a_failed_adopt_retries_from_the_checkout_recorded_before_the_write(
     assert str(old) in _stored_run(adopted)
 
     seat = adopted / "worktrees" / "implementer-1"
-    _git(moved, "worktree", "repair", str(seat))
     monkeypatch.setattr("foil.project.subprocess.run", real_run)
+    # The worktree .git file still names the old checkout. Point it at the
+    # moved checkout's admin entry, then repair, which rewrites gitdir.
+    common = Path(_git(moved, "rev-parse", "--git-common-dir").stdout.strip())
+    if not common.is_absolute():
+        common = (moved / common).resolve()
+    (seat / ".git").write_text(
+        f"gitdir: {common / 'worktrees' / 'implementer-1'}\n", encoding="utf-8"
+    )
+    _git(moved, "worktree", "repair", str(seat))
+    common = Path(_git(moved, "rev-parse", "--git-common-dir").stdout.strip())
+    if not common.is_absolute():
+        common = (moved / common).resolve()
+    gitdir = common / "worktrees" / "implementer-1" / "gitdir"
+    assert gitdir.read_text(encoding="utf-8").strip() == str(seat / ".git")
     capsys.readouterr()
     assert main(["init"]) == 0
     stored = _stored_run(adopted)

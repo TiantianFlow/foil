@@ -576,10 +576,23 @@ def _rewrite_worktree_paths(
     recorded = previous or project_record(root).get("path", "")
     checkout = str(_common_dir(toplevel).parent.resolve())
     store = str(root.resolve())
+    worktrees = root / "worktrees"
     if recorded and recorded != checkout and not Path(recorded).exists():
         pairs.append((recorded, checkout))
         pairs.append((f"{recorded}/.foil", store))
-    worktrees = root / "worktrees"
+        # A hand repair already updated the gitdir, so it no longer names
+        # the old store. The recorded path is the main checkout, whose
+        # common dir is `<checkout>/.git` even after that checkout is gone.
+        old_store = store_root() / "projects" / project_key(Path(recorded) / ".git")
+        if not old_store.exists():
+            pairs.append((str(old_store.resolve()), store))
+            # The hand repair also left each seat's recorded worktree path
+            # pointing at that store. The gitdir no longer says so.
+            if worktrees.is_dir():
+                for seat in worktrees.iterdir():
+                    old_seat = old_store / "worktrees" / seat.name
+                    if not old_seat.exists():
+                        pairs.append((str(old_seat), str(seat.resolve())))
     if worktrees.is_dir():
         for seat in worktrees.iterdir():
             old = stale.get(seat.name, "")
