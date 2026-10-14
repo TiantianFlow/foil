@@ -242,7 +242,7 @@ legacy move, and only after `git worktree repair` succeeds, absolute paths in `r
 what the old absolute prefix was, including a repository directory that
 was renamed, and whether or not any seat has a worktree. The old prefix covers the old checkout, the old `.foil/` directory, and each seat worktree. The old `.foil/` prefix is read from a worktree's gitdir text before repair. The rewrite also matches a path that JSON stored with escapes. A stale
 `FOIL_PROJECT` value stored in `run/plans/*.json` is rewritten to the
-current project key, and that write is atomic (N7). A failed repair leaves the stored paths unchanged. A later init maps the old store root or the old `.foil/` whenever that directory itself no longer exists. The check that its parent is gone applies only when rewriting the old checkout to the current one. The recorded checkout used for that retry is the path saved before this run writes the current checkout. A recorded checkout that no longer
+current project key, and that write is atomic (N7). A failed repair leaves the stored paths unchanged. A later init maps the old store root or the old `.foil/` whenever that directory itself no longer exists. When the gitdir no longer names that store, the old folder is `<projects>/` plus the project key of the checkout recorded before the write. The check that its parent is gone applies only when rewriting the old checkout to the current one. The recorded checkout used for that retry is the path saved before this run writes the current checkout. A recorded checkout that no longer
 exists is rewritten to the main checkout. A seat's environment
 includes `FOIL_PROJECT` set to that key. It also includes `FOIL_HOME`
 or `XDG_DATA_HOME` when the spawning process had that variable set, so
