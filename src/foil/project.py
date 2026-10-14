@@ -483,6 +483,7 @@ def _seat_gitdir(toplevel: Path, root: Path) -> str:
     admin = _common_dir(toplevel) / "worktrees"
     if not admin.is_dir():
         return ""
+    found = ""
     for child in admin.iterdir():
         if child.name not in labels:
             continue
@@ -493,9 +494,18 @@ def _seat_gitdir(toplevel: Path, root: Path) -> str:
         marker = f"/worktrees/{child.name}/.git"
         # A seat under .foil/worktrees, or under the store's worktrees/.
         # A user's worktree is already excluded: its label is not here.
-        if text.endswith(marker) and "/worktrees/" in text:
+        if not text.endswith(marker):
+            continue
+        prefix = text.removesuffix("/.git")
+        marker_at = prefix.rfind("/worktrees/")
+        if marker_at < 0:
+            continue
+        # A partial repair leaves some gitdirs current. Prefer one whose
+        # old directory is already gone, so the prefix is the leftover.
+        if not Path(prefix[:marker_at]).exists():
             return text
-    return ""
+        found = found or text
+    return found
 
 
 def _old_foil_prefix(toplevel: Path, root: Path) -> str:
@@ -554,6 +564,7 @@ def _rewrite_worktree_paths(
     stale: dict[str, str],
     old_foil: str,
     previous: str,
+    recover_missing: bool = True,
 ) -> None:
     """Point stored paths at the store, using prefixes read before repair.
 
@@ -585,7 +596,9 @@ def _rewrite_worktree_paths(
             pairs.append((checkout_of, checkout))
     elif relocated is not None and not Path(relocated).exists():
         pairs.append((str(relocated), store))
-    if not any(new == checkout or new.startswith(f"{checkout}/") for _old, new in pairs):
+    if recover_missing and not any(
+        new == checkout or new.startswith(f"{checkout}/") for _old, new in pairs
+    ):
         missing = _missing_checkout(root, checkout)
         if missing:
             pairs.append((missing, checkout))
@@ -741,9 +754,11 @@ def _move_legacy(legacy: Path, root: Path, toplevel: Path) -> None:
 def rewrite_stored_paths(root: Path, toplevel: Path, *, previous: str) -> None:
     """Rewrite stored paths once the run directories exist.
 
-    ``prepare_project`` may run before ``run/plans`` and
-    ``run/instructions`` are created, so a file placed there afterwards
-    would keep the old prefix. This pass does not run git repair again.
+    Called only after a move, an adopt, or a retry. ``prepare_project``
+    rewrites before ``run/plans`` and ``run/instructions`` are created, so
+    a file placed there afterwards would keep the old prefix. This pass
+    does not run git repair again, and it does not invent a checkout from
+    a missing plan cwd.
     """
 
     _rewrite_worktree_paths(
@@ -753,11 +768,12 @@ def rewrite_stored_paths(root: Path, toplevel: Path, *, previous: str) -> None:
         stale=_stale_worktrees(toplevel, root),
         old_foil=_old_foil_prefix(toplevel, root),
         previous=previous,
+        recover_missing=False,
     )
     _rewrite_project_keys(root, toplevel)
 
 
-def prepare_project(toplevel: Path) -> tuple[Path, str]:
+def prepare_project(toplevel: Path) -> tuple[Path, str, bool]:
     """Create or adopt the store folder.
 
     A legacy folder that still has a seat which was never killed refuses
@@ -777,17 +793,21 @@ def prepare_project(toplevel: Path) -> tuple[Path, str]:
     # Read before adopt or _write_record. Adopt rewrites project.json, so a
     # later read would already be the current checkout and could not retry.
     previous = record.get("path", "")
+    adopted_ok = False
     if not record:
         adopted = _adopt(projects, toplevel)
         if adopted is not None:
             root = adopted
             record = project_record(root)
-            if not previous:
-                previous = record.get("path", "")
+            adopted_ok = True
+            # Adopt already repaired and rewrote. Keeping the old checkout
+            # would make the retry below do that work a second time.
+            previous = ""
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     root.chmod(0o700)
     created = record.get("created") or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     _write_record(root, toplevel, created=created)
+    rewritten = False
     if legacy_here:
         if _simple_legacy(legacy):
             try:
@@ -797,6 +817,7 @@ def prepare_project(toplevel: Path) -> tuple[Path, str]:
             else:
                 print(f"Moved {legacy} into {root}")
                 _repair_worktrees(root, toplevel, relocated=legacy, previous=previous)
+                rewritten = True
         else:
             print(
                 "foil: an old .foil/ is still in this repository and is not "
@@ -806,7 +827,10 @@ def prepare_project(toplevel: Path) -> tuple[Path, str]:
             )
     elif _repair_pending(root, toplevel, previous=previous):
         _repair_worktrees(root, toplevel, previous=previous)
-    return root, previous
+        rewritten = True
+    elif adopted_ok:
+        rewritten = True
+    return root, previous, rewritten
 
 
 def _gone_records(projects: Path) -> list[tuple[Path, dict[str, str]]]:
