@@ -35,6 +35,7 @@ from foil.project import (
     prepare_project,
     project_key,
     require_host_tools,
+    rewrite_stored_paths,
 )
 from foil.store import (
     SAFE_ID,
@@ -151,11 +152,14 @@ def init_project(directory: str | None) -> None:
         for role in ("lead", "implementer", "reviewer")
     ):
         installed_harness(toplevel)
-    root = prepare_project(toplevel)
+    root, previous = prepare_project(toplevel)
     for relative in SKELETON:
         path = root / relative
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
+    # The first rewrite runs before these directories exist. A path written
+    # into one of them afterwards still names the old location.
+    rewrite_stored_paths(root, toplevel, previous=previous)
     ensure_board(toplevel)
     ensure_registry(toplevel)
     template_dir = root / "templates"
