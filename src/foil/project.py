@@ -33,7 +33,8 @@ _OLD_FOIL = (
     '"git+https://github.com/TiantianFlow/foil.git@v0.3.4", '
     "then run DIR/bin/foil seat kill --all. With pipx: "
     "PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "
-    '"git+https://github.com/TiantianFlow/foil.git@v0.3.4"'
+    '"git+https://github.com/TiantianFlow/foil.git@v0.3.4", '
+    "then run DIR/bin/foil seat kill --all"
 )
 _UPGRADE = (
     "kill them with the old foil (foil seat kill --all), then upgrade, "
@@ -489,20 +490,21 @@ def _seat_gitdir(toplevel: Path, root: Path) -> str:
         if recorded.is_symlink() or not recorded.is_file():
             continue
         text = recorded.read_text(encoding="utf-8").strip()
-        for marker in (f"/.foil/worktrees/{child.name}/.git", f"/worktrees/{child.name}/.git"):
-            if text.endswith(marker) and "/.foil/worktrees/" in text:
-                return text
-            if text.endswith(marker) and text.removesuffix(marker).endswith("/worktrees"):
-                return text
+        marker = f"/worktrees/{child.name}/.git"
+        # A seat under .foil/worktrees, or under the store's worktrees/.
+        # A user's worktree is already excluded: its label is not here.
+        if text.endswith(marker) and "/worktrees/" in text:
+            return text
     return ""
 
 
 def _old_foil_prefix(toplevel: Path, root: Path) -> str:
-    """The old ``<repo>/.foil`` prefix, taken from a Foil seat's gitdir.
+    """The old ``<repo>/.foil`` or store root, taken from a Foil seat's gitdir.
 
-    That text is ``<old checkout>/.foil/worktrees/<label>/.git``. Stripping
-    ``/worktrees/<label>/.git`` leaves the old ``.foil`` directory. The
-    result is used only when it ends at ``/.foil`` and its parent is gone.
+    That text is ``<old location>/worktrees/<label>/.git``. Stripping
+    ``/worktrees/<label>/.git`` leaves the old ``.foil`` directory or the
+    old store project folder. It is rewritten only when that directory is
+    gone. The checkout itself is a separate pair, and only when it is gone.
     """
 
     text = _seat_gitdir(toplevel, root)
@@ -513,11 +515,7 @@ def _old_foil_prefix(toplevel: Path, root: Path) -> str:
     marker = "/worktrees/"
     if marker not in parent:
         return ""
-    foil = parent[: parent.rfind(marker)]
-    marker_end = "/.foil"
-    if not foil.endswith(marker_end):
-        return ""
-    return foil
+    return parent[: parent.rfind(marker)]
 
 
 def _stale_worktrees(toplevel: Path, root: Path) -> dict[str, str]:
@@ -566,9 +564,10 @@ def _rewrite_worktree_paths(
     pairs: list[tuple[str, str]] = []
     recorded = previous or project_record(root).get("path", "")
     checkout = str(_common_dir(toplevel).parent.resolve())
+    store = str(root.resolve())
     if recorded and recorded != checkout and not Path(recorded).exists():
         pairs.append((recorded, checkout))
-        pairs.append((f"{recorded}/.foil", str(root.resolve())))
+        pairs.append((f"{recorded}/.foil", store))
     worktrees = root / "worktrees"
     if worktrees.is_dir():
         for seat in worktrees.iterdir():
@@ -577,12 +576,15 @@ def _rewrite_worktree_paths(
                 pairs.append((old, str(seat.resolve())))
     if not old_foil:
         old_foil = _foil_prefix_in_run(root)
-    if old_foil and _accepted_foil(old_foil) == old_foil:
-        pairs.append((old_foil, str(root.resolve())))
-        if old_foil.endswith("/.foil"):
-            pairs.append((old_foil.removesuffix("/.foil"), checkout))
-    elif relocated is not None:
-        pairs.append((str(relocated), str(root.resolve())))
+    # The directory itself must be gone. Its parent being gone is required
+    # only for rewriting that parent (the old checkout) to the current one.
+    if old_foil and not Path(old_foil).exists():
+        pairs.append((old_foil, store))
+        checkout_of = old_foil.removesuffix("/.foil") if old_foil.endswith("/.foil") else ""
+        if checkout_of and _accepted_foil(old_foil) == old_foil:
+            pairs.append((checkout_of, checkout))
+    elif relocated is not None and not Path(relocated).exists():
+        pairs.append((str(relocated), store))
     if not any(new == checkout or new.startswith(f"{checkout}/") for _old, new in pairs):
         missing = _missing_checkout(root, checkout)
         if missing:
@@ -611,16 +613,18 @@ def _rewrite_project_keys(root: Path, toplevel: Path) -> None:
         _write_json(path, json.dumps(payload) + "\n")
 
 
-def _repair_pending(root: Path, toplevel: Path) -> bool:
+def _repair_pending(root: Path, toplevel: Path, *, previous: str = "") -> bool:
     """A repair or rewrite that an earlier init did not finish.
 
     The folder is already in place, so adopt and the legacy move do not
-    run again. A recorded checkout that no longer exists, or a seat gitdir
-    that still names a path other than the store worktree, is the leftover.
+    run again. ``previous`` is the checkout recorded before this init wrote
+    the current one. A recorded checkout that no longer exists, or a seat
+    gitdir that still names a path other than the store worktree, is the
+    leftover.
     """
 
     checkout = str(_common_dir(toplevel).parent.resolve())
-    recorded = project_record(root).get("path", "")
+    recorded = previous or project_record(root).get("path", "")
     if recorded and recorded != checkout and not Path(recorded).exists():
         return True
     return any(not Path(old).exists() for old in _stale_worktrees(toplevel, root).values())
@@ -734,7 +738,26 @@ def _move_legacy(legacy: Path, root: Path, toplevel: Path) -> None:
         raise
 
 
-def prepare_project(toplevel: Path) -> Path:
+def rewrite_stored_paths(root: Path, toplevel: Path, *, previous: str) -> None:
+    """Rewrite stored paths once the run directories exist.
+
+    ``prepare_project`` may run before ``run/plans`` and
+    ``run/instructions`` are created, so a file placed there afterwards
+    would keep the old prefix. This pass does not run git repair again.
+    """
+
+    _rewrite_worktree_paths(
+        root,
+        toplevel,
+        relocated=None,
+        stale=_stale_worktrees(toplevel, root),
+        old_foil=_old_foil_prefix(toplevel, root),
+        previous=previous,
+    )
+    _rewrite_project_keys(root, toplevel)
+
+
+def prepare_project(toplevel: Path) -> tuple[Path, str]:
     """Create or adopt the store folder.
 
     A legacy folder that still has a seat which was never killed refuses
@@ -751,12 +774,16 @@ def prepare_project(toplevel: Path) -> Path:
             _refuse_live_legacy(blocking)
     projects = root.parent
     record = project_record(root) if root.is_dir() else {}
+    # Read before adopt or _write_record. Adopt rewrites project.json, so a
+    # later read would already be the current checkout and could not retry.
+    previous = record.get("path", "")
     if not record:
         adopted = _adopt(projects, toplevel)
         if adopted is not None:
             root = adopted
             record = project_record(root)
-    previous = record.get("path", "")
+            if not previous:
+                previous = record.get("path", "")
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     root.chmod(0o700)
     created = record.get("created") or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -777,9 +804,9 @@ def prepare_project(toplevel: Path) -> Path:
                 "real directories. Make them real directories, then run "
                 "foil init again."
             )
-    elif _repair_pending(root, toplevel):
+    elif _repair_pending(root, toplevel, previous=previous):
         _repair_worktrees(root, toplevel, previous=previous)
-    return root
+    return root, previous
 
 
 def _gone_records(projects: Path) -> list[tuple[Path, dict[str, str]]]:

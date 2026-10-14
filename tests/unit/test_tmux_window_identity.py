@@ -281,7 +281,7 @@ def _project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo = tmp_path / "project"
     repo.mkdir()
     _init_git_repository(repo)
-    prepare_project(repo)
+    prepare_project(repo)[0]
     monkeypatch.chdir(repo)
     return repo
 
