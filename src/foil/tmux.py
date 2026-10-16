@@ -83,7 +83,12 @@ class TmuxController:
         stale name that tmux would fall back onto another window yields None.
         """
 
-        if target.window_id:
+        # A stored id is exact or absent. Empty and non-@ values are not
+        # names, so they are not resolved through tmux. A name-only target
+        # is the one case that leaves window_id as None.
+        if target.window_id is not None:
+            if not target.window_id.startswith("@"):
+                return None
             return target.window_id
         result = self._run(
             [
