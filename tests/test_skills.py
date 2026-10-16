@@ -224,6 +224,16 @@ def test_onboarding_says_who_answers_a_dialog() -> None:
     assert "When the check passes, send the human's goal" in skill
     assert "When the file shows `state: done`, send" not in skill
     assert "no installed eligible harness" in skill
+    assert "foil: no harness installed" in skill
+    assert "foil seat kill lead" in skill
+    readme_order = (ROOT / "README.md").read_text(encoding="utf-8")
+    assert readme_order.index("onboard this repository") < readme_order.index("foil roster list")
+    by_hand = readme_order.split("### By hand", 1)[1].split("### If nothing happens", 1)[0]
+    assert by_hand.index("note its `updated`") < by_hand.index("foil seat spawn")
+    zh = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+    assert zh.index("onboard this repository") < zh.index("foil roster list")
+    zh_hand = zh.split("### 手动操作", 1)[1].split("### 如果什么都没发生", 1)[0]
+    assert zh_hand.index("先记下它的 `updated`") < zh_hand.index("foil seat spawn")
     assert "Read the whole report before you staff" in skill
     assert "| no |" in skill
     assert "1. Which harnesses are installed" not in skill

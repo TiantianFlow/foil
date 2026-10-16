@@ -90,7 +90,7 @@ flowchart TB
 
 ## Get started
 
-You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Before the first spawn, your agent runs `foil roster list`, names each harness id the roster uses, and asks you to run each of those once in this repository and accept its folder-trust, update, first-run, and opt-in prompts, or to confirm that is done. Trust is per harness per path. A seat worktree lives in the project folder, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. A seat waiting on one of those prompts looks, from outside, like a seat that is working. The operator answers an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until you or the operator approve it. It reports an update dialog, a first-run dialog, and an opt-in, and leaves those for you. Another CLI can join with a small preset file.
+You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Trust is per harness per path. A seat worktree lives in the project folder, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. A seat waiting on one of those prompts looks, from outside, like a seat that is working. The operator answers an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until you or the operator approve it. It reports an update dialog, a first-run dialog, and an opt-in, and leaves those for you. Another CLI can join with a small preset file once `foil init` has created the project folder.
 
 The human's part is one sentence, typed into the coding agent they already use, in the repository:
 
@@ -100,8 +100,8 @@ Install Foil from https://github.com/TiantianFlow/foil, onboard this repository 
 
 To update between goals, kill first, then upgrade, then `foil init`. Run `foil seat kill --all` once the goal is done, run the install line again, run `foil init` in each project, then spawn the lead. A project that still has an in-repo `.foil/` from 0.3.x is killed with that old `foil` before the install line runs. A stale seat whose tmux window is already gone also counts. If that old `foil` is no longer on `PATH`, install 0.3.4 beside the current one, which does not replace it: `UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then run `DIR/bin/foil seat kill --all`. With pipx: `PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then run `DIR/bin/foil seat kill --all`. Do not run `foil init` while those seats remain, and do not move that directory aside. The previous goal's `board/status.md`, in the project folder the report prints, already says `state: done`, so note its `updated` line before you spawn and wait for it to change. After `foil seat kill --all`, either case can occur, so check: run `tmux ls`. If it lists any session, a named preset `env` variable comes from that server and is set with `tmux set-environment -g NAME VALUE` before spawn. If it says no server is running, the next spawn starts a server from your shell.
 
-- The agent installs Foil and runs `foil init`.
-- It reads the report and sets each template's harness list and `permission` with `foil roster`, or by editing `templates/lead.toml`, `templates/implementer.toml`, and `templates/reviewer.toml` in the project folder the report printed. `init` writes one entry. `roster update` `harness` and `model` edit that entry. A longer list is edited in the file, and a spawn takes the entry at the count of seats already stored for that role. `auto` on the lead alone does not let the workers run unattended. Limits says what `auto` still does: the seat can stop on an approval prompt.
+- The agent installs Foil and runs `foil init`. If that command prints `foil: no harness installed`, it wrote nothing. Install one of the CLIs above and run `foil init` again.
+- It reads the report, runs `foil roster list`, and asks you to run each harness id once in this repository and accept its folder-trust, update, first-run, and opt-in prompts, or to confirm that is done. It sets each template's harness list and `permission` with `foil roster`, or by editing `templates/lead.toml`, `templates/implementer.toml`, and `templates/reviewer.toml` in the project folder the report printed. `init` writes one entry. `roster update` `harness` and `model` edit that entry. A longer list is edited in the file, and a spawn takes the entry at the count of seats already stored for that role. `auto` on the lead alone does not let the workers run unattended. Limits says what `auto` still does: the seat can stop on an approval prompt.
 - It runs the first-run check and sends the goal.
 - It never does the project work itself.
 
@@ -129,7 +129,7 @@ cd your-repo
 foil init
 ```
 
-Read the report, set the three templates with `foil roster` or by editing the files, then spawn the lead once:
+Read the report and set the three templates with `foil roster` or by editing the files. If `board/status.md` is already in the project folder, note its `updated` value. Then spawn the lead once:
 
 ```sh
 foil seat spawn lead --task "Write board/status.md with state: done"
@@ -147,7 +147,7 @@ foil seat peek lead
 
 ### If nothing happens
 
-Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually stopped on a dialog. The operator answers an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until someone approves it. It reports an update dialog, a first-run dialog, and an opt-in, and leaves those for you. Answer those in the window (`tmux ls` lists Foil's session and `tmux attach` opens it). A login the CLI will not finish in the pane is done once by hand, then `foil seat kill lead` and spawn the lead again.
+Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually stopped on a dialog. The operator answers an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until someone approves it. It reports an update dialog, a first-run dialog, and an opt-in, and leaves those for you. Answer those in the window (`tmux ls` lists Foil's session and `tmux attach` opens it). A login the CLI will not finish in the pane is done once by hand, then `foil seat kill lead` and spawn the lead again. If `foil seat list` shows that lead as `dead`, `foil seat kill lead` clears it. Spawn the check again only after it is gone.
 
 ## Limits
 

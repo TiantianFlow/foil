@@ -6,7 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
-- Onboarding names the dialog the operator may answer. An approval dialog is a folder-trust prompt, a login prompt, or a prompt that blocks the seat until someone approves it. An update dialog, a first-run dialog, and an opt-in are reported to the human and not answered. A previous `board/status.md` that already says `state: done` passes the first-run check only when `updated` changes. The sample `foil init` banner in the demos is labeled as an illustration from an older run. (#24)
+- Onboarding names the dialog the operator may answer. An approval dialog is a folder-trust prompt, a login prompt, or a prompt that blocks the seat until someone approves it. An update dialog, a first-run dialog, and an opt-in are reported to the human and not answered. A previous `board/status.md` that already says `state: done` passes the first-run check only when `updated` changes. The first `foil init` with no eligible harness prints `foil: no harness installed` and writes nothing; a preset can be added only after the project folder exists. A dead first-run lead is cleared with `foil seat kill lead` before the check is spawned again. The sample `foil init` banner in the demos is labeled as an illustration from an older run. (#24)
 
 ## [0.4.3] - 2026-10-17
 
