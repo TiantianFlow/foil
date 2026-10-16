@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 from foil import __version__
@@ -40,14 +41,18 @@ from foil.project import (
 from foil.store import (
     SAFE_ID,
     SEAT_FIELDS,
+    create_exclusive,
     ensure_registry,
+    exclusive_lock,
     load_registry,
     read_json,
+    registry_path,
     save_registry,
     scan,
     write_bytes,
+    write_json,
 )
-from foil.tmux import TmuxController, TmuxError, TmuxTarget
+from foil.tmux import ProbeState, TmuxController, TmuxError, TmuxTarget
 
 
 def _names(items: list[str]) -> str:
@@ -245,8 +250,9 @@ def _session_name(toplevel: Path) -> str:
 
 _LEAD_COMMANDS = """foil seat spawn TEMPLATE [--name NAME] [--task TEXT]
 foil seat kill NAME
+foil seat archive NAME
 foil seat resume [NAME]
-foil seat list [--json]
+foil seat list [--json] [--archived]
 foil seat peek NAME [--lines N]
 foil send TO TEXT
 foil mail read PATH [--json]
@@ -334,11 +340,14 @@ def _instruction(
         )
     elif task is not None:
         lines.append(
-            f"Your task is `{task.resolve()}`. Read it first with `foil mail read`. "
-            "Older mail in your mailbox may be from an earlier goal."
+            f"Your task is `{task.resolve()}`. Read it first with `foil mail read`."
         )
     else:
         lines.append("Run `foil mail list` and read your mail before you act.")
+    # One sentence for the lead, whose name is always reused, and for a
+    # worker whose name has an archive file. A new name does not get it.
+    if not restarted and (lead or _has_archive(root, seat)):
+        lines.append("Older mail in your mailbox may be from an earlier goal.")
     if lead:
         roster = []
         directory = foil_root(root) / "templates"
@@ -645,7 +654,137 @@ def resume_seats(root: Path, name: str | None) -> int:
     return 1
 
 
-def list_seats(root: Path, *, as_json: bool = False) -> None:
+def _archive_stamp() -> str:
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _archive_dir(root: Path) -> Path:
+    return foil_root(root) / "run" / "archive"
+
+
+def _archive_body(record: dict[str, str]) -> bytes:
+    lines = [f"{key}: {record.get(key, '')}" for key in SEAT_FIELDS]
+    return ("\n".join(lines) + "\n").encode()
+
+
+def _write_archive(root: Path, name: str, record: dict[str, str]) -> Path:
+    """Write the prose record. A crash after this still leaves the seat killed."""
+
+    directory = _archive_dir(root)
+    payload = _archive_body(record)
+    stem = f"{_archive_stamp()}-{name}"
+    for number in range(10000):
+        label = stem if number == 0 else f"{stem}-{number}"
+        path = directory / f"{label}.txt"
+        try:
+            create_exclusive(path, payload)
+        except FileExistsError:
+            continue
+        return path
+    raise FoilError("foil: could not archive seat")
+
+
+def _read_archive(path: Path) -> dict[str, str]:
+    record = {key: "" for key in SEAT_FIELDS}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition(": ")
+        if separator and key in record:
+            record[key] = value
+    return record
+
+
+def _archive_files(root: Path) -> list[Path]:
+    directory = _archive_dir(root)
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    files = [
+        path
+        for path in directory.iterdir()
+        if path.is_file() and not path.is_symlink() and path.suffix == ".txt"
+    ]
+    files.sort(key=lambda path: (path.stat().st_mtime_ns, path.name), reverse=True)
+    return files
+
+
+def _has_archive(root: Path, name: str) -> bool:
+    return any(_read_archive(path).get("name") == name for path in _archive_files(root))
+
+
+def _window_gone(registry: dict, root: Path, name: str, record: dict[str, str]) -> None:
+    """Refuse unless the stored window is gone.
+
+    This is the probe result, not `_state` and not `matches_window`.
+    `DEAD` with `identity_matches` false is the only result that proceeds.
+    That is also what an empty id, a non-@ id, a failed display-message,
+    and an empty tmux line return.
+    """
+
+    window = record.get("window_id") or ""
+    try:
+        probe = TmuxController().probe(
+            str(registry["fleet_id"]),
+            name,
+            _target(registry, root, name, window),
+        )
+    except TmuxError as exc:
+        raise FoilError(f"foil: seat '{name}' window is unknown") from exc
+    if probe.identity_matches is None or probe.state is ProbeState.UNKNOWN:
+        raise FoilError(f"foil: seat '{name}' window is unknown")
+    if probe.state is ProbeState.DEAD and probe.identity_matches is False:
+        return
+    if probe.state is ProbeState.ALIVE:
+        raise FoilError(f"foil: seat '{name}' window is still running")
+    raise FoilError(f"foil: seat '{name}' window still exists")
+
+
+def archive_seat(root: Path, name: str) -> None:
+    """Free a killed worker's name. The worktree, branch, and mailbox stay."""
+
+    path = registry_path(root)
+    # The lock covers the read, the probe, the archive file, and the
+    # registry replace. A second caller waits, then sees the key is gone.
+    with exclusive_lock(path.with_suffix(".lock")):
+        registry = load_registry(root)
+        record = dict(_known(registry, name))
+        stored = record.get("state") or ""
+        if stored == "alive":
+            raise FoilError(f"foil: seat '{name}' is alive")
+        if stored == "dead":
+            raise FoilError(f"foil: seat '{name}' is dead")
+        if name == "lead":
+            raise FoilError("foil: seat 'lead' cannot be archived")
+        if stored != "killed":
+            raise FoilError(f"foil: seat '{name}' is {_state(registry, name, record)}")
+        _window_gone(registry, root, name, record)
+        _write_archive(root, name, record)
+        registry["seats"].pop(name)
+        write_json(path, registry)
+    print(f"archived seat '{name}'")
+    if record.get("worktree"):
+        print(f"kept branch {record.get('branch') or ''}")
+
+
+def _list_archived(root: Path, *, as_json: bool) -> None:
+    rows = []
+    for path in _archive_files(root):
+        record = _read_archive(path)
+        record["archived"] = path.name
+        rows.append(record)
+    if as_json:
+        print(json.dumps(rows, sort_keys=True))
+        return
+    for row in rows:
+        launched = f"{row['harness']}/{row['model']}" if row["model"] else row["harness"]
+        print(
+            f"{row['name']}\t{row['template']}\t{row['state']}\t"
+            f"{row['worktree']}\t{launched}\t{row['branch']}"
+        )
+
+
+def list_seats(root: Path, *, as_json: bool = False, archived: bool = False) -> None:
+    if archived:
+        _list_archived(root, as_json=as_json)
+        return
     registry = load_registry(root)
     rows = []
     for seat_name, record in sorted(registry["seats"].items()):
