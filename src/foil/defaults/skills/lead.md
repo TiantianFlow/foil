@@ -19,7 +19,7 @@ A pane is raw text. Nobody decides busy, idle, working, or done from it. What th
 
 If a later finding shows an earlier stage was wrong, the next task goes back to that stage. Do not open a task whose only job is to patch the previous result. Seats run side by side only on work the board has already split into independent tasks, each with acceptance. A researcher and an implementer may run together when the item being implemented is already written down. Several implementers may run when the tasks do not share a file.
 
-## Spawn, kill, and resume
+## Spawn, kill, archive, and resume
 
 Spawn a worker from a template. The task is the goal and nothing else. Foil delivers the role instructions in the first prompt. The task becomes that seat's first mail:
 
@@ -28,12 +28,19 @@ foil seat spawn implementer --task "do the task"
 foil seat spawn reviewer --name helper --task "review the branch"
 ```
 
-`--name` chooses the seat name. Without it, the name is the template plus a number, and a name is never reused.
+`--name` chooses the seat name. Without it, the name is the template plus a number. A name is not reused while its record exists. After `foil seat archive`, that name can be spawned again.
 
 Stop another seat by name. You may not kill yourself, and you may not run `foil seat kill --all`.
 
 ```text
 foil seat kill implementer-1
+```
+
+Free a killed worker's name. This does not restart the seat, and it does not delete the branch or uncommitted files. You may not archive yourself. `foil seat list` no longer shows that seat. `foil seat list --archived` shows the stored worktree.
+
+```text
+foil seat archive implementer-1
+foil seat list --archived
 ```
 
 Restart a dead seat. A killed seat stays stopped. An alive seat is left running.

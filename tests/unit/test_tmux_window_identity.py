@@ -133,6 +133,30 @@ def _stale_worker_target() -> TmuxTarget:
     )
 
 
+def test_probe_does_not_ask_tmux_for_an_empty_or_plain_window_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "called"
+    executable = tmp_path / "tmux"
+    executable.write_text(
+        "#!/bin/sh\necho called >> \"$FAKE_TMUX_LOG\"\nexit 1\n",
+        encoding="utf-8",
+    )
+    executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("FAKE_TMUX_LOG", str(log))
+    tmux = TmuxController(executable=str(executable))
+
+    for window_id in ("", "1", "lead"):
+        probe = tmux.probe(
+            "fleet-1",
+            "worker",
+            TmuxTarget("foil-demo", "worker", None, window_id),
+        )
+        assert probe.state is ProbeState.DEAD
+        assert probe.identity_matches is False
+    assert not log.exists()
+
+
 def test_probe_reports_a_missing_recorded_window_as_dead(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -13,6 +13,7 @@ from foil.board import send_mail
 from foil.board_ops import board_list, board_read
 from foil.errors import FoilError
 from foil.lifecycle import (
+    archive_seat,
     init_project,
     kill_seats,
     list_seats,
@@ -40,6 +41,7 @@ _ALLOWED = {
     "spawn": {OUTSIDE, LEAD},
     "kill": {OUTSIDE, LEAD},
     "kill-all": {OUTSIDE},
+    "archive": {OUTSIDE, LEAD},
     "resume": {OUTSIDE, LEAD},
     "list": {OUTSIDE, LEAD, WORKER},
     "peek": {OUTSIDE, LEAD, WORKER},
@@ -102,11 +104,15 @@ def _build_parser() -> argparse.ArgumentParser:
     kill.add_argument("NAME", nargs="?", metavar="NAME")
     kill.add_argument("--all", action="store_true")
 
+    archive = seat_sub.add_parser("archive", help="Free a killed seat's name")
+    archive.add_argument("NAME", metavar="NAME")
+
     resume = seat_sub.add_parser("resume", help="Restart dead seats")
     resume.add_argument("NAME", nargs="?", metavar="NAME")
 
     listed = seat_sub.add_parser("list", help="List seats")
     listed.add_argument("--json", action="store_true")
+    listed.add_argument("--archived", action="store_true")
 
     peek = seat_sub.add_parser("peek", help="Print the pane tail")
     peek.add_argument("NAME", metavar="NAME")
@@ -214,12 +220,15 @@ def _run(args: argparse.Namespace) -> int:
                     raise FoilError("foil: NAME is required")
                 authorize("kill", name=args.NAME)
                 kill_seats(root, name=args.NAME)
+        elif action == "archive":
+            authorize("archive")
+            archive_seat(root, args.NAME)
         elif action == "resume":
             authorize("resume")
             return resume_seats(root, args.NAME)
         elif action == "list":
             authorize("list")
-            list_seats(root, as_json=args.json)
+            list_seats(root, as_json=args.json, archived=args.archived)
         else:
             authorize("peek")
             peek_seat(root, args.NAME, lines=args.lines)
