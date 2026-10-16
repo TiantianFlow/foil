@@ -17,7 +17,7 @@ Install or update, run `foil init`, read the report, and stop if no harness is e
 
 You perform onboarding. The human's part was one sentence. You install Foil, run `init`, read the report, set the roster, run the first-run check, and send the goal. You do not plan the goal, staff workers, integrate branches, or review the result.
 
-1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, run `foil roster list`, name each distinct harness id the roster uses, and ask the human to run each of those once in the repository root and accept its folder-trust, update, first-run, and opt-in dialogs, or to confirm that is done. Trust is per harness per path. A seat worktree lives in the store, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. Ask again when a role moves to a harness id that was not on that list. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. Trust before the first spawn stays the human's job. A dialog seen in `foil seat peek` is answered only when it is an approval dialog, as step 3 bounds it. Every other dialog is reported to the human and not answered.
+1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, run `foil roster list`, name each distinct harness id the roster uses, and ask the human to run each of those once in the repository root and accept its folder-trust, update, first-run, and opt-in dialogs, or to confirm that is done. Trust is per harness per path. A seat worktree lives in the store, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. Ask again when a role moves to a harness id that was not on that list. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. That confirmation, before the first spawn, is the human's. A dialog seen in `foil seat peek` is answered only when it is an approval dialog, as step 3 bounds it. Every other dialog is reported to the human and not answered.
 2. Install or update Foil. Run the install line even when foil is already installed; running it again updates it:
 
 ```text
@@ -36,13 +36,13 @@ If the report lists no installed eligible harness, stop and tell the human. Do n
 
 After first init, run `foil roster list` to see all templates and available personas. Review with the human:
 
-1. Which harnesses are installed
-2. What models to assign to lead/implementer/reviewer
-3. Whether to add researcher/verifier or other candidate roles
+- Which harnesses are installed
+- What models to assign to lead/implementer/reviewer
+- Whether to add researcher/verifier or other candidate roles
 
 Add roles as needed with `foil roster add <role>`. Update harness or model with `foil roster update <role> harness=<id>` or `foil roster update <role> model=<model>`.
 
-3. Before you spawn the lead, set the harness list and `permission` on every template the fleet will use: `templates/lead.toml`, `templates/implementer.toml`, and `templates/reviewer.toml` in the project folder the report printed. Those files are not in the repository. Each has its own permission. An omitted permission, and `roster add` without `--from`, are `auto`. `auto` asks the harness to skip approval prompts, though some harnesses still ask. `ask` is what a caller outside the fleet sets when a seat must stop for the human, with `foil roster update ROLE permission=ask`. That seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Pair `auto` with a worktree when that seat can commit. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`. You may set `permission` before the first spawn and again later with `foil roster update ROLE permission=VALUE`. A later change applies to the next spawn of that template, not to a seat already alive. The lead, inside the fleet, does not set `permission`. You may send keystrokes only for an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, an opt-in, an error, and ordinary output are reported and not answered. You look at the raw text `foil seat peek` printed. You do not scrape the pane, and you do not decide from it who is working. A prompt you will not approve is reported to the human with the seat name and what the pane shows. You do not send a denial sequence unless that sequence is the dialog's own reject key, and you tell the human first.
+3. Before you spawn the lead, set the harness list and `permission` on every template the fleet will use: `templates/lead.toml`, `templates/implementer.toml`, and `templates/reviewer.toml` in the project folder the report printed. Those files are not in the repository. Each has its own permission. An omitted permission, and `roster add` without `--from`, are `auto`. `auto` asks the harness to skip approval prompts, though some harnesses still ask. `ask` is what a caller outside the fleet sets when a seat must stop for the human, with `foil roster update ROLE permission=ask`. That seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Pair `auto` with a worktree when that seat can commit. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`. You may set `permission` before the first spawn and again later with `foil roster update ROLE permission=VALUE`. A later change applies to the next spawn of that template, not to a seat already alive. The lead, inside the fleet, does not set `permission`. You may send keystrokes only for an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, a first-run dialog, an opt-in, an error, and ordinary output are reported and not answered. You look at the raw text `foil seat peek` printed. You do not scrape the pane, and you do not decide from it who is working. A prompt you will not approve is reported to the human with the seat name and what the pane shows. You do not send a denial sequence unless that sequence is the dialog's own reject key, and you tell the human first.
 4. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. `--task` carries only the goal. Do not copy skill text into the task.
 5. Check that the lead is working. Spawn the lead once, with this task, then wait a few minutes:
 
@@ -50,13 +50,15 @@ Add roles as needed with `foil roster add <role>`. Update harness or model with 
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-Spawn writes the task as mail and types nothing into the new pane. A seat at a startup dialog waits there. If `board/status.md` is already there from an earlier goal, note its `updated` value before you spawn. The check passes only when `updated` changes and the file shows `state: done`. If `board/status.md` does not appear or `updated` does not change, peek the lead. The pane shows a login prompt, a folder-trust prompt, an update dialog, an approval prompt, or an error. You may send keystrokes only for an approval dialog, as step 3 bounds it. Anything else, including an error, is reported to the human and not answered. You do not fix the project.
+Spawn writes the task as mail and types nothing into the new pane. A seat at a startup dialog waits there. If `board/status.md` is already there from an earlier goal, note its `updated` value before you spawn. The check passes only when `updated` changes and the file shows `state: done`. A previous goal already has `state: done`, so an unchanged file is not a pass. If `board/status.md` does not appear or `updated` does not change, peek the lead:
 
 ```text
 foil seat peek lead
 ```
 
-When the file shows `state: done`, send the human's goal to that lead. Do not spawn the lead again.
+You may send keystrokes only for an approval dialog, as step 3 bounds it: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, a first-run dialog, an opt-in, and an error are reported to the human and not answered. You do not fix the project.
+
+When the check passes, send the human's goal to that lead. Do not spawn the lead again.
 
 A persistent copy of this skill is optional and stays at user level, out of `git status`. These paths were not checked against that harness's current docs.
 

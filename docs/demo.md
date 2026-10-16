@@ -37,9 +37,11 @@ Read /var/foil/projects/your-repo-1a2b3c/skills/operator.md and follow it. My go
 
 `foil init` writes that project folder outside the repository and writes
 nothing into the working tree, so `git status` stays clean. The first
-line of its output is the version. The report in between (trimmed here)
-names the installed harnesses and what init wrote. The last line is what
-you paste into your own agent later. The path is the one the report printed.
+line of its output is the version `foil --version` prints. `foil 0.4.0`
+in the sample is an illustration from an older run, not this tree's
+version. The report in between (trimmed here) names the installed
+harnesses and what init wrote. The last line is what you paste into your
+own agent later. The path is the one the report printed.
 
 ## 2. Choose a harness and a permission for each role
 
@@ -201,16 +203,19 @@ discards uncommitted work.
 ## If nothing happens
 
 Run `foil seat peek lead`. A seat that makes no progress is usually
-showing one of these:
+stopped on a dialog. The operator answers an approval dialog and reports
+the others.
 
-- a login prompt: log in to that CLI once by hand, then
-  `foil seat kill lead` and spawn it again;
-- a folder-trust prompt: accept it in that window. A seat worktree lives
-  outside the repository, so trusting the repository does not cover it.
-  Each seat label needs that trust once per harness;
-- an approval prompt: approve it in that window (`tmux ls` lists Foil's
-  session, and `tmux attach` opens it), or set `permission = "auto"`;
-- the harness's own first-run or opt-in dialog: answer it the same way.
+- an approval dialog: a folder-trust prompt, a login prompt, or a prompt
+  that blocks the seat until someone approves it. The operator may answer
+  it. You can answer it in the window too (`tmux ls` lists Foil's
+  session, and `tmux attach` opens it). A seat worktree lives outside the
+  repository, so trusting the repository does not cover it. Each seat
+  label needs that trust once per harness. A login the CLI will not
+  finish in the pane is done once by hand, then `foil seat kill lead`
+  and spawn the lead again.
+- an update dialog, a first-run dialog, or an opt-in: the operator reports
+  it and leaves it for you to answer in the window.
 
 If tmux died or the machine rebooted, `foil seat resume` restarts every
 seat that was not killed.
