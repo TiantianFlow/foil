@@ -23,9 +23,9 @@ _PROBE_FORMAT = (
 _IDENTITY_FORMAT = "#{session_id}\t#{window_id}\t#{window_name}"
 
 
-# Enter inside a fast burst stays in the harness input. Claude Code keeps
-# that burst open for 100ms and Codex for 120ms. The pause starts after the
-# line has been written, and Enter is sent once.
+# Enter inside a fast burst stays in the harness input. Codex keeps that
+# burst open for 120ms. The pause starts after the line has been written,
+# and Enter is sent once.
 NUDGE_ENTER_DELAY = 0.2
 
 

@@ -16,8 +16,7 @@ from foil.tmux import NUDGE_ENTER_DELAY, TmuxController
 
 pytestmark = pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
 
-# Codex keeps Enter from submitting for 120ms after a fast burst. That is the
-# longest such window among the built-in harnesses this wait is for.
+# Codex keeps Enter from submitting for 120ms after a fast burst.
 _BURST_S = 0.12
 
 _STAND_IN = """\
