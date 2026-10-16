@@ -59,8 +59,10 @@ FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live
    Python (requirement N4). Prefer deleting code to adding it.
 3. **Everything you commit is public**, including commit messages and every
    intermediate commit. Never commit secrets, tokens, personal paths,
-   private hostnames, or personal email addresses. The tests check the
-   tracked files but not history, so review your commits before you push.
+   private hostnames, or personal email addresses. Commits use
+   `177855728+TiantianFlow@users.noreply.github.com`, not a personal
+   mailbox. The tests check the tracked files but not history, so review
+   your commits before you push.
 4. **Keep docs tidy.** List every new document in docs/README.md, name
    release plans `plan-vX.Y.Z.md`, and add notable changes to
    CHANGELOG.md under "Unreleased".
