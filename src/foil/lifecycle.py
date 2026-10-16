@@ -249,6 +249,7 @@ foil seat resume [NAME]
 foil seat list [--json]
 foil seat peek NAME [--lines N]
 foil send TO TEXT
+foil post [TEXT] [--re PATH] [--decline]
 foil mail read PATH [--json]
 foil mail list [--json]
 foil board read PATH [--json]
@@ -266,6 +267,7 @@ foil roster remove ROLE"""
 _WORKER_COMMANDS = """foil seat list [--json]
 foil seat peek NAME [--lines N]
 foil send TO TEXT
+foil post [TEXT] [--re PATH] [--decline]
 foil mail read PATH [--json]
 foil mail list [--json]
 foil board read PATH [--json]
@@ -315,13 +317,17 @@ def _instruction(
         f"Identity is `FOIL_SEAT_ID` (yours is `{seat}`). You cannot change it with flags.",
         "Commands you may run:",
         _LEAD_COMMANDS if lead else _WORKER_COMMANDS,
-        "Mail: `foil send TO TEXT`. A nudge line is `from path`. Read it with `foil mail read`.",
+        "Mail: `foil send TO TEXT`. Room: `foil post TEXT`.",
+        "A nudge line is `from path`. A path under `board/mail/` is `foil mail read`. "
+        "A path under `board/room/` is `foil board read`.",
+        "List `board/room` and read threads this seat has not answered.",
         "There is no ack command.",
         "Notes: write files under `board/notes/`. They wake no one.",
         "Contracts (parsed only to print; Foil does not act on them):",
         "status/v1 (state working|blocked|done, updated, questions),",
         "task/v1 (id, owner, state open|doing|done, acceptance),",
-        "result/v1 (task, author, branch, outcome pass|fail).",
+        "result/v1 (task, author, branch, outcome pass|fail),",
+        "room/v1 (from, time, optional re, nudged).",
         f"Worktree: {work}",
         f"Persona:\n{_persona_line(template)}",
         skill_text,

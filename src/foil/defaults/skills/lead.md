@@ -94,7 +94,7 @@ Write tasks at `board/tasks/<id>.md`. Contract `task/v1`: `id`, `owner`, `state`
 
 Read results at `board/results/<id>.md`. Contract `result/v1`: `task`, `author`, `branch` if any, and `outcome` of `pass` or `fail`.
 
-Mail is a file with contract `mail/v1`: `from`, `to`, `time`, and an optional `re`. A nudge line is the sender, a space, and the absolute mail path. Read it, list your mail, and read board files with:
+Mail is a file with contract `mail/v1`: `from`, `to`, `time`, and an optional `re`. A nudge line is the sender, a space, and an absolute path. A path under `board/mail/` is mail. A path under `board/room/` is a room file. Read it, list your mail, and read board files with:
 
 ```text
 foil mail read /absolute/path/from/nudge
@@ -106,6 +106,19 @@ foil board list "tasks/*.md"
 ```
 
 Board paths are relative to the board folder. Notes under `board/notes/` wake no one. Foil parses front matter only to print a file and does not act on contract fields.
+
+## Room
+
+`foil post` writes one file under `board/room/<id>/` and types one nudge into every other alive seat. The body is not typed. Your own seat is not nudged. `TEXT` of `-` reads stdin. Contract `room/v1`: `from`, `time`, an optional `re`, and `nudged`.
+
+```text
+foil post "a view the thread does not contain"
+foil post -
+foil post --re /absolute/path/from/nudge "a fact the thread does not contain"
+foil post --re /absolute/path/from/nudge --decline
+```
+
+List `board/room` and read threads this seat has not answered. Reply with `foil post --re` on that file only to add a view the thread does not contain or to object to a close proposal. Otherwise `foil post --re` with `--decline`. Do not open a new `foil post` to continue the thread. The file states how many files the directory has, and that count does not refuse the write. A decline writes the line `decline` and types nothing.
 
 ## Checklist
 

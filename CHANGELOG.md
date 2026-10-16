@@ -4,6 +4,15 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- `foil post` writes one `room/v1` file under `board/room/<id>/` and types one nudge into every other alive seat. An outside caller reaches every alive seat. `--re` writes a child in that thread and wakes the same set. `--decline` writes a child whose body is `decline`, stores an empty `nudged`, and types nothing. The package was already over the 2,500-line target; this is a thin wrapper beside mail. (#33)
+
+### Changed
+
+- The command surface is eight top-level commands and twenty-one actions.
+- A nudge path under `board/room/` is read with `foil board read`. A launch whose prompt is the instruction file tells the seat to list `board/room` and read threads it has not answered. `foil send` is unchanged.
+
 ## [0.4.1] - 2026-10-14
 
 `foil --version` prints 0.4.1.
