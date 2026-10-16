@@ -141,6 +141,14 @@ foil send lead -
 
 If the lead looks stuck, nudge it the same way. Send a short mail. Do not type into the pane yourself, and do not try to tell whether the pane is at a prompt.
 
+Ordinary human answers stay `foil send lead`. `foil post` writes one room file and types one nudge into every alive seat, because you are outside the fleet. `TEXT` of `-` reads stdin. A decline writes a file and types nothing.
+
+```text
+foil post "a question for every alive seat"
+foil post -
+foil post --re /absolute/path/from/nudge --decline
+```
+
 You may read only enough to relay the human's goal in your own words. That reading is not research, not a plan, and not a source the fleet may follow. Do not write it up as a board note for the fleet to treat as findings. The lead spawns a researcher when the goal needs research. You never do the project work.
 
 ## Memory

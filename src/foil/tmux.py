@@ -289,12 +289,14 @@ class TmuxController:
             "capture-pane",
         )
 
-    def nudge(self, window_id: str, line: str) -> None:
+    def nudge(self, window_id: str, line: str) -> bool:
         if not window_id.startswith("@"):
-            return
+            return False
         typed = self._run(["send-keys", "-l", "-t", window_id, "--", line])
-        if typed.returncode == 0:
-            self._run(["send-keys", "-t", window_id, "Enter"])
+        if typed.returncode != 0:
+            return False
+        self._run(["send-keys", "-t", window_id, "Enter"])
+        return True
 
     def remove_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
         """Remove this seat's window, including one whose process has exited.
