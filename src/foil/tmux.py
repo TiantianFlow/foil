@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import time
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -20,6 +21,12 @@ _PROBE_FORMAT = (
     "#{@foil-fleet-id}\t#{@foil-seat-id}\t#{pane_dead}"
 )
 _IDENTITY_FORMAT = "#{session_id}\t#{window_id}\t#{window_name}"
+
+
+# Enter inside a fast burst stays in the harness input. Claude Code keeps
+# that burst open for 100ms and Codex for 120ms. The pause starts after the
+# line has been written, and Enter is sent once.
+NUDGE_ENTER_DELAY = 0.2
 
 
 class TmuxError(RuntimeError):
@@ -293,8 +300,10 @@ class TmuxController:
         if not window_id.startswith("@"):
             return
         typed = self._run(["send-keys", "-l", "-t", window_id, "--", line])
-        if typed.returncode == 0:
-            self._run(["send-keys", "-t", window_id, "Enter"])
+        if typed.returncode != 0:
+            return
+        time.sleep(NUDGE_ENTER_DELAY)
+        self._run(["send-keys", "-t", window_id, "Enter"])
 
     def remove_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
         """Remove this seat's window, including one whose process has exited.
