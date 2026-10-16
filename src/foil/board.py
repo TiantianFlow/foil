@@ -118,7 +118,7 @@ def _listing(directory: Path) -> int:
 def _preamble(path: Path, count: int) -> str:
     target = path.resolve()
     return (
-        f"Reply with `foil post --re {target}` only to add a view this thread "
+        f"Reply with `foil post --re {target}` only to add a view the thread "
         "does not contain or to object to a close proposal. "
         f"Otherwise `foil post --re {target} --decline`. "
         "Do not open a new `foil post` to continue this thread. "
