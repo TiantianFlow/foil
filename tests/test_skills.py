@@ -205,6 +205,47 @@ def test_lead_skill_keeps_a_checklist() -> None:
     assert "every item is ticked" in text
 
 
+def test_onboarding_says_who_answers_a_dialog() -> None:
+    """Issue 24: the pages a new user follows agree on the dialog rule."""
+
+    for relative in ("README.md", "skills/operator.md", "docs/demo.md"):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        assert "approval dialog" in text, relative
+        assert "opt-in" in text, relative
+        assert (
+            "not answered" in text
+            or "leaves those for you" in text
+            or "leaves it for you" in text
+        )
+        assert "reports any prompt it sees rather than answering it" not in text
+    skill = (SKILLS / "operator.md").read_text(encoding="utf-8")
+    assert 'foil seat spawn lead --task "Write board/status.md with state: done"' in skill
+    assert "The check passes only when `updated` changes" in skill
+    assert "When the check passes, send the human's goal" in skill
+    assert "When the file shows `state: done`, send" not in skill
+    assert "no installed eligible harness" in skill
+    assert "Read the whole report before you staff" in skill
+    assert "| no |" in skill
+    assert "1. Which harnesses are installed" not in skill
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    started = readme.split("## Get started", 1)[1].split("### By hand", 1)[0]
+    assert "Limits" in started
+    chinese = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+    assert "而不是替你回答" not in chinese
+    zh_started = chinese.split("## 开始使用", 1)[1].split("### 手动操作", 1)[0]
+    assert "限制" in zh_started
+    assert "审批对话框" in zh_started
+    for relative in ("docs/demo.md", "docs/demo.zh-CN.md"):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        assert "foil 0.3.1" not in text
+        assert "foil 0.4.0" in text
+        assert "illustration" in text or "示意" in text
+    requirements = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
+    onboarding = requirements.split("### Onboarding", 1)[1].split("## 4.", 1)[0]
+    assert "Onboarding adds no command or flag" in onboarding
+    assert "an approval prompt, or an error" not in onboarding
+
+
 def test_operator_reports_the_checklist() -> None:
     text = (SKILLS / "operator.md").read_text(encoding="utf-8")
     section = text.split("## Check in", 1)[1].split("\n## ", 1)[0]
