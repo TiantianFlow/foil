@@ -14,7 +14,11 @@ from foil.tmux import TmuxController, TmuxTarget
 from tests.test_slice_b import _mail, _repo, _seed
 
 
-def _keys(monkeypatch: pytest.MonkeyPatch, code: int = 0) -> list[list[str]]:
+def _keys(
+    monkeypatch: pytest.MonkeyPatch,
+    code: int = 0,
+    pauses: list[tuple[float, int]] | None = None,
+) -> list[list[str]]:
     calls: list[list[str]] = []
 
     def run(self: TmuxController, argv: list[str]) -> subprocess.CompletedProcess[str]:
@@ -34,7 +38,12 @@ def _keys(monkeypatch: pytest.MonkeyPatch, code: int = 0) -> list[list[str]]:
             return subprocess.CompletedProcess(argv, 0, stdout, "")
         return subprocess.CompletedProcess(argv, code, "", "")
 
+    def pause(seconds: float) -> None:
+        if pauses is not None:
+            pauses.append((seconds, len(calls)))
+
     monkeypatch.setattr("foil.tmux.TmuxController._run", run)
+    monkeypatch.setattr("foil.tmux.time.sleep", pause)
     return calls
 
 
@@ -43,7 +52,8 @@ def test_send_types_the_sender_and_mail_path(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _seed(repo, "lead", window_id="@12")
-    calls = _keys(monkeypatch)
+    pauses: list[tuple[float, int]] = []
+    calls = _keys(monkeypatch, pauses=pauses)
     assert main(["send", "lead", "hello"]) == 0
     mail = _mail(repo, "lead")[0]
     line = f"user {mail.resolve()}"
@@ -52,6 +62,8 @@ def test_send_types_the_sender_and_mail_path(
         ["send-keys", "-l", "-t", "@12", "--", line],
         ["send-keys", "-t", "@12", "Enter"],
     ]
+    # The pause is after the literal line and before Enter: two tmux calls so far.
+    assert pauses == [(0.2, 2)]
     assert "hello" not in line
 
 
@@ -60,7 +72,8 @@ def test_missing_window_keeps_the_mail(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _seed(repo, "lead", window_id="@12")
-    calls = _keys(monkeypatch, code=1)
+    pauses: list[tuple[float, int]] = []
+    calls = _keys(monkeypatch, code=1, pauses=pauses)
     assert main(["send", "lead", "hello"]) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
@@ -68,6 +81,7 @@ def test_missing_window_keeps_the_mail(
     assert len(_mail(repo, "lead")) == 1
     assert calls[0][:4] == ["display-message", "-p", "-t", "@12"]
     assert calls[1:] == [["send-keys", "-l", "-t", "@12", "--", calls[1][-1]]]
+    assert pauses == []
     assert "hello" not in calls[1][-1]
 
 
