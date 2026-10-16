@@ -473,6 +473,105 @@ def test_peek_of_a_dead_seat_prints_its_own_pane(
     assert captured.err == ""
 
 
+def _killed_worker(repo: Path, *, window_id: str = "@1") -> None:
+    registry = empty_registry()
+    registry["fleet_id"] = "fleet-1"
+    registry["tmux_session"] = "foil-demo"
+    record = _seat("worker", window_id)
+    record["state"] = "killed"
+    record["worktree"] = "/store/worktrees/worker"
+    record["branch"] = "foil/worker"
+    registry["seats"] = {"worker": record}
+    save_registry(repo, registry)
+
+
+def test_archive_after_kill_frees_the_name_the_fake_tmux_stopped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _use_fake_tmux(tmp_path, monkeypatch)
+    repo = _project(tmp_path, monkeypatch)
+    registry = empty_registry()
+    registry["fleet_id"] = "fleet-1"
+    registry["tmux_session"] = "foil-demo"
+    record = _seat("worker", "@1")
+    record["worktree"] = "/store/worktrees/worker"
+    record["branch"] = "foil/worker"
+    registry["seats"] = {"worker": record}
+    save_registry(repo, registry)
+
+    assert main(["seat", "kill", "worker"]) == 0
+    assert _kills(tmp_path) == ["@1"]
+    assert main(["seat", "archive", "worker"]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == "archived seat 'worker'\nkept branch foil/worker\n"
+    assert "/store/worktrees/worker" not in captured.out
+    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
+    assert "worker" not in saved["seats"]
+    body = next((foil_root(repo) / "run" / "archive").glob("*.txt")).read_text(encoding="utf-8")
+    assert "worktree: /store/worktrees/worker\n" in body
+    assert "@1" not in json.loads((tmp_path / "fake-tmux-state.json").read_text())["windows"]
+
+
+def test_archive_refuses_a_killed_record_whose_fake_window_is_still_running(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _use_fake_tmux(tmp_path, monkeypatch)
+    repo = _project(tmp_path, monkeypatch)
+    _killed_worker(repo)
+
+    assert main(["seat", "archive", "worker"]) == 1
+    assert capsys.readouterr().err == "foil: seat 'worker' window is still running\n"
+    assert _kills(tmp_path) == []
+    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
+    assert saved["seats"]["worker"]["state"] == "killed"
+    assert not (foil_root(repo) / "run" / "archive").exists()
+
+
+def test_archive_refuses_a_dead_pane_that_still_carries_markers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _use_fake_tmux(tmp_path, monkeypatch)
+    state_path = tmp_path / "fake-tmux-state.json"
+    state = json.loads(state_path.read_text())
+    state["windows"]["@1"]["dead"] = "1"
+    state_path.write_text(json.dumps(state))
+    repo = _project(tmp_path, monkeypatch)
+    _killed_worker(repo)
+
+    assert main(["seat", "archive", "worker"]) == 1
+    assert capsys.readouterr().err == "foil: seat 'worker' window still exists\n"
+    assert _kills(tmp_path) == []
+    assert "@1" in json.loads(state_path.read_text())["windows"]
+    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
+    assert "worker" in saved["seats"]
+
+
+def test_archive_refuses_a_reused_live_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _use_fake_tmux(tmp_path, monkeypatch)
+    state_path = tmp_path / "fake-tmux-state.json"
+    state = json.loads(state_path.read_text())
+    state["windows"]["@1"]["seat"] = "intruder"
+    state_path.write_text(json.dumps(state))
+    repo = _project(tmp_path, monkeypatch)
+    _killed_worker(repo)
+
+    assert main(["seat", "archive", "worker"]) == 1
+    assert capsys.readouterr().err == "foil: seat 'worker' window is still running\n"
+    assert _kills(tmp_path) == []
+    assert json.loads(state_path.read_text())["windows"]["@1"]["seat"] == "intruder"
+
+
 def test_name_only_targets_require_exact_name_resolution(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
