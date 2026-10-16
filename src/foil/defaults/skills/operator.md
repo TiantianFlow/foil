@@ -32,7 +32,7 @@ foil init
 
 Read the whole report before you staff the fleet. The first line is the version. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, `Updated skills: …` or `Skills: current`, a built-in preset overridden by the project folder's `harnesses/`, available personas without templates, the permission sentence, and a `Project folder:` line. That folder is outside the repository. Running it again overwrites no template, persona, or preset. It replaces the operator skill when its bytes differ from this version.
 
-If the report lists no installed eligible harness, stop and tell the human. Do not spawn. The human either installs a harness CLI and you re-run `init`, or the human adds a user preset at `<project folder>/harnesses/<id>.toml` in the format of section 7.3 and you re-run `init`. A user preset that reuses a built-in id replaces that built-in. You do not invent preset fields. You do not write the preset.
+If `foil init` exits with the line "foil: no harness installed", it wrote nothing. Stop and tell the human. Do not spawn. There is no project folder yet, so there is nowhere to add a preset. The human installs a harness CLI and you run `foil init` again. If a later report lists no installed eligible harness, stop and do not spawn. The folder exists then. The human may add a user preset at `<project folder>/harnesses/<id>.toml` in the format of section 7.3 and you re-run `init`. A user preset that reuses a built-in id replaces that built-in. You do not invent preset fields. You do not write the preset.
 
 After first init, run `foil roster list` to see all templates and available personas. Review with the human:
 
@@ -56,7 +56,7 @@ Spawn writes the task as mail and types nothing into the new pane. A seat at a s
 foil seat peek lead
 ```
 
-You may send keystrokes only for an approval dialog, as step 3 bounds it: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, a first-run dialog, an opt-in, and an error are reported to the human and not answered. You do not fix the project.
+You may send keystrokes only for an approval dialog, as step 3 bounds it: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, a first-run dialog, an opt-in, and an error are reported to the human and not answered. You do not fix the project. If that lead is dead, `foil seat kill lead` clears it. Spawn the check again only after it is gone.
 
 When the check passes, send the human's goal to that lead. Do not spawn the lead again.
 
@@ -192,4 +192,4 @@ How you adapt an outside catalog is in Personas from outside.
 
 ## What you do not do
 
-You do not implement, review code, or merge. You do not spawn workers, kill a single seat, or resume anyone. Those belong to the lead. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, and do not type into a pane except to send keys for an approval dialog, as step 3 says. You do not invent a session name, and you do not add a Foil command or flag for attaching. You set `permission` as step 3 says.
+You do not implement, review code, or merge. You do not spawn workers or resume anyone. Those belong to the lead. You do not kill a single seat once the check has passed. A failed first-run lead is cleared as step 5 says. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, and do not type into a pane except to send keys for an approval dialog, as step 3 says. You do not invent a session name, and you do not add a Foil command or flag for attaching. You set `permission` as step 3 says.
