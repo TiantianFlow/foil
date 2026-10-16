@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Fixed
+
+- `foil send` waits 200ms after the nudge line before it sends Enter once. A harness that treats Enter inside a fast burst as an unsent paste was leaving that line in the input, both while the agent was working and while it was waiting. The message body is still never typed. Foil still does not read the pane or send Enter again. (#35)
+
 ## [0.4.1] - 2026-10-14
 
 `foil --version` prints 0.4.1.

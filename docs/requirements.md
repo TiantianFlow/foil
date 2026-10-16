@@ -113,7 +113,7 @@ human's part is one sentence; everything after step 2 is the agent's work.
 
 | ID | Requirement |
 |---|---|
-| F13 | `send` stores the message as a mail file on the board, then types one nudge line into the recipient's pane: the sender and the mail file's absolute path. The message body is never typed into a pane. |
+| F13 | `send` stores the message as a mail file on the board, then types one nudge line into the recipient's pane: the sender and the mail file's absolute path. After that line is delivered it waits 200ms, then sends Enter once, so a harness that treats Enter inside a fast burst as an unsent paste (Claude Code keeps that burst open for 100ms, Codex for 120ms) submits the line instead of leaving it in the input. The wait does not depend on the pane. Foil does not read the pane and does not send Enter again. The message body is never typed into a pane. |
 | F14 | Mail sent from outside the fleet shows the sender as `user`. There is no operator mailbox. |
 | F15 | The board has a notes area for unaddressed shared files. Seats write notes with ordinary file tools and read them with `foil board read` and `foil board list`. Notes wake no one. |
 | F16 | Board contracts (section 7.4) are Markdown files with versioned front matter. Foil defines them and tells seats about them. Foil does not act on contract fields (`state`, `outcome`, and the rest). `mail read`, `mail list`, and `board read` may parse front matter only to print the file. |
@@ -193,7 +193,7 @@ accepts `--help`, and `foil --version` prints the version.
 | `foil seat resume [NAME]` | none | Restarts `dead` seats (F9). |
 | `foil seat list` | `--json` | Lists seats (F10). Human: `<name>\t<template>\t<state>\t<worktree>\t<harness>[/<model>]\t<description>`. JSON adds `harness`, `model`, and `description`. |
 | `foil seat peek NAME` | `--lines N` (default 40) | Prints the pane tail (F11). A dead seat whose window still exists and still carries this seat's markers is printed the same way. A killed seat, a dead seat whose window is gone, or a stored window id that now names another window is an error. |
-| `foil send TO TEXT` | none; `TEXT` = `-` reads stdin | Writes mail and nudges the recipient (F13, F14). |
+| `foil send TO TEXT` | none; `TEXT` = `-` reads stdin | Writes mail and nudges the recipient. Enter follows the nudge line after 200ms (F13, F14). |
 | `foil mail read PATH` | `--json` | Reads mail file at PATH. PATH must be absolute and in the project folder's `board/mail/`. Human output: body only. JSON: full contract + body. |
 | `foil mail list` | `--json` | Lists mail for current seat (FOIL_SEAT_ID required). A symlinked `board/mail` lists nothing. Sorted newest first. Human: `<time> <from> <path>` per line. JSON: array of mail metadata. |
 | `foil board read PATH` | `--json` | Reads board file at PATH (relative to board root or absolute). PATH must be in the project folder's `board/`. Human output: full file. JSON: parsed frontmatter + body. |
