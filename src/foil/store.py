@@ -155,6 +155,7 @@ def create_exclusive(path: Path, payload: bytes) -> None:
         raise
     temporary.unlink(missing_ok=True)
     path.chmod(0o600)
+    _fsync_dir(path.parent)
 
 
 def write_json(path: Path, payload: Mapping[str, Any]) -> None:

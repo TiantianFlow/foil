@@ -313,7 +313,7 @@ def _write_json(path: Path, text: str) -> None:
 def _run_files(root: Path) -> list[Path]:
     run = root / "run"
     targets = [run / "registry.json"]
-    for folder in ("plans", "instructions"):
+    for folder in ("plans", "instructions", "archive"):
         directory = run / folder
         if directory.is_dir():
             targets.extend(
