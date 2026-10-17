@@ -594,6 +594,25 @@ def test_f33_decline_with_text_writes_nothing(
 # --- Lifecycle ---
 
 
+def test_f33_empty_stored_state_still_reaches_every_seat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _fleet(
+        repo,
+        _seat("reviewer-1", state="", window="@3"),
+        _seat("implementer-1", state="", window="@2"),
+        _seat("lead", state="", window="@1"),
+    )
+    monkeypatch.setenv("FOIL_SEAT_ID", "")
+    calls = _install_tmux(monkeypatch)
+    assert main(["post", "from outside"]) == 0
+    fields, _body = _open(_room(repo)[0])
+    assert fields["from"] == "user"
+    assert fields["nudged"] == ["implementer-1", "lead", "reviewer-1"]
+    assert _nudge_windows(calls) == ["@2", "@1", "@3"]
+
+
 def test_f33_dead_seat_is_omitted_and_the_file_remains(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

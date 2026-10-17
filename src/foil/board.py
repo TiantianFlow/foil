@@ -182,7 +182,9 @@ def _wake_names(toplevel: Path) -> list[str]:
         if author is not None and name == author:
             continue
         seat = registry["seats"][name]
-        if seat.get("state") != "alive":
+        # Spawn leaves state empty. Alive is the window check below, the same
+        # one mail uses. A stored dead or killed seat is omitted either way.
+        if seat.get("state") in {"dead", "killed"}:
             continue
         window = seat.get("window_id") or ""
         if not window:
