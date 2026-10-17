@@ -13,10 +13,11 @@ import pytest
 from foil.cli import main
 from foil.errors import FoilError
 from foil.lifecycle import _git, archive_seat
-from foil.project import _swap_prefix, _texts_in_run, foil_root
+from foil.project import _replace_text, _swap_prefix, _texts_in_run, foil_root
 from foil.store import (
     SCHEMA_VERSION,
     SEAT_FIELDS,
+    exclusive_lock,
     load_registry,
     registry_path,
     save_registry,
@@ -553,3 +554,142 @@ def test_archived_list_ignores_an_unknown_line_and_sorts_newest_first(
     rows = json.loads(capsys.readouterr().out)
     assert [row["name"] for row in rows] == ["implementer-1", "helper"]
     assert "note" not in rows[0] and "extra" not in rows[1]
+
+
+def test_operator_skill_says_archive_keeps_the_mailbox() -> None:
+    text = (
+        Path(__file__).resolve().parents[1] / "src" / "foil" / "defaults" / "skills" / "operator.md"
+    ).read_text(encoding="utf-8")
+    assert "does not delete the worktree, the branch, the mailbox" in text
+
+
+def test_kill_does_not_restore_an_archived_seat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _fleet(tmp_path, monkeypatch)
+    assert main(["seat", "spawn", "reviewer", "--name", "helper"]) == 0
+    assert main(["seat", "kill", "implementer-1"]) == 0
+    capsys.readouterr()
+    started = threading.Event()
+    release = threading.Event()
+
+    def remove(self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
+        del self, fleet_id, target
+        if seat_id == "helper":
+            started.set()
+            assert release.wait(5)
+        return True
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.remove_verified", remove)
+    thread = threading.Thread(target=lambda: main(["seat", "kill", "helper"]))
+    thread.start()
+    assert started.wait(5)
+    assert main(["seat", "archive", "implementer-1"]) == 0
+    release.set()
+    thread.join(5)
+    assert not thread.is_alive()
+    seats = load_registry(repo)["seats"]
+    assert "implementer-1" not in seats
+    assert seats["helper"]["state"] == "killed"
+
+
+def test_spawn_does_not_restore_an_archived_seat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _fleet(tmp_path, monkeypatch)
+    assert main(["seat", "kill", "implementer-1"]) == 0
+    capsys.readouterr()
+    started = threading.Event()
+    release = threading.Event()
+
+    def launch(self: TmuxController, **kwargs: object) -> TmuxTarget:
+        del self
+        if kwargs.get("seat_id") == "helper":
+            started.set()
+            assert release.wait(5)
+        return TmuxTarget(
+            session_name=str(kwargs["session_name"]),
+            window_name=str(kwargs["window_name"]),
+            session_id="$1",
+            window_id="@99",
+        )
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.launch", launch)
+    box: dict[str, int] = {}
+
+    def run() -> None:
+        box["code"] = main(["seat", "spawn", "reviewer", "--name", "helper"])
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    assert started.wait(5)
+    assert main(["seat", "archive", "implementer-1"]) == 0
+    release.set()
+    thread.join(5)
+    assert not thread.is_alive()
+    assert box["code"] == 0
+    seats = load_registry(repo)["seats"]
+    assert "implementer-1" not in seats
+    assert seats["helper"]["window_id"] == "@99"
+
+
+def test_registry_rewrite_does_not_restore_an_archived_seat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _fleet(tmp_path, monkeypatch)
+    assert main(["seat", "kill", "implementer-1"]) == 0
+    capsys.readouterr()
+    path = registry_path(repo)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["seats"]["implementer-1"]["worktree"] = "/old/store/worktrees/implementer-1"
+    raw["seats"]["lead"]["worktree"] = "/old/store/keep"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    held = threading.Event()
+    rewrite = threading.Event()
+    entered = threading.Event()
+    real_lock = exclusive_lock
+
+    def spy(lock_path: Path):
+        entered.set()
+        return real_lock(lock_path)
+
+    monkeypatch.setattr("foil.store.exclusive_lock", spy)
+
+    def hold() -> None:
+        with real_lock(path.with_suffix(".lock")):
+            held.set()
+            assert rewrite.wait(5)
+            current = json.loads(path.read_text(encoding="utf-8"))
+            current["seats"].pop("implementer-1")
+            path.write_text(json.dumps(current), encoding="utf-8")
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    assert held.wait(5)
+
+    def run() -> None:
+        _replace_text(foil_root(repo), [("/old/store", "/new/store")])
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    assert entered.wait(5)
+    rewrite.set()
+    holder.join(5)
+    worker.join(5)
+    assert not holder.is_alive() and not worker.is_alive()
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert "implementer-1" not in saved["seats"]
+    assert saved["seats"]["lead"]["worktree"] == "/new/store/keep"
+
+
+def test_init_rewrite_does_not_follow_a_symlinked_archive(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = outside / "seat.txt"
+    target.write_text("worktree: /old/store/worktrees/implementer-1\n", encoding="utf-8")
+    archive = root / "run" / "archive"
+    archive.parent.mkdir(parents=True)
+    archive.symlink_to(outside, target_is_directory=True)
+    _replace_text(root, [("/old/store", "/new/store")])
+    assert target.read_text(encoding="utf-8") == "worktree: /old/store/worktrees/implementer-1\n"

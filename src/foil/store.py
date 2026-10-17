@@ -249,6 +249,21 @@ def save_registry(toplevel: Path, payload: Mapping[str, Any]) -> None:
         write_json(path, payload)
 
 
+def update_registry(toplevel: Path, mutate) -> dict[str, Any]:
+    """Apply ``mutate`` to a registry read under the lock, then write it.
+
+    Callers that loaded a registry earlier must not write that copy back.
+    An archive that removed a seat in between stays removed.
+    """
+
+    path = registry_path(toplevel)
+    with exclusive_lock(path.with_suffix(".lock")):
+        registry = load_registry(toplevel)
+        mutate(registry)
+        write_json(path, registry)
+        return registry
+
+
 def ensure_registry(toplevel: Path) -> None:
     path = registry_path(toplevel)
     if path.is_symlink():
