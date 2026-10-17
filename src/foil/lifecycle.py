@@ -299,7 +299,13 @@ def _persona_line(template: dict) -> str:
 
 
 def _instruction(
-    root: Path, seat: str, template: dict, *, restarted: bool, task: Path | None = None
+    root: Path,
+    seat: str,
+    template: dict,
+    *,
+    restarted: bool,
+    first_launch: bool = False,
+    task: Path | None = None,
 ) -> str:
     board = (foil_root(root) / "board").resolve()
     lessons = _accepted(root)
@@ -344,9 +350,9 @@ def _instruction(
         )
     else:
         lines.append("Run `foil mail list` and read your mail before you act.")
-    # One sentence for the lead, whose name is always reused, and for a
-    # worker whose name has an archive file. A new name does not get it.
-    if not restarted and (lead or _has_archive(root, seat)):
+    # First launch only. A native resume also leaves restarted false, and
+    # F24 does not repeat this sentence on crash recovery.
+    if first_launch and (lead or _has_archive(root, seat)):
         lines.append("Older mail in your mailbox may be from an earlier goal.")
     if lead:
         roster = []
@@ -372,10 +378,23 @@ def _instruction(
 
 
 def _write_instruction(
-    root: Path, seat: str, template: dict, *, restarted: bool, task: Path | None = None
+    root: Path,
+    seat: str,
+    template: dict,
+    *,
+    restarted: bool,
+    first_launch: bool = False,
+    task: Path | None = None,
 ) -> Path:
     path = (foil_root(root) / "run" / "instructions" / f"{seat}.md").resolve()
-    body = _instruction(root, seat, template, restarted=restarted, task=task).rstrip("\n")
+    body = _instruction(
+        root,
+        seat,
+        template,
+        restarted=restarted,
+        first_launch=first_launch,
+        task=task,
+    ).rstrip("\n")
     text = f"{body}\nRe-read `{path}` whenever you are woken.\n"
     scan(text)
     write_bytes(path, text.encode())
@@ -407,10 +426,13 @@ def _open(
     session_id: str,
     native: bool,
     restarted: bool,
+    first_launch: bool = False,
     task: Path | None = None,
 ) -> str:
     cwd = Path(worktree) if worktree else root
-    instruction = _write_instruction(root, seat, template, restarted=restarted, task=task)
+    instruction = _write_instruction(
+        root, seat, template, restarted=restarted, first_launch=first_launch, task=task
+    )
     prompt = instruction.read_text(encoding="utf-8")
     argv = expand_argv(
         preset,
@@ -500,6 +522,7 @@ def spawn_seat(
             session_id=native,
             native=False,
             restarted=False,
+            first_launch=True,
             task=mailed,
         )
     except Exception:
@@ -641,6 +664,8 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         current = fresh["seats"].get(name)
         if current is None:
             raise FoilError(f"foil: unknown seat '{shown(name)}'")
+        if current.get("state") == "killed":
+            raise FoilError(f"foil: seat '{shown(name)}' is killed")
         if (current.get("window_id") or "") != old_window:
             raise FoilError(f"foil: seat '{shown(name)}' changed")
         fresh["seats"][name] = dict(record)

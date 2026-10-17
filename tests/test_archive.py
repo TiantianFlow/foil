@@ -12,7 +12,7 @@ import pytest
 
 from foil.cli import main
 from foil.errors import FoilError
-from foil.lifecycle import _git, archive_seat
+from foil.lifecycle import _git, archive_seat, resume_seats
 from foil.project import _replace_text, _swap_prefix, _texts_in_run, foil_root
 from foil.store import (
     SCHEMA_VERSION,
@@ -556,6 +556,82 @@ def test_archived_list_ignores_an_unknown_line_and_sorts_newest_first(
     assert "note" not in rows[0] and "extra" not in rows[1]
 
 
+def test_native_resume_does_not_repeat_the_old_mail_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _fleet(tmp_path, monkeypatch)
+    instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
+    assert "may be from an earlier goal" in instruction.read_text(encoding="utf-8")
+
+    def matches_window(
+        self: TmuxController,
+        fleet_id: str,
+        seat_id: str,
+        session_name: str,
+        window_id: str,
+    ) -> bool:
+        del self, fleet_id, seat_id, session_name, window_id
+        return False
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.matches_window", matches_window)
+    assert main(["seat", "resume", "lead"]) == 0
+    capsys.readouterr()
+    text = instruction.read_text(encoding="utf-8")
+    assert "may be from an earlier goal" not in text
+    assert "You were restarted" not in text
+
+
+def test_resume_does_not_unkill_a_seat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _fleet(tmp_path, monkeypatch)
+
+    def matches_window(
+        self: TmuxController,
+        fleet_id: str,
+        seat_id: str,
+        session_name: str,
+        window_id: str,
+    ) -> bool:
+        del self, fleet_id, seat_id, session_name, window_id
+        return False
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.matches_window", matches_window)
+    started = threading.Event()
+    release = threading.Event()
+
+    def launch(self: TmuxController, **kwargs: object) -> TmuxTarget:
+        del self
+        if kwargs.get("seat_id") == "implementer-1":
+            started.set()
+            assert release.wait(5)
+        return TmuxTarget(
+            session_name=str(kwargs["session_name"]),
+            window_name=str(kwargs["window_name"]),
+            session_id="$1",
+            window_id="@77",
+        )
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.launch", launch)
+    box: dict[str, str] = {}
+
+    def run() -> None:
+        try:
+            resume_seats(repo, "implementer-1")
+        except FoilError as exc:
+            box["error"] = str(exc)
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    assert started.wait(5)
+    assert main(["seat", "kill", "implementer-1"]) == 0
+    release.set()
+    thread.join(5)
+    assert not thread.is_alive()
+    assert box["error"] == "foil: seat 'implementer-1' is killed"
+    assert load_registry(repo)["seats"]["implementer-1"]["state"] == "killed"
+
+
 def test_operator_skill_says_archive_keeps_the_mailbox() -> None:
     text = (
         Path(__file__).resolve().parents[1] / "src" / "foil" / "defaults" / "skills" / "operator.md"
@@ -662,6 +738,13 @@ def test_registry_rewrite_does_not_restore_an_archived_seat(
             current = json.loads(path.read_text(encoding="utf-8"))
             current["seats"].pop("implementer-1")
             path.write_text(json.dumps(current), encoding="utf-8")
+            archive = path.parent / "archive"
+            archive.mkdir(exist_ok=True)
+            prose = archive / "20260101T000000000000Z-implementer-1.txt"
+            prose.write_text(
+                "worktree: /old/store/worktrees/implementer-1\n",
+                encoding="utf-8",
+            )
 
     holder = threading.Thread(target=hold)
     holder.start()
@@ -680,6 +763,8 @@ def test_registry_rewrite_does_not_restore_an_archived_seat(
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert "implementer-1" not in saved["seats"]
     assert saved["seats"]["lead"]["worktree"] == "/new/store/keep"
+    prose = path.parent / "archive" / "20260101T000000000000Z-implementer-1.txt"
+    assert prose.read_text(encoding="utf-8") == "worktree: /new/store/worktrees/implementer-1\n"
 
 
 def test_init_rewrite_does_not_follow_a_symlinked_archive(tmp_path: Path) -> None:
