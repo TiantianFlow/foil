@@ -99,7 +99,8 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     rule = (
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
         "approval prompts, though some harnesses still ask for some commands. "
-        "Set it in each templates/<role>.toml in the project folder; "
+        "Set permission in roles.toml in the project folder; "
+        "a templates/<role>.toml overrides that role when the file is present; "
         "auto on the lead alone does not "
         "let the workers run unattended."
     )

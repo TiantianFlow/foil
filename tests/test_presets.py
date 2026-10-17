@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tomllib
@@ -621,17 +622,32 @@ def test_init_reports_an_overridden_builtin_and_leaves_the_preset(
     assert main(["init"]) == 0
     capsys.readouterr()
     harnesses = foil_root(repo) / "harnesses"
-    preset = files("foil").joinpath("defaults", "harnesses", "claude.toml").read_bytes()
-    (harnesses / "claude.toml").write_bytes(preset)
-    (harnesses / "grok.toml").write_bytes(
-        files("foil").joinpath("defaults", "harnesses", "grok.toml").read_bytes()
+    preset = (
+        'id = "claude"\n'
+        'command = ["claude", "{prompt}"]\n'
+        'session_id = "generated"\n'
+        "env = []\n\n"
+        "[permission]\n"
+        "ask = []\n"
+        "auto = []\n"
+    )
+    (harnesses / "claude.toml").write_text(preset, encoding="utf-8")
+    (harnesses / "grok.toml").write_text(
+        'id = "grok"\n'
+        'command = ["grok", "{prompt}"]\n'
+        'session_id = "generated"\n'
+        "env = []\n\n"
+        "[permission]\n"
+        "ask = []\n"
+        "auto = []\n",
+        encoding="utf-8",
     )
     (harnesses / "fake.toml").write_text('id = "fake"\n', encoding="utf-8")
     assert main(["init"]) == 0
     report = capsys.readouterr().out
     assert "Built-in presets overridden by harnesses: claude, grok\n" in report
     assert "fake" not in report.split("Built-in presets overridden", 1)[1].split("\n", 1)[0]
-    assert (harnesses / "claude.toml").read_bytes() == preset
+    assert (harnesses / "claude.toml").read_text(encoding="utf-8") == preset
 
 
 def test_lead_persona_does_not_take_the_operator_role() -> None:
@@ -709,3 +725,28 @@ def test_reviewer_persona_does_not_edit_files() -> None:
         encoding="utf-8"
     )
     assert "do not edit files" in text.lower()
+
+
+def test_init_writes_three_lists_and_a_fleet_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _fresh_repo(tmp_path, monkeypatch)
+    assert main(["init"]) == 0
+    root = foil_root(repo)
+    catalog = tomllib.loads((root / "harnesses.toml").read_text(encoding="utf-8"))
+    claude = next(item for item in catalog["harness"] if item["id"] == "claude")
+    assert "sonnet" in claude["models"]
+    assert "opus" in claude["models"]
+    roles = tomllib.loads((root / "roles.toml").read_text(encoding="utf-8"))
+    by_id = {item["id"]: item for item in roles["role"]}
+    assert by_id["lead"]["description"].startswith("You are the lead seat")
+    assert by_id["implementer"]["worktree"] is True
+    maps = tomllib.loads((root / "mapping.toml").read_text(encoding="utf-8"))
+    assigned = {item["role"]: item["harness"] for item in maps["map"]}
+    assert assigned["lead"] == "claude"
+    assert assigned["reviewer"] == "codex"
+    fleet = json.loads((root / "fleet.json").read_text(encoding="utf-8"))
+    assert fleet["workspace"] == str(repo.resolve())
+    assert (root / "board" / "room").is_dir()
+    assert main(["init"]) == 0
+    assert fleet == json.loads((root / "fleet.json").read_text(encoding="utf-8"))
