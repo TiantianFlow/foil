@@ -11,7 +11,15 @@ Notable changes to Foil, newest first.
 ### Changed
 
 - The command surface is eight top-level commands and twenty-one actions.
-- A nudge path under `board/room/` is read with `foil board read`. A launch whose prompt is the instruction file tells the seat to list `board/room` and read threads it has not answered. `foil send` is unchanged.
+- A nudge path under `board/room/` is read with `foil board read`. A launch whose prompt is the instruction file tells the seat to list `board/room` and read threads it has not answered. `foil post` types the same nudge as `foil send`, including the 200ms wait before Enter.
+
+## [0.4.2] - 2026-10-16
+
+`foil --version` prints 0.4.2.
+
+### Fixed
+
+- `foil send` waits 200ms after the nudge line before it sends Enter once. A harness that treats Enter inside a fast burst as an unsent paste was leaving that line in the input, both while the agent was working and while it was waiting. The message body is still never typed. Foil still does not read the pane or send Enter again. (#35)
 
 ## [0.4.1] - 2026-10-14
 
@@ -269,6 +277,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.4.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.2
 [0.4.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.1
 [0.4.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.0
 [0.3.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.4

@@ -1,7 +1,7 @@
 # Foil · 运筹
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.1-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.4.2-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -157,7 +157,7 @@ Templates default to `permission = "auto"`. An omitted permission runs the seat 
 
 Foil never interprets what is on a seat's screen. `foil seat peek` prints the raw tmux capture, and `foil seat list` reports `alive`, `dead`, or `killed` from whether the seat's window still exists, not from what is on its screen. Agents say whether they are blocked or done in board files. Foil does not scrape a pane, does not decide that a dialog is present, and does not send the keys.
 
-A nudge is typed even when the window is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path, then Enter. `foil post` writes one room file and types that same line into every other alive seat. The message body is never typed. `foil post --re PATH --decline` writes a room file and types nothing. If the agent is not waiting for input, those keystrokes still go into the window. Foil does not look at the screen to decide.
+A nudge is typed even when the window is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path. `foil post` writes one room file and types that same line into every other alive seat. Either command waits 200ms, then sends Enter once, so a harness that treats Enter inside a fast burst as an unsent paste submits the line instead of leaving it in the input. The message body is never typed. `foil post --re PATH --decline` writes a room file and types nothing. If the agent is not waiting for input, those keystrokes still go into the window. Foil does not look at the screen to decide, and it does not send Enter again.
 
 ## Learn more
 
