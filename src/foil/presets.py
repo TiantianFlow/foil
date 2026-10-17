@@ -17,6 +17,7 @@ from foil.store import SAFE_ID, create_exclusive, scan, write_bytes
 _PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}")
 _PRESET_KEYS = {"id", "command", "permission", "resume", "session_id", "env", "unverified"}
 _TEMPLATE_KEYS = {"harness", "model", "persona", "worktree", "permission"}
+_ENTRY_KEYS = {"id", "model"}
 _ROLES = ("lead", "implementer", "reviewer")
 BUILTIN_IDS = ("claude", "codex", "gemini", "opencode", "grok", "fake")
 
@@ -118,6 +119,80 @@ def _fill(argv: list[str], values: dict[str, str | None]) -> list[str]:
     return filled
 
 
+def _toml_basic(value: str) -> str:
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\b", "\\b")
+        .replace("\t", "\\t")
+        .replace("\n", "\\n")
+        .replace("\f", "\\f")
+        .replace("\r", "\\r")
+    )
+    return f'"{escaped}"'
+
+
+def _entry(harness_id: Any, model: Any) -> dict[str, str]:
+    if (
+        not isinstance(harness_id, str)
+        or not harness_id
+        or not SAFE_ID.fullmatch(harness_id)
+        or not isinstance(model, str)
+        or model.startswith("-")
+    ):
+        _fail("template")
+    return {"id": harness_id, "model": model}
+
+
+def _harness_entries(raw: dict[str, Any]) -> list[dict[str, str]]:
+    harness = raw.get("harness")
+    # Legacy string form (`harness = "id"`, optional top-level `model`).
+    # Remove this read when the project version reaches 0.5.0 or higher.
+    if isinstance(harness, str):
+        return [_entry(harness, raw.get("model", ""))]
+    if "model" in raw or not isinstance(harness, list) or not harness:
+        _fail("template")
+    entries: list[dict[str, str]] = []
+    for item in harness:
+        if not isinstance(item, dict) or set(item) - _ENTRY_KEYS or "id" not in item:
+            _fail("template")
+        entries.append(_entry(item["id"], item.get("model", "")))
+    return entries
+
+
+def entry_label(entry: dict[str, str]) -> str:
+    return f"{entry['id']}/{entry['model']}" if entry["model"] else entry["id"]
+
+
+def render_template(
+    entries: list[dict[str, str]],
+    *,
+    persona: str = "",
+    worktree: bool = False,
+    permission: str = "auto",
+) -> str:
+    """Write the canonical harness list. A missing model is omitted."""
+
+    head: list[str] = []
+    if persona:
+        head.append(f"persona = {_toml_basic(persona)}")
+    head.append(f"worktree = {'true' if worktree else 'false'}")
+    head.append(f"permission = {_toml_basic(permission)}")
+    blocks = ["\n".join(head)]
+    for entry in entries:
+        lines = ["[[harness]]", f"id = {_toml_basic(entry['id'])}"]
+        if entry.get("model"):
+            lines.append(f"model = {_toml_basic(entry['model'])}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) + "\n"
+
+
+def select_harness(entries: list[dict[str, str]], count: int) -> dict[str, str]:
+    """Return ``entries[count % len(entries)]``."""
+
+    return entries[count % len(entries)]
+
+
 def expand_argv(
     preset: dict[str, Any],
     *,
@@ -156,18 +231,14 @@ def load_template(toplevel: Path, name: str) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise FoilError(f"foil: unknown template '{name}'")
     raw = _load_toml(path.read_text(encoding="utf-8"), "template")
-    harness = raw.get("harness")
-    model = raw.get("model", "")
+    if set(raw) - _TEMPLATE_KEYS:
+        _fail("template")
+    entries = _harness_entries(raw)
     persona = raw.get("persona", "")
     worktree = raw.get("worktree", False)
     permission = _permission_field(raw)
     if (
-        set(raw) - _TEMPLATE_KEYS
-        or not isinstance(harness, str)
-        or not SAFE_ID.fullmatch(harness)
-        or not isinstance(model, str)
-        or model.startswith("-")
-        or not isinstance(persona, str)
+        not isinstance(persona, str)
         or persona.startswith("-")
         or not isinstance(worktree, bool)
         or permission not in {"ask", "auto"}
@@ -176,8 +247,7 @@ def load_template(toplevel: Path, name: str) -> dict[str, Any]:
     return {
         "name": name,
         "path": path,
-        "harness": harness,
-        "model": model,
+        "harness": entries,
         "persona": persona,
         "worktree": worktree,
         "permission": permission,
@@ -251,10 +321,11 @@ def launch_command(
     toplevel: Path, name: str, *, prompt: str, session_id: str | None = None
 ) -> list[str]:
     template = load_template(toplevel, name)
-    preset = load_preset(toplevel, template["harness"])
+    entry = template["harness"][0]
+    preset = load_preset(toplevel, entry["id"])
     return expand_argv(
         preset,
-        model=template["model"] or None,
+        model=entry["model"] or None,
         prompt=prompt,
         session_id=session_id,
         permission=template["permission"],
@@ -347,12 +418,11 @@ def write_default_templates(toplevel: Path) -> list[str]:
     second = found[1]["id"] if len(found) > 1 else first
     for role in missing:
         harness = second if role == "reviewer" else first
-        worktree = "true" if role == "implementer" else "false"
-        body = (
-            f'harness = "{harness}"\n'
-            f'persona = "personas/{role}.md"\n'
-            f"worktree = {worktree}\n"
-            'permission = "auto"\n'
+        body = render_template(
+            [{"id": harness, "model": ""}],
+            persona=f"personas/{role}.md",
+            worktree=role == "implementer",
+            permission="auto",
         )
         target = directory / f"{role}.toml"
         if not target.exists() and not target.is_symlink():

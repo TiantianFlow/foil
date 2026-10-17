@@ -34,8 +34,9 @@ Read /var/foil/projects/your-repo-1a2b3c/skills/operator.md and follow it. My go
 ```
 
 `foil init` 把项目目录写在仓库之外，工作区里什么都不写，所以 `git status` 保持干净。
-输出的第一行是版本号，中间的报告（这里有删节）列出已安装的 harness 和 init 写了什么；
-最后一行是你稍后要粘贴给自己的 Agent 的那句话。路径以报告打印的为准。
+输出的第一行是 `foil --version` 打印的版本号。样本里的 `foil 0.4.0` 是一次较早运行的示意，
+不是这份文档所在版本打印的版本号。中间的报告（这里有删节）列出已安装的 harness 和 init
+写了什么；最后一行是你稍后要粘贴给自己的 Agent 的那句话。路径以报告打印的为准。
 
 ## 2. 给每个角色选 harness 和权限
 
@@ -44,11 +45,15 @@ Read /var/foil/projects/your-repo-1a2b3c/skills/operator.md and follow it. My go
 
 ```toml
 # <项目目录>/templates/implementer.toml
-harness = "codex"
 persona = "personas/implementer.md"
 worktree = true
 permission = "auto"
+
+[[harness]]
+id = "codex"
 ```
+
+再写一个 `[[harness]]` 项，并可以带上 `model`，这个角色之后每增加一个席位就取列表中的下一项。只有一项时就一直用这一项。
 
 `worktree = true` 让每个实现者拥有自己的 Git worktree 和分支。省略 `permission` 时
 取值是 `auto`，席位无人值守地运行。`permission = "ask"` 是显式选择：
@@ -180,12 +185,13 @@ reviewer-1	reviewer	killed		claude	You check the change the lead names and repor
 
 ## 如果什么都没发生
 
-运行 `foil seat peek lead`。一个没有进展的席位，通常停在下面某一种画面上：
+运行 `foil seat peek lead`。一个没有进展的席位，通常停在对话框上。操作员回答审批对话框，
+其余的报告出来。
 
-- 登录提示：先手动登录一次那个 CLI，然后 `foil seat kill lead`，再重新启动主座；
-- 文件夹信任提示：在那个窗口里接受它。席位工作树在仓库之外，信任仓库一次覆盖不到它。每个席位标签对每个 harness 都要信任一次；
-- 审批提示：在那个窗口里批准（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入），
-  或者设置 `permission = "auto"`；
-- harness 自己的首次运行或意见征集对话框：用同样的办法回答它。
+- 审批对话框：文件夹信任提示、登录提示，或一个停住席位、直到有人批准的提示。操作员可以回答它。
+  你也可以在窗口里回答（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入）。席位工作树在仓库之外，
+  信任仓库一次覆盖不到它。每个席位标签对每个 harness 都要信任一次。CLI 在窗格里完成不了的登录，
+  先手动登录一次，然后 `foil seat kill lead`，再重新启动主座。
+- 更新对话框、首次运行对话框或意见征集：操作员报告它，留给你在窗口里回答。
 
 如果 tmux 挂了或机器重启了，`foil seat resume` 会重新启动所有没被 kill 的席位。

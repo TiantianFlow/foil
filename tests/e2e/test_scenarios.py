@@ -66,7 +66,7 @@ def _prepare(
     for role in ("lead", "implementer", "reviewer"):
         path = templates / f"{role}.toml"
         text = re.sub(
-            r'(?m)^harness = ".*"$', 'harness = "fake"', path.read_text(encoding="utf-8"), count=1
+            r'(?m)^id = ".*"$', 'id = "fake"', path.read_text(encoding="utf-8"), count=1
         )
         path.write_text(text, encoding="utf-8")
     return repo
@@ -115,14 +115,14 @@ def _set_auto(repo: Path) -> None:
 
 
 def _set_harness(repo: Path, harness: str) -> None:
-    """Rewrite the harness line of the three default templates."""
+    """Rewrite the harness id of the three default templates."""
 
     templates = foil_root(repo) / "templates"
     for role in ("lead", "implementer", "reviewer"):
         path = templates / f"{role}.toml"
         text = re.sub(
-            r'(?m)^harness = ".*"$',
-            f'harness = "{harness}"',
+            r'(?m)^id = ".*"$',
+            f'id = "{harness}"',
             path.read_text(encoding="utf-8"),
             count=1,
         )
@@ -666,15 +666,15 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
 
     try:
         version = foil("--version")
-        assert version.stdout.strip() == "foil 0.4.2", version.stderr
+        assert version.stdout.strip() == "foil 0.4.3", version.stderr
         assert Path(shutil.which("foil", path=environment["PATH"]) or "") == bindir / "foil"
         assert foil("init").returncode == 0
         templates = foil_root(repo) / "templates"
         for role in ("lead", "implementer", "reviewer"):
             path = templates / f"{role}.toml"
             text = re.sub(
-                r'(?m)^harness = ".*"$',
-                'harness = "fake"',
+                r'(?m)^id = ".*"$',
+                'id = "fake"',
                 path.read_text(encoding="utf-8"),
                 count=1,
             )
@@ -784,13 +784,13 @@ def test_scenario_7_ai_native_onboarding(
     reviewer = templates / "reviewer.toml"
     implementer.write_text(
         implementer.read_text(encoding="utf-8").replace(
-            'harness = "claude"', 'harness = "codex"', 1
+            'id = "claude"', 'id = "codex"', 1
         ),
         encoding="utf-8",
     )
     reviewer.write_text(
         reviewer.read_text(encoding="utf-8").replace(
-            'harness = "codex"', 'harness = "gemini"', 1
+            'id = "codex"', 'id = "gemini"', 1
         ),
         encoding="utf-8",
     )
@@ -811,7 +811,7 @@ def test_scenario_7_ai_native_onboarding(
     for role in ("lead", "implementer", "reviewer"):
         path = templates / f"{role}.toml"
         text = re.sub(
-            r'(?m)^harness = ".*"$', 'harness = "fake"', path.read_text(encoding="utf-8"), count=1
+            r'(?m)^id = ".*"$', 'id = "fake"', path.read_text(encoding="utf-8"), count=1
         )
         path.write_text(text, encoding="utf-8")
 
@@ -857,7 +857,7 @@ def test_unattended_templates_and_peek_on_timeout(
         for role in ("lead", "implementer", "reviewer"):
             text = (foil_root(repo) / "templates" / f"{role}.toml").read_text(encoding="utf-8")
             assert 'permission = "auto"\n' in text
-            assert 'harness = "fake"\n' in text
+            assert 'id = "fake"\n' in text
         assert main(["seat", "spawn", "lead"]) == 0
         deadline = time.monotonic() + 20
         ready = ""
@@ -886,4 +886,4 @@ def test_e2e_harness_override_rewrites_the_three_templates(
     repo = _prepare(tmp_path, "scenario-6", monkeypatch, fake=False)
     for role in ("lead", "implementer", "reviewer"):
         text = (foil_root(repo) / "templates" / f"{role}.toml").read_text(encoding="utf-8")
-        assert 'harness = "codex"\n' in text
+        assert 'id = "codex"\n' in text

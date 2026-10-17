@@ -430,7 +430,10 @@ def test_spawn_records_the_model_and_an_older_registry_still_loads(
     _launch(monkeypatch)
     template = foil_root(repo) / "templates" / "lead.toml"
     original = template.read_text(encoding="utf-8")
-    template.write_text(original + 'model = "demo-model"\n', encoding="utf-8")
+    template.write_text(
+        original.replace('id = "claude"\n', 'id = "claude"\nmodel = "demo-model"\n', 1),
+        encoding="utf-8",
+    )
     assert main(["seat", "spawn", "lead"]) == 0
     assert load_registry(repo)["seats"]["lead"]["model"] == "demo-model"
     path = foil_root(repo) / "run" / "registry.json"
@@ -552,3 +555,192 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
         (foil_root(repo) / "run" / "plans" / "seat-fake.json").read_text(encoding="utf-8")
     )
     assert fake_plan["argv"][fake_plan["argv"].index("--prompt") + 1] == fake
+
+
+def _registry_file(repo: Path) -> dict:
+    return json.loads((foil_root(repo) / "run" / "registry.json").read_text(encoding="utf-8"))
+
+
+_REGISTRY_KEYS = {"schema_version", "fleet_id", "tmux_session", "lead", "seats"}
+
+
+def _two_entries(role: str) -> str:
+    return (
+        f'persona = "personas/{role}.md"\n'
+        "worktree = false\n"
+        'permission = "auto"\n'
+        "\n"
+        "[[harness]]\n"
+        'id = "claude"\n'
+        'model = "opus"\n'
+        "\n"
+        "[[harness]]\n"
+        'id = "codex"\n'
+        'model = "gpt-5.5"\n'
+    )
+
+
+def _killable(monkeypatch: pytest.MonkeyPatch) -> None:
+    def matches_window(
+        self: TmuxController,
+        fleet_id: str,
+        seat_id: str,
+        session_name: str,
+        window_id: str,
+    ) -> bool:
+        del self, fleet_id, seat_id, session_name, window_id
+        return True
+
+    def stop(self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
+        del self, fleet_id, seat_id, target
+        return True
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.matches_window", matches_window)
+    monkeypatch.setattr("foil.lifecycle.TmuxController.remove_verified", stop)
+
+
+def _plan(calls: list[dict], index: int = -1) -> dict:
+    return json.loads(Path(calls[index]["runner_argv"][3]).read_text(encoding="utf-8"))
+
+
+def test_legacy_string_harness_spawns_that_pair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    (foil_root(repo) / "templates" / "lead.toml").write_text(
+        'harness = "claude"\n'
+        'model = "opus"\n'
+        'persona = "personas/lead.md"\n'
+        "worktree = false\n"
+        'permission = "auto"\n',
+        encoding="utf-8",
+    )
+    assert main(["seat", "spawn", "lead"]) == 0
+    seat = load_registry(repo)["seats"]["lead"]
+    assert seat["harness"] == "claude"
+    assert seat["model"] == "opus"
+    plan = _plan(calls)
+    assert plan["argv"][0] == "claude"
+    assert "opus" in plan["argv"]
+    assert set(_registry_file(repo)) == _REGISTRY_KEYS
+
+
+def test_one_entry_list_spawns_that_entry_every_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    (foil_root(repo) / "templates" / "implementer.toml").write_text(
+        'persona = "personas/implementer.md"\n'
+        "worktree = false\n"
+        'permission = "auto"\n'
+        "\n"
+        "[[harness]]\n"
+        'id = "codex"\n'
+        'model = "gpt-5.5"\n',
+        encoding="utf-8",
+    )
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    seats = load_registry(repo)["seats"]
+    assert seats["implementer-1"]["harness"] == "codex"
+    assert seats["implementer-1"]["model"] == "gpt-5.5"
+    assert seats["implementer-2"]["harness"] == "codex"
+    assert seats["implementer-2"]["model"] == "gpt-5.5"
+    assert set(_registry_file(repo)) == _REGISTRY_KEYS
+
+
+def test_spawns_alternate_and_a_failed_launch_does_not_advance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    (foil_root(repo) / "templates" / "implementer.toml").write_text(
+        'persona = "personas/implementer.md"\n'
+        "worktree = false\n"
+        'permission = "auto"\n'
+        "\n"
+        "[[harness]]\n"
+        'id = "claude"\n'
+        'model = "opus"\n'
+        "\n"
+        "[[harness]]\n"
+        'id = "codex"\n'
+        'model = "gpt-5.5"\n',
+        encoding="utf-8",
+    )
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    first = load_registry(repo)["seats"]["implementer-1"]
+    assert first["harness"] == "claude"
+    assert first["model"] == "opus"
+    assert "opus" in _plan(calls)["argv"]
+    assert set(_registry_file(repo)) == _REGISTRY_KEYS
+
+    def boom(self: TmuxController, **kwargs: object) -> TmuxTarget:
+        del self, kwargs
+        raise TmuxError("hidden")
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.launch", boom)
+    assert main(["seat", "spawn", "implementer"]) == 1
+    assert capsys.readouterr().err == "foil: could not launch seat\n"
+    saved = _registry_file(repo)
+    assert set(saved) == _REGISTRY_KEYS
+    assert "implementer-2" not in saved["seats"]
+
+    calls = _launch(monkeypatch)
+    assert main(["seat", "spawn", "implementer"]) == 0
+    second = load_registry(repo)["seats"]["implementer-2"]
+    assert second["harness"] == "codex"
+    assert second["model"] == "gpt-5.5"
+    plan = _plan(calls)
+    assert plan["argv"][0] == "codex"
+    assert "gpt-5.5" in plan["argv"]
+
+    assert main(["seat", "spawn", "implementer"]) == 0
+    assert load_registry(repo)["seats"]["implementer-3"]["harness"] == "claude"
+    assert set(_registry_file(repo)) == _REGISTRY_KEYS
+
+
+def test_a_killed_seat_still_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    _killable(monkeypatch)
+    (foil_root(repo) / "templates" / "implementer.toml").write_text(
+        _two_entries("implementer"), encoding="utf-8"
+    )
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    assert load_registry(repo)["seats"]["implementer-1"]["harness"] == "claude"
+    assert main(["seat", "kill", "implementer-1"]) == 0
+    assert load_registry(repo)["seats"]["implementer-1"]["state"] == "killed"
+    assert main(["seat", "spawn", "implementer"]) == 0
+    second = load_registry(repo)["seats"]["implementer-2"]
+    assert second["harness"] == "codex"
+    assert second["model"] == "gpt-5.5"
+    assert load_registry(repo)["seats"]["implementer-1"]["state"] == "killed"
+
+
+def test_replacing_a_killed_lead_follows_the_one_stored_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    _killable(monkeypatch)
+    (foil_root(repo) / "templates" / "lead.toml").write_text(
+        _two_entries("lead"), encoding="utf-8"
+    )
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert load_registry(repo)["seats"]["lead"]["harness"] == "claude"
+    assert main(["seat", "kill", "lead"]) == 0
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert list(load_registry(repo)["seats"]) == ["lead"]
+    assert load_registry(repo)["seats"]["lead"]["harness"] == "codex"
+    assert main(["seat", "kill", "lead"]) == 0
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert load_registry(repo)["seats"]["lead"]["harness"] == "codex"
+    assert load_registry(repo)["seats"]["lead"]["model"] == "gpt-5.5"

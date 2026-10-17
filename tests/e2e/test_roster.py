@@ -124,7 +124,8 @@ def test_roster_update_existing_template(tmp_path: Path, monkeypatch: pytest.Mon
     # Verify update
     lead_template = foil_root(repo) / "templates" / "lead.toml"
     content = lead_template.read_text()
-    assert 'harness = "codex"' in content
+    assert '[[harness]]' in content
+    assert 'id = "codex"' in content
 
     # Update implementer model
     out = io.StringIO()
@@ -221,14 +222,16 @@ def test_added_role_can_be_spawned(
         assert seat["harness"] == "fake"
         assert seat["state"] == ""
         path = foil_root(repo) / "templates" / "researcher.toml"
-        before = path.read_bytes()
         capsys.readouterr()
         assert main(["roster", "remove", "researcher"]) == 1
-        assert main(["roster", "update", "researcher", "harness=codex"]) == 1
         err = capsys.readouterr().err
-        assert err.count("\n") == 2
-        assert err.count("still in use") == 2
-        assert path.read_bytes() == before
+        assert err.count("\n") == 1
+        assert "still in use" in err
+        assert path.is_file()
+        assert main(["roster", "update", "researcher", "harness=codex"]) == 0
+        assert 'id = "codex"' in path.read_text(encoding="utf-8")
+        assert main(["seat", "list"]) == 0
+        assert "researcher-1\tresearcher\talive\t\tfake\t" in capsys.readouterr().out
     finally:
         monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
         main(["seat", "kill", "--all"])

@@ -1,7 +1,7 @@
 # 运筹 · Foil
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.2-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.4.3-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -29,7 +29,7 @@
 
 ### 每项工作都用最合适的模型，不限厂商
 
-模型各有长短：有的更会推理，有的写代码更快，有的更便宜，有的这周还剩额度。在运筹里，每个角色是一个模板，写明用哪个 harness 和哪个模型。主座可以用擅长推理的模型做规划，实现者可以用快速的模型，审查者可以来自另一家厂商，这又多了一层独立性：训练不同，盲区也不同。每个席位各自使用自己 CLI 的登录，工作因此分摊到你已经付费的多个订阅上。运筹从不保存你的密钥或登录信息。
+模型各有长短：有的更会推理，有的写代码更快，有的更便宜，有的这周还剩额度。在运筹里，每个角色是一个模板，里面是一份有序的 harness 列表，每一项是一个 id 和可选的模型。一次启动取的是该角色已经存下的席位记录条数所对应的那一项。主座可以用擅长推理的模型做规划，实现者可以用快速的模型，审查者可以来自另一家厂商，这又多了一层独立性：训练不同，盲区也不同。每个席位各自使用自己 CLI 的登录，工作因此分摊到你已经付费的多个订阅上。运筹从不保存你的密钥或登录信息。
 
 ## 它如何运转
 
@@ -90,7 +90,7 @@ flowchart TB
 
 ## 开始使用
 
-你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。在舰队开始之前，先在本仓库里把花名册用到的每个 harness 运行一次，接受它的文件夹信任、更新、首次运行和意见征集对话框。信任按每个 harness、每条路径生效。席位的工作树在项目目录里、仓库之外，所以不会沿用仓库的信任。每个席位标签对每个 harness 都要信任一次。停在这些提示上的席位，从外面看就像一个正在工作的席位。你的 Agent 会请你去做这件事，或者请你确认已经完成，并且报告它看到的任何提示，而不是替你回答。其他 CLI 只要一个小小的预设文件就能接入。
+你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。信任按每个 harness、每条路径生效。席位的工作树在项目目录里、仓库之外，所以不会沿用仓库的信任。每个席位标签对每个 harness 都要信任一次。停在这些提示上的席位，从外面看就像一个正在工作的席位。操作员回答的是审批对话框：文件夹信任提示、登录提示，或一个停住席位、直到你或操作员批准的提示。更新对话框、首次运行对话框和意见征集由它报告给你，留给你来回答。其他 CLI 要等 `foil init` 建好项目目录之后，用一个小小的预设文件接入。
 
 人要做的只有一句话。在仓库里，把它交给你已经在用的编程 Agent：
 
@@ -100,8 +100,8 @@ Install Foil from https://github.com/TiantianFlow/foil, onboard this repository 
 
 要在两个目标之间更新，顺序是先停掉、再升级、最后 `foil init`：目标完成后运行 `foil seat kill --all`，再运行一次安装命令，然后在每个项目里运行 `foil init`，再启动主座。还留着 0.3.x 仓库内 `.foil/` 的项目，要在运行安装命令之前用那个旧的 `foil` 停掉。tmux 窗口已经不在的过期席位同样算在内。如果 `PATH` 上已经没有那个旧的 `foil`，就在旁边安装 0.3.4，这不会替换当前的 `foil`：`UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。用 pipx 则是：`PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。那些席位还在时不要运行 `foil init`，也不要把那个目录挪走。上一个目标留在报告打印的项目目录里的 `board/status.md` 已经写着 `state: done`，所以启动前先记下它的 `updated` 行，等它变化。`foil seat kill --all` 之后两种情况都可能出现，所以要检查：运行 `tmux ls`。如果列出了任何会话，预设里点名的 `env` 变量来自该服务器，启动前用 `tmux set-environment -g NAME VALUE` 设置。如果它说没有服务器在运行，下一次启动会从你的 shell 拉起服务器。
 
-- Agent 安装运筹并运行 `foil init`。
-- 它读报告，并用 `foil roster` 设置 `harness`、`model` 和 `permission`，也可以直接改报告打印的项目目录里的 `templates/lead.toml`、`templates/implementer.toml` 和 `templates/reviewer.toml`。只把主座改成 `auto` 不会让工人席位无人值守。
+- Agent 安装运筹并运行 `foil init`。如果命令打印 `foil: no harness installed`，它什么都没写。先安装上面的某个 CLI，再运行一次 `foil init`。
+- 它读报告，运行 `foil roster list`，并请你在本仓库里把每个 harness id 运行一次，接受它的文件夹信任、更新、首次运行和意见征集对话框，或者请你确认已经完成。它用 `foil roster` 设置每个模板的 harness 列表和 `permission`，也可以直接改报告打印的项目目录里的 `templates/lead.toml`、`templates/implementer.toml` 和 `templates/reviewer.toml`。`init` 写入一项。`roster update` 的 `harness` 和 `model` 改的是这一项。更长的列表要改文件，一次启动取的是该角色已经存下的席位记录条数所对应的那一项。只把主座改成 `auto` 不会让工人席位无人值守。限制一节说明 `auto` 仍可能让席位停在审批提示上。
 - 它做首次运行检查，然后把目标发出去。
 - 它自己从不做项目本身的工作。
 
@@ -129,13 +129,13 @@ cd your-repo
 foil init
 ```
 
-读报告，用 `foil roster` 或直接改文件来设置那三个模板，然后只启动一次主座：
+读报告，用 `foil roster` 或直接改文件来设置那三个模板。如果项目目录里已经有 `board/status.md`，先记下它的 `updated`。然后只启动一次主座：
 
 ```sh
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-当项目目录里的 `board/status.md` 出现 `state: done`，且 `updated` 时间是新的，把目标发给这个主座。不要再启动一次主座。主座的第一条提示已经带上了它的指令，所以消息里只放目标或回答。
+当项目目录里的 `board/status.md` 出现 `state: done`，把目标发给这个主座。如果这个文件本来就在，只有 `updated` 变了才算通过。不要再启动一次主座。主座的第一条提示已经带上了它的指令，所以消息里只放目标或回答。
 
 ```sh
 foil send lead "the goal"
@@ -147,7 +147,7 @@ foil seat peek lead
 
 ### 如果什么都没发生
 
-运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在登录提示、文件夹信任提示、更新对话框、审批提示，或者 harness 自己的首次运行或意见征集对话框上。在那个窗口里处理它（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入），或者先手动登录一次那个 CLI，然后 `foil seat kill lead`，再重新启动主座。
+运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在对话框上。操作员回答的是审批对话框：文件夹信任提示、登录提示，或一个停住席位、直到有人批准的提示。更新对话框、首次运行对话框和意见征集由它报告给你，留给你来回答。那些要你在窗口里处理（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入）。CLI 在窗格里完成不了的登录，先手动登录一次，然后 `foil seat kill lead`，再重新启动主座。如果 `foil seat list` 显示这个主座是 `dead`，`foil seat kill lead` 会清掉它。等它消失之后再做一次首次运行检查。
 
 ## 限制
 
