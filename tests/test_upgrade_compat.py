@@ -79,5 +79,11 @@ def test_a_0_2_0_shaped_registry_still_loads(tmp_path: Path) -> None:
     assert seat["harness"] == "claude"
     assert seat["session_id"] == "sid"
     assert seat["model"] == ""
-    assert loaded["harness_cursor"] == {}
+    assert set(loaded) == {
+        "schema_version",
+        "fleet_id",
+        "tmux_session",
+        "lead",
+        "seats",
+    }
     assert set(seat) == set(SEAT_FIELDS)

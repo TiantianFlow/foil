@@ -674,10 +674,8 @@ def test_legacy_string_harness_loads_as_one_entry(tmp_path: Path) -> None:
 
 def test_one_entry_list_always_selects_that_entry() -> None:
     entry = {"id": "claude", "model": ""}
-    for cursor in (0, 1, 5):
-        chosen, nxt = select_harness([entry], cursor)
-        assert chosen is entry
-        assert nxt == cursor + 1
+    for count in (0, 1, 5):
+        assert select_harness([entry], count) is entry
 
 
 def test_select_harness_walks_the_list() -> None:
@@ -685,10 +683,8 @@ def test_select_harness_walks_the_list() -> None:
         {"id": "claude", "model": "opus"},
         {"id": "codex", "model": "gpt-5.5"},
     ]
-    first, cursor = select_harness(entries, 0)
-    second, cursor = select_harness(entries, cursor)
-    third, _nxt = select_harness(entries, cursor)
-    assert [first["id"], second["id"], third["id"]] == ["claude", "codex", "claude"]
+    chosen = [select_harness(entries, count)["id"] for count in range(3)]
+    assert chosen == ["claude", "codex", "claude"]
 
 
 def test_harness_list_rejects_ambiguous_empty_and_bad_entries(tmp_path: Path) -> None:

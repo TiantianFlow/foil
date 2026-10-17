@@ -58,7 +58,7 @@ permission = "auto"
 id = "codex"
 ```
 
-Add another `[[harness]]` entry, with an optional `model`, when later spawns of that role should alternate. One entry stays on that entry.
+Add another `[[harness]]` entry, with an optional `model`, when a later seat of that role should take the next entry. One entry stays on that entry.
 
 `worktree = true` gives each implementer its own Git worktree and branch.
 Omitting `permission` means `auto`, and the seat runs unattended.

@@ -6,12 +6,12 @@ Notable changes to Foil, newest first.
 
 ### Added
 
-- A role template's harness is one ordered list of entries (`[[harness]]`, with `id` and an optional `model`). Spawn takes `entries[n % len(entries)]`. `run/registry.json` stores `n` for that role in `harness_cursor` and advances it in the same save as the new seat, only after the launch succeeds. A failed launch does not skip an entry. One entry stays on that entry.
+- A role template's harness is one ordered list of entries (`[[harness]]`, with `id` and an optional `model`). Spawn takes `entries[n % len(entries)]`, where `n` is the number of seat records already stored for that role, including killed seats, counted before the new seat is inserted. A failed launch writes no seat record, so a retry selects the same entry. One entry stays on that entry. The lead reuses one registry record named `lead`, so that count is 0 before the record exists and 1 before every later launch.
 
 ### Changed
 
 - Resume and restart launch with the harness and model recorded on the seat. They do not reload the template list over that pair.
-- `roster update` of `harness` or `model` edits a one-entry list and writes `[[harness]]`. On a longer list those two updates are refused and the file is left unchanged. Editing the list while a seat is alive is allowed. `roster remove` still fails while a seat of that role is not killed, and it drops that role's cursor.
+- `roster update` of `harness` or `model` edits a one-entry list and writes `[[harness]]`. On a longer list those two updates are refused and the file is left unchanged. Editing the list while a seat is alive is allowed. `roster remove` still fails while a seat of that role is not killed. Seat records stay, including killed ones.
 - `roster list` and `roster show` report the harness list. JSON `harness` is the entries and JSON `preset` is one source per entry.
 
 ## [0.4.2] - 2026-10-16

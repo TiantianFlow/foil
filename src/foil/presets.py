@@ -187,13 +187,10 @@ def render_template(
     return "\n\n".join(blocks) + "\n"
 
 
-def select_harness(
-    entries: list[dict[str, str]], cursor: int
-) -> tuple[dict[str, str], int]:
-    """Return ``entries[cursor % len(entries)]`` and ``cursor + 1``."""
+def select_harness(entries: list[dict[str, str]], count: int) -> dict[str, str]:
+    """Return ``entries[count % len(entries)]``."""
 
-    chosen = entries[cursor % len(entries)]
-    return chosen, cursor + 1
+    return entries[count % len(entries)]
 
 
 def expand_argv(
