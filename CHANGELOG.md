@@ -6,7 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Added
 
-- `foil post` writes one `room/v1` file under `board/room/<id>/` and types one nudge into every other alive seat. An outside caller reaches every alive seat. `--re` writes a child in that thread and wakes the same set. `--decline` writes a child whose body is `decline`, stores an empty `nudged`, and types nothing. The package was already over the 2,500-line target; this is a thin wrapper beside mail. (#33)
+- `foil post` writes one `room/v1` file under `board/room/<id>/` and types one nudge into every other alive seat. A seat whose stored state is empty still receives that nudge when the window check passes. An outside caller reaches every alive seat. `--re` writes a child in that thread and wakes the same set. `--decline` writes a child whose body is `decline`, stores an empty `nudged`, and types nothing. The package was already over the 2,500-line target; this is a thin wrapper beside mail. (#33)
 
 ### Changed
 
