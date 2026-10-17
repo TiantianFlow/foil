@@ -984,14 +984,3 @@ def test_roster_update_refuses_harness_flags_on_a_list(project: Path) -> None:
     assert 'id = "codex"' in text
     assert 'persona = "personas/reviewer.md"' in text
 
-
-def test_remove_drops_the_role_cursor(
-    project: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    add_template(project, "researcher")
-    capsys.readouterr()
-    registry = load_registry(project)
-    registry["harness_cursor"]["researcher"] = 4
-    save_registry(project, registry)
-    remove_template(project, "researcher")
-    assert "researcher" not in load_registry(project)["harness_cursor"]

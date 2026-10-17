@@ -482,8 +482,8 @@ def spawn_seat(
         scan(task)
     registry = load_registry(root)
     seat = _seat_name(registry, loaded["name"], name)
-    cursors = registry["harness_cursor"]
-    chosen, nxt = select_harness(loaded["harness"], cursors.get(loaded["name"], 0))
+    stored = sum(item["template"] == loaded["name"] for item in registry["seats"].values())
+    chosen = select_harness(loaded["harness"], stored)
     preset = load_preset(root, chosen["id"])
     native = str(uuid.uuid4()) if preset["session_id"] == "generated" else ""
     worktree, branch = _worktree(root, seat) if loaded["worktree"] else ("", "")
@@ -521,7 +521,6 @@ def spawn_seat(
     if loaded["name"] == "lead":
         registry["lead"] = "lead"
     registry["seats"][seat] = record
-    cursors[loaded["name"]] = nxt
     try:
         save_registry(root, registry)
     except Exception:

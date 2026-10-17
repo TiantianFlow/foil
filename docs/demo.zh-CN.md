@@ -52,7 +52,7 @@ permission = "auto"
 id = "codex"
 ```
 
-再写一个 `[[harness]]` 项，并可以带上 `model`，之后这个角色的启动就会按列表轮换。只有一项时就一直用这一项。
+再写一个 `[[harness]]` 项，并可以带上 `model`，这个角色之后每增加一个席位就取列表中的下一项。只有一项时就一直用这一项。
 
 `worktree = true` 让每个实现者拥有自己的 Git worktree 和分支。省略 `permission` 时
 取值是 `auto`，席位无人值守地运行。`permission = "ask"` 是显式选择：
