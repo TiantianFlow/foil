@@ -79,6 +79,7 @@ def _install_tmux(
     *,
     foreign: frozenset[str] = frozenset(),
     fail_keys: frozenset[str] = frozenset(),
+    dead_panes: frozenset[str] = frozenset(),
     on_literal: Callable[[str], None] | None = None,
 ) -> list[list[str]]:
     calls: list[list[str]] = []
@@ -103,7 +104,8 @@ def _install_tmux(
                     ),
                     "other",
                 )
-            stdout = f"$0\t{window}\t{registry['fleet_id']}\t{seat}\t0\n"
+            pane_dead = "1" if window in dead_panes else "0"
+            stdout = f"$0\t{window}\t{registry['fleet_id']}\t{seat}\t{pane_dead}\n"
             return subprocess.CompletedProcess(argv, 0, stdout, "")
         if argv[:2] == ["send-keys", "-l"]:
             window = argv[argv.index("-t") + 1]
@@ -611,6 +613,29 @@ def test_f33_empty_stored_state_still_reaches_every_seat(
     assert fields["from"] == "user"
     assert fields["nudged"] == ["implementer-1", "lead", "reviewer-1"]
     assert _nudge_windows(calls) == ["@2", "@1", "@3"]
+
+
+def test_f33_empty_stored_state_omits_a_dead_pane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _fleet(
+        repo,
+        _seat("lead", state="", window="@1"),
+        _seat("implementer-1", state="", window="@2"),
+    )
+    monkeypatch.setenv("FOIL_SEAT_ID", "")
+    calls = _install_tmux(monkeypatch, dead_panes=frozenset({"@2"}))
+    assert main(["post", "hello"]) == 0
+    path = _room(repo)[0]
+    fields, body = _open(path)
+    assert "hello" in body
+    assert fields["nudged"] == ["lead"]
+    line = f"user {path.resolve()}"
+    assert _nudge_lines(calls) == [line]
+    assert _nudge_windows(calls) == ["@1"]
+    assert "hello" not in line
+    assert any(argv[0] == "display-message" and "@2" in argv for argv in calls)
 
 
 def test_f33_dead_seat_is_omitted_and_the_file_remains(
