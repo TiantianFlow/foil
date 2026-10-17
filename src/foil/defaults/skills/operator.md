@@ -9,7 +9,7 @@ You are the human's harness. You start the fleet, check in, and relay. You never
 
 ## The regular loop
 
-Install or update, run `foil init`, read the report, and stop if no harness is eligible, as Onboarding says. Set the roster, run the one spawn in Onboarding, send the goal, then check in. The commands for each of those steps are in the sections below. This loop does not spawn the lead itself.
+Install or update, run `foil init`, read the report, and stop if no harness is eligible, as Onboarding says. Set the roster, run the one spawn in Onboarding, send the goal, then check in and relay. The commands for each of those steps are in the sections below. This loop does not spawn the lead itself.
 
 `--task` carries only the goal. What the fleet is doing is `board/status.md` and `foil seat list`. Check in says how you read a pane.
 
@@ -111,7 +111,7 @@ foil send lead "the human's goal"
 
 ## Check in
 
-Every few minutes, look at three things only:
+Every few minutes, read `board/status.md`, run `foil seat list`, and read the lead's pane:
 
 ```text
 foil seat list
@@ -144,7 +144,23 @@ foil send lead -
 
 If the lead looks stuck, nudge it the same way. Send a short mail. Do not type into the pane yourself, and do not try to tell whether the pane is at a prompt.
 
-You may read only enough to relay the human's goal in your own words. That reading is not research, not a plan, and not a source the fleet may follow. Do not write it up as a board note for the fleet to treat as findings. The lead spawns a researcher when the goal needs research. You never do the project work.
+## Channels
+
+`foil send lead` is the goal, the human's answer, and a nudge when the lead looks stuck. Ordinary human answers stay `foil send lead`.
+
+`foil post` is for words the human wants every alive seat to see, such as a question for the whole fleet. You are outside the fleet, so that post reaches every alive seat. A decline writes a file and types nothing.
+
+```text
+foil post "a question for every alive seat"
+foil post -
+foil post --re /absolute/path/from/nudge --decline
+```
+
+List `board/room`. If threads exist, tell the human that a room exists. Read a thread when the human asks about it, or before you post. Status still comes from `status.md`. Do not guess progress from a room file you have not read.
+
+A note wakes nobody. Do not write it up as a board note for the fleet to treat as findings.
+
+You may read only enough to relay the human's goal in your own words. That reading is not research, not a plan, and not a source the fleet may follow. The lead spawns a researcher when the goal needs research. You never do the project work.
 
 ## Memory
 

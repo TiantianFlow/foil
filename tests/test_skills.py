@@ -19,6 +19,7 @@ FLAGS = {
     ("seat", "list"): {"--json"},
     ("seat", "peek"): {"--lines"},
     ("send",): set(),
+    ("post",): {"--re", "--decline"},
     ("mail", "read"): {"--json"},
     ("mail", "list"): {"--json"},
     ("board", "read"): {"--json"},
@@ -43,6 +44,7 @@ ROLE_COMMANDS = {
         ("seat", "peek"),
         ("seat", "kill"),
         ("send",),
+        ("post",),
         ("memory", "list"),
         ("memory", "accept"),
         ("memory", "reject"),
@@ -58,6 +60,7 @@ ROLE_COMMANDS = {
         ("seat", "list"),
         ("seat", "peek"),
         ("send",),
+        ("post",),
         ("mail", "read"),
         ("mail", "list"),
         ("board", "read"),
@@ -74,6 +77,7 @@ ROLE_COMMANDS = {
     },
     "worker.md": {
         ("send",),
+        ("post",),
         ("mail", "read"),
         ("mail", "list"),
         ("board", "read"),
@@ -254,6 +258,97 @@ def test_onboarding_says_who_answers_a_dialog() -> None:
     onboarding = requirements.split("### Onboarding", 1)[1].split("## 4.", 1)[0]
     assert "Onboarding adds no command or flag" in onboarding
     assert "an approval prompt, or an error" not in onboarding
+
+
+def test_skills_state_the_channel_choice() -> None:
+    operator = (SKILLS / "operator.md").read_text(encoding="utf-8")
+    lead = (SKILLS / "lead.md").read_text(encoding="utf-8")
+    worker = (SKILLS / "worker.md").read_text(encoding="utf-8")
+    requirements = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
+    section_8 = requirements.split("## 8. Skills", 1)[1].split("## 9.", 1)[0]
+    rows = {
+        line.split("|", 2)[1].strip(): line
+        for line in section_8.splitlines()
+        if line.startswith("| `")
+    }
+    step_5 = requirements.split("5. Seats send short messages", 1)[1].split("\n6. ", 1)[0]
+    shared = (
+        "Send is one seat. Post is every other alive seat.",
+        "`foil send lead` is the goal, the human's answer, and a nudge when the lead looks stuck.",
+        "Ordinary human answers stay `foil send lead`.",
+        "`foil post` is for words the human wants every alive seat to see, "
+        "such as a question for the whole fleet.",
+        "You are outside the fleet, so that post reaches every alive seat.",
+        "A decline writes a file and types nothing.",
+        "List `board/room`. If threads exist, tell the human that a room exists.",
+        "Read a thread when the human asks about it, or before you post.",
+        "Status still comes from `status.md`.",
+        "Do not guess progress from a room file you have not read.",
+        "`foil send` one seat when the point is for that seat alone: a question or a correction.",
+        "`foil post` when more than one other seat needs the same point.",
+        "`foil post` when other seats need the point, not the lead alone.",
+        "The task file is the brief, and the mail is the pointer to it.",
+        "The result file is the report. The mail is the pointer.",
+        "A note wakes nobody.",
+        "A note under `board/notes/` is scratch that wakes nobody.",
+        "Do not put the result or a decision there.",
+        "Do not continue a thread by mailing another seat.",
+    )
+    for sentence in shared:
+        assert sentence in step_5
+    operator_rules = (
+        "`foil send lead` is the goal, the human's answer, and a nudge when the lead looks stuck.",
+        "Ordinary human answers stay `foil send lead`.",
+        "`foil post` is for words the human wants every alive seat to see, "
+        "such as a question for the whole fleet.",
+        "You are outside the fleet, so that post reaches every alive seat.",
+        "A decline writes a file and types nothing.",
+        "List `board/room`. If threads exist, tell the human that a room exists.",
+        "Read a thread when the human asks about it, or before you post.",
+        "Status still comes from `status.md`.",
+        "Do not guess progress from a room file you have not read.",
+        "A note wakes nobody.",
+        "Do not write it up as a board note for the fleet to treat as findings.",
+    )
+    lead_rules = (
+        "Write the plan into `board/status.md`, including the checklist.",
+        "Write each piece of work as `board/tasks/<id>.md`. That file is the brief.",
+        "`foil seat spawn --task` writes a mail file whose text is the task string.",
+        "It does not write the task file.",
+        "The task file is the brief, and the mail is the pointer to it.",
+        "The seat follows the task file, not a second copy of the brief in the mail body.",
+        "`foil send` one seat when the point is for that seat alone: a question or a correction.",
+        "`foil post` when more than one other seat needs the same point.",
+        "Do not continue a thread by mailing another seat.",
+        "A note under `board/notes/` is scratch that wakes nobody.",
+        "Decisions, briefs, and results go in the task, result, and status files.",
+        "A path under `board/room/` is `foil board read`.",
+        "Implementation belongs in a seat whose template sets `worktree` to true.",
+    )
+    worker_rules = (
+        "Read the task file your mail points at, then the rest of your mail, before you act.",
+        "Write the result at `board/results/<id>.md`.",
+        "`foil send lead` that the result is ready.",
+        "The result file is the report.",
+        "The mail is the pointer.",
+        "A question or a result for the lead alone is `foil send lead`.",
+        "`foil post` when other seats need the point, not the lead alone.",
+        "Do not continue a thread by mailing another seat.",
+        "A note under `board/notes/` is scratch that wakes nobody.",
+        "Do not put the result or a decision there.",
+        "A path under `board/room/` is `foil board read`.",
+    )
+    for sentence in operator_rules:
+        assert sentence in operator
+        assert sentence in rows["`operator`"]
+    for sentence in lead_rules:
+        assert sentence in lead, sentence
+        if sentence != "Implementation belongs in a seat whose template sets `worktree` to true.":
+            assert sentence in rows["`lead`"], sentence
+    for sentence in worker_rules:
+        assert sentence in worker, sentence
+        assert sentence in rows["`worker`"], sentence
+    assert "is a room file" not in lead
 
 
 def test_operator_reports_the_checklist() -> None:
