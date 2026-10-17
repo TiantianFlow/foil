@@ -281,6 +281,10 @@ are fixed; exact names may vary.
 The file name is the role name. A role has one ordered list of harness entries. Spawn reads that list (F3). There is no second harness string or model field beside it.
 
 ```toml
+persona = "personas/implementer.md"
+worktree = true
+permission = "auto"
+
 [[harness]]
 id = "claude"
 model = "opus"
@@ -289,6 +293,8 @@ model = "opus"
 id = "codex"
 model = "gpt-5.5"
 ```
+
+`persona`, `worktree`, and `permission` are written before the entries. A key after an entry is part of that entry.
 
 | Field | Required | Meaning |
 |---|---|---|

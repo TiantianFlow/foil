@@ -959,17 +959,17 @@ def test_roster_update_rewrites_a_legacy_one_entry_file(project: Path) -> None:
 def test_roster_update_refuses_harness_flags_on_a_list(project: Path) -> None:
     path = foil_root(project) / "templates" / "lead.toml"
     path.write_text(
+        'persona = "personas/lead.md"\n'
+        "worktree = false\n"
+        'permission = "auto"\n'
+        "\n"
         "[[harness]]\n"
         'id = "claude"\n'
         'model = "opus"\n'
         "\n"
         "[[harness]]\n"
         'id = "codex"\n'
-        'model = "gpt-5.5"\n'
-        "\n"
-        'persona = "personas/lead.md"\n'
-        "worktree = false\n"
-        'permission = "auto"\n',
+        'model = "gpt-5.5"\n',
         encoding="utf-8",
     )
     before = path.read_bytes()

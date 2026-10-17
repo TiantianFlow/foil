@@ -693,7 +693,8 @@ def test_select_harness_walks_the_list() -> None:
 
 def test_harness_list_rejects_ambiguous_empty_and_bad_entries(tmp_path: Path) -> None:
     rejected = [
-        '[[harness]]\nid = "claude"\n\nmodel = "opus"\n',
+        'model = "opus"\n\n[[harness]]\nid = "claude"\n',
+        '[[harness]]\nid = "claude"\n\npersona = "x"\n',
         "harness = []\n",
         '[[harness]]\nmodel = "opus"\n',
         '[[harness]]\nid = ""\n',

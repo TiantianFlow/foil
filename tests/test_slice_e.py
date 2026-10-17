@@ -410,7 +410,7 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     _launch(monkeypatch)
     template = foil_root(repo) / "templates" / "worker.toml"
     template.write_text(
-        '[[harness]]\nid = "claude"\nmodel = "sonnet"\nworktree = false\npermission = "auto"\n',
+        'worktree = false\npermission = "auto"\n\n[[harness]]\nid = "claude"\nmodel = "sonnet"\n',
         encoding="utf-8",
     )
     assert main(["seat", "spawn", "lead"]) == 0
@@ -422,19 +422,20 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     assert launched["harness"] == "claude"
     assert launched["model"] == "sonnet"
     template.write_text(
+        "worktree = false\n"
+        'permission = "auto"\n'
+        "\n"
         "[[harness]]\n"
         'id = "gemini"\n'
         'model = "other"\n'
         "\n"
         "[[harness]]\n"
         'id = "codex"\n'
-        'model = "gpt-5.5"\n'
-        "\n"
-        "worktree = false\n"
-        'permission = "auto"\n',
+        'model = "gpt-5.5"\n',
         encoding="utf-8",
     )
     _alive(monkeypatch, {window})
+    capsys.readouterr()
     assert main(["seat", "list"]) == 0
     listed = capsys.readouterr().out
     assert "worker\tworker\talive\t\tclaude/sonnet\t" in listed

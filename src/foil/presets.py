@@ -173,18 +173,17 @@ def render_template(
 ) -> str:
     """Write the canonical harness list. A missing model is omitted."""
 
-    blocks: list[str] = []
+    head: list[str] = []
+    if persona:
+        head.append(f"persona = {_toml_basic(persona)}")
+    head.append(f"worktree = {'true' if worktree else 'false'}")
+    head.append(f"permission = {_toml_basic(permission)}")
+    blocks = ["\n".join(head)]
     for entry in entries:
         lines = ["[[harness]]", f"id = {_toml_basic(entry['id'])}"]
         if entry.get("model"):
             lines.append(f"model = {_toml_basic(entry['model'])}")
         blocks.append("\n".join(lines))
-    tail: list[str] = []
-    if persona:
-        tail.append(f"persona = {_toml_basic(persona)}")
-    tail.append(f"worktree = {'true' if worktree else 'false'}")
-    tail.append(f"permission = {_toml_basic(permission)}")
-    blocks.append("\n".join(tail))
     return "\n\n".join(blocks) + "\n"
 
 
