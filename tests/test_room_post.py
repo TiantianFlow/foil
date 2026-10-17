@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -78,12 +79,15 @@ def _install_tmux(
     *,
     foreign: frozenset[str] = frozenset(),
     fail_keys: frozenset[str] = frozenset(),
+    on_literal: Callable[[str], None] | None = None,
 ) -> list[list[str]]:
     calls: list[list[str]] = []
 
     def run(self: TmuxController, argv: list[str]) -> subprocess.CompletedProcess[str]:
         del self
         calls.append(list(argv))
+        if argv[:2] == ["send-keys", "-l"] and on_literal is not None:
+            on_literal(argv[-1])
         if argv and argv[0] == "display-message":
             window = argv[argv.index("-t") + 1]
             registry = json.loads(
@@ -743,6 +747,27 @@ def test_s74_a_colliding_create_uses_another_name(
     assert len(_room(repo)) == 1
 
 
+def test_f33_writes_the_room_file_before_the_nudge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _alive(repo)
+    monkeypatch.setenv("FOIL_SEAT_ID", "")
+    ready: list[Path] = []
+
+    def on_literal(line: str) -> None:
+        path = Path(line.split(" ", 1)[1])
+        text = path.read_text(encoding="utf-8")
+        assert "contract: room/v1" in text
+        assert "written-before-nudge" in text
+        ready.append(path)
+
+    calls = _install_tmux(monkeypatch, on_literal=on_literal)
+    assert main(["post", "written-before-nudge"]) == 0
+    assert len(ready) == len(_nudge_lines(calls)) == 3
+    assert len(set(ready)) == 1
+
+
 def test_f33_nudge_is_the_sender_and_the_absolute_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -979,6 +1004,18 @@ def test_f24_instruction_offers_unanswered_room_threads(
     assert "foil seat spawn" not in worker
     assert "foil post" in skill_text["lead"]
     assert "foil post" in skill_text["worker"]
+
+
+def test_s8_operator_skill_reaches_every_alive_seat() -> None:
+    text = (Path(__file__).resolve().parents[1] / "skills" / "operator.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Ordinary human answers stay `foil send lead`." in text
+    assert (
+        "`foil post` writes one room file and types one nudge into every alive seat, "
+        "because you are outside the fleet."
+    ) in text
+    assert "A decline writes a file and types nothing." in text
 
 
 def test_f24_a_later_launch_is_not_a_second_nudge_and_writes_no_ledger(
