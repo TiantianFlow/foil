@@ -744,3 +744,28 @@ def test_replacing_a_killed_lead_follows_the_one_stored_record(
     assert main(["seat", "spawn", "lead"]) == 0
     assert load_registry(repo)["seats"]["lead"]["harness"] == "codex"
     assert load_registry(repo)["seats"]["lead"]["model"] == "gpt-5.5"
+
+
+def test_fleet_memory_overrides_the_model_on_the_next_spawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    calls = _launch(monkeypatch)
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["roster", "update", "implementer", "model=opus"]) == 0
+    assert "fleet memory: implementer model = opus" in capsys.readouterr().out
+    monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
+    root = foil_root(repo)
+    assert "opus" not in (root / "mapping.toml").read_text(encoding="utf-8")
+    assert 'model = "opus"' in (root / "fleet-memory.toml").read_text(encoding="utf-8")
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    lead = _plan(calls, 0)
+    worker = _plan(calls, 1)
+    assert "Workspace:" in lead["argv"][-1]
+    assert "Posts:" in lead["argv"][-1]
+    assert "implementer: opus" in lead["argv"][-1]
+    assert worker["argv"][worker["argv"].index("--model") + 1] == "opus"
+    assert load_registry(repo)["seats"]["implementer-1"]["model"] == "opus"
+    assert load_registry(repo)["seats"]["implementer-1"]["harness"] == "claude"

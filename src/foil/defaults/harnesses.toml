@@ -1,0 +1,77 @@
+# One list of harness launch config and the model ids each harness accepts.
+# A project copy of this file overrides an id. harnesses/<id>.toml overrides both.
+# Spawn does not reject a model that is absent from models.
+
+[[harness]]
+id = "claude"
+command = ["claude", "--model", "{model}", "--session-id", "{session_id}", "{prompt}"]
+resume = ["claude", "--resume", "{session_id}"]
+session_id = "generated"
+env = []
+models = ["sonnet", "opus", "haiku", "claude-sonnet-4-5", "claude-opus-4-5"]
+
+[harness.permission]
+ask = []
+auto = ["--permission-mode", "auto"]
+
+[[harness]]
+id = "codex"
+unverified = ["resume-session-id"]
+command = ["codex", "--model", "{model}", "{prompt}"]
+resume = ["codex", "resume", "--last", "{prompt}"]
+session_id = "none"
+env = []
+models = ["gpt-5.5"]
+
+[harness.permission]
+ask = ["--ask-for-approval", "on-request"]
+auto = ["--ask-for-approval", "never"]
+
+[[harness]]
+id = "gemini"
+unverified = ["all-flags-docs-only"]
+command = ["gemini", "--model", "{model}", "{prompt}"]
+resume = ["gemini", "--resume"]
+session_id = "none"
+env = []
+models = ["gemini-2.5-pro", "gemini-2.5-flash"]
+
+[harness.permission]
+ask = []
+auto = ["--approval-mode=yolo"]
+
+[[harness]]
+id = "opencode"
+command = ["opencode", ".", "--model", "{model}", "--prompt", "{prompt}"]
+resume = ["opencode", ".", "--continue", "--prompt", "{prompt}"]
+session_id = "none"
+env = []
+models = ["anthropic/claude-sonnet-4-5", "openai/gpt-5.5"]
+
+[harness.permission]
+ask = []
+auto = ["--auto"]
+
+[[harness]]
+id = "grok"
+command = ["grok", "--model", "{model}", "--session-id", "{session_id}", "{prompt}"]
+resume = ["grok", "--model", "{model}", "--resume", "{session_id}"]
+session_id = "generated"
+env = []
+models = ["grok-4", "grok-3"]
+
+[harness.permission]
+ask = []
+auto = ["--always-approve"]
+
+[[harness]]
+id = "fake"
+command = ["foil-fake", "--session", "{session_id}", "--prompt", "{prompt}"]
+resume = ["foil-fake", "--session", "{session_id}", "--prompt", "{prompt}"]
+session_id = "generated"
+env = []
+models = []
+
+[harness.permission]
+ask = []
+auto = []
