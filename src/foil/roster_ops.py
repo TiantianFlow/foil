@@ -7,6 +7,7 @@ from pathlib import Path
 
 from foil.errors import FoilError, shown
 from foil.presets import (
+    entry_label,
     installed_harness,
     load_preset,
     load_template,
@@ -14,6 +15,7 @@ from foil.presets import (
     persona_stems,
     preset_source,
     read_description,
+    render_template,
     template_permission,
 )
 from foil.project import foil_root
@@ -79,7 +81,8 @@ def _persona_inside(persona: str) -> None:
 def _accept(toplevel: Path, role: str) -> None:
     template = load_template(toplevel, role)
     _persona_inside(str(template.get("persona") or ""))
-    load_preset(toplevel, str(template["harness"]))
+    for entry in template["harness"]:
+        load_preset(toplevel, str(entry["id"]))
 
 
 def _in_use(toplevel: Path, role: str) -> None:
@@ -102,14 +105,13 @@ def _listed(toplevel: Path, name: str) -> dict | None:
         template = load_template(toplevel, name)
     except FoilError:
         return None
-    harness = str(template["harness"])
+    entries = template["harness"]
     return {
         "role": name,
-        "harness": harness,
-        "model": template.get("model", ""),
+        "harness": [{"id": entry["id"], "model": entry["model"]} for entry in entries],
         "worktree": template.get("worktree", False),
         "permission": template.get("permission", "auto"),
-        "preset": preset_source(toplevel, harness),
+        "preset": [preset_source(toplevel, str(entry["id"])) for entry in entries],
         "description": read_description(template),
     }
 
@@ -135,8 +137,9 @@ def list_roster(toplevel: Path, *, as_json: bool = False) -> None:
         if row is None:
             print(f"{name}\tinvalid\tinvalid\t")
             continue
-        model = f"/{row['model']}" if row["model"] else ""
-        print(f"{name}\t{row['harness']}{model}\t{row['preset']}\t{row['description']}")
+        harness = ",".join(entry_label(entry) for entry in row["harness"])
+        preset = ",".join(row["preset"])
+        print(f"{name}\t{harness}\t{preset}\t{row['description']}")
     for person in available:
         print(f"+ {person['name']}\t{person['description']}")
 
@@ -147,14 +150,15 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
         raise FoilError(f"foil: unknown template '{shown(role)}'")
 
     template = load_template(toplevel, role)
-    preset = preset_source(toplevel, str(template["harness"]))
+    entries = template["harness"]
+    preset = [preset_source(toplevel, str(entry["id"])) for entry in entries]
     description = read_description(template)
+    harness = ",".join(entry_label(entry) for entry in entries)
 
     if as_json:
         output = {
             "role": role,
-            "harness": template["harness"],
-            "model": template.get("model", ""),
+            "harness": [{"id": entry["id"], "model": entry["model"]} for entry in entries],
             "persona": template.get("persona", ""),
             "worktree": template.get("worktree", False),
             "permission": template.get("permission", "auto"),
@@ -164,14 +168,12 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
         print(json.dumps(output, indent=2))
     else:
         print(f"role: {role}")
-        print(f"harness: {template['harness']}")
-        if template.get("model"):
-            print(f"model: {template['model']}")
+        print(f"harness: {harness}")
         if template.get("persona"):
             print(f"persona: {template['persona']}")
         print(f"worktree: {template.get('worktree', False)}")
         print(f"permission: {template.get('permission', 'auto')}")
-        print(f"preset: {preset}")
+        print(f"preset: {','.join(preset)}")
         print(f"description: {description}")
 
 
@@ -209,11 +211,11 @@ def add_template(
                 "Create the persona file first, or use --from FILE"
             )
 
-        content = (
-            f'harness = "{installed_harness(toplevel)}"\n'
-            f'persona = "personas/{role}.md"\n'
-            "worktree = false\n"
-            'permission = "auto"\n'
+        content = render_template(
+            [{"id": installed_harness(toplevel), "model": ""}],
+            persona=f"personas/{role}.md",
+            worktree=False,
+            permission="auto",
         )
 
     created = False
@@ -245,37 +247,40 @@ def update_template(
         fields = ", ".join(sorted(_TEMPLATE_FIELDS))
         raise FoilError(f"foil: invalid field '{shown(field)}'. Valid fields: {fields}")
 
-    # Load existing template to validate it exists
     template = load_template(toplevel, role)
     template_path = template["path"]
     _refuse_symlink(template_path)
-    if field == "harness":
-        _in_use(toplevel, role)
+    entries = [{"id": item["id"], "model": item["model"]} for item in template["harness"]]
+    if field in {"harness", "model"} and len(entries) != 1:
+        raise FoilError(
+            f"foil: template '{role}' has more than one harness entry; "
+            f"edit {shown(str(template_path))}"
+        )
 
-    # Read current content. Refuse a value that could escape its TOML string
-    # before any byte is replaced.
+    # Refuse a value that could escape its TOML string before any byte is replaced.
     original = template_path.read_text(encoding="utf-8")
     previous_permission = template_permission(original)
-    formatted = _formatted_value(field, value)
-    lines = original.splitlines(keepends=True)
+    _formatted_value(field, value)
+    persona = str(template.get("persona") or "")
+    worktree = bool(template.get("worktree", False))
+    permission = str(template.get("permission", "auto"))
+    if field == "harness":
+        entries[0]["id"] = value
+    elif field == "model":
+        entries[0]["model"] = value
+    elif field == "persona":
+        persona = value
+    elif field == "worktree":
+        worktree = value.lower() == "true"
+    else:
+        permission = value
 
-    # Parse and update
-    updated = False
-    new_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith(f"{field} ="):
-            new_lines.append(f"{field} = {formatted}\n")
-            updated = True
-        else:
-            new_lines.append(line)
-
-    # If field wasn't found, append it
-    if not updated:
-        new_lines.append(f"{field} = {formatted}\n")
-
-    # Write back atomically. A symlink is refused before this write.
-    _replace_template_file(template_path, "".join(new_lines))
+    _replace_template_file(
+        template_path,
+        render_template(
+            entries, persona=persona, worktree=worktree, permission=permission
+        ),
+    )
 
     # Validate by loading. An in-fleet caller must not change permission,
     # including by a value that parses as a second assignment.

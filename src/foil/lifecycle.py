@@ -17,6 +17,7 @@ from foil.errors import FoilError, shown
 from foil.presets import (
     BUILTIN_IDS,
     _builtin,
+    entry_label,
     expand_argv,
     installed_harness,
     installed_presets,
@@ -25,6 +26,7 @@ from foil.presets import (
     persona_stems,
     persona_text,
     read_description,
+    select_harness,
     write_default_templates,
 )
 from foil.project import (
@@ -87,7 +89,9 @@ def _print_init_report(
     roles = ("lead", "implementer", "reviewer")
     stored: list[str] = []
     for role in roles:
-        chosen = load_template(toplevel, role)["harness"]
+        ids = [entry["id"] for entry in load_template(toplevel, role)["harness"]]
+        chosen = ids[0]
+        label = chosen if len(ids) == 1 else ", ".join(ids)
         fresh = role not in had_templates
         second_reviewer = role == "reviewer" and chosen == second and second != first
         if fresh and second_reviewer:
@@ -96,8 +100,8 @@ def _print_init_report(
             why = "first installed id"
         else:
             why = "left alone"
-        print(f"{role}: {chosen} ({why})")
-        stored.append(chosen)
+        print(f"{role}: {label} ({why})")
+        stored.extend(ids)
     if not found:
         print("No eligible harness is installed.")
     distinct = len(set(stored))
@@ -353,7 +357,8 @@ def _instruction(
                 continue
             item = load_template(root, path.stem)
             flag = "yes" if item["worktree"] else "no"
-            roster.append(f"- {item['name']}: harness {item['harness']}, worktree {flag}")
+            labels = ", ".join(entry_label(entry) for entry in item["harness"])
+            roster.append(f"- {item['name']}: harness {labels}, worktree {flag}")
         lines.extend(
             [
                 "You may kill another seat by name. You may not kill yourself "
@@ -404,6 +409,7 @@ def _open(
     session_id: str,
     native: bool,
     restarted: bool,
+    model: str,
     task: Path | None = None,
 ) -> str:
     cwd = Path(worktree) if worktree else root
@@ -411,7 +417,7 @@ def _open(
     prompt = instruction.read_text(encoding="utf-8")
     argv = expand_argv(
         preset,
-        model=template["model"] or None,
+        model=model or None,
         prompt=prompt,
         session_id=session_id or None,
         permission=template["permission"],
@@ -482,7 +488,9 @@ def spawn_seat(
         scan(task)
     registry = load_registry(root)
     seat = _seat_name(registry, loaded["name"], name)
-    preset = load_preset(root, loaded["harness"])
+    stored = sum(item["template"] == loaded["name"] for item in registry["seats"].values())
+    chosen = select_harness(loaded["harness"], stored)
+    preset = load_preset(root, chosen["id"])
     native = str(uuid.uuid4()) if preset["session_id"] == "generated" else ""
     worktree, branch = _worktree(root, seat) if loaded["worktree"] else ("", "")
     mailed = write_mail(root, seat, task) if task is not None else None
@@ -497,6 +505,7 @@ def spawn_seat(
             session_id=native,
             native=False,
             restarted=False,
+            model=chosen["model"],
             task=mailed,
         )
     except Exception:
@@ -507,8 +516,8 @@ def spawn_seat(
         {
             "name": seat,
             "template": loaded["name"],
-            "harness": loaded["harness"],
-            "model": loaded["model"],
+            "harness": chosen["id"],
+            "model": chosen["model"],
             "window_id": window,
             "worktree": worktree,
             "branch": branch,
@@ -584,8 +593,8 @@ def _restart(root: Path, registry: dict, name: str) -> None:
     record = registry["seats"][name]
     loaded = load_template(root, record["template"])
     persona_text(loaded)
-    preset = load_preset(root, loaded["harness"])
-    stored = "" if loaded["harness"] != record["harness"] else record["session_id"]
+    preset = load_preset(root, record["harness"])
+    stored = record["session_id"]
     native = _native_resume(preset, stored, worktree=record.get("worktree") or "")
     if native:
         session = stored
@@ -604,12 +613,11 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         session_id=session,
         native=native,
         restarted=not native,
+        model=record.get("model") or "",
     )
     record["window_id"] = window
     record["state"] = ""
     record["session_id"] = session
-    record["harness"] = loaded["harness"]
-    record["model"] = loaded["model"]
     try:
         save_registry(root, registry)
     except Exception:

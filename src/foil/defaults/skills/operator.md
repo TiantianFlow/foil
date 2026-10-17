@@ -17,7 +17,7 @@ Install or update, run `foil init`, read the report, and stop if no harness is e
 
 You perform onboarding. The human's part was one sentence. You install Foil, run `init`, read the report, set the roster, run the first-run check, and send the goal. You do not plan the goal, staff workers, integrate branches, or review the result.
 
-1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, run `foil roster list`, name each distinct harness id the roster uses, and ask the human to run each of those once in the repository root and accept its folder-trust, update, first-run, and opt-in dialogs, or to confirm that is done. Trust is per harness per path. A seat worktree lives in the store, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. Ask again when a role moves to a harness id that was not on that list. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. Trust before the first spawn stays the human's job. A dialog seen in `foil seat peek` is answered only when it is an approval dialog, as step 3 bounds it. Every other dialog is reported to the human and not answered.
+1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, run `foil roster list`, name each distinct harness id the roster uses, and ask the human to run each of those once in the repository root and accept its folder-trust, update, first-run, and opt-in dialogs, or to confirm that is done. Trust is per harness per path. A seat worktree lives in the store, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. Ask again when a role moves to a harness id that was not on that list. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. That confirmation, before the first spawn, is the human's. A dialog seen in `foil seat peek` is answered only when it is an approval dialog, as step 3 bounds it. Every other dialog is reported to the human and not answered.
 2. Install or update Foil. Run the install line even when foil is already installed; running it again updates it:
 
 ```text
@@ -32,17 +32,17 @@ foil init
 
 Read the whole report before you staff the fleet. The first line is the version. It lists every installed harness in id order (a tiebreak, not a ranking), the id each default template was given and why, what it wrote and what it left alone, `Updated skills: …` or `Skills: current`, a built-in preset overridden by the project folder's `harnesses/`, available personas without templates, the permission sentence, and a `Project folder:` line. That folder is outside the repository. Running it again overwrites no template, persona, or preset. It replaces the operator skill when its bytes differ from this version.
 
-If the report lists no installed eligible harness, stop and tell the human. Do not spawn. The human either installs a harness CLI and you re-run `init`, or the human adds a user preset at `<project folder>/harnesses/<id>.toml` in the format of section 7.3 and you re-run `init`. A user preset that reuses a built-in id replaces that built-in. You do not invent preset fields. You do not write the preset.
+If `foil init` exits with the line "foil: no harness installed", it wrote nothing. Stop and tell the human. Do not spawn. There is no project folder yet, so there is nowhere to add a preset. The human installs a harness CLI and you run `foil init` again. If a later report lists no installed eligible harness, stop and do not spawn. The folder exists then. The human may add a user preset at `<project folder>/harnesses/<id>.toml` in the format of section 7.3 and you re-run `init`. A user preset that reuses a built-in id replaces that built-in. You do not invent preset fields. You do not write the preset.
 
 After first init, run `foil roster list` to see all templates and available personas. Review with the human:
 
-1. Which harnesses are installed
-2. What models to assign to lead/implementer/reviewer
-3. Whether to add researcher/verifier or other candidate roles
+- Which harnesses are installed
+- What models to assign to lead/implementer/reviewer
+- Whether to add researcher/verifier or other candidate roles
 
 Add roles as needed with `foil roster add <role>`. Update harness or model with `foil roster update <role> harness=<id>` or `foil roster update <role> model=<model>`.
 
-3. Before you spawn the lead, set `harness`, `model`, and `permission` on every template the fleet will use: `templates/lead.toml`, `templates/implementer.toml`, and `templates/reviewer.toml` in the project folder the report printed. Those files are not in the repository. Each has its own permission. An omitted permission, and `roster add` without `--from`, are `auto`. `auto` asks the harness to skip approval prompts, though some harnesses still ask. `ask` is what a caller outside the fleet sets when a seat must stop for the human, with `foil roster update ROLE permission=ask`. That seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Pair `auto` with a worktree when that seat can commit. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`. You may set `permission` before the first spawn and again later with `foil roster update ROLE permission=VALUE`. A later change applies to the next spawn of that template, not to a seat already alive. The lead, inside the fleet, does not set `permission`. You may send keystrokes only for an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, an opt-in, an error, and ordinary output are reported and not answered. You look at the raw text `foil seat peek` printed. You do not scrape the pane, and you do not decide from it who is working. A prompt you will not approve is reported to the human with the seat name and what the pane shows. You do not send a denial sequence unless that sequence is the dialog's own reject key, and you tell the human first.
+3. Before you spawn the lead, set the harness list and `permission` on every template the fleet will use: `templates/lead.toml`, `templates/implementer.toml`, and `templates/reviewer.toml` in the project folder the report printed. Those files are not in the repository. Each has its own permission. An omitted permission, and `roster add` without `--from`, are `auto`. `auto` asks the harness to skip approval prompts, though some harnesses still ask. `ask` is what a caller outside the fleet sets when a seat must stop for the human, with `foil roster update ROLE permission=ask`. That seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Pair `auto` with a worktree when that seat can commit. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`. You may set `permission` before the first spawn and again later with `foil roster update ROLE permission=VALUE`. A later change applies to the next spawn of that template, not to a seat already alive. The lead, inside the fleet, does not set `permission`. You may send keystrokes only for an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, a first-run dialog, an opt-in, an error, and ordinary output are reported and not answered. You look at the raw text `foil seat peek` printed. You do not scrape the pane, and you do not decide from it who is working. A prompt you will not approve is reported to the human with the seat name and what the pane shows. You do not send a denial sequence unless that sequence is the dialog's own reject key, and you tell the human first.
 4. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. `--task` carries only the goal. Do not copy skill text into the task.
 5. Check that the lead is working. Spawn the lead once, with this task, then wait a few minutes:
 
@@ -50,13 +50,15 @@ Add roles as needed with `foil roster add <role>`. Update harness or model with 
 foil seat spawn lead --task "Write board/status.md with state: done"
 ```
 
-Spawn writes the task as mail and types nothing into the new pane. A seat at a startup dialog waits there. If `board/status.md` is already there from an earlier goal, note its `updated` value before you spawn. The check passes only when `updated` changes and the file shows `state: done`. If `board/status.md` does not appear or `updated` does not change, peek the lead. The pane shows a login prompt, a folder-trust prompt, an update dialog, an approval prompt, or an error. You may send keystrokes only for an approval dialog, as step 3 bounds it. Anything else, including an error, is reported to the human and not answered. You do not fix the project.
+Spawn writes the task as mail and types nothing into the new pane. A seat at a startup dialog waits there. If `board/status.md` is already there from an earlier goal, note its `updated` value before you spawn. The check passes only when `updated` changes and the file shows `state: done`. A previous goal already has `state: done`, so an unchanged file is not a pass. If `board/status.md` does not appear or `updated` does not change, peek the lead:
 
 ```text
 foil seat peek lead
 ```
 
-When the file shows `state: done`, send the human's goal to that lead. Do not spawn the lead again.
+You may send keystrokes only for an approval dialog, as step 3 bounds it: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, a first-run dialog, an opt-in, and an error are reported to the human and not answered. You do not fix the project. If that lead is dead, `foil seat kill lead` clears it. Spawn the check again only after it is gone.
+
+When the check passes, send the human's goal to that lead. Do not spawn the lead again.
 
 A persistent copy of this skill is optional and stays at user level, out of `git status`. These paths were not checked against that harness's current docs.
 
@@ -68,7 +70,7 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 ## Role templates
 
-A template is a TOML file in the project folder's `templates/`. The file name is the role. The five fields are `harness`, `model`, `persona`, `worktree`, and `permission`. Personas live in that folder's `templates/personas/`. That directory is the one the report printed, not a directory in the repository. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the operator skill when its bytes differ from this version.
+A template is a TOML file in the project folder's `templates/`. The file name is the role. `harness` is one ordered list of entries. Each entry has an `id` and an optional `model`. The other fields are `persona`, `worktree`, and `permission`, written before the `[[harness]]` entries, because a key after an entry belongs to that entry. `init` writes one entry and no `model` line. A spawn takes the entry at the count of seats already stored for that role, including killed seats. One entry stays on that entry. Personas live in that folder's `templates/personas/`. That directory is the one the report printed, not a directory in the repository. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the operator skill when its bytes differ from this version.
 
 View and modify templates with the roster commands:
 
@@ -79,18 +81,19 @@ foil roster update implementer model=claude-sonnet-4-5
 foil roster add researcher
 ```
 
-The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add` without `--from` uses the first installed harness, `worktree = false`, and `permission = auto`. Set `permission` from outside the fleet; the lead cannot, including on `foil roster add --from` when the file's permission is not `auto`. An omitted permission is `auto`. Do not remove a template, or change its harness, while a seat of that template has a stored state other than `killed`. You can still edit template files directly in the project folder's `templates/` if you prefer.
+The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add` without `--from` uses the first installed harness, `worktree = false`, and `permission = auto`. Set `permission` from outside the fleet; the lead cannot, including on `foil roster add --from` when the file's permission is not `auto`. An omitted permission is `auto`. `foil roster update ROLE harness=ID` and `foil roster update ROLE model=MODEL` edit a list of one entry and write `[[harness]]`. A longer list is edited in the template file. Those two updates are refused, and the file is left unchanged. Do not remove a template while a seat of that template has a stored state other than `killed`. Changing the list while a seat is alive is allowed. That seat keeps the harness and model it was launched with, and resume uses that pair. You can still edit template files directly in the project folder's `templates/` if you prefer.
 
 ## Picking a harness and a model
 
 Keep the principles few.
 
 - Match the model to the work.
-- Keep the reviewer off the implementer's harness whenever at least two eligible harnesses are installed. `init` does this when it can. A different harness is not a different model. An operator who wants two models sets `model` on the templates.
+- Keep the reviewer off the implementer's harness whenever at least two eligible harnesses are installed. `init` does this when it can. A different harness is not a different model. An operator who wants two models sets `model` on an entry.
+- Several entries on one role make a spawn take the entry at the count of seats already stored for that role, including killed seats. That spreads later worker spawns across the entries. It does not watch quotas, and it does not switch a seat that is already running.
 - Give a large context to roles that read a lot.
 - Pair `auto` with a worktree. A seat that runs unattended and can commit should have its own branch.
 
-The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist. Do not reorder `init`'s harness assignment. Change harness or model afterwards with `roster update`.
+The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist. Do not reorder `init`'s harness assignment. Change a one-entry harness or model afterwards with `roster update`. Edit a longer list in the template file.
 
 ## Personas from outside
 
@@ -197,4 +200,4 @@ How you adapt an outside catalog is in Personas from outside.
 
 ## What you do not do
 
-You do not implement, review code, or merge. You do not spawn workers, kill a single seat, or resume anyone. Those belong to the lead. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, and do not type into a pane except to send keys for an approval dialog, as step 3 says. You do not invent a session name, and you do not add a Foil command or flag for attaching. You set `permission` as step 3 says.
+You do not implement, review code, or merge. You do not spawn workers or resume anyone. Those belong to the lead. You do not kill a single seat once the check has passed. A failed first-run lead is cleared as step 5 says. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, and do not type into a pane except to send keys for an approval dialog, as step 3 says. You do not invent a session name, and you do not add a Foil command or flag for attaching. You set `permission` as step 3 says.

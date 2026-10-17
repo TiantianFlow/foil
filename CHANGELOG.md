@@ -12,6 +12,21 @@ Notable changes to Foil, newest first.
 
 - The command surface is eight top-level commands and twenty-one actions.
 - A nudge path under `board/room/` is read with `foil board read`. A launch whose prompt is the instruction file tells the seat to list `board/room` and read threads it has not answered. `foil post` types the same nudge as `foil send`, including the 200ms wait before Enter.
+- Onboarding names the dialog the operator may answer. An approval dialog is a folder-trust prompt, a login prompt, or a prompt that blocks the seat until someone approves it. An update dialog, a first-run dialog, and an opt-in are reported to the human and not answered. A previous `board/status.md` that already says `state: done` passes the first-run check only when `updated` changes. The first `foil init` with no eligible harness prints `foil: no harness installed` and writes nothing; a preset can be added only after the project folder exists. A dead first-run lead is cleared with `foil seat kill lead` before the check is spawned again. The sample `foil init` banner in the demos is labeled as an illustration from an older run. (#24)
+
+## [0.4.3] - 2026-10-17
+
+`foil --version` prints 0.4.3.
+
+### Added
+
+- A role template's harness is one ordered list of entries (`[[harness]]`, with `id` and an optional `model`). Spawn takes `entries[n % len(entries)]`, where `n` is the number of seat records already stored for that role, including killed seats, counted before the new seat is inserted. A failed launch writes no seat record, so a retry selects the same entry. One entry stays on that entry. The lead reuses one registry record named `lead`, so that count is 0 before the record exists and 1 before every later launch.
+
+### Changed
+
+- Resume and restart launch with the harness and model recorded on the seat. They do not reload the template list over that pair.
+- `roster update` of `harness` or `model` edits a one-entry list and writes `[[harness]]`. On a longer list those two updates are refused and the file is left unchanged. Editing the list while a seat is alive is allowed. `roster remove` still fails while a seat of that role is not killed. Seat records stay, including killed ones.
+- `roster list` and `roster show` report the harness list. JSON `harness` is the entries and JSON `preset` is one source per entry.
 
 ## [0.4.2] - 2026-10-16
 
@@ -277,6 +292,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.4.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.3
 [0.4.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.2
 [0.4.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.1
 [0.4.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.0

@@ -92,8 +92,8 @@ def test_an_exited_harness_stays_peekable_until_kill_or_resume(
         )
         lead = foil_root(repo) / "templates" / "lead.toml"
         rewritten = re.sub(
-            r'harness = "[^"]+"',
-            'harness = "stub"',
+            r'id = "[^"]+"',
+            'id = "stub"',
             lead.read_text(encoding="utf-8"),
             count=1,
         )

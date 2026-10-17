@@ -169,8 +169,8 @@ def test_init_rerun_reports_the_harness_stored_after_an_edit(
     capsys.readouterr()
     reviewer = foil_root(repo) / "templates" / "reviewer.toml"
     original = reviewer.read_text(encoding="utf-8")
-    assert 'harness = "codex"' in original
-    edited = original.replace('harness = "codex"', 'harness = "claude"', 1)
+    assert 'id = "codex"' in original
+    edited = original.replace('id = "codex"', 'id = "claude"', 1)
     reviewer.write_text(edited, encoding="utf-8")
     assert main(["init"]) == 0
     report = capsys.readouterr().out
@@ -196,13 +196,13 @@ def test_init_report_uses_three_for_three_stored_ids(
     reviewer = templates / "reviewer.toml"
     implementer.write_text(
         implementer.read_text(encoding="utf-8").replace(
-            'harness = "claude"', 'harness = "codex"', 1
+            'id = "claude"', 'id = "codex"', 1
         ),
         encoding="utf-8",
     )
     reviewer.write_text(
         reviewer.read_text(encoding="utf-8").replace(
-            'harness = "codex"', 'harness = "gemini"', 1
+            'id = "codex"', 'id = "gemini"', 1
         ),
         encoding="utf-8",
     )
