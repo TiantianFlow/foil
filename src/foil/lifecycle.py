@@ -322,6 +322,8 @@ def _instruction(
         "Commands you may run:",
         _LEAD_COMMANDS if lead else _WORKER_COMMANDS,
         "Mail: `foil send TO TEXT`. Room: `foil post TEXT`.",
+        "Send is one seat. Post is every other alive seat. "
+        "The task and result files are the durable record. A note wakes nobody.",
         "A nudge line is `from path`. A path under `board/mail/` is `foil mail read`. "
         "A path under `board/room/` is `foil board read`.",
         "List `board/room` and read threads this seat has not answered.",

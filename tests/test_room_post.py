@@ -34,6 +34,10 @@ _OTHERWISE = "Otherwise `foil post --re` with `--decline`."
 _PREAMBLE_CONTINUE = "Do not open a new `foil post` to continue this thread."
 _SKILL_CONTINUE = "Do not open a new `foil post` to continue the thread."
 _NOTES = "Notes: write files under `board/notes/`. They wake no one."
+_CHOICE = (
+    "Send is one seat. Post is every other alive seat. "
+    "The task and result files are the durable record. A note wakes nobody."
+)
 _ROOM_FIELDS = "room/v1 (from, time, optional re, nudged)."
 _TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _COUNT = re.compile(r"This directory has (\d+) files, and \1 does not refuse the write\.")
@@ -897,6 +901,22 @@ def test_f33_whitespace_waking_text_writes_nothing(
     assert _nudge_lines(calls) == []
 
 
+def test_f33_empty_re_writes_nothing_and_types_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _alive(repo)
+    calls = _install_tmux(monkeypatch)
+    assert main(["post", "--re", "", "hello"]) == 1
+    assert _one_line(capsys) == "foil: room path must be absolute\n"
+    assert _room(repo) == []
+    assert _nudge_lines(calls) == []
+    assert main(["post", "--re", "", "--decline"]) == 1
+    assert _one_line(capsys) == "foil: --decline requires --re\n"
+    assert _room(repo) == []
+    assert _nudge_lines(calls) == []
+
+
 def test_f33_missing_text_writes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1043,6 +1063,7 @@ def test_f24_instruction_offers_unanswered_room_threads(
     for text in (lead, worker):
         assert "foil post [TEXT] [--re PATH] [--decline]" in text
         assert "A path under `board/room/` is `foil board read`." in text
+        assert _CHOICE in text
         assert _ROOM_FIELDS in text
         assert _NOTES in text
     assert "foil seat spawn" not in worker
@@ -1054,12 +1075,18 @@ def test_s8_operator_skill_reaches_every_alive_seat() -> None:
     text = (Path(__file__).resolve().parents[1] / "skills" / "operator.md").read_text(
         encoding="utf-8"
     )
+    assert (
+        "`foil send lead` is the goal, the human's answer, and a nudge when the lead looks stuck."
+        in text
+    )
     assert "Ordinary human answers stay `foil send lead`." in text
     assert (
-        "`foil post` writes one room file and types one nudge into every alive seat, "
-        "because you are outside the fleet."
+        "`foil post` is for words the human wants every alive seat to see, "
+        "such as a question for the whole fleet."
     ) in text
+    assert "You are outside the fleet, so that post reaches every alive seat." in text
     assert "A decline writes a file and types nothing." in text
+    assert "A note wakes nobody." in text
 
 
 def test_f24_a_later_launch_is_not_a_second_nudge_and_writes_no_ledger(
