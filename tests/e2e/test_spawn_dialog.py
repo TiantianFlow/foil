@@ -42,8 +42,8 @@ def test_task_mail_does_not_type_into_a_startup_dialog(
     for role in ("lead", "implementer", "reviewer"):
         path = templates / f"{role}.toml"
         text = re.sub(
-            r'(?m)^harness = ".*"$',
-            'harness = "fake"',
+            r'(?m)^id = ".*"$',
+            'id = "fake"',
             path.read_text(encoding="utf-8"),
             count=1,
         )
