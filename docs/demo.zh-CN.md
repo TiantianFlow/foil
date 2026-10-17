@@ -44,11 +44,15 @@ Read /var/foil/projects/your-repo-1a2b3c/skills/operator.md and follow it. My go
 
 ```toml
 # <项目目录>/templates/implementer.toml
-harness = "codex"
+[[harness]]
+id = "codex"
+
 persona = "personas/implementer.md"
 worktree = true
 permission = "auto"
 ```
+
+再写一个 `[[harness]]` 项，并可以带上 `model`，之后这个角色的启动就会按列表轮换。只有一项时就一直用这一项。
 
 `worktree = true` 让每个实现者拥有自己的 Git worktree 和分支。省略 `permission` 时
 取值是 `auto`，席位无人值守地运行。`permission = "ask"` 是显式选择：

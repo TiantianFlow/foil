@@ -50,11 +50,15 @@ for the reviewer:
 
 ```toml
 # <project folder>/templates/implementer.toml
-harness = "codex"
+[[harness]]
+id = "codex"
+
 persona = "personas/implementer.md"
 worktree = true
 permission = "auto"
 ```
+
+Add another `[[harness]]` entry, with an optional `model`, when later spawns of that role should alternate. One entry stays on that entry.
 
 `worktree = true` gives each implementer its own Git worktree and branch.
 Omitting `permission` means `auto`, and the seat runs unattended.

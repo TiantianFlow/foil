@@ -75,7 +75,8 @@ def test_roster_list_json_format(project: Path, capsys: pytest.CaptureFixture[st
     assert isinstance(data["personas"], list)
     assert data["personas"]
     assert {"name", "description"} <= set(data["personas"][0])
-    assert data["templates"][0]["preset"] in {"builtin", "user", "invalid"}
+    assert data["templates"][0]["preset"][0] in {"builtin", "user", "invalid"}
+    assert isinstance(data["templates"][0]["harness"], list)
     assert "description" in data["templates"][0]
 
 
@@ -99,7 +100,9 @@ def test_roster_show_json_format(project: Path, capsys: pytest.CaptureFixture[st
     assert "harness" in data
     assert "worktree" in data
     assert data["worktree"] is True  # implementer has worktree
-    assert data["preset"] == "builtin"
+    assert data["preset"] == ["builtin"]
+    assert isinstance(data["harness"], list)
+    assert "model" not in data
     assert data["description"].startswith("You make the change the task asks for,")
 
 
@@ -179,7 +182,8 @@ def test_roster_update_harness(project: Path, capsys: pytest.CaptureFixture[str]
     
     template_path = foil_root(project) / "templates" / "lead.toml"
     content = template_path.read_text()
-    assert 'harness = "codex"' in content
+    assert "[[harness]]" in content
+    assert 'id = "codex"' in content
 
 
 def test_roster_update_model(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -506,16 +510,21 @@ def _seat(project: Path, *, state: str) -> None:
     save_registry(project, registry)
 
 
-def test_remove_and_harness_change_refuse_a_live_seat(project: Path) -> None:
+def test_remove_refuses_a_live_seat_and_a_harness_edit_does_not(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     _seat(project, state="")
     path = foil_root(project) / "templates" / "researcher.toml"
-    before = path.read_bytes()
     with pytest.raises(FoilError, match="still in use"):
         remove_template(project, "researcher")
-    with pytest.raises(FoilError, match="still in use"):
-        update_template(project, "researcher", "harness", "codex")
-    assert path.read_bytes() == before
     assert path.is_file()
+    update_template(project, "researcher", "harness", "codex")
+    text = path.read_text(encoding="utf-8")
+    assert "[[harness]]" in text
+    assert 'id = "codex"' in text
+    assert load_registry(project)["seats"]["researcher-1"]["harness"] == "fake"
+    list_seats(project)
+    assert "researcher-1\tresearcher\tdead\t\tfake\t" in capsys.readouterr().out
 
 
 def test_killed_seat_does_not_block_remove(
@@ -757,10 +766,10 @@ def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
         data = json.loads(capsys.readouterr().out)
         by_role = {item["role"]: item for item in data["templates"]}
         assert by_role["quiet"]["description"] == ""
-        assert by_role["quiet"]["preset"] == "builtin"
-        assert by_role["stranger"]["preset"] == "invalid"
-        assert by_role["local"]["preset"] == "user"
-        assert by_role["r2"]["preset"] == "invalid"
+        assert by_role["quiet"]["preset"] == ["builtin"]
+        assert by_role["stranger"]["preset"] == ["invalid"]
+        assert by_role["local"]["preset"] == ["user"]
+        assert by_role["r2"]["preset"] == ["invalid"]
         assert by_role["sealed"]["description"] == ""
         assert main(["roster", "show", "r2"]) == 0
         assert "preset: invalid" in capsys.readouterr().out
@@ -924,3 +933,65 @@ def test_a_persona_through_a_symlinked_directory_is_refused(
     shown = json.loads(capsys.readouterr().out)
     assert shown["description"] == ""
     assert "Outside text" not in listed
+
+
+def test_roster_update_rewrites_a_legacy_one_entry_file(project: Path) -> None:
+    path = foil_root(project) / "templates" / "lead.toml"
+    path.write_text(
+        'harness = "claude"\n'
+        'model = "opus"\n'
+        'persona = "personas/lead.md"\n'
+        "worktree = false\n"
+        'permission = "auto"\n',
+        encoding="utf-8",
+    )
+    update_template(project, "lead", "harness", "codex")
+    text = path.read_text(encoding="utf-8")
+    assert "[[harness]]" in text
+    assert 'id = "codex"' in text
+    assert 'model = "opus"' in text
+    assert 'harness = "' not in text
+    from foil.presets import load_template
+
+    assert load_template(project, "lead")["harness"] == [{"id": "codex", "model": "opus"}]
+
+
+def test_roster_update_refuses_harness_flags_on_a_list(project: Path) -> None:
+    path = foil_root(project) / "templates" / "lead.toml"
+    path.write_text(
+        "[[harness]]\n"
+        'id = "claude"\n'
+        'model = "opus"\n'
+        "\n"
+        "[[harness]]\n"
+        'id = "codex"\n'
+        'model = "gpt-5.5"\n'
+        "\n"
+        'persona = "personas/lead.md"\n'
+        "worktree = false\n"
+        'permission = "auto"\n',
+        encoding="utf-8",
+    )
+    before = path.read_bytes()
+    with pytest.raises(FoilError, match="more than one harness entry"):
+        update_template(project, "lead", "harness", "gemini")
+    with pytest.raises(FoilError, match="more than one harness entry"):
+        update_template(project, "lead", "model", "other")
+    assert path.read_bytes() == before
+    update_template(project, "lead", "persona", "personas/reviewer.md")
+    text = path.read_text(encoding="utf-8")
+    assert 'id = "claude"' in text
+    assert 'id = "codex"' in text
+    assert 'persona = "personas/reviewer.md"' in text
+
+
+def test_remove_drops_the_role_cursor(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    add_template(project, "researcher")
+    capsys.readouterr()
+    registry = load_registry(project)
+    registry["harness_cursor"]["researcher"] = 4
+    save_registry(project, registry)
+    remove_template(project, "researcher")
+    assert "researcher" not in load_registry(project)["harness_cursor"]

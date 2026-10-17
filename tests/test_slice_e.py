@@ -231,7 +231,7 @@ def test_resume_without_a_worktree_starts_in_the_project(
     _alive(monkeypatch, set())
     templates = foil_root(repo) / "templates"
     lead = templates / "lead.toml"
-    text = lead.read_text(encoding="utf-8").replace('harness = "claude"', 'harness = "codex"')
+    text = lead.read_text(encoding="utf-8").replace('id = "claude"', 'id = "codex"', 1)
     lead.write_text(text)
     templates.joinpath("plain.toml").write_text(
         'harness = "opencode"\nworktree = false\n',
@@ -403,30 +403,56 @@ def test_list_and_peek_report_owned_facts_only(
     assert capsys.readouterr().err == "foil: invalid lines\n"
 
 
-def test_resume_uses_the_edited_template_harness(
+def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _launch(monkeypatch)
-    _alive(monkeypatch, set())
     template = foil_root(repo) / "templates" / "worker.toml"
-    template.write_text('harness = "claude"\nworktree = false\n', encoding="utf-8")
+    template.write_text(
+        '[[harness]]\nid = "claude"\nmodel = "sonnet"\nworktree = false\npermission = "auto"\n',
+        encoding="utf-8",
+    )
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "worker", "--name", "worker"]) == 0
-    previous = load_registry(repo)["seats"]["worker"]["session_id"]
+    launched = load_registry(repo)["seats"]["worker"]
+    previous = launched["session_id"]
+    window = launched["window_id"]
     assert previous
-    template.write_text('harness = "gemini"\nworktree = false\n', encoding="utf-8")
+    assert launched["harness"] == "claude"
+    assert launched["model"] == "sonnet"
+    template.write_text(
+        "[[harness]]\n"
+        'id = "gemini"\n'
+        'model = "other"\n'
+        "\n"
+        "[[harness]]\n"
+        'id = "codex"\n'
+        'model = "gpt-5.5"\n'
+        "\n"
+        "worktree = false\n"
+        'permission = "auto"\n',
+        encoding="utf-8",
+    )
+    _alive(monkeypatch, {window})
+    assert main(["seat", "list"]) == 0
+    listed = capsys.readouterr().out
+    assert "worker\tworker\talive\t\tclaude/sonnet\t" in listed
+    assert "gemini" not in listed
+    _alive(monkeypatch, set())
     assert main(["seat", "resume", "worker"]) == 0
     assert capsys.readouterr().err == ""
     seat = load_registry(repo)["seats"]["worker"]
     plan = json.loads(
         (foil_root(repo) / "run" / "plans" / "worker.json").read_text(encoding="utf-8")
     )
-    assert seat["harness"] == "gemini"
-    assert seat["session_id"] == ""
-    assert plan["argv"][0] == "gemini"
-    assert "--resume" not in plan["argv"]
-    assert previous not in plan["argv"]
+    assert seat["harness"] == "claude"
+    assert seat["model"] == "sonnet"
+    assert seat["session_id"] == previous
+    assert plan["argv"][0] == "claude"
+    assert "--resume" in plan["argv"]
+    assert previous in plan["argv"]
+    assert "gemini" not in plan["argv"]
 
 
 def test_resume_names_a_broken_seat_and_continues(
