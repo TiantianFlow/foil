@@ -19,7 +19,7 @@ from foil.presets import (
     template_permission,
 )
 from foil.project import foil_root
-from foil.store import SAFE_ID, create_exclusive, load_registry, save_registry, write_bytes
+from foil.store import SAFE_ID, create_exclusive, load_registry, write_bytes
 
 _PROTECTED_ROLES = {"lead", "implementer", "reviewer"}
 _TEMPLATE_FIELDS = {"harness", "model", "persona", "worktree", "permission"}
@@ -83,15 +83,6 @@ def _accept(toplevel: Path, role: str) -> None:
     _persona_inside(str(template.get("persona") or ""))
     for entry in template["harness"]:
         load_preset(toplevel, str(entry["id"]))
-
-
-def _drop_cursor(toplevel: Path, role: str) -> None:
-    registry = load_registry(toplevel)
-    cursors = registry["harness_cursor"]
-    if role not in cursors:
-        return
-    del cursors[role]
-    save_registry(toplevel, registry)
 
 
 def _in_use(toplevel: Path, role: str) -> None:
@@ -323,5 +314,4 @@ def remove_template(toplevel: Path, role: str) -> None:
     _refuse_symlink(template_path)
 
     template_path.unlink()
-    _drop_cursor(toplevel, role)
     print(f"foil: removed template '{role}'")

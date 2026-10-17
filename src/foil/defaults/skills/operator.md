@@ -68,7 +68,7 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 ## Role templates
 
-A template is a TOML file in the project folder's `templates/`. The file name is the role. `harness` is one ordered list of entries. Each entry has an `id` and an optional `model`. The other fields are `persona`, `worktree`, and `permission`, written before the `[[harness]]` entries, because a key after an entry belongs to that entry. `init` writes one entry and no `model` line. Spawn takes the next entry. One entry stays on that entry. Personas live in that folder's `templates/personas/`. That directory is the one the report printed, not a directory in the repository. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the operator skill when its bytes differ from this version.
+A template is a TOML file in the project folder's `templates/`. The file name is the role. `harness` is one ordered list of entries. Each entry has an `id` and an optional `model`. The other fields are `persona`, `worktree`, and `permission`, written before the `[[harness]]` entries, because a key after an entry belongs to that entry. `init` writes one entry and no `model` line. A spawn takes the entry at the count of seats already stored for that role, including killed seats. One entry stays on that entry. Personas live in that folder's `templates/personas/`. That directory is the one the report printed, not a directory in the repository. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the operator skill when its bytes differ from this version.
 
 View and modify templates with the roster commands:
 
@@ -87,7 +87,7 @@ Keep the principles few.
 
 - Match the model to the work.
 - Keep the reviewer off the implementer's harness whenever at least two eligible harnesses are installed. `init` does this when it can. A different harness is not a different model. An operator who wants two models sets `model` on an entry.
-- Several entries on one role make later spawns alternate through that list. That spreads those spawns across the entries. It does not watch quotas, and it does not switch a seat that is already running.
+- Several entries on one role make a spawn take the entry at the count of seats already stored for that role, including killed seats. That spreads later worker spawns across the entries. It does not watch quotas, and it does not switch a seat that is already running.
 - Give a large context to roles that read a lot.
 - Pair `auto` with a worktree. A seat that runs unattended and can commit should have its own branch.
 
