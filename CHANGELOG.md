@@ -6,7 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Added
 
-- `foil seat archive NAME` frees a killed worker's name so it can be spawned again. The old record is a prose file under `run/archive/`, and the registry schema stays 1. The worktree, branch, mailbox, plan, and instruction file stay. A dirty tree is left in place on purpose. `foil seat list` omits the archived seat. `foil seat list --archived` prints the stored worktree path and branch. `seat archive` holds the registry lock across its tmux probe, so spawn, kill, and resume wait while that probe waits. A `display-message` failure proceeds rather than refuses. (#32)
+- `foil seat archive NAME` frees a killed worker's name so it can be spawned again. The old record is a prose file under `run/archive/`, and the registry schema stays 1. The worktree, branch, mailbox, plan, and instruction file stay. A dirty tree is left in place on purpose. `foil seat list` omits the archived seat. `foil seat list --archived` prints the stored worktree path and branch. `seat archive` holds the registry lock across its tmux probe. Spawn, kill, and resume re-read the registry under that lock before they write, so they do not put an archived seat back. A `display-message` failure proceeds rather than refuses. (#32)
 
 ## [0.4.4] - 2026-10-18
 

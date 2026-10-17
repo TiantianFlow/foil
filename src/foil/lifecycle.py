@@ -49,8 +49,8 @@ from foil.store import (
     load_registry,
     read_json,
     registry_path,
-    save_registry,
     scan,
+    update_registry,
     write_bytes,
     write_json,
 )
@@ -535,11 +535,20 @@ def spawn_seat(
             "session_id": native,
         }
     )
-    if loaded["name"] == "lead":
-        registry["lead"] = "lead"
-    registry["seats"][seat] = record
+    session = str(registry.get("tmux_session") or "")
+
+    def apply(fresh: dict) -> None:
+        existing = fresh["seats"].get(seat)
+        if existing is not None and not (seat == "lead" and existing.get("state") == "killed"):
+            raise FoilError(f"foil: seat '{shown(seat)}' already exists")
+        fresh["seats"][seat] = record
+        if session:
+            fresh["tmux_session"] = session
+        if loaded["name"] == "lead":
+            fresh["lead"] = "lead"
+
     try:
-        save_registry(root, registry)
+        update_registry(root, apply)
     except Exception:
         TmuxController().abandon_window(
             TmuxTarget(
@@ -596,8 +605,20 @@ def kill_seats(
         window = record.get("window_id") or ""
         if _state(registry, seat_name, record) != "killed":
             _remove_leftover(registry, root, seat_name, window)
-        record["state"] = "killed"
-        save_registry(root, registry)
+
+        def apply(fresh: dict, seat_name: str = seat_name, window: str = window) -> None:
+            current = fresh["seats"].get(seat_name)
+            if current is None:
+                if not all_seats:
+                    raise FoilError(f"foil: unknown seat '{shown(seat_name)}'")
+                return
+            if (current.get("window_id") or "") != window:
+                if not all_seats:
+                    raise FoilError(f"foil: seat '{shown(seat_name)}' changed")
+                return
+            current["state"] = "killed"
+
+        update_registry(root, apply)
 
 
 def _restart(root: Path, registry: dict, name: str) -> None:
@@ -613,7 +634,8 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         session = str(uuid.uuid4())
     else:
         session = ""
-    _remove_leftover(registry, root, name, record.get("window_id") or "")
+    old_window = record.get("window_id") or ""
+    _remove_leftover(registry, root, name, old_window)
     window = _open(
         root,
         registry,
@@ -629,8 +651,22 @@ def _restart(root: Path, registry: dict, name: str) -> None:
     record["window_id"] = window
     record["state"] = ""
     record["session_id"] = session
+    tmux_session = str(registry.get("tmux_session") or "")
+
+    def apply(fresh: dict) -> None:
+        current = fresh["seats"].get(name)
+        if current is None:
+            raise FoilError(f"foil: unknown seat '{shown(name)}'")
+        if current.get("state") == "killed":
+            raise FoilError(f"foil: seat '{shown(name)}' is killed")
+        if (current.get("window_id") or "") != old_window:
+            raise FoilError(f"foil: seat '{shown(name)}' changed")
+        fresh["seats"][name] = dict(record)
+        if tmux_session:
+            fresh["tmux_session"] = tmux_session
+
     try:
-        save_registry(root, registry)
+        update_registry(root, apply)
     except Exception:
         TmuxController().abandon_window(
             TmuxTarget(

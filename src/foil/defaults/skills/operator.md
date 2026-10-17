@@ -182,7 +182,7 @@ When the human is done:
 foil seat kill --all
 ```
 
-That stops every seat. It does not delete branches or worktrees. A killed worker's name stays reserved until you archive it. That frees the name and does not delete the worktree, the branch, or uncommitted work. Use it after an upgrade when a killed seat should have its usual name again. `foil seat list --archived` shows the stored worktree. A leftover seat worktree is `<project folder>/worktrees/<label>`. Remove one that is clean with `git worktree remove <path>`. A dirty tree needs `--force`, and that discards uncommitted work.
+That stops every seat. It does not delete branches or worktrees. A killed worker's name stays reserved until you archive it. That frees the name and does not delete the worktree, the branch, the mailbox, or uncommitted work. Use it after an upgrade when a killed seat should have its usual name again. `foil seat list --archived` shows the stored worktree. A leftover seat worktree is `<project folder>/worktrees/<label>`. Remove one that is clean with `git worktree remove <path>`. A dirty tree needs `--force`, and that discards uncommitted work.
 
 ```text
 foil seat archive implementer-1
