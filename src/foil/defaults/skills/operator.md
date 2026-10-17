@@ -68,7 +68,7 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 ## Role templates
 
-A template is a TOML file in the project folder's `templates/`. The file name is the role. `harness` is one ordered list of entries. Each entry has an `id` and an optional `model`. The other fields are `persona`, `worktree`, and `permission`. `init` writes one entry and no `model` line. Spawn takes the next entry. One entry stays on that entry. Personas live in that folder's `templates/personas/`. That directory is the one the report printed, not a directory in the repository. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the operator skill when its bytes differ from this version.
+A template is a TOML file in the project folder's `templates/`. The file name is the role. `harness` is one ordered list of entries. Each entry has an `id` and an optional `model`. The other fields are `persona`, `worktree`, and `permission`, written before the `[[harness]]` entries, because a key after an entry belongs to that entry. `init` writes one entry and no `model` line. Spawn takes the next entry. One entry stays on that entry. Personas live in that folder's `templates/personas/`. That directory is the one the report printed, not a directory in the repository. `init` copies every packaged persona there and writes only the three default templates. It overwrites no template, persona, or preset. Re-running it after an edit leaves those files alone, and replaces the operator skill when its bytes differ from this version.
 
 View and modify templates with the roster commands:
 

@@ -594,13 +594,13 @@ def test_one_entry_list_spawns_that_entry_every_time(
     repo = _repo(tmp_path, monkeypatch)
     _launch(monkeypatch)
     (foil_root(repo) / "templates" / "implementer.toml").write_text(
-        '[[harness]]\n'
-        'id = "codex"\n'
-        'model = "gpt-5.5"\n'
-        "\n"
         'persona = "personas/implementer.md"\n'
         "worktree = false\n"
-        'permission = "auto"\n',
+        'permission = "auto"\n'
+        "\n"
+        "[[harness]]\n"
+        'id = "codex"\n'
+        'model = "gpt-5.5"\n',
         encoding="utf-8",
     )
     assert main(["seat", "spawn", "lead"]) == 0
@@ -620,17 +620,17 @@ def test_spawns_alternate_and_a_failed_launch_does_not_advance(
     repo = _repo(tmp_path, monkeypatch)
     calls = _launch(monkeypatch)
     (foil_root(repo) / "templates" / "implementer.toml").write_text(
+        'persona = "personas/implementer.md"\n'
+        "worktree = false\n"
+        'permission = "auto"\n'
+        "\n"
         "[[harness]]\n"
         'id = "claude"\n'
         'model = "opus"\n'
         "\n"
         "[[harness]]\n"
         'id = "codex"\n'
-        'model = "gpt-5.5"\n'
-        "\n"
-        'persona = "personas/implementer.md"\n'
-        "worktree = false\n"
-        'permission = "auto"\n',
+        'model = "gpt-5.5"\n',
         encoding="utf-8",
     )
     assert main(["seat", "spawn", "lead"]) == 0

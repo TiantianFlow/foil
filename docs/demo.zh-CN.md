@@ -44,12 +44,12 @@ Read /var/foil/projects/your-repo-1a2b3c/skills/operator.md and follow it. My go
 
 ```toml
 # <项目目录>/templates/implementer.toml
-[[harness]]
-id = "codex"
-
 persona = "personas/implementer.md"
 worktree = true
 permission = "auto"
+
+[[harness]]
+id = "codex"
 ```
 
 再写一个 `[[harness]]` 项，并可以带上 `model`，之后这个角色的启动就会按列表轮换。只有一项时就一直用这一项。

@@ -50,12 +50,12 @@ for the reviewer:
 
 ```toml
 # <project folder>/templates/implementer.toml
-[[harness]]
-id = "codex"
-
 persona = "personas/implementer.md"
 worktree = true
 permission = "auto"
+
+[[harness]]
+id = "codex"
 ```
 
 Add another `[[harness]]` entry, with an optional `model`, when later spawns of that role should alternate. One entry stays on that entry.
