@@ -374,13 +374,20 @@ def _replace_text(root: Path, pairs: list[tuple[str, str]]) -> None:
             _write_json(path, replaced if replaced.endswith("\n") else replaced + "\n")
 
     for path in _run_files(root):
-        if path.name == "registry.json":
-            with exclusive_lock(path.with_suffix(".lock")):
-                if path.is_symlink() or not path.is_file():
-                    continue
-                rewrite(path)
+        if path.parent.name == "archive":
             continue
-        rewrite(path)
+        if path.name != "registry.json":
+            rewrite(path)
+            continue
+        with exclusive_lock(path.with_suffix(".lock")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            archive = path.parent / "archive"
+            if not archive.is_symlink() and archive.is_dir():
+                for child in archive.iterdir():
+                    if child.is_file() and not child.is_symlink():
+                        rewrite(child)
+            rewrite(path)
 
 
 def _texts_in_run(root: Path) -> list[str]:
