@@ -6,6 +6,9 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
+- Config is three lists in the project folder. `harnesses.toml` is how each harness launches, including the model ids it accepts. `roles.toml` is the role profiles (role and description, plus persona, worktree, and permission). `mapping.toml` is the default role to harness and model. `init` still writes `templates/<role>.toml` for the three default roles; a present file overrides the lists for that role. (#43)
+- Each fleet has its own workspace (`fleet.json`), board, posts (`board/room/`), and fleet memory. From inside the fleet, `foil roster update ROLE model=VALUE` records fleet memory and the next spawn of that role uses that model. The default mapping stays. Resume still launches the harness and model recorded on the seat. (#43)
+- Package Python is about 4,500 lines. N4's 2,500-line target is not a hard limit. The three lists, the legacy template reader, and fleet memory are the addition.
 - Onboarding names the dialog the operator may answer. An approval dialog is a folder-trust prompt, a login prompt, or a prompt that blocks the seat until someone approves it. An update dialog, a first-run dialog, and an opt-in are reported to the human and not answered. A previous `board/status.md` that already says `state: done` passes the first-run check only when `updated` changes. The first `foil init` with no eligible harness prints `foil: no harness installed` and writes nothing; a preset can be added only after the project folder exists. A dead first-run lead is cleared with `foil seat kill lead` before the check is spawned again. The sample `foil init` banner in the demos is labeled as an illustration from an older run. (#24)
 
 ## [0.4.3] - 2026-10-17

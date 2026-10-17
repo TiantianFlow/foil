@@ -26,7 +26,7 @@ def notes_dir(toplevel: Path) -> Path:
 
 def ensure_board(toplevel: Path) -> None:
     root = foil_root(toplevel) / "board"
-    for name in ("mail", "notes", "tasks", "results"):
+    for name in ("mail", "notes", "tasks", "results", "room"):
         private_dir(root / name)
 
 

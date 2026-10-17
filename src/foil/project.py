@@ -22,6 +22,7 @@ SKELETON = (
     "board/notes",
     "board/tasks",
     "board/results",
+    "board/room",
     "run/instructions",
     "run/plans",
     "run/fake",

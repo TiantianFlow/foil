@@ -15,9 +15,22 @@ from foil.project import foil_root
 from foil.store import SAFE_ID, create_exclusive, scan, write_bytes
 
 _PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}")
-_PRESET_KEYS = {"id", "command", "permission", "resume", "session_id", "env", "unverified"}
+_PRESET_KEYS = {
+    "id",
+    "command",
+    "permission",
+    "resume",
+    "session_id",
+    "env",
+    "unverified",
+    "models",
+}
 _TEMPLATE_KEYS = {"harness", "model", "persona", "worktree", "permission"}
 _ENTRY_KEYS = {"id", "model"}
+_ROLE_KEYS = {"id", "description", "persona", "worktree", "permission"}
+_MAP_KEYS = {"role", "harness", "model"}
+_FLEET_KEYS = {"role", "model", "note"}
+_PRESET_SAME = ("command", "permission", "resume", "session_id", "env", "unverified", "models")
 _ROLES = ("lead", "implementer", "reviewer")
 BUILTIN_IDS = ("claude", "codex", "gemini", "opencode", "grok", "fake")
 
@@ -57,12 +70,13 @@ def _load_toml(text: str, label: str) -> dict[str, Any]:
     return raw
 
 
-def _parse_preset(text: str, harness_id: str) -> dict[str, Any]:
-    raw = _load_toml(text, "preset")
+def _preset_from_table(raw: dict[str, Any]) -> dict[str, Any]:
     permission = raw.get("permission", {})
+    harness_id = raw.get("id")
     if (
         set(raw) - _PRESET_KEYS
-        or raw.get("id") != harness_id
+        or not isinstance(harness_id, str)
+        or not SAFE_ID.fullmatch(harness_id)
         or raw.get("session_id") not in {"generated", "none"}
         or not isinstance(permission, dict)
         or set(permission) - {"ask", "auto"}
@@ -74,6 +88,11 @@ def _parse_preset(text: str, harness_id: str) -> dict[str, Any]:
     resume = raw.get("resume")
     env = _strings(raw.get("env", []), "preset")
     assert_no_secret(env)
+    models = raw.get("models", [])
+    if not isinstance(models, list) or any(
+        not isinstance(item, str) or not item or item.startswith("-") for item in models
+    ):
+        _fail("preset")
     return {
         "id": harness_id,
         "command": command,
@@ -85,7 +104,59 @@ def _parse_preset(text: str, harness_id: str) -> dict[str, Any]:
         "session_id": raw["session_id"],
         "env": env,
         "unverified": _strings(raw.get("unverified", []), "preset"),
+        "models": list(models),
     }
+
+
+def _parse_preset(text: str, harness_id: str) -> dict[str, Any]:
+    preset = _preset_from_table(_load_toml(text, "preset"))
+    if preset["id"] != harness_id:
+        _fail("preset")
+    return preset
+
+
+def _catalog(text: str) -> dict[str, dict[str, Any]]:
+    raw = _load_toml(text, "preset")
+    items = raw.get("harness")
+    if set(raw) - {"harness"} or not isinstance(items, list) or not items:
+        _fail("preset")
+    found: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            _fail("preset")
+        preset = _preset_from_table(item)
+        if preset["id"] in found:
+            _fail("preset")
+        found[preset["id"]] = preset
+    return found
+
+
+def _packaged_catalog() -> dict[str, dict[str, Any]]:
+    text = files("foil").joinpath("defaults", "harnesses.toml").read_text(encoding="utf-8")
+    return _catalog(text)
+
+
+def _optional_text(path: Path) -> str | None:
+    if path.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    if not path.is_file():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def _merged_catalog(toplevel: Path) -> tuple[dict[str, dict[str, Any]], list[tuple[str, str]]]:
+    """Packaged list, then the project list. A broken project file is skipped."""
+
+    skipped: list[tuple[str, str]] = []
+    merged = _packaged_catalog()
+    text = _optional_text(foil_root(toplevel) / "harnesses.toml")
+    if text is None:
+        return merged, skipped
+    try:
+        merged.update(_catalog(text))
+    except FoilError as exc:
+        skipped.append(("harnesses.toml", str(exc).removeprefix("foil: ")))
+    return merged, skipped
 
 
 def load_preset(toplevel: Path, harness_id: str) -> dict[str, Any]:
@@ -96,9 +167,12 @@ def load_preset(toplevel: Path, harness_id: str) -> dict[str, Any]:
         raise FoilError("foil: refusing symlink")
     if user.is_file():
         return _parse_preset(user.read_text(encoding="utf-8"), harness_id)
-    if harness_id not in BUILTIN_IDS:
+    merged, skipped = _merged_catalog(toplevel)
+    if skipped and harness_id not in merged:
+        raise FoilError(f"foil: invalid {skipped[0][1]}")
+    if harness_id not in merged:
         raise FoilError(f"foil: unknown harness '{harness_id}'")
-    return _parse_preset(_builtin("harnesses", f"{harness_id}.toml"), harness_id)
+    return merged[harness_id]
 
 
 def _is_flag(token: str) -> bool:
@@ -187,6 +261,198 @@ def render_template(
     return "\n\n".join(blocks) + "\n"
 
 
+def render_roles(roles: list[dict[str, Any]]) -> str:
+    blocks: list[str] = []
+    for role in roles:
+        lines = [
+            "[[role]]",
+            f"id = {_toml_basic(str(role['id']))}",
+            f"description = {_toml_basic(str(role.get('description') or ''))}",
+            f"persona = {_toml_basic(str(role.get('persona') or ''))}",
+            f"worktree = {'true' if role.get('worktree') else 'false'}",
+            f"permission = {_toml_basic(str(role.get('permission') or 'auto'))}",
+        ]
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
+def render_maps(maps: list[dict[str, str]]) -> str:
+    blocks: list[str] = []
+    for item in maps:
+        lines = [
+            "[[map]]",
+            f"role = {_toml_basic(item['role'])}",
+            f"harness = {_toml_basic(item['id'])}",
+        ]
+        if item.get("model"):
+            lines.append(f"model = {_toml_basic(item['model'])}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
+def _parse_roles(text: str) -> list[dict[str, Any]]:
+    if not text.strip():
+        return []
+    raw = _load_toml(text, "template")
+    if not raw:
+        return []
+    items = raw.get("role")
+    if set(raw) - {"role"} or not isinstance(items, list):
+        _fail("template")
+    roles: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict) or set(item) - _ROLE_KEYS or "id" not in item:
+            _fail("template")
+        role_id = item["id"]
+        description = item.get("description", "")
+        persona = item.get("persona", "")
+        worktree = item.get("worktree", False)
+        permission = _permission_field(item)
+        if (
+            not isinstance(role_id, str)
+            or not SAFE_ID.fullmatch(role_id)
+            or role_id in seen
+            or not isinstance(description, str)
+            or description.startswith("-")
+            or not isinstance(persona, str)
+            or persona.startswith("-")
+            or not isinstance(worktree, bool)
+            or permission not in {"ask", "auto"}
+        ):
+            _fail("template")
+        seen.add(role_id)
+        roles.append(
+            {
+                "id": role_id,
+                "description": description,
+                "persona": persona,
+                "worktree": worktree,
+                "permission": permission,
+            }
+        )
+    return roles
+
+
+def _parse_maps(text: str) -> list[dict[str, str]]:
+    if not text.strip():
+        return []
+    raw = _load_toml(text, "template")
+    if not raw:
+        return []
+    items = raw.get("map")
+    if set(raw) - {"map"} or not isinstance(items, list):
+        _fail("template")
+    maps: list[dict[str, str]] = []
+    for item in items:
+        if not isinstance(item, dict) or set(item) - _MAP_KEYS:
+            _fail("template")
+        role = item.get("role")
+        if not isinstance(role, str) or not SAFE_ID.fullmatch(role) or "harness" not in item:
+            _fail("template")
+        entry = _entry(item["harness"], item.get("model", ""))
+        maps.append({"role": role, "id": entry["id"], "model": entry["model"]})
+    return maps
+
+
+def read_roles(toplevel: Path) -> list[dict[str, Any]] | None:
+    """Profiles from ``roles.toml``, or None when that file is absent."""
+
+    text = _optional_text(foil_root(toplevel) / "roles.toml")
+    if text is None:
+        return None
+    return _parse_roles(text)
+
+
+def read_maps(toplevel: Path) -> list[dict[str, str]]:
+    text = _optional_text(foil_root(toplevel) / "mapping.toml")
+    if text is None:
+        return []
+    return _parse_maps(text)
+
+
+def save_roles(toplevel: Path, roles: list[dict[str, Any]]) -> None:
+    path = foil_root(toplevel) / "roles.toml"
+    if path.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    write_bytes(path, render_roles(roles).encode())
+
+
+def save_maps(toplevel: Path, maps: list[dict[str, str]]) -> None:
+    path = foil_root(toplevel) / "mapping.toml"
+    if path.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    write_bytes(path, render_maps(maps).encode())
+
+
+def render_fleet(items: list[dict[str, str]]) -> str:
+    blocks: list[str] = []
+    for item in items:
+        lines = [
+            "[[override]]",
+            f"role = {_toml_basic(item['role'])}",
+            f"model = {_toml_basic(item['model'])}",
+        ]
+        if item.get("note"):
+            lines.append(f"note = {_toml_basic(item['note'])}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
+def fleet_overrides(toplevel: Path) -> list[dict[str, str]]:
+    """Fleet memory. The last override for a role is the one spawn uses."""
+
+    text = _optional_text(foil_root(toplevel) / "fleet-memory.toml")
+    if text is None or not text.strip():
+        return []
+    raw = _load_toml(text, "fleet memory")
+    if not raw:
+        return []
+    items = raw.get("override")
+    if set(raw) - {"override"} or not isinstance(items, list):
+        _fail("fleet memory")
+    found: list[dict[str, str]] = []
+    for item in items:
+        if not isinstance(item, dict) or set(item) - _FLEET_KEYS:
+            _fail("fleet memory")
+        role = item.get("role")
+        model = item.get("model", "")
+        note = item.get("note", "")
+        if (
+            not isinstance(role, str)
+            or not SAFE_ID.fullmatch(role)
+            or not isinstance(model, str)
+            or not model
+            or model.startswith("-")
+            or not isinstance(note, str)
+        ):
+            _fail("fleet memory")
+        scan(model)
+        scan(note)
+        found.append({"role": role, "model": model, "note": note})
+    return found
+
+
+def fleet_model(toplevel: Path, role: str) -> str | None:
+    chosen = None
+    for item in fleet_overrides(toplevel):
+        if item["role"] == role:
+            chosen = item["model"]
+    return chosen
+
+
+def remember_model(toplevel: Path, role: str, model: str) -> None:
+    if not SAFE_ID.fullmatch(role) or not model or model.startswith("-"):
+        _fail("fleet memory")
+    scan(model)
+    items = [item for item in fleet_overrides(toplevel) if item["role"] != role]
+    items.append({"role": role, "model": model, "note": ""})
+    path = foil_root(toplevel) / "fleet-memory.toml"
+    if path.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    write_bytes(path, render_fleet(items).encode())
+
+
 def select_harness(entries: list[dict[str, str]], count: int) -> dict[str, str]:
     """Return ``entries[count % len(entries)]``."""
 
@@ -224,13 +490,8 @@ def expand_argv(
     return filled[:index] + extra + filled[index:]
 
 
-def load_template(toplevel: Path, name: str) -> dict[str, Any]:
-    if not SAFE_ID.fullmatch(name):
-        raise FoilError(f"foil: unknown template '{shown(name)}'")
-    path = foil_root(toplevel) / "templates" / f"{name}.toml"
-    if path.is_symlink() or not path.is_file():
-        raise FoilError(f"foil: unknown template '{name}'")
-    raw = _load_toml(path.read_text(encoding="utf-8"), "template")
+def parse_template_text(text: str) -> dict[str, Any]:
+    raw = _load_toml(text, "template")
     if set(raw) - _TEMPLATE_KEYS:
         _fail("template")
     entries = _harness_entries(raw)
@@ -245,13 +506,58 @@ def load_template(toplevel: Path, name: str) -> dict[str, Any]:
     ):
         _fail("template")
     return {
-        "name": name,
-        "path": path,
         "harness": entries,
         "persona": persona,
         "worktree": worktree,
         "permission": permission,
     }
+
+
+def _listed_template(toplevel: Path, name: str) -> dict[str, Any] | None:
+    roles = read_roles(toplevel)
+    if roles is None:
+        return None
+    match = next((role for role in roles if role["id"] == name), None)
+    if match is None:
+        return None
+    entries = [
+        {"id": item["id"], "model": item["model"]}
+        for item in read_maps(toplevel)
+        if item["role"] == name
+    ]
+    if not entries:
+        _fail("template")
+    return {
+        "name": name,
+        "path": foil_root(toplevel) / "templates" / f"{name}.toml",
+        "harness": entries,
+        "persona": match["persona"],
+        "worktree": match["worktree"],
+        "permission": match["permission"],
+        "description": match["description"],
+    }
+
+
+def load_template(toplevel: Path, name: str) -> dict[str, Any]:
+    if not SAFE_ID.fullmatch(name):
+        raise FoilError(f"foil: unknown template '{shown(name)}'")
+    path = foil_root(toplevel) / "templates" / f"{name}.toml"
+    if path.is_symlink():
+        raise FoilError(f"foil: unknown template '{name}'")
+    # A template file overrides the profile and mapping lists for that role.
+    if path.is_file():
+        parsed = parse_template_text(path.read_text(encoding="utf-8"))
+        roles = read_roles(toplevel)
+        description = ""
+        if roles is not None:
+            match = next((role for role in roles if role["id"] == name), None)
+            if match is not None:
+                description = str(match["description"])
+        return {"name": name, "path": path, "description": description, **parsed}
+    listed = _listed_template(toplevel, name)
+    if listed is not None:
+        return listed
+    raise FoilError(f"foil: unknown template '{name}'")
 
 
 def persona_text(template: dict[str, Any]) -> str:
@@ -287,6 +593,13 @@ def description_of(text: str) -> str:
 
 
 def read_description(template: dict[str, Any]) -> str:
+    stored = template.get("description") or ""
+    if isinstance(stored, str) and stored:
+        try:
+            scan(stored)
+        except FoilError:
+            return ""
+        return stored.replace("\t", " ")
     try:
         return description_of(persona_text(template))
     except (FoilError, OSError, UnicodeDecodeError):
@@ -301,13 +614,22 @@ def path_description(path: Path) -> str:
     return description_of(text)
 
 
+def _same_preset(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    return all(left.get(key) == right.get(key) for key in _PRESET_SAME)
+
+
 def preset_source(toplevel: Path, harness_id: str) -> str:
     try:
-        load_preset(toplevel, harness_id)
+        loaded = load_preset(toplevel, harness_id)
     except (FoilError, OSError, UnicodeDecodeError):
         return "invalid"
     user = foil_root(toplevel) / "harnesses" / f"{harness_id}.toml"
-    return "user" if user.is_file() else "builtin"
+    if user.is_file():
+        return "user"
+    packaged = _packaged_catalog().get(harness_id)
+    if packaged is None or not _same_preset(loaded, packaged):
+        return "user"
+    return "builtin"
 
 
 def persona_stems(directory: Path) -> list[str]:
@@ -323,9 +645,12 @@ def launch_command(
     template = load_template(toplevel, name)
     entry = template["harness"][0]
     preset = load_preset(toplevel, entry["id"])
+    model = fleet_model(toplevel, name)
+    if model is None:
+        model = entry["model"] or None
     return expand_argv(
         preset,
-        model=entry["model"] or None,
+        model=model,
         prompt=prompt,
         session_id=session_id,
         permission=template["permission"],
@@ -350,7 +675,8 @@ def installed_presets(
     preset still fails.
     """
 
-    ids = {name for name in BUILTIN_IDS if name != "fake"}
+    merged, skipped = _merged_catalog(toplevel)
+    ids = {name for name in merged if name != "fake"}
     directory = foil_root(toplevel) / "harnesses"
     if directory.is_dir() and not directory.is_symlink():
         for path in directory.glob("*.toml"):
@@ -364,7 +690,6 @@ def installed_presets(
                 continue
             ids.add(harness_id)
     found: list[dict[str, Any]] = []
-    skipped: list[tuple[str, str]] = []
     for harness_id in sorted(ids):
         try:
             preset = load_preset(toplevel, harness_id)
@@ -403,6 +728,13 @@ def write_default_templates(toplevel: Path) -> list[str]:
         if not target.exists() and not target.is_symlink():
             with suppress(FileExistsError):
                 create_exclusive(target, _builtin("personas", name).encode())
+    catalog = foil_root(toplevel) / "harnesses.toml"
+    if catalog.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    if not catalog.exists():
+        packaged = files("foil").joinpath("defaults", "harnesses.toml").read_bytes()
+        with suppress(FileExistsError):
+            create_exclusive(catalog, packaged)
     missing = [
         role
         for role in _ROLES
@@ -416,14 +748,38 @@ def write_default_templates(toplevel: Path) -> list[str]:
         raise FoilError("foil: no harness installed")
     first = found[0]["id"]
     second = found[1]["id"] if len(found) > 1 else first
+    roles = list(read_roles(toplevel) or [])
+    known = {item["id"] for item in roles}
+    maps = [item for item in read_maps(toplevel) if item["role"] not in missing]
+    bodies: list[tuple[str, str]] = []
     for role in missing:
         harness = second if role == "reviewer" else first
-        body = render_template(
-            [{"id": harness, "model": ""}],
-            persona=f"personas/{role}.md",
-            worktree=role == "implementer",
-            permission="auto",
+        if role not in known:
+            roles.append(
+                {
+                    "id": role,
+                    "description": description_of(_builtin("personas", f"{role}.md")),
+                    "persona": f"personas/{role}.md",
+                    "worktree": role == "implementer",
+                    "permission": "auto",
+                }
+            )
+        profile = next(item for item in roles if item["id"] == role)
+        maps.append({"role": role, "id": harness, "model": ""})
+        bodies.append(
+            (
+                role,
+                render_template(
+                    [{"id": harness, "model": ""}],
+                    persona=str(profile["persona"]),
+                    worktree=bool(profile["worktree"]),
+                    permission=str(profile["permission"]),
+                ),
+            )
         )
+    save_roles(toplevel, roles)
+    save_maps(toplevel, maps)
+    for role, body in bodies:
         target = directory / f"{role}.toml"
         if not target.exists() and not target.is_symlink():
             with suppress(FileExistsError):
