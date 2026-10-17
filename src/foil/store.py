@@ -67,6 +67,7 @@ def empty_registry() -> dict[str, Any]:
         "tmux_session": "",
         "lead": "",
         "seats": {},
+        "harness_cursor": {},
     }
 
 
@@ -222,6 +223,25 @@ def _seat_map(raw: Any) -> dict[str, dict[str, str]]:
     return seats
 
 
+def _cursors(raw: Any) -> dict[str, int]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise FoilError("foil: invalid record")
+    found: dict[str, int] = {}
+    for key, value in raw.items():
+        if (
+            not isinstance(key, str)
+            or not SAFE_ID.fullmatch(key)
+            or isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < 0
+        ):
+            raise FoilError("foil: invalid record")
+        found[key] = value
+    return found
+
+
 def load_registry(toplevel: Path) -> dict[str, Any]:
     path = registry_path(toplevel)
     if path.is_symlink():
@@ -239,6 +259,7 @@ def load_registry(toplevel: Path) -> dict[str, Any]:
     if not isinstance(record["fleet_id"], str):
         raise FoilError("foil: invalid record")
     record["seats"] = _seat_map(payload.get("seats", {}))
+    record["harness_cursor"] = _cursors(payload.get("harness_cursor"))
     return record
 
 

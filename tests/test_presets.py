@@ -21,6 +21,7 @@ from foil.presets import (
     load_preset,
     load_template,
     persona_text,
+    select_harness,
 )
 from foil.project import foil_root
 from tests.test_init import _init_git_repository
@@ -245,7 +246,8 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
     root = foil_root(repo)
     for role, worktree in (("lead", False), ("implementer", True), ("reviewer", False)):
         template = load_template(repo, role)
-        assert template["harness"] == ("codex" if role == "reviewer" else "claude")
+        assert template["harness"][0]["id"] == ("codex" if role == "reviewer" else "claude")
+        assert template["harness"][0]["model"] == ""
         assert template["worktree"] is worktree
         assert template["permission"] == "auto"
         packaged = files("foil").joinpath("defaults", "personas", f"{role}.md").read_text(
@@ -254,7 +256,7 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
         assert persona_text(template) == packaged
         assert len(packaged) > 50
         argv = launch_command(repo, role, prompt=prompt, session_id="abc")
-        assert argv[0] == template["harness"]
+        assert argv[0] == template["harness"][0]["id"]
         assert argv[-1] == prompt
         stored = tomllib.loads((root / "templates" / f"{role}.toml").read_text(encoding="utf-8"))
         assert stored["persona"] == f"personas/{role}.md"
@@ -268,11 +270,11 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
     assert main(["init"]) == 0
     assert lead.read_text(encoding="utf-8") == 'harness = "claude"\npersona = "keep me"\n'
     assert persona.read_text(encoding="utf-8") == "custom persona\n"
-    assert load_template(repo, "lead")["harness"] == "claude"
+    assert load_template(repo, "lead")["harness"][0]["id"] == "claude"
     assert persona_text(load_template(repo, "lead")) == "keep me"
     assert persona_text({"path": lead, "persona": "/keep me"}) == "/keep me"
     assert reviewer.is_file()
-    assert load_template(repo, "reviewer")["harness"] == "codex"
+    assert load_template(repo, "reviewer")["harness"][0]["id"] == "codex"
     reviewed = reviewer.read_bytes()
     assert main(["init"]) == 0
     assert reviewer.read_bytes() == reviewed
@@ -446,9 +448,9 @@ def test_user_id_sorts_between_builtins_and_fake_is_ignored(
     _write_preset(harnesses, "delta", "delta")
     _write_preset(harnesses, "fake", "foil-fake")
     assert main(["init"]) == 0
-    assert load_template(repo, "lead")["harness"] == "claude"
-    assert load_template(repo, "implementer")["harness"] == "claude"
-    assert load_template(repo, "reviewer")["harness"] == "delta"
+    assert load_template(repo, "lead")["harness"][0]["id"] == "claude"
+    assert load_template(repo, "implementer")["harness"][0]["id"] == "claude"
+    assert load_template(repo, "reviewer")["harness"][0]["id"] == "delta"
     ids = [preset["id"] for preset in installed_presets(repo)[0]]
     assert ids == ["claude", "delta", "opencode"]
 
@@ -462,8 +464,8 @@ def test_same_program_counts_as_two_ids_and_one_id_fills_every_template(
     harnesses.mkdir(parents=True)
     _write_preset(harnesses, "extra", "claude")
     assert main(["init"]) == 0
-    assert load_template(repo, "lead")["harness"] == "claude"
-    assert load_template(repo, "reviewer")["harness"] == "extra"
+    assert load_template(repo, "lead")["harness"][0]["id"] == "claude"
+    assert load_template(repo, "reviewer")["harness"][0]["id"] == "extra"
     assert [preset["command"][0] for preset in installed_presets(repo)[0]] == ["claude", "claude"]
 
     reviewer = foil_root(repo) / "templates" / "reviewer.toml"
@@ -475,7 +477,7 @@ def test_same_program_counts_as_two_ids_and_one_id_fills_every_template(
     (harnesses / "extra.toml").unlink()
     assert main(["init"]) == 0
     for role in ("lead", "implementer", "reviewer"):
-        assert load_template(repo, role)["harness"] == "claude"
+        assert load_template(repo, role)["harness"][0]["id"] == "claude"
 
 
 def test_init_copies_every_persona_and_keeps_an_edit(
@@ -653,6 +655,55 @@ def test_lead_persona_does_not_take_the_operator_role() -> None:
         text = path.read_text(encoding="utf-8").lower()
         assert "foil " not in text
         assert "board/" not in text
+
+
+def _write_template(tmp_path: Path, body: str) -> None:
+    directory = tmp_path / ".foil" / "templates"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "lead.toml").write_text(body, encoding="utf-8")
+
+
+def test_legacy_string_harness_loads_as_one_entry(tmp_path: Path) -> None:
+    _write_template(
+        tmp_path,
+        'harness = "claude"\nmodel = "opus"\nworktree = false\npermission = "ask"\n',
+    )
+    loaded = load_template(tmp_path, "lead")
+    assert loaded["harness"] == [{"id": "claude", "model": "opus"}]
+
+
+def test_one_entry_list_always_selects_that_entry() -> None:
+    entry = {"id": "claude", "model": ""}
+    for cursor in (0, 1, 5):
+        chosen, nxt = select_harness([entry], cursor)
+        assert chosen is entry
+        assert nxt == cursor + 1
+
+
+def test_select_harness_walks_the_list() -> None:
+    entries = [
+        {"id": "claude", "model": "opus"},
+        {"id": "codex", "model": "gpt-5.5"},
+    ]
+    first, cursor = select_harness(entries, 0)
+    second, cursor = select_harness(entries, cursor)
+    third, _nxt = select_harness(entries, cursor)
+    assert [first["id"], second["id"], third["id"]] == ["claude", "codex", "claude"]
+
+
+def test_harness_list_rejects_ambiguous_empty_and_bad_entries(tmp_path: Path) -> None:
+    rejected = [
+        '[[harness]]\nid = "claude"\n\nmodel = "opus"\n',
+        "harness = []\n",
+        '[[harness]]\nmodel = "opus"\n',
+        '[[harness]]\nid = ""\n',
+        'harness = ["claude"]\n',
+        '[[harness]]\nid = "claude"\ncolor = "red"\n',
+    ]
+    for body in rejected:
+        _write_template(tmp_path, body)
+        with pytest.raises(FoilError, match="invalid template"):
+            load_template(tmp_path, "lead")
 
 
 def test_reviewer_persona_does_not_edit_files() -> None:
