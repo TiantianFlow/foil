@@ -306,7 +306,7 @@ def post_room(
     if not text.strip():
         raise FoilError("foil: empty text")
     scan(text)
-    parent = _room_parent(toplevel, reply) if reply else None
+    parent = None if reply is None else _room_parent(toplevel, reply)
     names = _wake_names(toplevel)
     when = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     if parent is None:
