@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-10-17
+
+`foil --version` prints 0.4.3.
+
 ### Added
 
 - A role template's harness is one ordered list of entries (`[[harness]]`, with `id` and an optional `model`). Spawn takes `entries[n % len(entries)]`, where `n` is the number of seat records already stored for that role, including killed seats, counted before the new seat is inserted. A failed launch writes no seat record, so a retry selects the same entry. One entry stays on that entry. The lead reuses one registry record named `lead`, so that count is 0 before the record exists and 1 before every later launch.
@@ -278,6 +282,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.4.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.3
 [0.4.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.2
 [0.4.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.1
 [0.4.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.0
