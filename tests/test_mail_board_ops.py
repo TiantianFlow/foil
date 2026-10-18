@@ -59,7 +59,7 @@ def _repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def _create_mail(repo: Path, seat: str, from_user: str, body: str) -> Path:
     """Create a test mail file."""
-    mail_dir = foil_root(repo) / "board" / "mail" / seat
+    mail_dir = foil_root(repo) / "fleets" / "main" / "board" / "mail" / seat
     mail_dir.mkdir(parents=True, exist_ok=True)
     mail_file = mail_dir / f"20260930T120000Z-{from_user}-test1234.md"
     content = f"""---
@@ -76,7 +76,7 @@ time: 2026-09-30T12:00:00Z
 
 def _create_board_file(repo: Path, rel_path: str, content: str) -> Path:
     """Create a test board file."""
-    board_root = foil_root(repo) / "board"
+    board_root = foil_root(repo) / "fleets" / "main" / "board"
     file_path = board_root / rel_path
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(content, encoding="utf-8")
@@ -151,9 +151,7 @@ def test_mail_read_outputs_json(
 # mail list tests
 
 
-def test_mail_list_requires_seat_id(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_mail_list_requires_seat_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """mail list fails without FOIL_SEAT_ID."""
     _repo(tmp_path, monkeypatch)
     with pytest.raises(FoilError, match="FOIL_SEAT_ID not set"):
@@ -213,7 +211,7 @@ def test_mail_list_skips_outside_symlink_and_non_file(
     """mail list does not follow outside symlinks or non-regular files."""
     repo = _repo(tmp_path, monkeypatch)
     real = _create_mail(repo, "worker-1", "lead", "Keep me.")
-    mailbox = foil_root(repo) / "board" / "mail" / "worker-1"
+    mailbox = foil_root(repo) / "fleets" / "main" / "board" / "mail" / "worker-1"
     outside = tmp_path / "secret.md"
     outside.write_text(
         """---
@@ -262,7 +260,7 @@ leaked
 """,
         encoding="utf-8",
     )
-    mail = foil_root(repo) / "board" / "mail"
+    mail = foil_root(repo) / "fleets" / "main" / "board" / "mail"
     mail.rename(tmp_path / "real-mail")
     mail.symlink_to(outside.parent)
 
@@ -290,7 +288,7 @@ leaked
 """,
         encoding="utf-8",
     )
-    mail_root = foil_root(repo) / "board" / "mail"
+    mail_root = foil_root(repo) / "fleets" / "main" / "board" / "mail"
     mail_root.mkdir(parents=True, exist_ok=True)
     link = mail_root / "worker-1"
     if link.exists():
@@ -430,7 +428,7 @@ def test_board_list_skips_outside_symlink(
     _create_board_file(repo, "tasks/keep.md", "Keep")
     outside = tmp_path / "outside-task.md"
     outside.write_text("secret", encoding="utf-8")
-    board = foil_root(repo) / "board"
+    board = foil_root(repo) / "fleets" / "main" / "board"
     (board / "tasks" / "escape.md").symlink_to(outside)
 
     board_list("tasks/*.md", as_json=True)

@@ -12,7 +12,7 @@ from typing import Any
 
 from foil.errors import FoilError, assert_no_secret, shown
 from foil.project import foil_root
-from foil.store import SAFE_ID, create_exclusive, scan, write_bytes
+from foil.store import SAFE_ID, create_exclusive, fleet_dir, scan, write_bytes
 
 _PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}")
 _PRESET_KEYS = {
@@ -238,29 +238,6 @@ def entry_label(entry: dict[str, str]) -> str:
     return f"{entry['id']}/{entry['model']}" if entry["model"] else entry["id"]
 
 
-def render_template(
-    entries: list[dict[str, str]],
-    *,
-    persona: str = "",
-    worktree: bool = False,
-    permission: str = "auto",
-) -> str:
-    """Write the canonical harness list. A missing model is omitted."""
-
-    head: list[str] = []
-    if persona:
-        head.append(f"persona = {_toml_basic(persona)}")
-    head.append(f"worktree = {'true' if worktree else 'false'}")
-    head.append(f"permission = {_toml_basic(permission)}")
-    blocks = ["\n".join(head)]
-    for entry in entries:
-        lines = ["[[harness]]", f"id = {_toml_basic(entry['id'])}"]
-        if entry.get("model"):
-            lines.append(f"model = {_toml_basic(entry['model'])}")
-        blocks.append("\n".join(lines))
-    return "\n\n".join(blocks) + "\n"
-
-
 def render_roles(roles: list[dict[str, Any]]) -> str:
     blocks: list[str] = []
     for role in roles:
@@ -402,7 +379,7 @@ def render_fleet(items: list[dict[str, str]]) -> str:
 def fleet_overrides(toplevel: Path) -> list[dict[str, str]]:
     """Fleet memory. The last override for a role is the one spawn uses."""
 
-    text = _optional_text(foil_root(toplevel) / "fleet-memory.toml")
+    text = _optional_text(fleet_dir(toplevel) / "overrides.toml")
     if text is None or not text.strip():
         return []
     raw = _load_toml(text, "fleet memory")
@@ -447,7 +424,7 @@ def remember_model(toplevel: Path, role: str, model: str) -> None:
     scan(model)
     items = [item for item in fleet_overrides(toplevel) if item["role"] != role]
     items.append({"role": role, "model": model, "note": ""})
-    path = foil_root(toplevel) / "fleet-memory.toml"
+    path = fleet_dir(toplevel) / "overrides.toml"
     if path.is_symlink():
         raise FoilError("foil: refusing symlink")
     write_bytes(path, render_fleet(items).encode())
@@ -541,23 +518,10 @@ def _listed_template(toplevel: Path, name: str) -> dict[str, Any] | None:
 def load_template(toplevel: Path, name: str) -> dict[str, Any]:
     if not SAFE_ID.fullmatch(name):
         raise FoilError(f"foil: unknown template '{shown(name)}'")
-    path = foil_root(toplevel) / "templates" / f"{name}.toml"
-    if path.is_symlink():
-        raise FoilError(f"foil: unknown template '{name}'")
-    # A template file overrides the profile and mapping lists for that role.
-    if path.is_file():
-        parsed = parse_template_text(path.read_text(encoding="utf-8"))
-        roles = read_roles(toplevel)
-        description = ""
-        if roles is not None:
-            match = next((role for role in roles if role["id"] == name), None)
-            if match is not None:
-                description = str(match["description"])
-        return {"name": name, "path": path, "description": description, **parsed}
     listed = _listed_template(toplevel, name)
-    if listed is not None:
-        return listed
-    raise FoilError(f"foil: unknown template '{name}'")
+    if listed is None:
+        raise FoilError(f"foil: unknown template '{name}'")
+    return listed
 
 
 def persona_text(template: dict[str, Any]) -> str:
@@ -735,12 +699,8 @@ def write_default_templates(toplevel: Path) -> list[str]:
         packaged = files("foil").joinpath("defaults", "harnesses.toml").read_bytes()
         with suppress(FileExistsError):
             create_exclusive(catalog, packaged)
-    missing = [
-        role
-        for role in _ROLES
-        if not (directory / f"{role}.toml").is_symlink()
-        and not (directory / f"{role}.toml").exists()
-    ]
+    present = {item["id"] for item in (read_roles(toplevel) or [])}
+    missing = [role for role in _ROLES if role not in present]
     if not missing:
         return updated
     found, _skipped = installed_presets(toplevel)
@@ -749,39 +709,19 @@ def write_default_templates(toplevel: Path) -> list[str]:
     first = found[0]["id"]
     second = found[1]["id"] if len(found) > 1 else first
     roles = list(read_roles(toplevel) or [])
-    known = {item["id"] for item in roles}
     maps = [item for item in read_maps(toplevel) if item["role"] not in missing]
-    bodies: list[tuple[str, str]] = []
     for role in missing:
         harness = second if role == "reviewer" else first
-        if role not in known:
-            roles.append(
-                {
-                    "id": role,
-                    "description": description_of(_builtin("personas", f"{role}.md")),
-                    "persona": f"personas/{role}.md",
-                    "worktree": role == "implementer",
-                    "permission": "auto",
-                }
-            )
-        profile = next(item for item in roles if item["id"] == role)
-        maps.append({"role": role, "id": harness, "model": ""})
-        bodies.append(
-            (
-                role,
-                render_template(
-                    [{"id": harness, "model": ""}],
-                    persona=str(profile["persona"]),
-                    worktree=bool(profile["worktree"]),
-                    permission=str(profile["permission"]),
-                ),
-            )
+        roles.append(
+            {
+                "id": role,
+                "description": description_of(_builtin("personas", f"{role}.md")),
+                "persona": f"personas/{role}.md",
+                "worktree": role == "implementer",
+                "permission": "auto",
+            }
         )
+        maps.append({"role": role, "id": harness, "model": ""})
     save_roles(toplevel, roles)
     save_maps(toplevel, maps)
-    for role, body in bodies:
-        target = directory / f"{role}.toml"
-        if not target.exists() and not target.is_symlink():
-            with suppress(FileExistsError):
-                create_exclusive(target, body.encode())
     return updated

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import stat
 import subprocess
 import uuid
@@ -59,7 +58,7 @@ def _install_socket_tmux(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, socket
     wrapper = tmp_path / "bin" / "tmux"
     wrapper.parent.mkdir()
     wrapper.write_text(
-        f"#!/bin/sh\nexec {real} -L {socket} \"$@\"\n",
+        f'#!/bin/sh\nexec {real} -L {socket} "$@"\n',
         encoding="utf-8",
     )
     wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
@@ -90,14 +89,13 @@ def test_an_exited_harness_stays_peekable_until_kill_or_resume(
             'session_id = "none"\nenv = []\n\n[permission]\nask = []\nauto = []\n',
             encoding="utf-8",
         )
-        lead = foil_root(repo) / "templates" / "lead.toml"
-        rewritten = re.sub(
-            r'id = "[^"]+"',
-            'id = "stub"',
-            lead.read_text(encoding="utf-8"),
-            count=1,
+        mapping = foil_root(repo) / "mapping.toml"
+        rewritten = mapping.read_text(encoding="utf-8").replace(
+            'role = "lead"\nharness = "claude"',
+            'role = "lead"\nharness = "stub"',
+            1,
         )
-        lead.write_text(rewritten, encoding="utf-8")
+        mapping.write_text(rewritten, encoding="utf-8")
 
         assert main(["seat", "spawn", "lead"]) == 0
         deadline = __import__("time").time() + 5
@@ -124,7 +122,7 @@ def test_an_exited_harness_stays_peekable_until_kill_or_resume(
             if "\tdead\t" in listed:
                 break
         assert "lead\tlead\tdead\t" in listed
-        instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
+        instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md"
         assert "You were restarted." in instruction.read_text(encoding="utf-8")
         assert len(_windows(real, socket)) == 1
 

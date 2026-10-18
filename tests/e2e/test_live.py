@@ -81,14 +81,18 @@ def test_scenario_2_live(
         with _live_failure_panes(repo):
             assert main(["seat", "spawn", "lead"]) == 0
             assert main(["seat", "spawn", "implementer"]) == 0
-            before = (foil_root(repo) / "run" / "registry.json").read_text(encoding="utf-8")
+            before = (foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text(
+                encoding="utf-8"
+            )
             monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
             assert main(["seat", "spawn", "reviewer"]) == 1
             assert capsys.readouterr().err == "foil: not allowed\n"
             assert main(["seat", "kill", "lead"]) == 1
             assert capsys.readouterr().err == "foil: not allowed\n"
             monkeypatch.delenv("FOIL_SEAT_ID")
-            after = (foil_root(repo) / "run" / "registry.json").read_text(encoding="utf-8")
+            after = (foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text(
+                encoding="utf-8"
+            )
             assert after == before
     finally:
         _close(repo)
@@ -148,15 +152,14 @@ def test_scenario_5_live(
     try:
         with _live_failure_panes(repo):
             assert main(["seat", "spawn", "lead", "--task", _TASK_5]) == 0
-            note = foil_root(repo) / "board" / "notes" / "accept.txt"
+            note = foil_root(repo) / "fleets" / "main" / "board" / "notes" / "accept.txt"
             _wait(repo, note.is_file, _TIMEOUT)
             assert note.read_text(encoding="utf-8").strip() == "refused"
-            instruction = foil_root(repo) / "run" / "instructions" / "reader.md"
+            instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "reader.md"
 
             def lesson_landed() -> bool:
-                return (
-                    instruction.is_file()
-                    and "check the merged tests" in instruction.read_text(encoding="utf-8")
+                return instruction.is_file() and "check the merged tests" in instruction.read_text(
+                    encoding="utf-8"
                 )
 
             _wait(repo, lesson_landed, _TIMEOUT)

@@ -9,12 +9,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from foil.errors import FoilError, shown
-from foil.project import foil_root
 from foil.store import (
     SAFE_ID,
     actor,
     create_exclusive,
     find_seat,
+    fleet_dir,
     load_registry,
     private_dir,
     scan,
@@ -24,11 +24,11 @@ from foil.tmux import TmuxController, TmuxError
 
 
 def notes_dir(toplevel: Path) -> Path:
-    return foil_root(toplevel) / "board" / "notes"
+    return fleet_dir(toplevel) / "board" / "notes"
 
 
 def ensure_board(toplevel: Path) -> None:
-    root = foil_root(toplevel) / "board"
+    root = fleet_dir(toplevel) / "board"
     for name in ("mail", "notes", "tasks", "results", "room"):
         private_dir(root / name)
 
@@ -72,7 +72,7 @@ def write_mail(toplevel: Path, to: str, text: str) -> Path:
     when = datetime.now(UTC)
     rendered = _message(sender, to, when.strftime("%Y-%m-%dT%H:%M:%SZ"), text)
     scan(rendered)
-    directory = foil_root(toplevel) / "board" / "mail" / to
+    directory = fleet_dir(toplevel) / "board" / "mail" / to
     private_dir(directory)
     token = when.strftime("%Y%m%dT%H%M%SZ")
     payload = rendered.encode("utf-8")
@@ -161,7 +161,7 @@ def _room_parent(toplevel: Path, text: str) -> Path:
         raise FoilError("foil: refusing symlink")
     if not stat.S_ISREG(info.st_mode):
         raise FoilError("foil: room path must be a file")
-    room = (foil_root(toplevel) / "board" / "room").resolve()
+    room = (fleet_dir(toplevel) / "board" / "room").resolve()
     resolved = given.resolve()
     if not resolved.is_relative_to(room):
         raise FoilError("foil: room path must be under board/room")
@@ -249,7 +249,7 @@ def _exclusive(path: Path, rendered: str) -> bool:
 
 
 def _new_thread(toplevel: Path, sender: str, when: str, text: str, nudged: list[str]) -> Path:
-    room = foil_root(toplevel) / "board" / "room"
+    room = fleet_dir(toplevel) / "board" / "room"
     private_dir(room)
     caller = _caller_text(text)
     for _ in range(8):

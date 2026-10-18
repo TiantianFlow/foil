@@ -37,6 +37,7 @@ from foil.project import (
     common_dir,
     foil_root,
     git_toplevel,
+    lift_root_runtime,
     prepare_project,
     project_key,
     project_record,
@@ -47,6 +48,8 @@ from foil.store import (
     SAFE_ID,
     SEAT_FIELDS,
     ensure_registry,
+    fleet_dir,
+    fleet_id,
     load_registry,
     read_json,
     save_registry,
@@ -120,7 +123,7 @@ def _print_init_report(
         )
     template_dir = foil_root(toplevel) / "templates"
     personas = persona_stems(template_dir / "personas")
-    template_names = {path.stem for path in template_dir.glob("*.toml")}
+    template_names = {item["id"] for item in (read_roles(toplevel) or [])}
     available_personas = [name for name in personas if name not in template_names]
 
     print("Wrote templates: " + _names([role for role in roles if role not in had_templates]))
@@ -140,35 +143,13 @@ def _print_init_report(
     print(
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
         "approval prompts, though some harnesses still ask for some commands. "
-        "Set permission in roles.toml in the project folder; "
-        "a templates/<role>.toml overrides that role when the file is present; "
+        "Set permission in roles.toml in the project folder. "
+        "An omitted permission is auto. "
         "auto on the lead alone does not "
         "let the workers run unattended."
     )
     print(f"Project folder: {foil_root(toplevel)}")
     print(f"Read {foil_root(toplevel) / 'skills' / 'operator.md'} and follow it. My goal: <goal>.")
-
-
-def _ensure_fleet(toplevel: Path) -> None:
-    """Record this fleet's workspace. One fleet per project; the file is its root."""
-
-    root = foil_root(toplevel)
-    path = root / "fleet.json"
-    if path.is_symlink():
-        raise FoilError("foil: refusing symlink")
-    workspace = project_record(root).get("path") or str(toplevel.resolve())
-    current: dict | None = None
-    if path.is_file():
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            loaded = None
-        current = loaded if isinstance(loaded, dict) else None
-    if current is not None and current.get("workspace") == workspace:
-        return
-    payload = json.dumps({"schema_version": 1, "workspace": workspace}, sort_keys=True) + "\n"
-    scan(payload)
-    write_bytes(path, payload.encode())
 
 
 def init_project(directory: str | None) -> None:
@@ -178,27 +159,27 @@ def init_project(directory: str | None) -> None:
         raise FoilError("foil: not a git repository")
     toplevel = git_toplevel(start)
     root = foil_root(toplevel)
-    if any(
-        not ((root / "templates" / f"{role}.toml").exists())
-        for role in ("lead", "implementer", "reviewer")
-    ):
+    present = {item["id"] for item in (read_roles(toplevel) or [])}
+    if any(role not in present for role in ("lead", "implementer", "reviewer")):
         installed_harness(toplevel)
     root, previous, rewritten = prepare_project(toplevel)
     for relative in SKELETON:
         path = root / relative
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
+    lift_root_runtime(root)
     # Only after a move, an adopt, or a retry. A healthy re-init leaves run/
     # alone, including a plan whose seat worktree the user has deleted.
     if rewritten:
         rewrite_stored_paths(root, toplevel, previous=previous)
     ensure_board(toplevel)
     ensure_registry(toplevel)
-    _ensure_fleet(toplevel)
     template_dir = root / "templates"
     persona_dir = template_dir / "personas"
     roles = ("lead", "implementer", "reviewer")
-    had_templates = {role for role in roles if (template_dir / f"{role}.toml").exists()}
+    had_templates = {
+        role for role in roles if any(item["id"] == role for item in (read_roles(toplevel) or []))
+    }
     had_personas = set(persona_stems(persona_dir))
     updated_skills = write_default_templates(toplevel)
     _print_init_report(toplevel, had_templates, had_personas, updated_skills)
@@ -272,7 +253,12 @@ def _worktree(toplevel: Path, seat: str) -> tuple[str, str]:
 def _session_name(toplevel: Path) -> str:
     slug = re.sub(r"[^A-Za-z0-9]+", "-", toplevel.name).strip("-")[:32] or "repo"
     digest = hashlib.sha256(str(toplevel.resolve()).encode()).hexdigest()[:8]
-    return f"foil-{slug}-{digest}"
+    base = f"foil-{slug}-{digest}"
+    fleet = fleet_id()
+    if fleet == "main":
+        return base
+    extra = re.sub(r"[^A-Za-z0-9]+", "-", fleet).strip("-")[:32] or "fleet"
+    return f"{base}-{extra}"
 
 
 _LEAD_COMMANDS = """foil seat spawn TEMPLATE [--name NAME] [--task TEXT]
@@ -329,7 +315,7 @@ def _persona_line(template: dict) -> str:
 def _instruction(
     root: Path, seat: str, template: dict, *, restarted: bool, task: Path | None = None
 ) -> str:
-    board = (foil_root(root) / "board").resolve()
+    board = (fleet_dir(root) / "board").resolve()
     lessons = _accepted(root)
     learned = "none yet"
     if lessons:
@@ -369,25 +355,25 @@ def _instruction(
     ]
     if lead:
         workspace = project_record(foil_root(root)).get("path") or str(root.resolve())
-        posts = (foil_root(root) / "board" / "room").resolve()
+        posts = (fleet_dir(root) / "board" / "room").resolve()
+        override_path = (fleet_dir(root) / "overrides.toml").resolve()
         overrides = fleet_overrides(root)
         memory = (
-            "\n".join(
-                f"- {item['role']}: {item['model']}"
-                + (f" ({item['note']})" if item["note"] else "")
-                for item in overrides
-            )
+            "\n".join(f"- {item['role']}: {item['model']}" for item in overrides)
             if overrides
             else "none"
         )
         lines.extend(
             [
-                f"Workspace: `{workspace}`.",
+                f"Workspace: `{workspace}`. The repository is shared by every fleet.",
                 f"Posts: `{posts}`.",
                 f"Harnesses and model ids: `{foil_root(root) / 'harnesses.toml'}`.",
                 f"Profiles: `{foil_root(root) / 'roles.toml'}`.",
                 f"Default mapping: `{foil_root(root) / 'mapping.toml'}`.",
-                "Fleet memory overrides the model on the next spawn of that role:",
+                f"Fleet memory: `{override_path}`. Re-read that file before you spawn.",
+                "Spawn applies the model in that file as the harness model flag.",
+                "You do not pass a model flag.",
+                "Current overrides:",
                 memory,
                 "Record one with `foil roster update ROLE model=VALUE`. "
                 "That leaves the default mapping unchanged.",
@@ -407,13 +393,6 @@ def _instruction(
         lines.append("Run `foil mail list` and read your mail before you act.")
     if lead:
         names = {item["id"] for item in (read_roles(root) or [])}
-        directory = foil_root(root) / "templates"
-        if directory.is_dir() and not directory.is_symlink():
-            names.update(
-                path.stem
-                for path in directory.glob("*.toml")
-                if path.is_file() and not path.is_symlink()
-            )
         roster = []
         for name in sorted(names):
             try:
@@ -440,7 +419,7 @@ def _instruction(
 def _write_instruction(
     root: Path, seat: str, template: dict, *, restarted: bool, task: Path | None = None
 ) -> Path:
-    path = (foil_root(root) / "run" / "instructions" / f"{seat}.md").resolve()
+    path = (fleet_dir(root) / "run" / "instructions" / f"{seat}.md").resolve()
     body = _instruction(root, seat, template, restarted=restarted, task=task).rstrip("\n")
     text = f"{body}\nRe-read `{path}` whenever you are woken.\n"
     scan(text)
@@ -491,8 +470,12 @@ def _open(
     for name in ("PATH", "HOME"):
         if name not in forward:
             forward.append(name)
-    plan_path = (foil_root(root) / "run" / "plans" / f"{seat}.json").resolve()
-    environment = {"FOIL_SEAT_ID": seat, "FOIL_PROJECT": project_key(common_dir(root))}
+    plan_path = (fleet_dir(root) / "run" / "plans" / f"{seat}.json").resolve()
+    environment = {
+        "FOIL_SEAT_ID": seat,
+        "FOIL_PROJECT": project_key(common_dir(root)),
+        "FOIL_FLEET": fleet_id(),
+    }
     for name in ("FOIL_HOME", "XDG_DATA_HOME"):
         value = os.environ.get(name)
         if value:
@@ -546,6 +529,7 @@ def spawn_seat(
     name: str | None = None,
     task: str | None = None,
 ) -> None:
+    ensure_board(root)
     loaded = load_template(root, template)
     persona_text(loaded)
     if task is not None:

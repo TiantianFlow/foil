@@ -97,7 +97,7 @@ def test_registry_lock_symlink_is_refused(tmp_path: Path) -> None:
     victim = tmp_path / "victim"
     victim.write_text("keep\n", encoding="utf-8")
     victim.chmod(0o644)
-    lock = tmp_path / ".foil" / "run" / "registry.lock"
+    lock = tmp_path / ".foil" / "fleets" / "main" / "run" / "registry.lock"
     lock.parent.mkdir(parents=True)
     lock.symlink_to(victim)
 
@@ -105,7 +105,7 @@ def test_registry_lock_symlink_is_refused(tmp_path: Path) -> None:
         save_registry(tmp_path, empty_registry())
     assert lock.is_symlink()
     assert stat.S_IMODE(victim.stat().st_mode) == 0o644
-    assert not (tmp_path / ".foil" / "run" / "registry.json").exists()
+    assert not (tmp_path / ".foil" / "fleets" / "main" / "run" / "registry.json").exists()
 
 
 def test_exclusive_lock_refuses_non_regular_file(tmp_path: Path) -> None:

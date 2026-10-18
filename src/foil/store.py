@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from foil.errors import FoilError, assert_no_secret
+from foil.errors import FoilError, assert_no_secret, shown
 from foil.project import foil_root
 
 SCHEMA_VERSION = 1
@@ -56,8 +56,23 @@ def scan(value: Any) -> None:
             scan(child)
 
 
+def fleet_id() -> str:
+    """The fleet these commands talk to. Unset means ``main``."""
+
+    raw = os.environ.get("FOIL_FLEET", "").strip() or "main"
+    if not SAFE_ID.fullmatch(raw):
+        raise FoilError(f"foil: invalid fleet '{shown(raw)}'")
+    return raw
+
+
+def fleet_dir(toplevel: Path) -> Path:
+    """Per-fleet board, registry, and overrides. Project lists stay above this."""
+
+    return foil_root(toplevel) / "fleets" / fleet_id()
+
+
 def registry_path(toplevel: Path) -> Path:
-    return foil_root(toplevel) / "run" / "registry.json"
+    return fleet_dir(toplevel) / "run" / "registry.json"
 
 
 def empty_registry() -> dict[str, Any]:
