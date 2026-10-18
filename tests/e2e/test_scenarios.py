@@ -827,6 +827,26 @@ def test_star_record_leaves_the_store_root_mode_and_survives_a_failed_init(
     assert not (root / "star.json").exists()
 
 
+def test_star_line_is_not_spent_when_stdout_is_closed(tmp_path: Path) -> None:
+    bindir = _install_foil(tmp_path)
+    repo = _star_repo(tmp_path)
+    env = {**os.environ, "PATH": os.pathsep.join((str(bindir), os.environ.get("PATH", "")))}
+    env.pop("FOIL_SEAT_ID", None)
+    env.pop("PYTHONUNBUFFERED", None)
+    read_fd, write_fd = os.pipe()
+    os.close(read_fd)
+    try:
+        proc = subprocess.Popen(
+            ["foil", "init"], cwd=repo, stdout=write_fd, stderr=subprocess.PIPE, env=env
+        )
+    finally:
+        os.close(write_fd)
+    _, err = proc.communicate(timeout=60)
+    assert (proc.returncode, err) == (1, b"")
+    assert not (Path(os.environ["FOIL_HOME"]) / "star.json").exists()
+    assert STAR_LINE in _star_init(bindir, repo, dict(os.environ))
+
+
 def test_star_line_skips_a_deeply_nested_record(tmp_path: Path) -> None:
     bindir = _install_foil(tmp_path)
     repo = _star_repo(tmp_path)
@@ -859,7 +879,9 @@ def test_star_line_returns_only_for_a_newer_minor(
     assert STAR_LINE not in _star_init(bindir, repo, dict(os.environ))
     saved = json.loads(record.read_text(encoding="utf-8"))
     assert len(saved["shown"]) == len(shown) + (1 if due else 0)
-    assert saved["minor"] == max(recorded, ".".join(__version__.split(".")[:2]))
+    running = tuple(int(part) for part in __version__.split(".")[:2])
+    newest = max(running, tuple(int(part) for part in recorded.split(".")))
+    assert saved["minor"] == ".".join(map(str, newest))
     assert saved["note"] == "x"
 
 

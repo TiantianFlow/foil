@@ -49,6 +49,7 @@ from foil.project import (
 )
 from foil.store import (
     SAFE_ID,
+    SCHEMA_VERSION,
     SEAT_FIELDS,
     create_exclusive,
     ensure_registry,
@@ -103,7 +104,7 @@ def _star_due() -> dict | None:
             return None
     return {
         **record,
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "shown": [*record.get("shown", []), today.isoformat()],
         "minor": ".".join(map(str, max(running, seen))),
         "stop": False,
@@ -122,6 +123,8 @@ def _star_saved(record: dict | None) -> bool:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(record, handle, sort_keys=True)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temporary, path)
     except (OSError, TypeError, ValueError, RecursionError):
         if temporary is not None:
@@ -152,7 +155,6 @@ def _print_init_report(
     had_templates: set[str],
     had_personas: set[str],
     updated_skills: list[str],
-    star: dict | None,
 ) -> None:
     print(f"foil {__version__}")
     presets, skipped = installed_presets(toplevel)
@@ -221,7 +223,9 @@ def _print_init_report(
         "let the workers run unattended."
     )
     print(f"Project folder: {foil_root(toplevel)}")
-    if _star_saved(star):
+    # Flush first: a closed stdout then fails before the record is spent.
+    sys.stdout.flush()
+    if _star_saved(_star_due()):
         print(f"For the human: if Foil helps, a GitHub star helps others find it: {STAR_URL}")
     print(f"Read {foil_root(toplevel) / 'skills' / 'operator.md'} and follow it. My goal: <goal>.")
 
@@ -256,7 +260,7 @@ def init_project(directory: str | None) -> None:
     }
     had_personas = set(persona_stems(persona_dir))
     updated_skills = write_default_templates(toplevel)
-    _print_init_report(toplevel, had_templates, had_personas, updated_skills, _star_due())
+    _print_init_report(toplevel, had_templates, had_personas, updated_skills)
 
 
 def _seat_name(registry: dict, template_name: str, requested: str | None) -> str:
