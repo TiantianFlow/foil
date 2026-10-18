@@ -1,7 +1,7 @@
 # 运筹 · Foil
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.3-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.4.4-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -19,7 +19,7 @@
 
 行之有效的做法是分工：一个 Agent 规划，一个实现，一个审查。Claude Code 甚至自带 `opusplan` 设置，用 Opus 规划、用 Sonnet 动手。但跨工具时，这种分工通常意味着由你来打杂：把计划复制到另一个终端，再把结果转述回来，还要提醒每个 Agent 之前定过什么。
 
-运筹把这种分工变成结构。主座负责规划，按角色派出工人席位，用邮件下发任务，再合并它们的分支。你只和一个操作员 Agent 对话，管理的活由主座来做。
+运筹把这种分工变成结构。主座负责规划，按角色派出工人席位，再合并它们的分支。任务文件 `board/tasks/<id>.md` 是任务说明，邮件是指向它的指针。`foil seat spawn --task` 写成那封邮件，并不写任务文件。你只和一个操作员 Agent 对话，管理的活由主座来做。
 
 ### 一个不轻信"做完了"的干净上下文检查
 
@@ -46,14 +46,14 @@ flowchart TB
   end
 
   subgraph disk["磁盘上"]
-    board[("<b>项目目录/board</b><br/>邮件 · status.md")]
+    board[("<b>项目目录/board</b><br/>邮件 · 房间 · status.md")]
     tree[("<b>Git worktree</b><br/>分支 foil/implementer-1")]
   end
 
   you <-->|对话| operator
   operator -->|"foil init · seat spawn lead<br/>send · seat peek"| foil
   lead -->|"seat spawn · seat kill · send"| foil
-  foil -->|"启动席位 · 写邮件 · 打一行提醒"| fleet
+  foil -->|"启动席位 · 给一个席位发邮件<br/>或写房间文件，提醒其他每个仍在运行的席位"| fleet
   fleet <-->|读写| disk
   impl -->|提交| tree
   lead -->|合并| tree
@@ -73,9 +73,9 @@ flowchart TB
 
 - **你**只和操作员 Agent 对话。
 - **操作员 Agent**：你喜欢的任何 harness，带着它原本的界面。它按操作员技能行事，自己从不做项目本身的工作。
-- **foil**：就是这个命令行工具。它在 tmux 里启动席位、写邮件，并往收件人的窗口里打一行提醒。它不跑守护进程，也从不解读席位屏幕上显示的内容。
+- **foil**：就是这个命令行工具。它在 tmux 里启动席位。`foil send` 写成一份邮件文件，并提醒那个收件人。`foil post` 写成一份房间文件，并提醒其他每个仍在运行的席位。正文不会被打进窗口。两者都等待 200ms，然后发送一次 Enter。它不跑守护进程，也从不解读席位屏幕上显示的内容。
 - **主座、实现者、审查者**：在 tmux 窗口里无界面运行的 Agent CLI，每个都带着自己角色的指令启动。默认只有实现者拥有自己的 Git worktree 和分支。
-- **看板**：邮件、笔记和 `status.md`，都是普通文件，放在 `foil init` 报告打印的项目目录里。这个目录在仓库之外。席位用 `foil mail` 读邮件，用 `foil board` 读板上的其他文件。
+- **看板**：邮件、房间线程、笔记和 `status.md`，都是普通文件，放在 `foil init` 报告打印的项目目录里。这个目录在仓库之外。席位用 `foil mail` 读邮件，用 `foil board` 读板上的其他文件，包括房间线程。
 
 ## 尽量不碍事的设计
 
@@ -157,7 +157,7 @@ foil seat peek lead
 
 运筹从不解读窗口里的内容。`foil seat peek` 打印 tmux 原样捕获的文本，`foil seat list` 报告 `alive`、`dead` 或 `killed`，依据是席位的窗口还在不在，而不是屏幕上显示了什么。Agent 是否卡住、是否做完，由它们自己写在看板文件里。运筹不会抓取窗格，不会判断对话框是否出现，也不会发送按键。
 
-即使窗口不在输入提示符，提醒也会被打进去。`foil send` 先把邮件写成文件，再往收件人的窗口打一行：发件人、一个空格、邮件文件的绝对路径。它等待 200ms，然后发送一次 Enter，这样把快速连击里的 Enter 当成未发送粘贴的 harness 会提交这一行，而不是把它留在输入行里。消息正文从不被打进窗口。如果 Agent 并不在等输入，这些按键仍然会进入窗口。运筹不会先看窗口再决定打不打，也不会再发送一次 Enter。
+即使窗口不在输入提示符，提醒也会被打进去。`foil send` 先把邮件写成文件，再往收件人的窗口打一行：发件人、一个空格、邮件文件的绝对路径。`foil post` 写成一份房间文件，再把同样的一行打进其他每个仍在运行的席位。两者都等待 200ms，然后发送一次 Enter，这样把快速连击里的 Enter 当成未发送粘贴的 harness 会提交这一行，而不是把它留在输入行里。消息正文从不被打进窗口。`foil post --re PATH --decline` 写成一份房间文件，但不打任何按键。如果 Agent 并不在等输入，这些按键仍然会进入窗口。运筹不会先看窗口再决定打不打，也不会再发送一次 Enter。
 
 ## 进一步了解
 
