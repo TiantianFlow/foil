@@ -63,14 +63,24 @@ grey, and red state dots) is about 70 lines of CSS. System fonts
 replace Geist. Dark mode follows `prefers-color-scheme`.
 
 The server is `socketserver.ThreadingTCPServer` with
-`BaseHTTPRequestHandler`, `daemon_threads = True`, and
-`allow_reuse_address = False`. It does not use `http.server.HTTPServer`,
-whose `server_bind` runs a reverse DNS lookup through `socket.getfqdn`.
+`BaseHTTPRequestHandler` and `daemon_threads = True`. It does not use
+`http.server.HTTPServer`, whose `server_bind` runs a reverse DNS lookup
+through `socket.getfqdn`. `SO_REUSEADDR` stays on, as `socketserver`
+and most servers set it: the server closes each connection first, so
+its port sits in TIME_WAIT after a stop, and without the option a
+restarted viewer could not rebind its own port for up to a minute. On
+Linux the option still refuses a port another socket listens on. On
+macOS it may not refuse a port another program holds on all addresses,
+so before binding a port the viewer tries a 0.2 s connect to
+`127.0.0.1:<port>` and treats an answer as "in use".
 A single-threaded server is not enough: a browser keeps idle and
 speculative connections open, and one idle connection holds a
 single-threaded server for its whole socket timeout, so every real
-request waits. Threads remove that. A semaphore caps work at 8 requests
-at once; a request over the cap gets an empty 503.
+request waits. Threads remove that. A semaphore caps page work at 8
+requests at once. A request takes a slot only after its request line and
+headers are parsed, so idle and speculative connections hold none, and
+gives it back before a Raw body streams, so a slow Raw reader holds none.
+A request over the cap gets an empty 503.
 
 Routes:
 
@@ -91,7 +101,9 @@ Routes:
   `--port N` it binds exactly that port or exits 1 with
   `foil: port N is in use`. It does not move, because a supervisor
   (section 4) needs the address to stay put. `N` must be an integer from
-  1024 to 65535; anything else is `foil: invalid port`. Fifty busy ports
+  1024 to 65535. `--port` is parsed as a string and checked by
+  `foil view`, so anything else, including `abc`, is
+  `foil: invalid port`. Fifty busy ports
   is `foil: no free port in 7460-7509`.
 - **Project.** It resolves the project the way every command does:
   `FOIL_PROJECT`, otherwise the Git toplevel of the working directory. A
@@ -116,8 +128,11 @@ Routes:
   exception in a handler is an empty 500. So the supervisor's log holds
   the address line and at most one error line per start.
 - **Clients.** Each connection has a 10 s socket timeout. The request
-  line and headers must arrive within 10 s in total, or the connection
-  is closed; this stops a client that drips one byte at a time. A Raw
+  line and headers must also arrive within 10 s in total: a
+  `threading.Timer` started with the connection calls
+  `shutdown(SHUT_RDWR)` on it at the deadline and is cancelled once the
+  headers are parsed. That stops a client that drips one byte at a time,
+  which the per-read timeout alone does not. A Raw
   response to a slow reader holds only its own thread.
 - **State.** No PID file, no lock, no state, no access log. Two viewers
   on one project are two ports and do not interfere. Stopping either
@@ -274,7 +289,10 @@ What the server does:
 - **Launch argv.** Preset `command` tokens are not scanned when a preset
   loads. Before the Harnesses table shows a token, the credential scan
   that mail uses runs on it, and a matching token is shown as
-  `[hidden]`.
+  `[hidden]`. So is the token after any flag whose name, with `-` read
+  as `_`, contains one of the scan's secret key parts (`api_key`,
+  `access_token`, `secret`, `password`, and the rest in `errors.py`), so `--api-key AKIA...` is hidden
+  too. This is best effort, and F34 and D2 say so.
 
 Who can still read the page:
 
@@ -306,8 +324,9 @@ preview plus a raw view, not infinite scroll:
   Ctrl-F searches it, and nothing in it runs.
 - **Opening safely.** A listed path is not enough. Between the listing
   and the open, a seat can swap a file or a directory for a symlink or a
-  FIFO. So the viewer opens the board directory, then each path
-  component with `os.open(name, O_RDONLY | O_NOFOLLOW | O_DIRECTORY,
+  FIFO, and a seat can swap `fleets/<id>` itself. So the viewer opens
+  the project folder, then `fleets`, `<id>`, `board`, and each path
+  component below it with `os.open(name, O_RDONLY | O_NOFOLLOW | O_DIRECTORY,
   dir_fd=parent)`, then the file with `O_RDONLY | O_NOFOLLOW |
   O_NONBLOCK`. It requires `S_ISREG` from `fstat` and serves the preview
   and Raw from that one descriptor. A symlink anywhere on the path, or a
@@ -319,17 +338,19 @@ preview plus a raw view, not infinite scroll:
   shows the size from `lstat`, not a line count, so a page load does not
   read every mail file.
 - **Pane.** 40 lines by default, as `seat peek`. A **More** link doubles
-  `?lines=` up to 1280. Any other value of `?lines=` is treated as 40.
-  tmux refuses output over 64 KiB (`tmux.py`), so a wide pane can fail
-  before 1280; the page then shows that one-line peek error and offers
-  the shorter capture. This is `peek --lines N`, not a new reading of
+  `?lines=`: 80, 160, and so on up to 1280. An integer from 1 to 1280 is
+  used as given; anything else is 40. Foil's tmux wrapper refuses
+  output over 64 Ki characters (`tmux.py`), so a wide pane can fail
+  before 1280; the page then shows that one-line peek error and a link
+  back to the last length that worked. This is `peek --lines N`, not a new reading of
   the pane.
 
 ## 7. Reading the store
 
 - **Refactors.** Five splits of reading from printing, with command
   output unchanged: `seat_rows` from `list_seats` (also returning
-  `branch` and `window_id`, which `seat list` keeps out of its output),
+  `branch`, `window_id`, and `owned`, the probe's identity result, which
+  `seat list` keeps out of its output),
   `peek_text` from `peek_seat`, `roster_rows` from `list_roster`,
   `read_lessons` from `list_lessons`, and `preset_ids` from
   `installed_presets`.
@@ -377,8 +398,10 @@ preview plus a raw view, not infinite scroll:
   name is a prefix of every other fleet's (`_session_name`), so a gone
   `main` session would attach to another fleet. An empty session shows
   "No session yet. This fleet has not started." A seat adds
-  `\; select-window -t <window id>` only when that seat's probe found
-  the window still carrying this fleet's and this seat's markers. A
+  `\; select-window -t <window id>` only when `owned` is true: the
+  probe found that window still carrying this fleet's and this seat's
+  markers. The state string cannot decide this, because `dead` covers
+  both a dead pane that is still there and a window that is gone. A
   killed seat keeps its old window id, and ids are reused after a tmux
   restart, so a stored id alone is not trusted. Nothing is derived from
   the directory name. The operator skill's `tmux attach -t <session>`
@@ -416,7 +439,8 @@ never hold 7460.
 - `FOIL_SEAT_ID` set: exit 1, the exact stderr line, and no socket
   bound (patch `socket.socket.bind` to fail the test). An empty
   `FOIL_SEAT_ID` serves.
-- Ports: with the base held, the default binds the next port and prints
+- Ports: a stop and an immediate restart on the same `--port` binds
+  again; with the base held, the default binds the next port and prints
   it; with every port in the range held, the range error; an explicit
   busy `--port`, `foil: port N is in use`; `--port 80` and
   `--port 70000`, `foil: invalid port`; SIGTERM exits 0.
@@ -477,7 +501,8 @@ Standing checks that change:
   `foil: no free port in 7460-7509`, `foil: invalid port`, and
   `foil: view is outside the fleet only`; the stdout line; exit 0 on
   Ctrl-C and SIGTERM; the `Host`, `Origin`, and method rules; the
-  1 MiB preview, the Raw view and its headers; `?lines=` and its cap;
+  1 MiB preview, the Raw view and its headers; the best-effort argv
+  hiding; `?lines=` and its cap;
   the attach command with `=` and the verified window; and the
   exposure to other local users.
 - **"Keep the screen in step":** one sentence in F34, and a line in
@@ -497,7 +522,7 @@ Standing checks that change:
   GUI" (and the same lines in README.zh-CN.md), and the `pyproject.toml`
   description "Headless", are reworded: Foil itself runs no daemon, and
   `foil view` is an optional read-only page. A README section has the
-  service steps. [architecture.md](architecture.md) gains a row for the
+  service steps, and README.zh-CN.md carries the same section (D3). [architecture.md](architecture.md) gains a row for the
   module. CHANGELOG gets an entry.
 
 ## 11. Settled by common practice
