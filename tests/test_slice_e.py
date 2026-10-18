@@ -129,6 +129,8 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert "- reviewer: harness codex, worktree no" in text
     assert "You are the lead seat of this fleet." in text
     assert "Run `foil mail list` and read your mail before you act." in text
+    assert "foil seat archive NAME" in text
+    assert text.count("may be from an earlier goal") == 1
     assert "none yet" not in text
 
     second = _lesson(capsys, "re-read the diff")
@@ -155,6 +157,8 @@ def test_worker_instruction_and_resume_refreshes_lessons(
     assert "Stay in your worktree." in text
     assert "Templates:" not in text
     assert "foil seat kill NAME" not in text
+    assert "foil seat archive" not in text
+    assert "earlier goal" not in text
     assert "foil mail read PATH [--json]" in text
     assert "foil mail list [--json]" in text
     assert "foil board read PATH [--json]" in text

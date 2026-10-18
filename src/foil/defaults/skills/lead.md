@@ -32,7 +32,7 @@ If a later finding shows an earlier stage was wrong, the next task goes back to 
 
 A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `foil board read`.
 
-## Spawn, kill, and resume
+## Spawn, kill, archive, and resume
 
 Spawn a worker from a template. `--task` is the text of the first mail. Pass the task file's path. Foil does not write the task file. The role instructions arrive in the first prompt.
 
@@ -41,12 +41,19 @@ foil seat spawn implementer --task "board/tasks/t1.md"
 foil seat spawn reviewer --name helper --task "board/tasks/t2.md"
 ```
 
-`--name` chooses the seat name. Without it, the name is the template plus a number, and a name is never reused.
+`--name` chooses the seat name. Without it, the name is the template plus a number. A name is not reused while its record exists. After `foil seat archive`, that name can be spawned again.
 
 Stop another seat by name. You may not kill yourself, and you may not run `foil seat kill --all`.
 
 ```text
 foil seat kill implementer-1
+```
+
+Free a killed worker's name. This does not restart the seat, and it does not delete the branch, the mailbox, or uncommitted files. You may not archive yourself. `foil seat list` no longer shows that seat. `foil seat list --archived` shows the stored worktree.
+
+```text
+foil seat archive implementer-1
+foil seat list --archived
 ```
 
 Restart a dead seat. A killed seat stays stopped. An alive seat is left running.
