@@ -170,7 +170,7 @@ foil view --port 8790
 - `YOUR_PATH`：在你自己的终端里运行 `echo $PATH` 打印的内容。服务启动时的 `PATH` 很少，没有你的 `PATH` 就找不到 tmux 和你的 Agent CLI。
 - `HOME_DIR`：你的主目录的绝对路径。
 
-如果你设置了 `FOIL_HOME` 或 `XDG_DATA_HOME`，在 `PATH` 旁边加上同样的值。升级运筹之后重启这个服务。
+如果你设置了 `FOIL_HOME`、`XDG_DATA_HOME` 或 `TMUX_TMPDIR`，在 `PATH` 旁边加上同样的值；`TMUX_TMPDIR` 不一致时，查看器找不到席位的窗口，会把每个席位都显示为 dead。升级运筹之后重启这个服务。
 
 macOS，`~/Library/LaunchAgents/dev.foil.view.PROJECT.plist`：
 

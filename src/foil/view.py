@@ -36,6 +36,7 @@ CHUNK = 64 * 1024
 MAX_LINES = 1280
 DEADLINE = 10
 SLOTS = 8
+CONNECTIONS = 64
 LOOPBACK = {"127.0.0.1", "localhost", "[::1]"}
 HELP = (
     "One project shares roles, harnesses, and the default mapping. Each fleet has its own "
@@ -234,26 +235,28 @@ def _fleet_ids(root: Path) -> list[str]:
 def _argv(command: list[str]) -> str:
     """Launch argv as written, with credential-shaped tokens hidden (best effort)."""
 
+    def secret(value: Any) -> bool:
+        try:
+            assert_no_secret(value)
+        except FoilError:
+            return True
+        return False
+
     shown: list[str] = []
     hide_next = False
     for token in command:
-        name, equals, _value = token.partition("=")
-        secret_flag = False
-        if token.startswith("-"):
-            try:
-                assert_no_secret({name.lstrip("-").replace("-", "_"): ""})
-            except FoilError:
-                secret_flag = True
-        try:
-            assert_no_secret(token)
-            hidden = hide_next
-        except FoilError:
-            hidden = True
-        if secret_flag and equals:
-            shown.append(f"{name}=[hidden]")
+        cut = min((token.find(mark) for mark in "=:" if mark in token), default=-1)
+        words = token.replace("=", " ").replace(":", " ").split()
+        named = any(secret({word.lstrip("-").replace("-", "_"): ""}) for word in words)
+        if hide_next or any(secret(word) or secret(f"{word} x") for word in words):
+            shown.append("[hidden]")
+        elif named and cut >= 0:
+            shown.append(f"{token[: cut + 1]}[hidden]")
+        elif not token or any(char.isspace() for char in token):
+            shown.append(shlex.quote(token))
         else:
-            shown.append("[hidden]" if hidden else shlex.quote(token) if " " in token else token)
-        hide_next = secret_flag and not equals
+            shown.append(token)
+        hide_next = named and cut < 0 and token.startswith("-")
     return " ".join(shown)
 
 
@@ -372,10 +375,19 @@ def _attach(registry: dict, row: dict | None = None) -> str | None:
     session = str(registry.get("tmux_session") or "")
     if not session:
         return None
-    command = f"tmux attach -t {shlex.quote('=' + session)}"
+    quoted = "'" + ("=" + session).replace("'", "'\\''") + "'"
+    command = f"tmux attach -t {quoted}"
     if row is not None and row["owned"]:
         command += f" \\; select-window -t {shlex.quote(row['window_id'])}"
     return command
+
+
+def _utf8(path: Path) -> bool:
+    try:
+        str(path).encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _board_files(root: Path, fleet: str) -> list[tuple[str, int]]:
@@ -392,7 +404,7 @@ def _board_files(root: Path, fleet: str) -> list[tuple[str, int]]:
                 info = path.lstat()
             except OSError:
                 continue
-            if name.startswith(".") or not stat.S_ISREG(info.st_mode):
+            if name.startswith(".") or not stat.S_ISREG(info.st_mode) or not _utf8(path):
                 continue
             found.append((path.relative_to(board).as_posix(), info.st_size))
     return sorted(found, key=lambda item: (item[0] != "status.md", item[0]))
@@ -478,8 +490,8 @@ def _board_sections(root: Path, fleet: str, opened: str, here: str) -> str:
 
     return (
         '<div class="files">'
-        + _section("Board", inner(board, "No files.", False), meta=meta(board))
-        + _section("Posts", inner(posts, "No posts.", True), meta=meta(posts))
+        + _section("Board", _guard(lambda: inner(board, "No files.", False)), meta=meta(board))
+        + _section("Posts", _guard(lambda: inner(posts, "No posts.", True)), meta=meta(posts))
         + "</div>"
     )
 
@@ -545,7 +557,7 @@ def _seat_page(root: Path, fleet: str, name: str, lines: int) -> str:
     registry = load_registry(root, fleet)
     if not SAFE_ID.fullmatch(name) or name not in registry["seats"]:
         raise _Missing(f"No seat named {name} in fleet {fleet}.")
-    row = next(item for item in seat_rows(root, registry) if item["name"] == name)
+    row = seat_rows(root, registry, only=name, owned=True)[0]
     upcoming = _next_models(root, fleet, registry).get(row["template"], "")
     launched = f"{row['harness']} / {row['model']}" if row["model"] else row["harness"]
     model = _mono(launched) + (f"<small>next spawn {_mono(upcoming)}</small>" if upcoming else "")
@@ -741,7 +753,24 @@ class _Server(socketserver.ThreadingTCPServer):
     def __init__(self, root: Path, port: int) -> None:
         self.root = root
         self.slots = threading.BoundedSemaphore(SLOTS)
+        self.connections = threading.BoundedSemaphore(CONNECTIONS)
         super().__init__(("127.0.0.1", port), _Handler)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self.connections.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self.connections.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.connections.release()
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         """A failed connection prints nothing."""
@@ -789,18 +818,23 @@ def open_server(root: Path, port: str | None, *, base: int = BASE_PORT) -> _Serv
 
 
 def serve(root: Path, port: str | None, *, base: int = BASE_PORT) -> int:
-    server = open_server(root, port, base=base)
-
     def stop(_signum: int, _frame: object) -> None:
         raise KeyboardInterrupt
 
     previous = signal.signal(signal.SIGTERM, stop)
-    print(f"http://127.0.0.1:{server.server_address[1]}/", flush=True)
+    server = None
     try:
+        server = open_server(root, port, base=base)
+        print(f"http://127.0.0.1:{server.server_address[1]}/", flush=True)
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        server.server_close()
+        # A second Ctrl-C or SIGTERM during close does not print a traceback.
+        interrupt = signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        if server is not None:
+            server.server_close()
+        signal.signal(signal.SIGINT, interrupt)
         signal.signal(signal.SIGTERM, previous)
     return 0

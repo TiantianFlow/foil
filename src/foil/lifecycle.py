@@ -928,17 +928,24 @@ def _list_archived(root: Path, *, as_json: bool) -> None:
         )
 
 
-def seat_rows(root: Path, registry: dict) -> list[dict]:
-    """Seat facts for `seat list`, plus branch, window id, and window ownership."""
+def seat_rows(
+    root: Path, registry: dict, *, only: str | None = None, owned: bool = False
+) -> list[dict]:
+    """Seat facts for `seat list`, plus branch and window id.
+
+    ``only`` keeps one seat. ``owned`` adds whether its window still carries
+    this fleet and seat, which costs a second probe for a dead seat.
+    """
 
     rows = []
     for seat_name, record in sorted(registry["seats"].items()):
+        if only is not None and seat_name != only:
+            continue
         try:
             description = read_description(load_template(root, record["template"]))
         except (FoilError, OSError, UnicodeDecodeError):
             description = ""
         state = _state(registry, seat_name, record)
-        owned = _owned(registry, seat_name, record, state)
         rows.append(
             {
                 "name": seat_name,
@@ -950,7 +957,7 @@ def seat_rows(root: Path, registry: dict) -> list[dict]:
                 "description": description,
                 "branch": record.get("branch", ""),
                 "window_id": record.get("window_id", ""),
-                "owned": owned,
+                "owned": owned and _owned(registry, seat_name, record, state),
             }
         )
     return rows

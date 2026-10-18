@@ -6,6 +6,7 @@ each stage: not started, done, crashed, resumed, stopped, and killed.
 
 from __future__ import annotations
 
+import html
 import os
 import signal
 import socket
@@ -66,7 +67,8 @@ def _states(port: int) -> dict[str, str]:
 
 
 def _attach(port: int, name: str) -> str:
-    return _page(port, f"/fleets/main/seats/{name}").split("<code>")[1].split("</code>")[0]
+    page = _page(port, f"/fleets/main/seats/{name}")
+    return html.unescape(page.split("<code>")[1].split("</code>")[0])
 
 
 def test_the_viewer_follows_a_fleet_from_start_to_teardown(
@@ -93,7 +95,7 @@ def test_the_viewer_follows_a_fleet_from_start_to_teardown(
         session = str(registry["tmux_session"])
         assert _states(port) == dict.fromkeys(SEATS, "alive")
         fleet = _page(port, "/fleets/main")
-        assert f"<code>tmux attach -t ={session}</code>" in fleet
+        assert f"<code>tmux attach -t &#x27;={session}&#x27;</code>" in fleet
         assert "foil/implementer-1" in fleet
         board = fleet.split("<h2>Board")[1].split("</section>")[0]
         assert board.index("status.md") < board.index("mail/")
@@ -103,7 +105,7 @@ def test_the_viewer_follows_a_fleet_from_start_to_teardown(
         assert "state: done" in status and "- [x] Merge foil/implementer-1" in status
         window = registry["seats"]["implementer-1"]["window_id"]
         assert _attach(port, "implementer-1") == (
-            f"tmux attach -t ={session} \\; select-window -t {window}"
+            f"tmux attach -t '={session}' \\; select-window -t {window}"
         )
         pane = _page(port, "/fleets/main/seats/implementer-1")
         assert "foil-fake implementer-1 ready" in pane.replace("\n", "")

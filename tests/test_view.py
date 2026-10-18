@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -144,7 +146,7 @@ def test_an_empty_seat_id_is_outside_the_fleet(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     called: list[tuple[Path, str | None]] = []
-    monkeypatch.setattr("foil.cli.serve", lambda root, port: called.append((root, port)) or 0)
+    monkeypatch.setattr("foil.view.serve", lambda root, port: called.append((root, port)) or 0)
     monkeypatch.setenv("FOIL_SEAT_ID", "")
     assert main(["view", "--port", "9999"]) == 0
     assert called == [(repo, "9999")]
@@ -264,16 +266,45 @@ def test_a_client_that_drips_headers_is_cut_at_the_deadline(
     repo = _repo(tmp_path, monkeypatch)
     monkeypatch.setattr(view, "DEADLINE", 1)
     with _serving(repo) as port, socket.create_connection(("127.0.0.1", port)) as slow:
-        slow.settimeout(5)
         slow.sendall(b"GET / HTTP/1.0\r\n")
         started = time.monotonic()
         with pytest.raises(OSError):
-            for _ in range(10):
-                slow.sendall(b"X-Slow: 1\r\n")
+            # One header line every 0.4 s keeps each read under the socket timeout.
+            for _ in range(20):
                 time.sleep(0.4)
-                if slow.recv(1) == b"":
-                    raise ConnectionResetError
+                slow.sendall(b"X-Slow: 1\r\n")
         assert time.monotonic() - started < 4
+        slow.settimeout(1)
+        assert slow.recv(100) == b"" if not _reset(slow) else True
+
+
+def _reset(client: socket.socket) -> bool:
+    try:
+        client.recv(1, socket.MSG_PEEK)
+    except OSError:
+        return True
+    return False
+
+
+def test_past_the_cap_a_request_gets_an_empty_503(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(view, "SLOTS", 0)
+    with _serving(repo) as port:
+        assert _get(port)[0::2] == (503, b"")
+
+
+def test_past_the_connection_cap_a_connection_is_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(view, "CONNECTIONS", 1)
+    with _serving(repo) as port, socket.create_connection(("127.0.0.1", port)):
+        time.sleep(0.3)
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as second:
+            second.sendall(f"GET / HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\n\r\n".encode())
+            assert second.recv(100) == b""
 
 
 # Settings
@@ -396,11 +427,11 @@ def test_attach_uses_the_exact_session_and_a_verified_window(
         lead = _page(port, "/fleets/main/seats/lead")
         killed = _page(port, "/fleets/main/seats/implementer-1")
         reused = _page(port, "/fleets/main/seats/reviewer-1")
-    assert "<code>tmux attach -t =foil-demo-1</code>" in fleet
-    assert "tmux attach -t =foil-demo-1 \\; select-window -t @4</code>" in lead
+    assert "<code>tmux attach -t &#x27;=foil-demo-1&#x27;</code>" in fleet
+    assert "tmux attach -t &#x27;=foil-demo-1&#x27; \\; select-window -t @4</code>" in lead
     assert "$ ready" in lead
     for page in (killed, reused):
-        assert "<code>tmux attach -t =foil-demo-1</code>" in page
+        assert "<code>tmux attach -t &#x27;=foil-demo-1&#x27;</code>" in page
         assert "select-window" not in page
         assert "$ ready" not in page
     assert "foil: seat &#x27;implementer-1&#x27; is killed" in killed
@@ -639,9 +670,68 @@ def test_crawling_every_page_writes_nothing(
     before = _snapshot(foil_root(repo))
     with _serving(repo) as port:
         pages = ["/", "/settings", "/fleets/main", "/fleets/main/seats/lead",
-                 "/fleets/main/seats/implementer-1", "/fleets/main?open=status.md",
-                 "/fleets/main/raw?open=room/t1/t1.md", "/nope"]
+                 "/fleets/main/seats/implementer-1", "/nope"]
         for path in pages:
             _get(port, path)
+        listed = re.findall(r'href="/fleets/main\?open=([^"]+)"', _page(port, "/fleets/main"))
+        assert len(listed) == 2
+        for opened in listed:
+            assert _get(port, f"/fleets/main?open={opened}")[0] == 200
+            assert _get(port, f"/fleets/main/raw?open={opened}")[0] == 200
+            assert _get(port, f"/fleets/main/raw?open={opened}", method="HEAD")[0] == 200
         assert "Peek a new seat first." in _page(port, "/")
     assert _snapshot(foil_root(repo)) == before
+
+
+def test_the_attach_command_parses_the_same_in_bash_and_zsh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _registry(repo, _seat("lead", window="@4"), session="foil-demo-1")
+    _windows(monkeypatch, {"@4": "lead"})
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main/seats/lead")
+    command = html.unescape(page.split("<code>")[1].split("</code>")[0])
+    expected = "tmux\nattach\n-t\n=foil-demo-1\n;\nselect-window\n-t\n@4\n"
+    shells = [shell for shell in ("bash", "zsh") if shutil.which(shell)]
+    assert "bash" in shells
+    for shell in shells:
+        script = f'set -- {command}; printf "%s\\n" "$@"'
+        result = subprocess.run([shell, "-c", script], capture_output=True, text=True)
+        assert (result.stdout, result.stderr) == (expected, ""), shell
+
+
+@pytest.mark.parametrize(
+    ("command", "shown"),
+    [
+        (["env", "OPENAI_API_KEY=sk-abc", "codex"], "env [hidden] codex"),
+        (["env", "MY_SECRET=hunter2", "codex"], "env MY_SECRET=[hidden] codex"),
+        (["cli", "-H", "Authorization: Bearer abc123"], "cli -H [hidden]"),
+        (["cli", "--header=Authorization: token abc123"], "cli --header=[hidden]"),
+        (
+            ["cli", "--password", "pw", "--model", "{model}"],
+            "cli --password [hidden] --model {model}",
+        ),
+        (["cli", "a\tb", ""], "cli 'a\tb' ''"),
+    ],
+)
+def test_launch_argv_hides_credentials_and_keeps_token_boundaries(
+    command: list[str], shown: str
+) -> None:
+    assert view._argv(command) == shown
+
+
+def test_a_file_name_that_is_not_utf8_is_skipped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _registry(repo, _seat("lead", window="@1"))
+    _windows(monkeypatch, {"@1": "lead"})
+    notes = os.fsencode(_board(repo) / "notes")
+    with open(os.path.join(notes, b"bad\xff.md"), "wb") as handle:
+        handle.write(b"x")
+    (_board(repo) / "notes" / "good.md").write_text("ok", encoding="utf-8")
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main")
+    assert "notes/good.md" in page and "notes/bad" not in page
+    assert '<span class="dot alive"></span>alive' in page

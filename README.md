@@ -170,7 +170,7 @@ Foil has no daemon mode. launchd on macOS and `systemd --user` on Linux run `foi
 - `YOUR_PATH`: what `echo $PATH` prints in your own terminal. A service starts with a minimal `PATH`, and without yours it cannot find tmux or your agent CLIs.
 - `HOME_DIR`: your home directory's absolute path.
 
-If you set `FOIL_HOME` or `XDG_DATA_HOME`, add the same value next to `PATH`. Restart the service after you upgrade Foil.
+If you set `FOIL_HOME`, `XDG_DATA_HOME`, or `TMUX_TMPDIR`, add the same value next to `PATH`; without the same `TMUX_TMPDIR`, the viewer cannot find your seats' windows and shows every seat dead. Restart the service after you upgrade Foil.
 
 macOS, `~/Library/LaunchAgents/dev.foil.view.PROJECT.plist`:
 

@@ -31,7 +31,6 @@ from foil.roster_ops import (
     show_template,
     update_template,
 )
-from foil.view import serve
 
 OUTSIDE = "outside"
 LEAD = "lead"
@@ -216,6 +215,9 @@ def _run(args: argparse.Namespace) -> int:
     if args.command == "view":
         if _caller() != OUTSIDE:
             raise FoilError("foil: view is outside the fleet only")
+        # Imported here so other commands do not load the HTTP server modules.
+        from foil.view import serve
+
         return serve(_require_project(), args.port)
     root = _require_project()
     if args.command == "seat":
