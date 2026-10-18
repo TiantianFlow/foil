@@ -34,7 +34,7 @@ A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `f
 
 ## Spawn, kill, and resume
 
-Spawn a worker from a template. `--task` carries only the goal. Foil delivers the role instructions in the first prompt.
+Spawn a worker from a template. `--task` is the text of the first mail. Pass the task file's path. Foil does not write the task file. The role instructions arrive in the first prompt.
 
 ```text
 foil seat spawn implementer --task "board/tasks/t1.md"

@@ -317,6 +317,10 @@ def test_skills_state_the_channel_choice() -> None:
         "It does not write the task file.",
         "The task file is the brief, and the mail is the pointer to it.",
         "The seat follows the task file, not a second copy of the brief in the mail body.",
+        "`--task` is the text of the first mail.",
+        "Pass the task file's path.",
+        "Foil does not write the task file.",
+        "The role instructions arrive in the first prompt.",
         "`foil send` one seat when the point is for that seat alone: a question or a correction.",
         "`foil post` when more than one other seat needs the same point.",
         "Do not continue a thread by mailing another seat.",
@@ -345,6 +349,10 @@ def test_skills_state_the_channel_choice() -> None:
         assert sentence in lead, sentence
         if sentence != "Implementation belongs in a seat whose template sets `worktree` to true.":
             assert sentence in rows["`lead`"], sentence
+    assert "`--task` carries only the goal" not in lead
+    assert "`--task` carries only the goal" not in rows["`lead`"]
+    assert "`--task` carries only the goal" in operator
+    assert "`--task` carries only the goal" in rows["`operator`"]
     for sentence in worker_rules:
         assert sentence in worker, sentence
         assert sentence in rows["`worker`"], sentence
