@@ -85,7 +85,8 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size
 header{display:flex;gap:16px;align-items:center;height:44px;padding:0 24px;
 border-bottom:1px solid var(--line)}header a{text-decoration:none}
 header .name{font-weight:600}header .link{color:var(--muted)}
-main{max-width:72rem;margin:0 auto;padding:24px;display:grid;gap:32px}
+main{max-width:72rem;margin:0 auto;padding:24px;display:grid;gap:32px;
+grid-template-columns:minmax(0,1fr)}@media (max-width:640px){main{padding:16px}}
 h1{font-size:20px;margin:0}h2{font-size:14px;margin:0 0 8px;display:flex;gap:6px;
 align-items:center}h3{font-size:12px;margin:0;padding:6px 12px;color:var(--muted);
 border-top:1px solid var(--line)}.muted,nav a{color:var(--muted)}nav a{text-decoration:none}
@@ -94,12 +95,13 @@ table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px 12px
 vertical-align:top;border-top:1px solid var(--line)}th{border-top:0;font-weight:500;
 color:var(--muted);font-size:13px}td small{display:block;color:var(--muted);font-size:12px}
 pre{margin:0;padding:12px 16px;white-space:pre;overflow-x:auto;background:var(--soft)}
-.facts{display:grid;grid-template-columns:110px 1fr;gap:12px;align-items:center}
+.facts{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;align-items:center}
+.facts code,li code{overflow-wrap:anywhere;min-width:0}
 .facts>span{font-size:12px;color:var(--muted);display:flex;gap:6px}
 .cmd{display:flex;gap:8px;align-items:center;border:1px solid var(--line);
 border-radius:6px;background:var(--soft);padding:4px 4px 4px 12px}.cmd code{flex:1}
 button{font:inherit;font-size:12px;border:0;background:none;color:var(--muted);cursor:pointer}
-.files{display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.files{display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr))}
 ul{list-style:none;margin:0;padding:0}li a{display:flex;gap:8px;padding:8px 12px;
 text-decoration:none;border-top:1px solid var(--line)}li:first-child a{border-top:0}
 li a:hover{background:var(--soft)}li a span{margin-left:auto;color:var(--muted);font-size:12px}
@@ -708,6 +710,7 @@ class _Handler(BaseHTTPRequestHandler):
             return
         policy = (
             f"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; "
+            "img-src data:; "
             "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         )
         self._send(int(result[0]), page, policy=policy)

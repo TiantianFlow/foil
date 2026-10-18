@@ -272,14 +272,15 @@ What the server does:
 - **Methods.** GET and HEAD. Every other method gets an empty 405.
   `send_error` is replaced, so no standard error page is ever sent.
 - **Headers.** `Content-Security-Policy: default-src 'none'; style-src
-  'unsafe-inline'; script-src 'nonce-<random>'; base-uri 'none';
+  'unsafe-inline'; script-src 'nonce-<random>'; img-src data:; base-uri 'none';
   form-action 'none'; frame-ancestors 'none'`,
   `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control:
   no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy:
   no-referrer`. CORP stops another site from loading a viewer response
   as an image or a script, which carries a valid `Host` and no
   `Origin`. The page cannot load anything from another host. The
-  favicon is `data:,`.
+  favicon is `data:,`, which `img-src data:` allows, so the browser
+  neither asks for `/favicon.ico` nor logs a policy error.
 - **Hostile text.** Pane text, board files, file names, and persona
   lines are written by agents. Every value is escaped where it becomes
   HTML. A value inside a link (`?open=`) is percent-encoded with
