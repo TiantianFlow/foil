@@ -103,8 +103,8 @@ def _listed(toplevel: Path, name: str) -> dict | None:
     }
 
 
-def list_roster(toplevel: Path, *, as_json: bool = False) -> None:
-    """List all templates and available personas."""
+def roster_rows(toplevel: Path) -> tuple[list[tuple[str, dict | None]], list[dict[str, str]]]:
+    """Each role with its listed row (None when invalid), then personas with no role."""
     names = _template_names(toplevel)
     persona_dir = foil_root(toplevel) / "templates" / "personas"
     available = [
@@ -112,7 +112,12 @@ def list_roster(toplevel: Path, *, as_json: bool = False) -> None:
         for item in persona_stems(persona_dir)
         if item not in names
     ]
-    loaded = [(name, _listed(toplevel, name)) for name in names]
+    return [(name, _listed(toplevel, name)) for name in names], available
+
+
+def list_roster(toplevel: Path, *, as_json: bool = False) -> None:
+    """List all templates and available personas."""
+    loaded, available = roster_rows(toplevel)
     if as_json:
         missing = {"error": "invalid template", "preset": "invalid", "description": ""}
         templates = [

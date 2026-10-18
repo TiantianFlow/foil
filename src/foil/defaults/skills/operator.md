@@ -126,7 +126,18 @@ You schedule your own check-ins. The interval is at most 10 minutes. Until the f
 
 At each check-in, and whenever the human asks for status, tell the human: the `state` and `updated` value from `board/status.md`; the checklist progress and the open items, quoted from that file; any `questions` in that file; which seats `foil seat list` shows alive, dead, or killed; and when you will check again. An archived seat is absent from `foil seat list`. Quote the file. Do not guess progress from the pane. Do not decide from a pane who is working or what they are working on. A blocked worker is named in `questions`. Do not peek workers to find one. If `updated` has not changed over several check-ins, nudge the lead as below.
 
-When a check-in reports a dialog or a seat that is not making progress, run `tmux ls` and you may tell the human `tmux attach -t <session>` for a session that command printed. Do not invent a session name. Do not add a Foil command or flag.
+When a check-in reports a dialog or a seat that is not making progress, run `tmux ls` and you may tell the human `tmux attach -t '=<session>'` for a session that command printed. The `=` matches that exact name, not a longer one that begins with it. Do not invent a session name. Do not add a Foil command or flag.
+
+## The viewer
+
+`foil view` serves a read-only page for this project: the shared lists, each fleet's seats, board, posts, and overrides, and each seat's pane. Run it from the repository, outside the fleet, and give the human the address it prints. It types nothing and decides nothing. Status still comes from `board/status.md`. Without `--port` it takes the first free port from 7460. While it runs, anyone logged in to this machine can read the page.
+
+```text
+foil view
+foil view --port 8790
+```
+
+When the human wants the viewer to keep running, write a launchd agent on macOS or a `systemd --user` unit on Linux from the README section "Keep the viewer running". Fill in the absolute path of the foil command, the repository as the working directory, a port outside 7460-7509, and the `PATH` the human prints with `echo $PATH` in their own terminal. Your own `PATH` may not be theirs. Show the human the file and load it only after they agree. Foil writes no unit file.
 
 ## Relay and nudge
 
@@ -196,7 +207,7 @@ One foil install serves every project on this machine. Updating it changes the c
 1. `foil seat kill --all` once the lead reports `state: done`. A project that still has an in-repo `.foil/` from 0.3.x is killed with that older command before you upgrade. A stale seat whose tmux window is already gone also counts. When that older command is no longer on `PATH`, install 0.3.4 beside the current one, which does not replace it: `UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then run `DIR/bin/foil seat kill --all`. With pipx: `PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then run `DIR/bin/foil seat kill --all`. Do not run `foil init` while those seats remain, and do not move that directory aside.
 2. Run the install line, and check `foil --version`.
 3. Run `foil init` and read the report. It says which skills it updated. A refused init creates nothing in the store. The refusal names the blocking seats and this same order.
-4. Re-copy any user-level copy of this skill.
+4. Re-copy any user-level copy of this skill, and restart a `foil view` service if the human has one.
 5. Note `updated` in `board/status.md`, then spawn the lead as in the first-run check. The previous goal's file already says `state: done`, so wait until `updated` changes.
 
 From 0.4 to 0.5, use that order between goals. Do not resume a seat started on 0.4. `foil init` moves a project-root `board/` and `run/` under `fleets/main/` when that fleet's copies are absent or empty. It writes `harnesses.toml`, `roles.toml`, and `mapping.toml` when they are missing. It does not read `templates/<role>.toml`. After init, copy each role's harness, model, worktree, and permission from those old files into the lists. A new list uses `permission = "auto"` and omits `model`. Set `permission` from outside the fleet. Lessons in `memory/` and seat worktrees stay. `FOIL_FLEET` defaults to `main`.

@@ -65,14 +65,18 @@ def fleet_id() -> str:
     return raw
 
 
-def fleet_dir(toplevel: Path) -> Path:
-    """Per-fleet board, registry, and overrides. Project lists stay above this."""
+def fleet_dir(toplevel: Path, fleet: str | None = None) -> Path:
+    """Per-fleet board, registry, and overrides. Project lists stay above this.
 
-    return foil_root(toplevel) / "fleets" / fleet_id()
+    ``fleet`` names a fleet the caller has already checked; None reads
+    ``FOIL_FLEET``.
+    """
+
+    return foil_root(toplevel) / "fleets" / (fleet or fleet_id())
 
 
-def registry_path(toplevel: Path) -> Path:
-    return fleet_dir(toplevel) / "run" / "registry.json"
+def registry_path(toplevel: Path, fleet: str | None = None) -> Path:
+    return fleet_dir(toplevel, fleet) / "run" / "registry.json"
 
 
 def empty_registry() -> dict[str, Any]:
@@ -238,8 +242,8 @@ def _seat_map(raw: Any) -> dict[str, dict[str, str]]:
     return seats
 
 
-def load_registry(toplevel: Path) -> dict[str, Any]:
-    path = registry_path(toplevel)
+def load_registry(toplevel: Path, fleet: str | None = None) -> dict[str, Any]:
+    path = registry_path(toplevel, fleet)
     if path.is_symlink():
         raise FoilError("foil: refusing symlink")
     if not path.exists():

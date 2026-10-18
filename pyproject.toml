@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "foil-orchestrator"
 version = "0.5.0"
-description = "Headless, durable coordination for complementary CLI-agent fleets"
+description = "Durable coordination for complementary CLI-agent fleets, with a read-only local viewer"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"

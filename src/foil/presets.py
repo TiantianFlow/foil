@@ -376,10 +376,10 @@ def render_fleet(items: list[dict[str, str]]) -> str:
     return "\n\n".join(blocks) + ("\n" if blocks else "")
 
 
-def fleet_overrides(toplevel: Path) -> list[dict[str, str]]:
+def fleet_overrides(toplevel: Path, fleet: str | None = None) -> list[dict[str, str]]:
     """Fleet memory. The last override for a role is the one spawn uses."""
 
-    text = _optional_text(fleet_dir(toplevel) / "overrides.toml")
+    text = _optional_text(fleet_dir(toplevel, fleet) / "overrides.toml")
     if text is None or not text.strip():
         return []
     raw = _load_toml(text, "fleet memory")
@@ -626,18 +626,8 @@ def _packaged_persona_names() -> list[str]:
     return sorted(item.name for item in directory.iterdir() if item.name.endswith(".md"))
 
 
-def installed_presets(
-    toplevel: Path,
-) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
-    """Eligible presets whose own command[0] is on PATH, and skipped files.
-
-    ``fake`` is excluded. A user file that reuses a built-in id replaces
-    that built-in. Ids are sorted by Unicode code point, case preserved:
-    a tiebreak, not a ranking. One invalid file is skipped. Its display
-    path and the reason are returned beside the presets that loaded.
-    ``load_preset`` itself is unchanged, so a spawn that names a broken
-    preset still fails.
-    """
+def preset_ids(toplevel: Path) -> tuple[list[str], list[tuple[str, str]]]:
+    """Every eligible id, sorted by code point, and the list files skipped."""
 
     merged, skipped = _merged_catalog(toplevel)
     ids = {name for name in merged if name != "fake"}
@@ -653,8 +643,25 @@ def installed_presets(
             ):
                 continue
             ids.add(harness_id)
+    return sorted(ids), skipped
+
+
+def installed_presets(
+    toplevel: Path,
+) -> tuple[list[dict[str, Any]], list[tuple[str, str]]]:
+    """Eligible presets whose own command[0] is on PATH, and skipped files.
+
+    ``fake`` is excluded. A user file that reuses a built-in id replaces
+    that built-in. Ids are sorted by Unicode code point, case preserved:
+    a tiebreak, not a ranking. One invalid file is skipped. Its display
+    path and the reason are returned beside the presets that loaded.
+    ``load_preset`` itself is unchanged, so a spawn that names a broken
+    preset still fails.
+    """
+
+    ids, skipped = preset_ids(toplevel)
     found: list[dict[str, Any]] = []
-    for harness_id in sorted(ids):
+    for harness_id in ids:
         try:
             preset = load_preset(toplevel, harness_id)
         except FoilError as exc:

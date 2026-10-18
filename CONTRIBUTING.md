@@ -66,6 +66,9 @@ FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live
 4. **Keep docs tidy.** List every new document in docs/README.md, name
    release plans `plan-vX.Y.Z.md`, and add notable changes to
    CHANGELOG.md under "Unreleased".
+5. **Keep the viewer in step.** A change to the lists, the overrides,
+   memory, the board, the registry, `seat list`, `seat peek`, `post`, or
+   the session name updates `foil view` and its tests in the same change.
 
 ## Before you ask for review
 

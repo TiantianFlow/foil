@@ -73,7 +73,7 @@ flowchart TB
 
 - **You** talk only to the operator agent.
 - **Operator agent**: any harness you like, with its normal interface. It follows the operator skill and never does the project work itself.
-- **foil**: this command-line tool. It launches seats in tmux. `foil send` writes one mail file and nudges that recipient. `foil post` writes one room file and nudges every other alive seat. The body is not typed. Both wait 200ms, then send Enter once. It runs no daemon and never interprets what is on a seat's screen.
+- **foil**: this command-line tool. It launches seats in tmux. `foil send` writes one mail file and nudges that recipient. `foil post` writes one room file and nudges every other alive seat. The body is not typed. Both wait 200ms, then send Enter once. It runs no daemon of its own and never interprets what is on a seat's screen. `foil view` is an optional read-only page in your browser.
 - **Lead, implementer, reviewer**: agent CLIs running headless in tmux windows, each started with its role's instructions. By default only the implementer gets its own Git worktree and branch.
 - **Board**: mail, room threads, notes, and `status.md`, as plain files in the project folder `foil init` prints. That folder is outside the repository. Seats read mail with `foil mail` and other board files, including room threads, with `foil board`.
 
@@ -81,7 +81,7 @@ flowchart TB
 
 - **Your own agent runs the fleet.** You don't drive a dashboard or wire agents together by hand. You tell the agent you already use what you want, in whatever interface you like it in, as long as it can run shell commands in your repository. Following one skill file, it starts the lead, checks in, and relays questions.
 - **Each CLI works as it is.** Foil starts every agent with that CLI's own documented flags and talks to it the way you would: one short line typed into its window, and the message itself in a file. It never reads the screen to guess what an agent is doing, so a CLI update rarely breaks it, and adding a CLI takes a small preset file, not code.
-- **Runs wherever tmux runs.** A command-line tool with no daemon and no GUI, on Linux or macOS, on your laptop or over SSH on a remote machine. Close your terminal and the fleet keeps working; reattach with tmux.
+- **Runs wherever tmux runs.** A command-line tool with no daemon of its own, plus an optional read-only page, on Linux or macOS, on your laptop or over SSH on a remote machine. Close your terminal and the fleet keeps working; reattach with tmux.
 - **Nothing hidden.** Mail, tasks, status, and lessons are plain files, and the work lands on ordinary Git branches. You can read, grep, or edit any of it. They survive a dead tmux session or a reboot, and `foil seat resume` brings the seats back.
 
 ## Demo
@@ -149,6 +149,80 @@ foil seat peek lead
 
 Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually stopped on a dialog. The operator answers an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until someone approves it. It reports an update dialog, a first-run dialog, and an opt-in, and leaves those for you. Answer those in the window (`tmux ls` lists Foil's session and `tmux attach` opens it). A login the CLI will not finish in the pane is done once by hand, then `foil seat kill lead` and spawn the lead again. If `foil seat list` shows that lead as `dead`, `foil seat kill lead` clears it. Spawn the check again only after it is gone.
 
+## See it in a browser
+
+`foil view`, run in the repository, serves a read-only page for this project and prints its address. The page lists the fleets and the project's lessons. Settings shows the three shared lists. Each fleet shows its attach command, overrides, seats, board, and posts, and each seat shows its raw pane. It types nothing into a pane and decides nothing about progress; that is still `board/status.md`. Stopping it leaves every seat as it was.
+
+```sh
+foil view
+foil view --port 8790
+```
+
+Without `--port` it takes the first free port from 7460 to 7509. It listens on `127.0.0.1` only. To reach it from another machine, forward the port over SSH, for example `ssh -L 8790:127.0.0.1:8790 host`.
+
+### Keep the viewer running
+
+Foil has no daemon mode. launchd on macOS and `systemd --user` on Linux run `foil view` as it is, start it at login, and restart it when it fails. Your operator agent can fill these in for you. Use one file per project, each with its own port outside 7460-7509, so an ad hoc `foil view` never takes it. Replace each capitalized placeholder:
+
+- `FOIL`: the absolute path that `command -v foil` prints.
+- `REPO`: the repository's absolute path.
+- `PORT`: the port.
+- `YOUR_PATH`: what `echo $PATH` prints in your own terminal. A service starts with a minimal `PATH`, and without yours it cannot find tmux or your agent CLIs.
+- `HOME_DIR`: your home directory's absolute path.
+
+If you set `FOIL_HOME` or `XDG_DATA_HOME`, add the same value next to `PATH`. Restart the service after you upgrade Foil.
+
+macOS, `~/Library/LaunchAgents/dev.foil.view.PROJECT.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.foil.view.PROJECT</string>
+  <key>ProgramArguments</key><array>
+    <string>FOIL</string><string>view</string><string>--port</string><string>PORT</string>
+  </array>
+  <key>WorkingDirectory</key><string>REPO</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>YOUR_PATH</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>HOME_DIR/Library/Logs/foil-view-PROJECT.log</string>
+  <key>StandardErrorPath</key><string>HOME_DIR/Library/Logs/foil-view-PROJECT.log</string>
+</dict></plist>
+```
+
+```sh
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.foil.view.PROJECT.plist
+launchctl bootout gui/$(id -u)/dev.foil.view.PROJECT
+```
+
+The first line starts it and the second stops it. After you edit the file, stop it before you start it again. It restarts after a failure, at most once every 30 seconds, and not after a clean stop.
+
+Linux, `~/.config/systemd/user/foil-view-PROJECT.service`. Write each `%` in `YOUR_PATH` as `%%`:
+
+```ini
+[Unit]
+Description=Foil viewer for PROJECT
+
+[Service]
+ExecStart="FOIL" view --port PORT
+WorkingDirectory=REPO
+Environment="PATH=YOUR_PATH"
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user enable --now foil-view-PROJECT
+systemctl --user disable --now foil-view-PROJECT
+journalctl --user -u foil-view-PROJECT
+```
+
+It runs while you are logged in.
+
 ## Limits
 
 Foil is cooperative protection for seats that follow instructions. It is not isolation from a hostile process. A seat's identity is the `FOIL_SEAT_ID` environment variable Foil sets when it launches that seat. There is no flag a seat can pass to claim another seat. Anything you can do on this machine, a process running as you can do too.
@@ -156,6 +230,8 @@ Foil is cooperative protection for seats that follow instructions. It is not iso
 Templates default to `permission = "auto"`. An omitted permission runs the seat unattended. Setting `permission = "ask"` is how a template opts back into prompts: that seat stops at its first approval prompt. Setting `permission = "auto"` inserts that preset's auto flags. For Claude, those flags are `--permission-mode` and `auto`. Claude Code's auto mode can still ask before some commands, so an `auto` seat may stop on an approval prompt. Peek new seats. That seat is still you.
 
 Foil never interprets what is on a seat's screen. `foil seat peek` prints the raw tmux capture, and `foil seat list` reports `alive`, `dead`, or `killed` from whether the seat's window still exists, not from what is on its screen. Agents say whether they are blocked or done in board files. Foil does not scrape a pane, does not decide that a dialog is present, and does not send the keys.
+
+`foil view` has no login. Your project folder is private to you, but a port on `127.0.0.1` is open to every account on the machine, so while the viewer runs anyone logged in can read it, including pane text and board files. It hides launch-command tokens that look like credentials, as a best effort. On a machine other people log in to, stop it when you are done.
 
 A nudge is typed even when the window is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path. `foil post` writes one room file and types that same line into every other alive seat. Either command waits 200ms, then sends Enter once, so a harness that treats Enter inside a fast burst as an unsent paste submits the line instead of leaving it in the input. The message body is never typed. `foil post --re PATH --decline` writes a room file and types nothing. If the agent is not waiting for input, those keystrokes still go into the window. Foil does not look at the screen to decide, and it does not send Enter again.
 

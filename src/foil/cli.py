@@ -31,6 +31,7 @@ from foil.roster_ops import (
     show_template,
     update_template,
 )
+from foil.view import serve
 
 OUTSIDE = "outside"
 LEAD = "lead"
@@ -187,6 +188,9 @@ def _build_parser() -> argparse.ArgumentParser:
     roster_remove = roster_sub.add_parser("remove", help="Remove a template")
     roster_remove.add_argument("ROLE", metavar="ROLE")
 
+    view = sub.add_parser("view", help="Serve a read-only page for this project")
+    view.add_argument("--port", metavar="N")
+
     return parser
 
 
@@ -209,6 +213,10 @@ def _run(args: argparse.Namespace) -> int:
         authorize("init")
         init_project(args.DIR)
         return 0
+    if args.command == "view":
+        if _caller() != OUTSIDE:
+            raise FoilError("foil: view is outside the fleet only")
+        return serve(_require_project(), args.port)
     root = _require_project()
     if args.command == "seat":
         action = args.seat_command

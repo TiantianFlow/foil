@@ -87,7 +87,7 @@ def reject_lesson(toplevel: Path, lesson_id: str) -> None:
     _review(toplevel, lesson_id, "rejected")
 
 
-def list_lessons(toplevel: Path, *, all_lessons: bool = False, as_json: bool = False) -> None:
+def read_lessons(toplevel: Path, *, all_lessons: bool = False) -> list[dict[str, Any]]:
     directory = foil_root(toplevel) / "memory"
     if directory.is_symlink():
         raise FoilError("foil: refusing symlink")
@@ -98,6 +98,11 @@ def list_lessons(toplevel: Path, *, all_lessons: bool = False, as_json: bool = F
     if not all_lessons:
         lessons = [item for item in lessons if item.get("state") == "accepted"]
     lessons.sort(key=lambda item: (str(item.get("time", "")), str(item.get("id", ""))))
+    return lessons
+
+
+def list_lessons(toplevel: Path, *, all_lessons: bool = False, as_json: bool = False) -> None:
+    lessons = read_lessons(toplevel, all_lessons=all_lessons)
     if as_json:
         print(json.dumps(lessons, ensure_ascii=False, sort_keys=True))
         return
