@@ -1,7 +1,7 @@
 # Foil · 运筹
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.4-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.4.5-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -143,7 +143,7 @@ foil seat list
 foil seat peek lead
 ```
 
-`board/status.md` in the project folder is the lead's own report, including any questions for you; answer them with `foil send lead "..."`. It carries a checklist of what is done and what is left, and the operator reports it at each check-in and whenever the human asks. When you are done, `foil seat kill --all` stops every seat and leaves branches and worktrees in place. A leftover seat worktree is `<project folder>/worktrees/<label>`. Remove one that is clean with `git worktree remove <path>`. A dirty tree needs `--force`, and that discards uncommitted work.
+`board/status.md` in the project folder is the lead's own report, including any questions for you; answer them with `foil send lead "..."`. It carries a checklist of what is done and what is left, and the operator reports it at each check-in and whenever the human asks. When you are done, `foil seat kill --all` stops every seat and leaves branches and worktrees in place. A killed seat's name stays reserved until `foil seat archive NAME`, which frees the name and does not delete the worktree, the branch, the mailbox, or uncommitted work. `foil seat list --archived` shows the stored worktree. A leftover seat worktree is `<project folder>/worktrees/<label>`. Remove one that is clean with `git worktree remove <path>`. A dirty tree needs `--force`, and that discards uncommitted work.
 
 ### If nothing happens
 

@@ -666,7 +666,7 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
 
     try:
         version = foil("--version")
-        assert version.stdout.strip() == "foil 0.4.4", version.stderr
+        assert version.stdout.strip() == "foil 0.4.5", version.stderr
         assert Path(shutil.which("foil", path=environment["PATH"]) or "") == bindir / "foil"
         assert foil("init").returncode == 0
         templates = foil_root(repo) / "templates"
@@ -843,6 +843,40 @@ def test_scenario_7_ai_native_onboarding(
         session = str(load_registry(repo)["tmux_session"])
         assert main(["seat", "kill", "--all"]) == 0
         _no_windows(session)
+    finally:
+        _close(repo)
+
+
+def test_archive_reuses_a_killed_name_against_the_fake_harness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _prepare(tmp_path, "scenario-2", monkeypatch)
+    try:
+        assert main(["seat", "spawn", "lead"]) == 0
+        assert main(["seat", "spawn", "implementer"]) == 0
+        seat = load_registry(repo)["seats"]["implementer-1"]
+        note = Path(seat["worktree"]) / "note.txt"
+        note.write_text("keep\n", encoding="utf-8")
+        assert main(["seat", "archive", "implementer-1"]) == 1
+        assert capsys.readouterr().err == "foil: seat 'implementer-1' is alive\n"
+        assert main(["seat", "kill", "implementer-1"]) == 0
+        assert main(["seat", "archive", "implementer-1"]) == 0
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert captured.out == (
+            "archived seat 'implementer-1'\nkept branch foil/implementer-1\n"
+        )
+        assert str(seat["worktree"]) not in captured.out
+        assert note.read_text(encoding="utf-8") == "keep\n"
+        assert "implementer-1" not in load_registry(repo)["seats"]
+        assert main(["seat", "spawn", "implementer", "--name", "implementer-1"]) == 0
+        revived = load_registry(repo)["seats"]["implementer-1"]
+        assert revived["branch"] == "foil/implementer-1-2"
+        assert revived["worktree"] != seat["worktree"]
+        text = (foil_root(repo) / "run" / "instructions" / "implementer-1.md").read_text(
+            encoding="utf-8"
+        )
+        assert text.count("may be from an earlier goal") == 1
     finally:
         _close(repo)
 

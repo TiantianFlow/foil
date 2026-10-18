@@ -124,7 +124,7 @@ Read the lead's `status.md` in the Foil folder at `board/status.md`. That file i
 
 You schedule your own check-ins. The interval is at most 10 minutes. Until the first-run check has passed, or you have reported a dialog to the human, check more often than that. This is your own scheduling. It is not a Foil command, and Foil has no poll flag.
 
-At each check-in, and whenever the human asks for status, tell the human: the `state` and `updated` value from `board/status.md`; the checklist progress and the open items, quoted from that file; any `questions` in that file; which seats `foil seat list` shows alive, dead, or killed; and when you will check again. Quote the file. Do not guess progress from the pane. Do not decide from a pane who is working or what they are working on. A blocked worker is named in `questions`. Do not peek workers to find one. If `updated` has not changed over several check-ins, nudge the lead as below.
+At each check-in, and whenever the human asks for status, tell the human: the `state` and `updated` value from `board/status.md`; the checklist progress and the open items, quoted from that file; any `questions` in that file; which seats `foil seat list` shows alive, dead, or killed; and when you will check again. An archived seat is absent from `foil seat list`. Quote the file. Do not guess progress from the pane. Do not decide from a pane who is working or what they are working on. A blocked worker is named in `questions`. Do not peek workers to find one. If `updated` has not changed over several check-ins, nudge the lead as below.
 
 When a check-in reports a dialog or a seat that is not making progress, run `tmux ls` and you may tell the human `tmux attach -t <session>` for a session that command printed. Do not invent a session name. Do not add a Foil command or flag.
 
@@ -182,7 +182,12 @@ When the human is done:
 foil seat kill --all
 ```
 
-That stops every seat. It does not delete branches or worktrees. A leftover seat worktree is `<project folder>/worktrees/<label>`. Remove one that is clean with `git worktree remove <path>`. A dirty tree needs `--force`, and that discards uncommitted work.
+That stops every seat. It does not delete branches or worktrees. A killed worker's name stays reserved until you archive it. That frees the name and does not delete the worktree, the branch, the mailbox, or uncommitted work. Use it after an upgrade when a killed seat should have its usual name again. `foil seat list --archived` shows the stored worktree. A leftover seat worktree is `<project folder>/worktrees/<label>`. Remove one that is clean with `git worktree remove <path>`. A dirty tree needs `--force`, and that discards uncommitted work.
+
+```text
+foil seat archive implementer-1
+foil seat list --archived
+```
 
 ## Upgrading
 
