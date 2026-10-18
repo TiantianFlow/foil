@@ -22,8 +22,12 @@ def _foil_root(prompt: str) -> Path:
         return Path(prompt[left:index])
     named = os.environ.get("FOIL_PROJECT", "").strip()
     home = os.environ.get("FOIL_HOME", "").strip()
+    fleet = os.environ.get("FOIL_FLEET", "").strip() or "main"
     if named and home:
         candidate = Path(home) / "projects" / named
+        fleet_root = candidate / "fleets" / fleet
+        if (fleet_root / "board").is_dir() or (fleet_root / "run").is_dir():
+            return fleet_root
         if candidate.is_dir():
             return candidate
     for parent in (Path.cwd(), *Path.cwd().parents):

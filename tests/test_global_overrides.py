@@ -10,6 +10,7 @@ import pytest
 from foil.cli import main
 from foil.project import foil_root
 from foil.store import load_registry
+from foil.tmux import TmuxController
 from tests.test_spawn import _commit, _launch, _plan, _repo
 
 
@@ -85,6 +86,38 @@ def test_two_fleets_share_the_mapping_and_keep_separate_overrides(
     side_board = foil_root(repo) / "fleets" / "side" / "board" / "mail"
     assert main_board.is_dir() and side_board.is_dir()
     assert calls[0]["session_name"] != calls[2]["session_name"]
+
+
+def test_an_unsafe_fleet_id_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _repo(tmp_path, monkeypatch)
+    monkeypatch.setenv("FOIL_FLEET", "../side")
+    assert main(["seat", "list"]) == 1
+    assert capsys.readouterr().err == "foil: invalid fleet '../side'\n"
+
+
+def test_resume_keeps_the_recorded_model_when_fleet_memory_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    calls = _launch(monkeypatch)
+
+    def matches_window(self: TmuxController, *args: object) -> bool:
+        del self, args
+        return False
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.matches_window", matches_window)
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["roster", "update", "implementer", "model=opus"]) == 0
+    monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
+    assert main(["seat", "resume", "implementer-1"]) == 0
+    resumed = _plan(calls, -1)["argv"]
+    assert "--model" not in resumed
+    assert load_registry(repo)["seats"]["implementer-1"]["model"] == ""
     assert json.loads((foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text())[
         "seats"
     ]["implementer-1"]["model"] == ""

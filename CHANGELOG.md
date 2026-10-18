@@ -7,6 +7,7 @@ Notable changes to Foil, newest first.
 ### Fixed
 
 - The init report lists a persona as available only when `roles.toml` has no row for it.
+- `foil post` writes the current fleet's room. Another fleet's room stays unchanged.
 
 ### Changed
 

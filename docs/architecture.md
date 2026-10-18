@@ -171,7 +171,7 @@ Foil stores only a session id per seat, in `fleets/<id>/run/registry.json`. Each
 
 An explicit id stays unambiguous when seats share a working directory. `--continue` and `--last` mean the latest session for this directory, so Foil refuses that native resume for a seat with no worktree and starts it fresh in the project directory. Trust is path-keyed too. A seat worktree lives in the store, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness.
 
-Templates, skills, harnesses, and the board stay per project, inside that project's store folder. There is no user-level layer above the project. The folder is outside the working tree so `git status` stays clean without an exclude entry. The key is the Git common dir, which a linked worktree and a seat worktree already share.
+Templates, skills, and harnesses stay per project, inside that project's store folder. Each fleet has its own board, room, and registry in that same folder. There is no user-level layer above the project. The folder is outside the working tree so `git status` stays clean without an exclude entry. The key is the Git common dir, which a linked worktree and a seat worktree already share.
 
 ## Authority
 

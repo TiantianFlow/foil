@@ -95,9 +95,8 @@ def _install_tmux(
             on_literal(argv[-1])
         if argv and argv[0] == "display-message":
             window = argv[argv.index("-t") + 1]
-            registry = json.loads(
-                (foil_root(Path.cwd()) / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8")
-            )
+            registry_path = foil_root(Path.cwd()) / "fleets" / "main" / "run" / "registry.json"
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
             seat = "other"
             if window not in foreign:
                 seat = next(
@@ -199,6 +198,22 @@ def _post(
 
 
 # --- Success ---
+
+
+def test_a_post_stays_in_the_fleet_that_wrote_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _alive(repo)
+    calls = _install_tmux(monkeypatch)
+    monkeypatch.setenv("FOIL_FLEET", "side")
+    assert main(["post", "only side"]) == 0
+    assert _room(repo) == []
+    side = foil_root(repo) / "fleets" / "side" / "board" / "room"
+    files = sorted(path for path in side.rglob("*.md") if path.is_file())
+    assert len(files) == 1
+    assert "only side" in files[0].read_text(encoding="utf-8")
+    assert _nudge_lines(calls) == []
 
 
 def test_f33_waking_post_writes_one_room_file_and_nudges_every_other_alive_seat(
@@ -1002,7 +1017,8 @@ def test_s10_decline_types_nothing_so_the_fake_sees_no_line(
     )
     result = _run_fake(repo, "implementer-1", "")
     assert result.returncode == 0, result.stderr
-    assert not (foil_root(repo) / "fleets" / "main" / "board" / "notes" / "saw-decline.txt").exists()
+    declined = foil_root(repo) / "fleets" / "main" / "board" / "notes" / "saw-decline.txt"
+    assert not declined.exists()
     handled = fake / "implementer-1.handled"
     if handled.is_file():
         assert str(child.resolve()) not in handled.read_text(encoding="utf-8")
@@ -1019,7 +1035,8 @@ def test_f33_hand_written_room_file_wakes_nobody(
     hand = thread / "note.md"
     hand.write_text("hand written\n", encoding="utf-8")
     assert main(["board", "list", "room/*/*.md"]) == 0
-    assert str(hand.relative_to(foil_root(repo) / "fleets" / "main" / "board")) in capsys.readouterr().out
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    assert str(hand.relative_to(board)) in capsys.readouterr().out
     assert all(argv[0] != "send-keys" for argv in calls)
     fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
     fake.mkdir(exist_ok=True)
@@ -1158,7 +1175,8 @@ def test_s6_worker_cannot_spawn_kill_or_resume(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _alive(repo)
-    before = (foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8")
+    registry = foil_root(repo) / "fleets" / "main" / "run" / "registry.json"
+    before = registry.read_text(encoding="utf-8")
     monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
     assert main(["seat", "spawn", "implementer"]) == 1
     assert _one_line(capsys) == "foil: not allowed\n"
@@ -1166,7 +1184,7 @@ def test_s6_worker_cannot_spawn_kill_or_resume(
     assert _one_line(capsys) == "foil: not allowed\n"
     assert main(["seat", "resume"]) == 1
     assert _one_line(capsys) == "foil: not allowed\n"
-    assert (foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8") == before
+    assert registry.read_text(encoding="utf-8") == before
 
 
 def test_f13_send_nudges_one_recipient_and_does_not_write_re(
