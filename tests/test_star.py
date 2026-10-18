@@ -15,6 +15,18 @@ from foil.project import store_root
 
 MINOR = ".".join(__version__.split(".")[:2])
 LINE = "For the human: if Foil helps, a GitHub star helps others find it:"
+TODAY = date(2026, 10, 18)
+
+
+class _Today(date):
+    @classmethod
+    def today(cls) -> date:
+        return TODAY
+
+
+@pytest.fixture(autouse=True)
+def _fixed_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(lifecycle, "date", _Today)
 
 
 @pytest.fixture
@@ -27,7 +39,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _ago(days: int) -> str:
-    return (date.today() - timedelta(days=days)).isoformat()
+    return (TODAY - timedelta(days=days)).isoformat()
 
 
 def _record(shown: list[str], minor: str = MINOR, stop: bool = False) -> None:
@@ -60,13 +72,13 @@ def test_first_init_shows_the_line_once_and_records_it(
     assert lines[-1].startswith("Read ")
     assert _saved() == {
         "schema_version": 1,
-        "shown": [date.today().isoformat()],
+        "shown": [TODAY.isoformat()],
         "minor": MINOR,
         "stop": False,
     }
 
     assert LINE not in _init(capsys)
-    assert _saved()["shown"] == [date.today().isoformat()]
+    assert _saved()["shown"] == [TODAY.isoformat()]
 
 
 @pytest.mark.parametrize(
@@ -79,6 +91,8 @@ def test_first_init_shows_the_line_once_and_records_it(
         ([_ago(90), _ago(80), _ago(40)], MINOR, False),
         ([_ago(90), _ago(80), _ago(40)], "0.0", True),
         ([_ago(90), _ago(80), _ago(29)], "0.0", False),
+        ([_ago(90), _ago(80), _ago(30)], "0.0", True),
+        ([_ago(90), _ago(80), _ago(40)], "9.9", False),
         ([_ago(90), _ago(80), _ago(70), _ago(31)], "0.0", True),
         ([_ago(-1)], MINOR, False),
     ],
@@ -95,7 +109,7 @@ def test_later_lines_follow_the_schedule(
     assert (LINE in out) is due
     saved = _saved()
     if due:
-        assert saved["shown"] == [*shown, date.today().isoformat()]
+        assert saved["shown"] == [*shown, TODAY.isoformat()]
         assert saved["minor"] == MINOR
     else:
         assert saved["shown"] == shown
@@ -108,10 +122,23 @@ def test_stop_silences_every_later_line(repo: Path, capsys: pytest.CaptureFixtur
     assert _saved()["stop"] is True
 
 
-@pytest.mark.parametrize("text", ["not json", '{"schema_version": 1}', '{"schema_version": 9}'])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "not json",
+        '{"schema_version": 1}',
+        '{"schema_version": 9}',
+        '{"schema_version": 1, "shown": "2026-01-01", "minor": "0.0", "stop": false}',
+        '{"schema_version": 1, "shown": ["2026-01-01"], "minor": "0.0", "stop": 0}',
+        '{"schema_version": 1, "shown": ["2026-01-01"], "stop": false}',
+        "deep",
+    ],
+)
 def test_an_unreadable_record_shows_nothing_and_is_left_alone(
     repo: Path, capsys: pytest.CaptureFixture[str], text: str
 ) -> None:
+    if text == "deep":
+        text = '{"schema_version": 1, "shown": ' + "[" * 100000 + "]" * 100000 + "}"
     path = store_root() / "star.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -119,12 +146,21 @@ def test_an_unreadable_record_shows_nothing_and_is_left_alone(
     assert path.read_text(encoding="utf-8") == text
 
 
-def test_a_failed_save_still_finishes_init(
+def test_a_directory_in_place_of_the_record_shows_nothing(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (store_root() / "star.json").mkdir(parents=True)
+    assert LINE not in _init(capsys)
+    assert (store_root() / "star.json").is_dir()
+
+
+def test_a_failed_save_shows_nothing_and_still_finishes_init(
     repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def refuse(*_args: object) -> None:
         raise OSError("read-only")
 
     monkeypatch.setattr(lifecycle, "write_json", refuse)
-    assert LINE in _init(capsys)
+    assert LINE not in _init(capsys)
+    assert LINE not in _init(capsys)
     assert not (store_root() / "star.json").exists()

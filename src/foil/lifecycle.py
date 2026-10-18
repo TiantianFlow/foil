@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import os
@@ -60,11 +59,18 @@ STAR_GAPS = (3, 14)  # days before the second and the third star line
 STAR_LATER = 30  # days before one more line on a new minor version
 
 
+def _minor(version: str) -> tuple[int, int]:
+    match = re.match(r"(\d+)\.(\d+)", version)
+    if not match:
+        raise ValueError(version)
+    return int(match[1]), int(match[2])
+
+
 def _star_due() -> dict | None:
-    """The star record to save after this report, or None when no line is due."""
+    """The star record to save before this report, or None when no line is due."""
     path = store_root() / "star.json"
-    minor = ".".join(__version__.split(".")[:2])
     today = date.today()
+    minor = ".".join(map(str, _minor(__version__)))
     fresh = {"schema_version": 1, "shown": [today.isoformat()], "minor": minor, "stop": False}
     if not (path.exists() or path.is_symlink()):
         return fresh
@@ -72,7 +78,8 @@ def _star_due() -> dict | None:
         record = read_json(path)
         shown = [date.fromisoformat(day) for day in record["shown"]]
         stop = record["stop"]
-    except (FoilError, KeyError, TypeError, ValueError):
+        newer = _minor(minor) > _minor(str(record["minor"]))
+    except (FoilError, KeyError, TypeError, ValueError, RecursionError):
         return None
     if stop is not False or not shown:
         return None
@@ -80,10 +87,21 @@ def _star_due() -> dict | None:
     if len(shown) <= len(STAR_GAPS):
         due = gap >= STAR_GAPS[len(shown) - 1]
     else:
-        due = gap >= STAR_LATER and record.get("minor") != minor
+        due = gap >= STAR_LATER and newer
     if not due:
         return None
     return {**fresh, "shown": [*record["shown"], today.isoformat()]}
+
+
+def _star_saved(record: dict | None) -> bool:
+    """Save first and show only what was saved, so a failing store never repeats the line."""
+    if record is None:
+        return False
+    try:
+        write_json(store_root() / "star.json", record)
+    except (FoilError, OSError):
+        return False
+    return True
 
 
 def _names(items: list[str]) -> str:
@@ -210,11 +228,8 @@ def init_project(directory: str | None) -> None:
     had_templates = {role for role in roles if (template_dir / f"{role}.toml").exists()}
     had_personas = set(persona_stems(persona_dir))
     updated_skills = write_default_templates(toplevel)
-    star = _star_due()
-    _print_init_report(toplevel, had_templates, had_personas, updated_skills, star is not None)
-    if star is not None:
-        with contextlib.suppress(FoilError, OSError):
-            write_json(store_root() / "star.json", star)
+    star = _star_saved(_star_due())
+    _print_init_report(toplevel, had_templates, had_personas, updated_skills, star)
 
 
 def _seat_name(registry: dict, template_name: str, requested: str | None) -> str:
