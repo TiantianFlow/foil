@@ -80,8 +80,8 @@ The page has four routes:
 - With `FOIL_SEAT_ID` set, it prints
   `foil: view is outside the fleet only`, exits 1, and binds nothing.
   That check comes first.
-- It binds `127.0.0.1:0` and prints `http://127.0.0.1:<port>` as its only
-  stdout line, flushed, so `foil view | head -1` and a script that reads
+- It binds `127.0.0.1:0` and prints the page's address, the `http`
+  scheme then `127.0.0.1:<port>`, as its only stdout line, flushed, so `foil view | head -1` and a script that reads
   one line both work.
 - The server handles one request at a time and has a 10 s socket
   timeout, so a stuck client cannot hold it. Each page costs one tmux
@@ -122,7 +122,7 @@ What the server does:
 - Binds `127.0.0.1` only. Not `0.0.0.0`, not `::`, not `localhost`, which
   may resolve to `::1` or something else.
 - **Origin.** A request whose `Origin` is anything but
-  `http://127.0.0.1:<port>`, including `null`, gets status 403 and an
+  the viewer's own (`http` scheme, `127.0.0.1:<port>`), including `null`, gets status 403 and an
   empty body. A navigation with no `Origin` loads the page.
 - **Host.** A request whose `Host` is not `127.0.0.1:<port>` gets the
   same empty 403. This blocks DNS rebinding: a page on `evil.example`
@@ -163,7 +163,7 @@ Question 6 options:
 | | Change | Cost |
 |---|---|---|
 | a. Accept and document it | README: "On a machine other people log in to, anyone there can read the viewer while it runs." | None. Matches the agreed text |
-| b. Token in the URL | Print `http://127.0.0.1:<port>/<token>/`. A request without that prefix gets the empty 403. 128 random bits, new each run | About 10 lines. The URL is a secret in shell history and the browser history. Changes the agreed text ("carries no token") |
+| b. Token in the URL | Print the address with a `/<token>/` path. A request without that prefix gets the empty 403. 128 random bits, new each run | About 10 lines. The URL is a secret in shell history and the browser history. Changes the agreed text ("carries no token") |
 | c. Check the peer's user id | Not portable. TCP has no `SO_PEERCRED`. Reading `/proc/net/tcp` works only on Linux | Rejected |
 | d. A Unix socket | Browsers cannot open one | Rejected |
 
