@@ -16,7 +16,8 @@ FLAGS = {
     ("seat", "spawn"): {"--name", "--task"},
     ("seat", "kill"): {"--all"},
     ("seat", "resume"): set(),
-    ("seat", "list"): {"--json"},
+    ("seat", "list"): {"--json", "--archived"},
+    ("seat", "archive"): set(),
     ("seat", "peek"): {"--lines"},
     ("send",): set(),
     ("post",): {"--re", "--decline"},
@@ -43,6 +44,7 @@ ROLE_COMMANDS = {
         ("seat", "list"),
         ("seat", "peek"),
         ("seat", "kill"),
+        ("seat", "archive"),
         ("send",),
         ("post",),
         ("memory", "list"),
@@ -56,6 +58,7 @@ ROLE_COMMANDS = {
     "lead.md": {
         ("seat", "spawn"),
         ("seat", "kill"),
+        ("seat", "archive"),
         ("seat", "resume"),
         ("seat", "list"),
         ("seat", "peek"),
@@ -174,7 +177,10 @@ def test_onboarding_sentence_names_the_install_source() -> None:
 def test_permission_is_per_template_in_the_onboarding_docs() -> None:
     for relative in ("README.md", "README.zh-CN.md", "skills/operator.md"):
         text = (ROOT / relative).read_text(encoding="utf-8")
-        for name in ("lead.toml", "implementer.toml", "reviewer.toml"):
+        assert "roles.toml" in text, relative
+    for relative in ("README.md", "skills/operator.md"):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        for name in ("lead", "implementer", "reviewer"):
             assert name in text, relative
     for relative in ("README.md", "skills/operator.md"):
         text = (ROOT / relative).read_text(encoding="utf-8")

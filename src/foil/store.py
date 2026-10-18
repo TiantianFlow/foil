@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from foil.errors import FoilError, assert_no_secret
+from foil.errors import FoilError, assert_no_secret, shown
 from foil.project import foil_root
 
 SCHEMA_VERSION = 1
@@ -56,8 +56,23 @@ def scan(value: Any) -> None:
             scan(child)
 
 
+def fleet_id() -> str:
+    """The fleet these commands talk to. Unset means ``main``."""
+
+    raw = os.environ.get("FOIL_FLEET", "").strip() or "main"
+    if not SAFE_ID.fullmatch(raw):
+        raise FoilError(f"foil: invalid fleet '{shown(raw)}'")
+    return raw
+
+
+def fleet_dir(toplevel: Path) -> Path:
+    """Per-fleet board, registry, and overrides. Project lists stay above this."""
+
+    return foil_root(toplevel) / "fleets" / fleet_id()
+
+
 def registry_path(toplevel: Path) -> Path:
-    return foil_root(toplevel) / "run" / "registry.json"
+    return fleet_dir(toplevel) / "run" / "registry.json"
 
 
 def empty_registry() -> dict[str, Any]:
@@ -155,6 +170,7 @@ def create_exclusive(path: Path, payload: bytes) -> None:
         raise
     temporary.unlink(missing_ok=True)
     path.chmod(0o600)
+    _fsync_dir(path.parent)
 
 
 def write_json(path: Path, payload: Mapping[str, Any]) -> None:
@@ -246,6 +262,21 @@ def save_registry(toplevel: Path, payload: Mapping[str, Any]) -> None:
     path = registry_path(toplevel)
     with exclusive_lock(path.with_suffix(".lock")):
         write_json(path, payload)
+
+
+def update_registry(toplevel: Path, mutate) -> dict[str, Any]:
+    """Apply ``mutate`` to a registry read under the lock, then write it.
+
+    Callers that loaded a registry earlier must not write that copy back.
+    An archive that removed a seat in between stays removed.
+    """
+
+    path = registry_path(toplevel)
+    with exclusive_lock(path.with_suffix(".lock")):
+        registry = load_registry(toplevel)
+        mutate(registry)
+        write_json(path, registry)
+        return registry
 
 
 def ensure_registry(toplevel: Path) -> None:

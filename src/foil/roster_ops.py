@@ -7,19 +7,26 @@ from pathlib import Path
 
 from foil.errors import FoilError, shown
 from foil.presets import (
+    description_of,
     entry_label,
     installed_harness,
     load_preset,
     load_template,
+    parse_template_text,
     path_description,
     persona_stems,
+    persona_text,
     preset_source,
     read_description,
-    render_template,
+    read_maps,
+    read_roles,
+    remember_model,
+    save_maps,
+    save_roles,
     template_permission,
 )
 from foil.project import foil_root
-from foil.store import SAFE_ID, create_exclusive, load_registry, write_bytes
+from foil.store import SAFE_ID, load_registry, write_bytes
 
 _PROTECTED_ROLES = {"lead", "implementer", "reviewer"}
 _TEMPLATE_FIELDS = {"harness", "model", "persona", "worktree", "permission"}
@@ -28,23 +35,6 @@ _TEMPLATE_FIELDS = {"harness", "model", "persona", "worktree", "permission"}
 def _refuse_symlink(path: Path) -> None:
     if path.is_symlink():
         raise FoilError("foil: refusing symlink")
-
-
-def _create_template_file(path: Path, content: str) -> None:
-    """Create a template without following a symlink out of the directory."""
-    _refuse_symlink(path)
-    if path.exists():
-        raise FoilError(f"foil: template '{path.stem}' already exists")
-    try:
-        create_exclusive(path, content.encode())
-    except FileExistsError:
-        _refuse_symlink(path)
-        raise FoilError(f"foil: template '{path.stem}' already exists") from None
-
-
-def _replace_template_file(path: Path, content: str) -> None:
-    _refuse_symlink(path)
-    write_bytes(path, content.encode())
 
 
 def _formatted_value(field: str, value: str) -> str:
@@ -94,10 +84,7 @@ def _in_use(toplevel: Path, role: str) -> None:
 
 def _template_names(toplevel: Path) -> list[str]:
     """List existing template names."""
-    templates_dir = foil_root(toplevel) / "templates"
-    if not templates_dir.is_dir():
-        return []
-    return sorted(path.stem for path in templates_dir.glob("*.toml"))
+    return sorted(role["id"] for role in (read_roles(toplevel) or []))
 
 
 def _listed(toplevel: Path, name: str) -> dict | None:
@@ -177,6 +164,81 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
         print(f"description: {description}")
 
 
+def _restore(path: Path, payload: bytes | None) -> None:
+    if payload is None:
+        if path.is_file() and not path.is_symlink():
+            path.unlink()
+        return
+    write_bytes(path, payload)
+
+
+def _add_listed(
+    toplevel: Path,
+    role: str,
+    *,
+    from_file: str | None,
+    in_fleet: bool,
+) -> None:
+    root = foil_root(toplevel)
+    roles_path = root / "roles.toml"
+    maps_path = root / "mapping.toml"
+    _refuse_symlink(roles_path)
+    if maps_path.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    if from_file:
+        source = Path(from_file)
+        if not source.is_file():
+            raise FoilError(f"foil: file not found: {shown(from_file)}")
+        content = source.read_text(encoding="utf-8")
+        if in_fleet and template_permission(content) != "auto":
+            raise FoilError("foil: permission is outside the fleet only")
+        parsed = parse_template_text(content)
+    else:
+        persona_file = root / "templates" / "personas" / f"{role}.md"
+        if not persona_file.is_file():
+            raise FoilError(
+                f"foil: persona file not found: personas/{role}.md. "
+                "Create the persona file first, or use --from FILE"
+            )
+        parsed = {
+            "persona": f"personas/{role}.md",
+            "worktree": False,
+            "permission": "auto",
+            "harness": [{"id": installed_harness(toplevel), "model": ""}],
+        }
+    persona_path = root / "templates" / f"{role}.toml"
+    try:
+        description = description_of(
+            persona_text({"persona": parsed["persona"], "path": persona_path})
+        )
+    except FoilError:
+        description = ""
+    roles = list(read_roles(toplevel) or [])
+    roles.append(
+        {
+            "id": role,
+            "description": description,
+            "persona": parsed["persona"],
+            "worktree": parsed["worktree"],
+            "permission": parsed["permission"],
+        }
+    )
+    maps = list(read_maps(toplevel))
+    for entry in parsed["harness"]:
+        maps.append({"role": role, "id": entry["id"], "model": entry["model"]})
+    original_roles = roles_path.read_bytes() if roles_path.is_file() else None
+    original_maps = maps_path.read_bytes() if maps_path.is_file() else None
+    save_roles(toplevel, roles)
+    save_maps(toplevel, maps)
+    try:
+        _accept(toplevel, role)
+    except FoilError:
+        _restore(roles_path, original_roles)
+        _restore(maps_path, original_maps)
+        raise
+    print(f"foil: created template '{role}'")
+
+
 def add_template(
     toplevel: Path,
     role: str,
@@ -188,47 +250,67 @@ def add_template(
     if not SAFE_ID.fullmatch(role):
         raise FoilError(f"foil: invalid role name '{shown(role)}'")
 
-    templates_dir = foil_root(toplevel) / "templates"
-    template_path = templates_dir / f"{role}.toml"
-    _refuse_symlink(template_path)
-    if template_path.exists():
+    listed = read_roles(toplevel)
+    if listed is not None and any(item["id"] == role for item in listed):
         raise FoilError(f"foil: template '{role}' already exists")
+    _add_listed(toplevel, role, from_file=from_file, in_fleet=in_fleet)
 
-    if from_file:
-        source = Path(from_file)
-        if not source.is_file():
-            raise FoilError(f"foil: file not found: {shown(from_file)}")
-        content = source.read_text(encoding="utf-8")
-        if in_fleet and template_permission(content) != "auto":
-            raise FoilError("foil: permission is outside the fleet only")
-    else:
-        personas_dir = templates_dir / "personas"
-        persona_file = personas_dir / f"{role}.md"
 
-        if not persona_file.is_file():
-            raise FoilError(
-                f"foil: persona file not found: personas/{role}.md. "
-                "Create the persona file first, or use --from FILE"
-            )
-
-        content = render_template(
-            [{"id": installed_harness(toplevel), "model": ""}],
-            persona=f"personas/{role}.md",
-            worktree=False,
-            permission="auto",
+def _update_listed(
+    toplevel: Path,
+    role: str,
+    field: str,
+    value: str,
+    *,
+    in_fleet: bool,
+    template: dict,
+) -> None:
+    root = foil_root(toplevel)
+    roles_path = root / "roles.toml"
+    maps_path = root / "mapping.toml"
+    _refuse_symlink(roles_path)
+    if maps_path.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    roles = list(read_roles(toplevel) or [])
+    maps = list(read_maps(toplevel))
+    indexes = [index for index, item in enumerate(maps) if item["role"] == role]
+    if field in {"harness", "model"} and len(indexes) != 1:
+        raise FoilError(
+            f"foil: template '{role}' has more than one harness entry; "
+            f"edit {shown(str(maps_path))}"
         )
-
-    created = False
+    _formatted_value(field, value)
+    original_roles = roles_path.read_bytes()
+    original_maps = maps_path.read_bytes() if maps_path.is_file() else None
+    previous = str(template.get("permission", "auto"))
+    row = next(item for item in roles if item["id"] == role)
+    if field == "harness":
+        maps[indexes[0]]["id"] = value
+    elif field == "model":
+        maps[indexes[0]]["model"] = value
+    elif field == "persona":
+        row["persona"] = value
+        try:
+            row["description"] = description_of(
+                persona_text({"persona": value, "path": root / "templates" / f"{role}.toml"})
+            )
+        except FoilError:
+            row["description"] = ""
+    elif field == "worktree":
+        row["worktree"] = value.lower() == "true"
+    else:
+        row["permission"] = value
+    save_roles(toplevel, roles)
+    save_maps(toplevel, maps)
     try:
-        _create_template_file(template_path, content)
-        created = True
         _accept(toplevel, role)
+        if in_fleet and str(load_template(toplevel, role)["permission"]) != previous:
+            raise FoilError("foil: permission is outside the fleet only")
     except FoilError:
-        if created and template_path.is_file() and not template_path.is_symlink():
-            template_path.unlink()
+        _restore(roles_path, original_roles)
+        _restore(maps_path, original_maps)
         raise
-
-    print(f"foil: created template '{role}'")
+    print(f"foil: updated template '{role}': {field} = {value}")
 
 
 def update_template(
@@ -247,53 +329,15 @@ def update_template(
         fields = ", ".join(sorted(_TEMPLATE_FIELDS))
         raise FoilError(f"foil: invalid field '{shown(field)}'. Valid fields: {fields}")
 
+    if field == "model" and in_fleet:
+        load_template(toplevel, role)
+        _formatted_value(field, value)
+        remember_model(toplevel, role, value)
+        print(f"foil: fleet memory: {role} model = {value}")
+        return
+
     template = load_template(toplevel, role)
-    template_path = template["path"]
-    _refuse_symlink(template_path)
-    entries = [{"id": item["id"], "model": item["model"]} for item in template["harness"]]
-    if field in {"harness", "model"} and len(entries) != 1:
-        raise FoilError(
-            f"foil: template '{role}' has more than one harness entry; "
-            f"edit {shown(str(template_path))}"
-        )
-
-    # Refuse a value that could escape its TOML string before any byte is replaced.
-    original = template_path.read_text(encoding="utf-8")
-    previous_permission = template_permission(original)
-    _formatted_value(field, value)
-    persona = str(template.get("persona") or "")
-    worktree = bool(template.get("worktree", False))
-    permission = str(template.get("permission", "auto"))
-    if field == "harness":
-        entries[0]["id"] = value
-    elif field == "model":
-        entries[0]["model"] = value
-    elif field == "persona":
-        persona = value
-    elif field == "worktree":
-        worktree = value.lower() == "true"
-    else:
-        permission = value
-
-    _replace_template_file(
-        template_path,
-        render_template(
-            entries, persona=persona, worktree=worktree, permission=permission
-        ),
-    )
-
-    # Validate by loading. An in-fleet caller must not change permission,
-    # including by a value that parses as a second assignment.
-    try:
-        _accept(toplevel, role)
-        written = template_path.read_text(encoding="utf-8")
-        if in_fleet and template_permission(written) != previous_permission:
-            raise FoilError("foil: permission is outside the fleet only")
-    except FoilError:
-        _replace_template_file(template_path, original)
-        raise
-
-    print(f"foil: updated template '{role}': {field} = {value}")
+    _update_listed(toplevel, role, field, value, in_fleet=in_fleet, template=template)
 
 
 def remove_template(toplevel: Path, role: str) -> None:
@@ -312,6 +356,10 @@ def remove_template(toplevel: Path, role: str) -> None:
     _in_use(toplevel, role)
     template_path = template["path"]
     _refuse_symlink(template_path)
-
-    template_path.unlink()
+    if template_path.is_file():
+        template_path.unlink()
+    roles = read_roles(toplevel)
+    if roles is not None and any(item["id"] == role for item in roles):
+        save_roles(toplevel, [item for item in roles if item["id"] != role])
+        save_maps(toplevel, [item for item in read_maps(toplevel) if item["role"] != role])
     print(f"foil: removed template '{role}'")

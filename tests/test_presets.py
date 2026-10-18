@@ -55,9 +55,14 @@ def test_builtins_cover_the_six_harnesses(tmp_path: Path) -> None:
 def test_expansion_drops_missing_values_and_their_flags(tmp_path: Path) -> None:
     prompt = "Read /tmp/instructions.md first."
     grok = load_preset(tmp_path, "grok")
-    assert expand_argv(
-        grok, model="grok-4", prompt=prompt, session_id="abc", permission="ask"
-    ) == ["grok", "--model", "grok-4", "--session-id", "abc", prompt]
+    assert expand_argv(grok, model="grok-4", prompt=prompt, session_id="abc", permission="ask") == [
+        "grok",
+        "--model",
+        "grok-4",
+        "--session-id",
+        "abc",
+        prompt,
+    ]
     dropped = expand_argv(grok, prompt=prompt, session_id="abc", permission="auto")
     assert dropped == ["grok", "--session-id", "abc", "--always-approve", prompt]
 
@@ -186,35 +191,22 @@ def test_expand_argv_does_not_place_a_leading_dash_model(tmp_path: Path) -> None
 
 
 def test_load_template_rejects_a_leading_dash_model(tmp_path: Path) -> None:
-    templates = tmp_path / ".foil" / "templates"
-    templates.mkdir(parents=True)
-    path = templates / "lead.toml"
-    path.write_text(
+    from foil.presets import parse_template_text
+
+    rejected = [
         'harness = "claude"\nmodel = "--yolo"\nworktree = false\npermission = "ask"\n',
-        encoding="utf-8",
-    )
-    before = path.read_bytes()
-    with pytest.raises(FoilError, match="invalid template"):
-        load_template(tmp_path, "lead")
-    assert path.read_bytes() == before
-    with pytest.raises(FoilError, match="invalid template"):
-        launch_command(tmp_path, "lead", prompt="go")
-    path.write_text(
         'harness = "claude"\npersona = "--yolo"\nworktree = false\npermission = "ask"\n',
-        encoding="utf-8",
-    )
-    with pytest.raises(FoilError, match="invalid template"):
-        load_template(tmp_path, "lead")
-    path.write_text(
         'harness = "--yolo"\nworktree = false\npermission = "ask"\n',
-        encoding="utf-8",
-    )
-    with pytest.raises(FoilError, match="invalid template"):
-        load_template(tmp_path, "lead")
+    ]
+    for body in rejected:
+        with pytest.raises(FoilError, match="invalid template"):
+            parse_template_text(body)
+    with pytest.raises(FoilError, match="unknown template"):
+        launch_command(tmp_path, "lead", prompt="go")
 
 
 def test_unknown_placeholder_and_template_key_are_rejected(tmp_path: Path) -> None:
-    builtin = (tmp_path / ".foil" / "harnesses")
+    builtin = tmp_path / ".foil" / "harnesses"
     builtin.mkdir(parents=True)
     (builtin / "grok.toml").write_text(
         'id = "grok"\ncommand = ["grok", "{cwd}"]\nsession_id = "none"\n',
@@ -225,12 +217,10 @@ def test_unknown_placeholder_and_template_key_are_rejected(tmp_path: Path) -> No
 
     templates = tmp_path / ".foil" / "templates"
     templates.mkdir(parents=True)
-    (templates / "lead.toml").write_text(
-        'harness = "grok"\ncolor = "red"\n',
-        encoding="utf-8",
-    )
+    from foil.presets import parse_template_text
+
     with pytest.raises(FoilError, match="invalid template"):
-        load_template(tmp_path, "lead")
+        parse_template_text('harness = "grok"\ncolor = "red"\n')
 
 
 def test_init_writes_real_personas_and_resolves_a_launch_command(
@@ -250,34 +240,41 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
         assert template["harness"][0]["model"] == ""
         assert template["worktree"] is worktree
         assert template["permission"] == "auto"
-        packaged = files("foil").joinpath("defaults", "personas", f"{role}.md").read_text(
-            encoding="utf-8"
+        packaged = (
+            files("foil").joinpath("defaults", "personas", f"{role}.md").read_text(encoding="utf-8")
         )
         assert persona_text(template) == packaged
         assert len(packaged) > 50
         argv = launch_command(repo, role, prompt=prompt, session_id="abc")
         assert argv[0] == template["harness"][0]["id"]
         assert argv[-1] == prompt
-        stored = tomllib.loads((root / "templates" / f"{role}.toml").read_text(encoding="utf-8"))
+        roles = tomllib.loads((root / "roles.toml").read_text(encoding="utf-8"))
+        stored = next(item for item in roles["role"] if item["id"] == role)
         assert stored["persona"] == f"personas/{role}.md"
 
-    lead = root / "templates" / "lead.toml"
+    roles_path = root / "roles.toml"
     persona = root / "templates" / "personas" / "lead.md"
-    lead.write_text('harness = "claude"\npersona = "keep me"\n', encoding="utf-8")
+    original_roles = roles_path.read_text(encoding="utf-8")
+    roles_path.write_text(
+        original_roles.replace(
+            'persona = "personas/lead.md"',
+            'persona = "keep me"',
+            1,
+        ),
+        encoding="utf-8",
+    )
     persona.write_text("custom persona\n", encoding="utf-8")
-    reviewer = root / "templates" / "reviewer.toml"
-    reviewer.unlink()
+    kept = roles_path.read_text(encoding="utf-8")
     assert main(["init"]) == 0
-    assert lead.read_text(encoding="utf-8") == 'harness = "claude"\npersona = "keep me"\n'
+    assert roles_path.read_text(encoding="utf-8") == kept
     assert persona.read_text(encoding="utf-8") == "custom persona\n"
     assert load_template(repo, "lead")["harness"][0]["id"] == "claude"
     assert persona_text(load_template(repo, "lead")) == "keep me"
-    assert persona_text({"path": lead, "persona": "/keep me"}) == "/keep me"
-    assert reviewer.is_file()
+    assert (
+        persona_text({"path": root / "templates" / "lead.toml", "persona": "/keep me"})
+        == "/keep me"
+    )
     assert load_template(repo, "reviewer")["harness"][0]["id"] == "codex"
-    reviewed = reviewer.read_bytes()
-    assert main(["init"]) == 0
-    assert reviewer.read_bytes() == reviewed
 
 
 def test_persona_text_rejects_a_leading_slash_without_reading(
@@ -364,9 +361,7 @@ def _write_preset(directory: Path, harness_id: str, program: str) -> None:
     )
 
 
-def test_scan_sorts_ids_by_code_point(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scan_sorts_ids_by_code_point(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bindir = tmp_path / "bin"
     bindir.mkdir()
     names = ["a-b", "a.b", "a_b", "mid"]
@@ -468,12 +463,8 @@ def test_same_program_counts_as_two_ids_and_one_id_fills_every_template(
     assert load_template(repo, "reviewer")["harness"][0]["id"] == "extra"
     assert [preset["command"][0] for preset in installed_presets(repo)[0]] == ["claude", "claude"]
 
-    reviewer = foil_root(repo) / "templates" / "reviewer.toml"
-    reviewer.unlink()
-    implementer = foil_root(repo) / "templates" / "implementer.toml"
-    implementer.unlink()
-    lead = foil_root(repo) / "templates" / "lead.toml"
-    lead.unlink()
+    (foil_root(repo) / "roles.toml").unlink()
+    (foil_root(repo) / "mapping.toml").unlink()
     (harnesses / "extra.toml").unlink()
     assert main(["init"]) == 0
     for role in ("lead", "implementer", "reviewer"):
@@ -498,7 +489,14 @@ def test_init_copies_every_persona_and_keeps_an_edit(
         "verifier.md",
     ]
     templates = sorted(path.name for path in (foil_root(repo) / "templates").glob("*.toml"))
-    assert templates == ["implementer.toml", "lead.toml", "reviewer.toml"]
+    assert templates == []
+    role_ids = [
+        item["id"]
+        for item in tomllib.loads((foil_root(repo) / "roles.toml").read_text(encoding="utf-8"))[
+            "role"
+        ]
+    ]
+    assert role_ids == ["lead", "implementer", "reviewer"]
     edited = personas / "researcher.md"
     edited.write_text("custom researcher\n", encoding="utf-8")
     before = {
@@ -577,7 +575,7 @@ def test_init_refreshes_skills_and_leaves_templates_and_personas(
     stale.write_text("old lead\n", encoding="utf-8")
     persona = foil_root(repo) / "templates" / "personas" / "lead.md"
     persona.write_text("edited persona\n", encoding="utf-8")
-    template = foil_root(repo) / "templates" / "lead.toml"
+    template = foil_root(repo) / "roles.toml"
     template_bytes = template.read_bytes()
     assert main(["init"]) == 0
     report = capsys.readouterr().out
@@ -621,17 +619,32 @@ def test_init_reports_an_overridden_builtin_and_leaves_the_preset(
     assert main(["init"]) == 0
     capsys.readouterr()
     harnesses = foil_root(repo) / "harnesses"
-    preset = files("foil").joinpath("defaults", "harnesses", "claude.toml").read_bytes()
-    (harnesses / "claude.toml").write_bytes(preset)
-    (harnesses / "grok.toml").write_bytes(
-        files("foil").joinpath("defaults", "harnesses", "grok.toml").read_bytes()
+    preset = (
+        'id = "claude"\n'
+        'command = ["claude", "{prompt}"]\n'
+        'session_id = "generated"\n'
+        "env = []\n\n"
+        "[permission]\n"
+        "ask = []\n"
+        "auto = []\n"
+    )
+    (harnesses / "claude.toml").write_text(preset, encoding="utf-8")
+    (harnesses / "grok.toml").write_text(
+        'id = "grok"\n'
+        'command = ["grok", "{prompt}"]\n'
+        'session_id = "generated"\n'
+        "env = []\n\n"
+        "[permission]\n"
+        "ask = []\n"
+        "auto = []\n",
+        encoding="utf-8",
     )
     (harnesses / "fake.toml").write_text('id = "fake"\n', encoding="utf-8")
     assert main(["init"]) == 0
     report = capsys.readouterr().out
     assert "Built-in presets overridden by harnesses: claude, grok\n" in report
     assert "fake" not in report.split("Built-in presets overridden", 1)[1].split("\n", 1)[0]
-    assert (harnesses / "claude.toml").read_bytes() == preset
+    assert (harnesses / "claude.toml").read_text(encoding="utf-8") == preset
 
 
 def test_lead_persona_does_not_take_the_operator_role() -> None:
@@ -663,12 +676,12 @@ def _write_template(tmp_path: Path, body: str) -> None:
     (directory / "lead.toml").write_text(body, encoding="utf-8")
 
 
-def test_legacy_string_harness_loads_as_one_entry(tmp_path: Path) -> None:
-    _write_template(
-        tmp_path,
-        'harness = "claude"\nmodel = "opus"\nworktree = false\npermission = "ask"\n',
+def test_legacy_string_harness_loads_as_one_entry() -> None:
+    from foil.presets import parse_template_text
+
+    loaded = parse_template_text(
+        'harness = "claude"\nmodel = "opus"\nworktree = false\npermission = "ask"\n'
     )
-    loaded = load_template(tmp_path, "lead")
     assert loaded["harness"] == [{"id": "claude", "model": "opus"}]
 
 
@@ -697,10 +710,11 @@ def test_harness_list_rejects_ambiguous_empty_and_bad_entries(tmp_path: Path) ->
         'harness = ["claude"]\n',
         '[[harness]]\nid = "claude"\ncolor = "red"\n',
     ]
+    from foil.presets import parse_template_text
+
     for body in rejected:
-        _write_template(tmp_path, body)
         with pytest.raises(FoilError, match="invalid template"):
-            load_template(tmp_path, "lead")
+            parse_template_text(body)
 
 
 def test_reviewer_persona_does_not_edit_files() -> None:
@@ -709,3 +723,27 @@ def test_reviewer_persona_does_not_edit_files() -> None:
         encoding="utf-8"
     )
     assert "do not edit files" in text.lower()
+
+
+def test_init_writes_three_lists_and_a_fleet_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _fresh_repo(tmp_path, monkeypatch)
+    assert main(["init"]) == 0
+    root = foil_root(repo)
+    catalog = tomllib.loads((root / "harnesses.toml").read_text(encoding="utf-8"))
+    claude = next(item for item in catalog["harness"] if item["id"] == "claude")
+    assert "sonnet" in claude["models"]
+    assert "opus" in claude["models"]
+    roles = tomllib.loads((root / "roles.toml").read_text(encoding="utf-8"))
+    by_id = {item["id"]: item for item in roles["role"]}
+    assert by_id["lead"]["description"].startswith("You are the lead seat")
+    assert by_id["implementer"]["worktree"] is True
+    maps = tomllib.loads((root / "mapping.toml").read_text(encoding="utf-8"))
+    assigned = {item["role"]: item["harness"] for item in maps["map"]}
+    assert assigned["lead"] == "claude"
+    assert assigned["reviewer"] == "codex"
+    assert not (root / "fleet.json").exists()
+    assert (root / "fleets" / "main" / "board" / "room").is_dir()
+    assert main(["init"]) == 0
+    assert not (root / "fleet.json").exists()

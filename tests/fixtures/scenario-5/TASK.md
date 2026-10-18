@@ -6,7 +6,7 @@ If `foil seat list` does not contain `implementer-1`, run:
 foil seat spawn implementer --task "Run sh propose.sh."
 ```
 
-`propose.sh` proposes the lesson `check the merged tests`. A worker cannot accept it, so the script writes `refused` to `board/notes/accept.txt` in the project folder and sends mail that starts with `proposed`.
+`propose.sh` proposes the lesson `check the merged tests`. A worker cannot accept it, so the script writes `refused` to `board/notes/accept.txt` on this fleet's board and sends mail that starts with `proposed`.
 
 When that mail arrives, run `sh accept.sh`.
 

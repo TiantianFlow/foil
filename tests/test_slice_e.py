@@ -68,9 +68,7 @@ def _pane(
         seen.append((window_id, lines))
         return "pane-text\n"
 
-    def probe(
-        self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget
-    ) -> ProbeResult:
+    def probe(self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget) -> ProbeResult:
         del self, fleet_id, seat_id
         if present is None or target.window_id in windows:
             return ProbeResult(ProbeState.ALIVE, True, target)
@@ -98,8 +96,10 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert main(["memory", "add", "still proposed"]) == 0
     proposed = capsys.readouterr().out.strip()
     assert main(["seat", "spawn", "lead"]) == 0
-    text = (foil_root(repo) / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
-    board = foil_root(repo) / "board"
+    text = (foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md").read_text(
+        encoding="utf-8"
+    )
+    board = foil_root(repo) / "fleets" / "main" / "board"
     assert f"Written by foil {__version__}." in text
     assert "You are seat `lead`. Lead is `lead`." in text
     assert f"Board: `{board.resolve()}`." in text
@@ -129,12 +129,14 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert "- reviewer: harness codex, worktree no" in text
     assert "You are the lead seat of this fleet." in text
     assert "Run `foil mail list` and read your mail before you act." in text
+    assert "foil seat archive NAME" in text
+    assert text.count("may be from an earlier goal") == 1
     assert "none yet" not in text
 
     second = _lesson(capsys, "re-read the diff")
-    assert second not in (foil_root(repo) / "run" / "instructions" / "lead.md").read_text(
-        encoding="utf-8"
-    )
+    assert second not in (
+        foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_worker_instruction_and_resume_refreshes_lessons(
@@ -149,12 +151,14 @@ def test_worker_instruction_and_resume_refreshes_lessons(
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     assert main(["seat", "spawn", "implementer"]) == 0
     monkeypatch.delenv("FOIL_SEAT_ID")
-    text = (foil_root(repo) / "run" / "instructions" / "implementer-1.md").read_text(
-        encoding="utf-8"
-    )
+    text = (
+        foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "implementer-1.md"
+    ).read_text(encoding="utf-8")
     assert "Stay in your worktree." in text
     assert "Templates:" not in text
     assert "foil seat kill NAME" not in text
+    assert "foil seat archive" not in text
+    assert "earlier goal" not in text
     assert "foil mail read PATH [--json]" in text
     assert "foil mail list [--json]" in text
     assert "foil board read PATH [--json]" in text
@@ -164,9 +168,9 @@ def test_worker_instruction_and_resume_refreshes_lessons(
     assert f"- {first}: prefer small diffs" in text
     second = _lesson(capsys, "re-read the diff")
     assert main(["seat", "resume", "implementer-1"]) == 0
-    refreshed = (foil_root(repo) / "run" / "instructions" / "implementer-1.md").read_text(
-        encoding="utf-8"
-    )
+    refreshed = (
+        foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "implementer-1.md"
+    ).read_text(encoding="utf-8")
     assert f"- {second}: re-read the diff" in refreshed
     plan = json.loads(Path(calls[-1]["runner_argv"][3]).read_text(encoding="utf-8"))
     assert plan["cwd"] == load_registry(repo)["seats"]["implementer-1"]["worktree"]
@@ -184,15 +188,10 @@ def test_resume_uses_last_or_continue_and_restarts_otherwise(
     _commit(repo)
     calls = _launch(monkeypatch)
     _alive(monkeypatch, set())
-    templates = foil_root(repo) / "templates"
-    templates.joinpath("codex-role.toml").write_text(
-        'harness = "codex"\npermission = "auto"\nworktree = true\n',
-        encoding="utf-8",
-    )
-    templates.joinpath("fresh.toml").write_text(
-        'harness = "gemini"\npermission = "auto"\nworktree = false\n',
-        encoding="utf-8",
-    )
+    from tests.test_spawn import _add_role
+
+    _add_role(repo, "codex-role", "codex", worktree=True)
+    _add_role(repo, "fresh", "gemini")
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "codex-role", "--name", "coder"]) == 0
     assert main(["seat", "spawn", "fresh", "--name", "reader"]) == 0
@@ -200,20 +199,24 @@ def test_resume_uses_last_or_continue_and_restarts_otherwise(
     assert capsys.readouterr().err == ""
 
     coder = json.loads(
-        (foil_root(repo) / "run" / "plans" / "coder.json").read_text(encoding="utf-8")
+        (foil_root(repo) / "fleets" / "main" / "run" / "plans" / "coder.json").read_text(
+            encoding="utf-8"
+        )
     )
     reader = json.loads(
-        (foil_root(repo) / "run" / "plans" / "reader.json").read_text(encoding="utf-8")
+        (foil_root(repo) / "fleets" / "main" / "run" / "plans" / "reader.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert coder["argv"][:4] == ["codex", "resume", "--ask-for-approval", "never"]
     assert "--last" in coder["argv"]
     assert "--resume" not in reader["argv"]
     assert reader["argv"][0] == "gemini"
     assert "--approval-mode=yolo" in reader["argv"]
-    reader_text = (foil_root(repo) / "run" / "instructions" / "reader.md").read_text(
-        encoding="utf-8"
-    )
-    mail = foil_root(repo) / "board" / "mail" / "reader"
+    reader_text = (
+        foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "reader.md"
+    ).read_text(encoding="utf-8")
+    mail = foil_root(repo) / "fleets" / "main" / "board" / "mail" / "reader"
     assert "You were restarted." in reader_text
     assert "List your mail with `foil mail list`" in reader_text
     assert "read each file with `foil mail read`" in reader_text
@@ -229,14 +232,10 @@ def test_resume_without_a_worktree_starts_in_the_project(
     repo = _repo(tmp_path, monkeypatch)
     _launch(monkeypatch)
     _alive(monkeypatch, set())
-    templates = foil_root(repo) / "templates"
-    lead = templates / "lead.toml"
-    text = lead.read_text(encoding="utf-8").replace('id = "claude"', 'id = "codex"', 1)
-    lead.write_text(text)
-    templates.joinpath("plain.toml").write_text(
-        'harness = "opencode"\nworktree = false\n',
-        encoding="utf-8",
-    )
+    from tests.test_spawn import _add_role, _set_entries
+
+    _set_entries(repo, "lead", [("codex", "")])
+    _add_role(repo, "plain", "opencode")
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "plain", "--name", "clerk"]) == 0
     assert main(["seat", "resume"]) == 0
@@ -247,11 +246,13 @@ def test_resume_without_a_worktree_starts_in_the_project(
     project = str(repo.resolve())
     for name in ("lead", "clerk"):
         plan = json.loads(
-            (foil_root(repo) / "run" / "plans" / f"{name}.json").read_text(encoding="utf-8")
+            (foil_root(repo) / "fleets" / "main" / "run" / "plans" / f"{name}.json").read_text(
+                encoding="utf-8"
+            )
         )
-        text = (foil_root(repo) / "run" / "instructions" / f"{name}.md").read_text(
-            encoding="utf-8"
-        )
+        text = (
+            foil_root(repo) / "fleets" / "main" / "run" / "instructions" / f"{name}.md"
+        ).read_text(encoding="utf-8")
         assert plan["cwd"] == project
         assert "--last" not in plan["argv"]
         assert "--continue" not in plan["argv"]
@@ -267,13 +268,17 @@ def test_alive_resume_does_not_relaunch(
     assert main(["seat", "spawn", "lead"]) == 0
     window = load_registry(repo)["seats"]["lead"]["window_id"]
     _alive(monkeypatch, {window})
-    before = (foil_root(repo) / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
+    before = (foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md").read_text(
+        encoding="utf-8"
+    )
     assert main(["seat", "resume", "lead"]) == 0
     captured = capsys.readouterr()
     assert captured.out.endswith("foil: seat 'lead' is alive\n")
     assert captured.err == ""
     assert len(calls) == 1
-    after = (foil_root(repo) / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
+    after = (foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md").read_text(
+        encoding="utf-8"
+    )
     assert after == before
 
 
@@ -345,8 +350,8 @@ def test_respawned_lead_is_pointed_at_the_new_task_mail(
     repo = _repo(tmp_path, monkeypatch)
     _launch(monkeypatch)
     _stop(monkeypatch)
-    mailbox = foil_root(repo) / "board" / "mail" / "lead"
-    instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
+    mailbox = foil_root(repo) / "fleets" / "main" / "board" / "mail" / "lead"
+    instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md"
     assert main(["seat", "spawn", "lead", "--task", "first goal"]) == 0
     assert main(["seat", "kill", "--all"]) == 0
     assert main(["seat", "spawn", "lead", "--task", "second goal"]) == 0
@@ -408,11 +413,9 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _launch(monkeypatch)
-    template = foil_root(repo) / "templates" / "worker.toml"
-    template.write_text(
-        'worktree = false\npermission = "auto"\n\n[[harness]]\nid = "claude"\nmodel = "sonnet"\n',
-        encoding="utf-8",
-    )
+    from tests.test_spawn import _add_role, _set_entries
+
+    _add_role(repo, "worker", "claude", model="sonnet")
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "worker", "--name", "worker"]) == 0
     launched = load_registry(repo)["seats"]["worker"]
@@ -421,19 +424,7 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     assert previous
     assert launched["harness"] == "claude"
     assert launched["model"] == "sonnet"
-    template.write_text(
-        "worktree = false\n"
-        'permission = "auto"\n'
-        "\n"
-        "[[harness]]\n"
-        'id = "gemini"\n'
-        'model = "other"\n'
-        "\n"
-        "[[harness]]\n"
-        'id = "codex"\n'
-        'model = "gpt-5.5"\n',
-        encoding="utf-8",
-    )
+    _set_entries(repo, "worker", [("gemini", "other"), ("codex", "gpt-5.5")])
     _alive(monkeypatch, {window})
     capsys.readouterr()
     assert main(["seat", "list"]) == 0
@@ -445,7 +436,9 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     assert capsys.readouterr().err == ""
     seat = load_registry(repo)["seats"]["worker"]
     plan = json.loads(
-        (foil_root(repo) / "run" / "plans" / "worker.json").read_text(encoding="utf-8")
+        (foil_root(repo) / "fleets" / "main" / "run" / "plans" / "worker.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert seat["harness"] == "claude"
     assert seat["model"] == "sonnet"
@@ -478,15 +471,9 @@ def test_resume_names_a_broken_seat_and_continues(
         return window_id not in dead
 
     monkeypatch.setattr("foil.lifecycle.TmuxController.matches_window", matches_window)
-    template = foil_root(repo) / "templates" / "implementer.toml"
-    template.write_text(
-        template.read_text(encoding="utf-8").replace(
-            'persona = "personas/implementer.md"',
-            'persona = "personas/missing.md"',
-            1,
-        ),
-        encoding="utf-8",
-    )
+    from tests.test_spawn import _set_persona
+
+    _set_persona(repo, "implementer", "personas/missing.md")
     capsys.readouterr()
     assert main(["seat", "resume"]) == 1
     captured = capsys.readouterr()
@@ -495,8 +482,7 @@ def test_resume_names_a_broken_seat_and_continues(
     assert rows == {"implementer-1": "dead", "lead": "alive", "reviewer-1": "alive"}
     assert captured.out == ""
     assert captured.err == (
-        "foil: seat 'implementer-1' not resumed: "
-        "persona file not found: personas/missing.md\n"
+        "foil: seat 'implementer-1' not resumed: persona file not found: personas/missing.md\n"
     )
     assert main(["seat", "resume", "implementer-1"]) == 1
     assert capsys.readouterr().err == "foil: persona file not found: personas/missing.md\n"

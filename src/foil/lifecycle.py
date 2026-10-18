@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from foil import __version__
@@ -20,6 +20,8 @@ from foil.presets import (
     _builtin,
     entry_label,
     expand_argv,
+    fleet_model,
+    fleet_overrides,
     installed_harness,
     installed_presets,
     load_preset,
@@ -27,6 +29,7 @@ from foil.presets import (
     persona_stems,
     persona_text,
     read_description,
+    read_roles,
     select_harness,
     write_default_templates,
 )
@@ -35,8 +38,10 @@ from foil.project import (
     common_dir,
     foil_root,
     git_toplevel,
+    lift_root_runtime,
     prepare_project,
     project_key,
+    project_record,
     require_host_tools,
     rewrite_stored_paths,
     store_root,
@@ -44,15 +49,20 @@ from foil.project import (
 from foil.store import (
     SAFE_ID,
     SEAT_FIELDS,
+    create_exclusive,
     ensure_registry,
+    exclusive_lock,
+    fleet_dir,
+    fleet_id,
     load_registry,
     read_json,
-    save_registry,
+    registry_path,
     scan,
+    update_registry,
     write_bytes,
     write_json,
 )
-from foil.tmux import TmuxController, TmuxError, TmuxTarget
+from foil.tmux import ProbeState, TmuxController, TmuxError, TmuxTarget
 
 STAR_URL = "https://github.com/TiantianFlow/foil"
 STAR_GAPS = (3, 14)  # days before the second and the third star line
@@ -169,7 +179,7 @@ def _print_init_report(
         )
     template_dir = foil_root(toplevel) / "templates"
     personas = persona_stems(template_dir / "personas")
-    template_names = {path.stem for path in template_dir.glob("*.toml")}
+    template_names = {item["id"] for item in (read_roles(toplevel) or [])}
     available_personas = [name for name in personas if name not in template_names]
 
     print("Wrote templates: " + _names([role for role in roles if role not in had_templates]))
@@ -189,7 +199,8 @@ def _print_init_report(
     print(
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
         "approval prompts, though some harnesses still ask for some commands. "
-        "Set it in each templates/<role>.toml in the project folder; "
+        "Set permission in roles.toml in the project folder. "
+        "An omitted permission is auto. "
         "auto on the lead alone does not "
         "let the workers run unattended."
     )
@@ -206,16 +217,15 @@ def init_project(directory: str | None) -> None:
         raise FoilError("foil: not a git repository")
     toplevel = git_toplevel(start)
     root = foil_root(toplevel)
-    if any(
-        not ((root / "templates" / f"{role}.toml").exists())
-        for role in ("lead", "implementer", "reviewer")
-    ):
+    present = {item["id"] for item in (read_roles(toplevel) or [])}
+    if any(role not in present for role in ("lead", "implementer", "reviewer")):
         installed_harness(toplevel)
     root, previous, rewritten = prepare_project(toplevel)
     for relative in SKELETON:
         path = root / relative
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
         path.chmod(0o700)
+    lift_root_runtime(root)
     # Only after a move, an adopt, or a retry. A healthy re-init leaves run/
     # alone, including a plan whose seat worktree the user has deleted.
     if rewritten:
@@ -225,7 +235,9 @@ def init_project(directory: str | None) -> None:
     template_dir = root / "templates"
     persona_dir = template_dir / "personas"
     roles = ("lead", "implementer", "reviewer")
-    had_templates = {role for role in roles if (template_dir / f"{role}.toml").exists()}
+    had_templates = {
+        role for role in roles if any(item["id"] == role for item in (read_roles(toplevel) or []))
+    }
     had_personas = set(persona_stems(persona_dir))
     updated_skills = write_default_templates(toplevel)
     star = _star_saved(_star_due())
@@ -300,13 +312,19 @@ def _worktree(toplevel: Path, seat: str) -> tuple[str, str]:
 def _session_name(toplevel: Path) -> str:
     slug = re.sub(r"[^A-Za-z0-9]+", "-", toplevel.name).strip("-")[:32] or "repo"
     digest = hashlib.sha256(str(toplevel.resolve()).encode()).hexdigest()[:8]
-    return f"foil-{slug}-{digest}"
+    base = f"foil-{slug}-{digest}"
+    fleet = fleet_id()
+    if fleet == "main":
+        return base
+    extra = re.sub(r"[^A-Za-z0-9]+", "-", fleet).strip("-")[:32] or "fleet"
+    return f"{base}-{extra}"
 
 
 _LEAD_COMMANDS = """foil seat spawn TEMPLATE [--name NAME] [--task TEXT]
 foil seat kill NAME
+foil seat archive NAME
 foil seat resume [NAME]
-foil seat list [--json]
+foil seat list [--json] [--archived]
 foil seat peek NAME [--lines N]
 foil send TO TEXT
 foil post [TEXT] [--re PATH] [--decline]
@@ -355,9 +373,15 @@ def _persona_line(template: dict) -> str:
 
 
 def _instruction(
-    root: Path, seat: str, template: dict, *, restarted: bool, task: Path | None = None
+    root: Path,
+    seat: str,
+    template: dict,
+    *,
+    restarted: bool,
+    first_launch: bool = False,
+    task: Path | None = None,
 ) -> str:
-    board = (foil_root(root) / "board").resolve()
+    board = (fleet_dir(root) / "board").resolve()
     lessons = _accepted(root)
     learned = "none yet"
     if lessons:
@@ -395,6 +419,32 @@ def _instruction(
         skill_text,
         f"Accepted lessons: {learned}",
     ]
+    if lead:
+        workspace = project_record(foil_root(root)).get("path") or str(root.resolve())
+        posts = (fleet_dir(root) / "board" / "room").resolve()
+        override_path = (fleet_dir(root) / "overrides.toml").resolve()
+        overrides = fleet_overrides(root)
+        memory = (
+            "\n".join(f"- {item['role']}: {item['model']}" for item in overrides)
+            if overrides
+            else "none"
+        )
+        lines.extend(
+            [
+                f"Workspace: `{workspace}`. The repository is shared by every fleet.",
+                f"Posts: `{posts}`.",
+                f"Harnesses and model ids: `{foil_root(root) / 'harnesses.toml'}`.",
+                f"Profiles: `{foil_root(root) / 'roles.toml'}`.",
+                f"Default mapping: `{foil_root(root) / 'mapping.toml'}`.",
+                f"Fleet memory: `{override_path}`. Re-read that file before you spawn.",
+                "Spawn applies the model in that file as the harness model flag.",
+                "You do not pass a model flag.",
+                "Current overrides:",
+                memory,
+                "Record one with `foil roster update ROLE model=VALUE`. "
+                "That leaves the default mapping unchanged.",
+            ]
+        )
     if restarted:
         lines.append(
             "You were restarted. List your mail with `foil mail list` "
@@ -402,18 +452,22 @@ def _instruction(
         )
     elif task is not None:
         lines.append(
-            f"Your task is `{task.resolve()}`. Read it first with `foil mail read`. "
-            "Older mail in your mailbox may be from an earlier goal."
+            f"Your task is `{task.resolve()}`. Read it first with `foil mail read`."
         )
     else:
         lines.append("Run `foil mail list` and read your mail before you act.")
+    # First launch only. A native resume also leaves restarted false, and
+    # F24 does not repeat this sentence on crash recovery.
+    if first_launch and (lead or _has_archive(root, seat)):
+        lines.append("Older mail in your mailbox may be from an earlier goal.")
     if lead:
+        names = {item["id"] for item in (read_roles(root) or [])}
         roster = []
-        directory = foil_root(root) / "templates"
-        for path in sorted(directory.glob("*.toml")):
-            if path.is_symlink() or not path.is_file():
+        for name in sorted(names):
+            try:
+                item = load_template(root, name)
+            except FoilError:
                 continue
-            item = load_template(root, path.stem)
             flag = "yes" if item["worktree"] else "no"
             labels = ", ".join(entry_label(entry) for entry in item["harness"])
             roster.append(f"- {item['name']}: harness {labels}, worktree {flag}")
@@ -432,10 +486,23 @@ def _instruction(
 
 
 def _write_instruction(
-    root: Path, seat: str, template: dict, *, restarted: bool, task: Path | None = None
+    root: Path,
+    seat: str,
+    template: dict,
+    *,
+    restarted: bool,
+    first_launch: bool = False,
+    task: Path | None = None,
 ) -> Path:
-    path = (foil_root(root) / "run" / "instructions" / f"{seat}.md").resolve()
-    body = _instruction(root, seat, template, restarted=restarted, task=task).rstrip("\n")
+    path = (fleet_dir(root) / "run" / "instructions" / f"{seat}.md").resolve()
+    body = _instruction(
+        root,
+        seat,
+        template,
+        restarted=restarted,
+        first_launch=first_launch,
+        task=task,
+    ).rstrip("\n")
     text = f"{body}\nRe-read `{path}` whenever you are woken.\n"
     scan(text)
     write_bytes(path, text.encode())
@@ -468,10 +535,13 @@ def _open(
     native: bool,
     restarted: bool,
     model: str,
+    first_launch: bool = False,
     task: Path | None = None,
 ) -> str:
     cwd = Path(worktree) if worktree else root
-    instruction = _write_instruction(root, seat, template, restarted=restarted, task=task)
+    instruction = _write_instruction(
+        root, seat, template, restarted=restarted, first_launch=first_launch, task=task
+    )
     prompt = instruction.read_text(encoding="utf-8")
     argv = expand_argv(
         preset,
@@ -485,8 +555,12 @@ def _open(
     for name in ("PATH", "HOME"):
         if name not in forward:
             forward.append(name)
-    plan_path = (foil_root(root) / "run" / "plans" / f"{seat}.json").resolve()
-    environment = {"FOIL_SEAT_ID": seat, "FOIL_PROJECT": project_key(common_dir(root))}
+    plan_path = (fleet_dir(root) / "run" / "plans" / f"{seat}.json").resolve()
+    environment = {
+        "FOIL_SEAT_ID": seat,
+        "FOIL_PROJECT": project_key(common_dir(root)),
+        "FOIL_FLEET": fleet_id(),
+    }
     for name in ("FOIL_HOME", "XDG_DATA_HOME"):
         value = os.environ.get(name)
         if value:
@@ -540,6 +614,7 @@ def spawn_seat(
     name: str | None = None,
     task: str | None = None,
 ) -> None:
+    ensure_board(root)
     loaded = load_template(root, template)
     persona_text(loaded)
     if task is not None:
@@ -548,6 +623,9 @@ def spawn_seat(
     seat = _seat_name(registry, loaded["name"], name)
     stored = sum(item["template"] == loaded["name"] for item in registry["seats"].values())
     chosen = select_harness(loaded["harness"], stored)
+    model = fleet_model(root, loaded["name"])
+    if model is None:
+        model = chosen["model"]
     preset = load_preset(root, chosen["id"])
     native = str(uuid.uuid4()) if preset["session_id"] == "generated" else ""
     worktree, branch = _worktree(root, seat) if loaded["worktree"] else ("", "")
@@ -563,7 +641,8 @@ def spawn_seat(
             session_id=native,
             native=False,
             restarted=False,
-            model=chosen["model"],
+            model=model,
+            first_launch=True,
             task=mailed,
         )
     except Exception:
@@ -575,18 +654,27 @@ def spawn_seat(
             "name": seat,
             "template": loaded["name"],
             "harness": chosen["id"],
-            "model": chosen["model"],
+            "model": model,
             "window_id": window,
             "worktree": worktree,
             "branch": branch,
             "session_id": native,
         }
     )
-    if loaded["name"] == "lead":
-        registry["lead"] = "lead"
-    registry["seats"][seat] = record
+    session = str(registry.get("tmux_session") or "")
+
+    def apply(fresh: dict) -> None:
+        existing = fresh["seats"].get(seat)
+        if existing is not None and not (seat == "lead" and existing.get("state") == "killed"):
+            raise FoilError(f"foil: seat '{shown(seat)}' already exists")
+        fresh["seats"][seat] = record
+        if session:
+            fresh["tmux_session"] = session
+        if loaded["name"] == "lead":
+            fresh["lead"] = "lead"
+
     try:
-        save_registry(root, registry)
+        update_registry(root, apply)
     except Exception:
         TmuxController().abandon_window(
             TmuxTarget(
@@ -643,8 +731,20 @@ def kill_seats(
         window = record.get("window_id") or ""
         if _state(registry, seat_name, record) != "killed":
             _remove_leftover(registry, root, seat_name, window)
-        record["state"] = "killed"
-        save_registry(root, registry)
+
+        def apply(fresh: dict, seat_name: str = seat_name, window: str = window) -> None:
+            current = fresh["seats"].get(seat_name)
+            if current is None:
+                if not all_seats:
+                    raise FoilError(f"foil: unknown seat '{shown(seat_name)}'")
+                return
+            if (current.get("window_id") or "") != window:
+                if not all_seats:
+                    raise FoilError(f"foil: seat '{shown(seat_name)}' changed")
+                return
+            current["state"] = "killed"
+
+        update_registry(root, apply)
 
 
 def _restart(root: Path, registry: dict, name: str) -> None:
@@ -660,7 +760,8 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         session = str(uuid.uuid4())
     else:
         session = ""
-    _remove_leftover(registry, root, name, record.get("window_id") or "")
+    old_window = record.get("window_id") or ""
+    _remove_leftover(registry, root, name, old_window)
     window = _open(
         root,
         registry,
@@ -676,8 +777,22 @@ def _restart(root: Path, registry: dict, name: str) -> None:
     record["window_id"] = window
     record["state"] = ""
     record["session_id"] = session
+    tmux_session = str(registry.get("tmux_session") or "")
+
+    def apply(fresh: dict) -> None:
+        current = fresh["seats"].get(name)
+        if current is None:
+            raise FoilError(f"foil: unknown seat '{shown(name)}'")
+        if current.get("state") == "killed":
+            raise FoilError(f"foil: seat '{shown(name)}' is killed")
+        if (current.get("window_id") or "") != old_window:
+            raise FoilError(f"foil: seat '{shown(name)}' changed")
+        fresh["seats"][name] = dict(record)
+        if tmux_session:
+            fresh["tmux_session"] = tmux_session
+
     try:
-        save_registry(root, registry)
+        update_registry(root, apply)
     except Exception:
         TmuxController().abandon_window(
             TmuxTarget(
@@ -717,7 +832,137 @@ def resume_seats(root: Path, name: str | None) -> int:
     return 1
 
 
-def list_seats(root: Path, *, as_json: bool = False) -> None:
+def _archive_stamp() -> str:
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _archive_dir(root: Path) -> Path:
+    return fleet_dir(root) / "run" / "archive"
+
+
+def _archive_body(record: dict[str, str]) -> bytes:
+    lines = [f"{key}: {record.get(key, '')}" for key in SEAT_FIELDS]
+    return ("\n".join(lines) + "\n").encode()
+
+
+def _write_archive(root: Path, name: str, record: dict[str, str]) -> Path:
+    """Write the prose record. A crash after this still leaves the seat killed."""
+
+    directory = _archive_dir(root)
+    payload = _archive_body(record)
+    stem = f"{_archive_stamp()}-{name}"
+    for number in range(10000):
+        label = stem if number == 0 else f"{stem}-{number}"
+        path = directory / f"{label}.txt"
+        try:
+            create_exclusive(path, payload)
+        except FileExistsError:
+            continue
+        return path
+    raise FoilError("foil: could not archive seat")
+
+
+def _read_archive(path: Path) -> dict[str, str]:
+    record = {key: "" for key in SEAT_FIELDS}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition(": ")
+        if separator and key in record:
+            record[key] = value
+    return record
+
+
+def _archive_files(root: Path) -> list[Path]:
+    directory = _archive_dir(root)
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    files = [
+        path
+        for path in directory.iterdir()
+        if path.is_file() and not path.is_symlink() and path.suffix == ".txt"
+    ]
+    files.sort(key=lambda path: (path.stat().st_mtime_ns, path.name), reverse=True)
+    return files
+
+
+def _has_archive(root: Path, name: str) -> bool:
+    return any(_read_archive(path).get("name") == name for path in _archive_files(root))
+
+
+def _window_gone(registry: dict, root: Path, name: str, record: dict[str, str]) -> None:
+    """Refuse unless the stored window is gone.
+
+    This is the probe result, not `_state` and not `matches_window`.
+    `DEAD` with `identity_matches` false is the only result that proceeds.
+    That is also what an empty id, a non-@ id, a failed display-message,
+    and an empty tmux line return.
+    """
+
+    window = record.get("window_id") or ""
+    try:
+        probe = TmuxController().probe(
+            str(registry["fleet_id"]),
+            name,
+            _target(registry, root, name, window),
+        )
+    except TmuxError as exc:
+        raise FoilError(f"foil: seat '{name}' window is unknown") from exc
+    if probe.identity_matches is None or probe.state is ProbeState.UNKNOWN:
+        raise FoilError(f"foil: seat '{name}' window is unknown")
+    if probe.state is ProbeState.DEAD and probe.identity_matches is False:
+        return
+    if probe.state is ProbeState.ALIVE:
+        raise FoilError(f"foil: seat '{name}' window is still running")
+    raise FoilError(f"foil: seat '{name}' window still exists")
+
+
+def archive_seat(root: Path, name: str) -> None:
+    """Free a killed worker's name. The worktree, branch, and mailbox stay."""
+
+    path = registry_path(root)
+    # The lock covers the read, the probe, the archive file, and the
+    # registry replace. A second caller waits, then sees the key is gone.
+    with exclusive_lock(path.with_suffix(".lock")):
+        registry = load_registry(root)
+        record = dict(_known(registry, name))
+        stored = record.get("state") or ""
+        if stored == "alive":
+            raise FoilError(f"foil: seat '{name}' is alive")
+        if stored == "dead":
+            raise FoilError(f"foil: seat '{name}' is dead")
+        if name == "lead":
+            raise FoilError("foil: seat 'lead' cannot be archived")
+        if stored != "killed":
+            raise FoilError(f"foil: seat '{name}' is {_state(registry, name, record)}")
+        _window_gone(registry, root, name, record)
+        _write_archive(root, name, record)
+        registry["seats"].pop(name)
+        write_json(path, registry)
+    print(f"archived seat '{name}'")
+    if record.get("worktree"):
+        print(f"kept branch {record.get('branch') or ''}")
+
+
+def _list_archived(root: Path, *, as_json: bool) -> None:
+    rows = []
+    for path in _archive_files(root):
+        record = _read_archive(path)
+        record["archived"] = path.name
+        rows.append(record)
+    if as_json:
+        print(json.dumps(rows, sort_keys=True))
+        return
+    for row in rows:
+        launched = f"{row['harness']}/{row['model']}" if row["model"] else row["harness"]
+        print(
+            f"{row['name']}\t{row['template']}\t{row['state']}\t"
+            f"{row['worktree']}\t{launched}\t{row['branch']}"
+        )
+
+
+def list_seats(root: Path, *, as_json: bool = False, archived: bool = False) -> None:
+    if archived:
+        _list_archived(root, as_json=as_json)
+        return
     registry = load_registry(root)
     rows = []
     for seat_name, record in sorted(registry["seats"].items()):

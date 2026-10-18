@@ -6,11 +6,47 @@ Notable changes to Foil, newest first.
 
 ### Added
 
-- The `foil init` report can end, just before the pointer line, with one line for the human that invites a GitHub star. It shows on the first `init` in a store, then at least 3 days later, then at least 14 days after that, and afterwards at most once per newer minor version, 30 days or more after the last one. `<root>/star.json` records those days per store, not per project, and the line does not name it; `"stop": true` silences it for good. The record is written before the line, and the line prints only when that write succeeded, so a store Foil cannot write never repeats it; a failed write does not fail `init`. Foil never stars, opens a browser, or reads a GitHub login. The package was already over the 2,500-line target; this adds about 40 lines to `init`, the one report every operator session reads. (#46)
+- The `foil init` report can end, just before the pointer line, with one line for the human that invites a GitHub star. It shows on the first `init` in a store, then at least 3 days later, then at least 14 days after that, and afterwards at most once per newer minor version, 30 days or more after the last one. `<root>/star.json` records those days per store, not per project, and the line does not name it; `"stop": true` silences it for good. The record is written before the line, and the line prints only when that write succeeded, so a store Foil cannot write never repeats it; a failed write does not fail `init`. Foil never stars, opens a browser, or reads a GitHub login. The package was already over the 2,500-line target; this adds about 55 lines to `init`, the one report every operator session reads. (#46)
 
 ### Changed
 
 - The operator skill relays that line once, after the goal reaches `state: done`, and sets `"stop": true` when the human declines. The README invites a star in one line. Package metadata names the supported agent CLIs.
+
+## [0.5.0] - 2026-10-18
+
+`foil --version` prints 0.5.0.
+
+### Breaking
+
+- The roster is three shared lists in the project folder: `harnesses.toml`, `roles.toml`, and `mapping.toml`. Permission defaults to `auto`. `templates/<role>.toml` is not read. Several fleets can run on one repository and one checkout. `FOIL_FLEET` selects a fleet and defaults to `main`. Each fleet has its own board, posts, registry, and `overrides.toml` under `fleets/<id>/`. (#43)
+- From inside the fleet, `foil roster update ROLE model=VALUE` writes that fleet's `overrides.toml` and leaves `mapping.toml` unchanged. The next spawn applies that model as the harness model flag. Resume still uses the model recorded on the seat. (#43)
+
+### Upgrade from 0.4
+
+Do this between goals. Do not resume a seat that was started on 0.4.
+
+1. With 0.4 still on `PATH`, run `foil seat kill --all` in the project. A stale seat whose tmux window is already gone also counts.
+2. Upgrade Foil. `foil --version` prints `foil 0.5.0`.
+3. Run `foil init` in the project. It moves a project-root `board/` and `run/` under `fleets/main/` when that fleet's copies are absent or empty, and it rewrites those absolute prefixes inside that fleet's `run/`. It writes the three lists when they are missing. It does not read `templates/<role>.toml`.
+4. Copy each role's harness, model, worktree, and permission from the old template file into `roles.toml` and `mapping.toml`. A list `init` just wrote uses `permission = "auto"` and omits `model`. Set `permission` from outside the fleet.
+5. Lessons in `memory/` and seat worktrees stay. Spawn the lead again. `FOIL_FLEET` defaults to `main`, which is the lifted fleet.
+
+### Fixed
+
+- The init report lists a persona as available only when `roles.toml` has no row for it.
+- `foil post` writes the current fleet's room. Another fleet's room stays unchanged.
+
+## [0.4.5] - 2026-10-18
+
+`foil --version` prints 0.4.5.
+
+### Added
+
+- `foil seat archive NAME` frees a killed worker's name so it can be spawned again. The old record is a prose file under `run/archive/`, and the registry schema stays 1. The worktree, branch, mailbox, plan, and instruction file stay. A dirty tree is left in place on purpose. `foil seat list` omits the archived seat. `foil seat list --archived` prints the stored worktree path and branch. `seat archive` holds the registry lock across its tmux probe. Spawn, kill, and resume re-read the registry under that lock before they write, so they do not put an archived seat back. A `display-message` failure proceeds rather than refuses. A first launch says older mail may be from an earlier goal when the seat is the lead or when that name already has an archive file. A normal worker's first launch does not, and a resume does not rewrite the sentence. (#32)
+
+### Changed
+
+- The command surface is eight top-level commands and twenty-two actions.
 
 ## [0.4.4] - 2026-10-18
 
@@ -305,6 +341,8 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.5.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.0
+[0.4.5]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.5
 [0.4.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.4
 [0.4.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.3
 [0.4.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.2

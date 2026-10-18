@@ -32,7 +32,7 @@ If a later finding shows an earlier stage was wrong, the next task goes back to 
 
 A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `foil board read`.
 
-## Spawn, kill, and resume
+## Spawn, kill, archive, and resume
 
 Spawn a worker from a template. `--task` is the text of the first mail. Pass the task file's path. Foil does not write the task file. The role instructions arrive in the first prompt.
 
@@ -41,12 +41,19 @@ foil seat spawn implementer --task "board/tasks/t1.md"
 foil seat spawn reviewer --name helper --task "board/tasks/t2.md"
 ```
 
-`--name` chooses the seat name. Without it, the name is the template plus a number, and a name is never reused.
+`--name` chooses the seat name. Without it, the name is the template plus a number. A name is not reused while its record exists. After `foil seat archive`, that name can be spawned again.
 
 Stop another seat by name. You may not kill yourself, and you may not run `foil seat kill --all`.
 
 ```text
 foil seat kill implementer-1
+```
+
+Free a killed worker's name. This does not restart the seat, and it does not delete the branch, the mailbox, or uncommitted files. You may not archive yourself. `foil seat list` no longer shows that seat. `foil seat list --archived` shows the stored worktree.
+
+```text
+foil seat archive implementer-1
+foil seat list --archived
 ```
 
 Restart a dead seat. A killed seat stays stopped. An alive seat is left running.
@@ -83,7 +90,7 @@ Implementation belongs in a seat whose template sets `worktree` to true. That se
 
 ## Roster
 
-The roster is the template files under `templates/` in the project folder. That folder is outside the repository. View and modify templates:
+The roster is `roles.toml` and `mapping.toml` in the project folder. Every fleet shares them. Your fleet's overrides are `overrides.toml` next to your board. View and modify templates:
 
 ```text
 foil roster list
@@ -95,9 +102,9 @@ foil roster remove old-role
 
 To add a role whose persona file exists, use `foil roster add <role>`. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. Personas live in the project folder's `templates/personas/`. A role that commits needs `worktree = true`.
 
-`foil roster add ROLE` creates a template when `personas/ROLE.md` is already on disk. A role you add arrives as `auto`, and you cannot set `permission`. A caller outside the fleet sets `ask` when a seat must stop for the human. `foil roster update ROLE model=VALUE` changes the model when that role's harness list has one entry, so a researcher or reviewer can be given a stronger model for that ask. `harness` and `model` are refused when the list has more than one entry. Edit that list in the template file. `foil roster update ROLE persona=VALUE` points an existing template at a persona file. Neither command sets `permission`. A new seat takes the entry at the count of seats already stored for that role, including killed seats. A seat already alive keeps the harness and model from its last launch, and resume uses that pair.
+`foil roster add ROLE` creates a template when `personas/ROLE.md` is already on disk. A role you add arrives as `auto`, and you cannot set `permission`. A caller outside the fleet sets `ask` when a seat must stop for the human. `foil roster update ROLE model=VALUE` records fleet memory for that role. The next spawn of the role uses that model. The default mapping stays. Use it so a researcher or reviewer can be given a stronger model for that ask. Re-read `overrides.toml` before you spawn. Spawn applies that model as the harness model flag. You do not pass a model flag. `harness` is refused when the mapping has more than one entry. Edit that list in `mapping.toml`. `model` still records fleet memory when the list is longer. `foil roster update ROLE persona=VALUE` points an existing template at a persona file. Neither command sets `permission`. A new seat takes the entry at the count of seats already stored for that role, including killed seats. A seat already alive keeps the harness and model from its last launch, and resume uses that pair.
 
-You can still edit template files directly in the project folder's `templates/` if you prefer. A harness list is one or more `[[harness]]` entries, each with `id` and an optional `model`. Write `persona`, `worktree`, and `permission` before those entries. A key after an entry belongs to that entry. Editing that list changes the next spawn. A seat already alive keeps its launch pair. You cannot set `permission`, including adding a file whose permission is not `auto`; only a caller outside the fleet can. An omitted permission is `auto`. You cannot remove a template while a seat of that template has a stored state other than `killed`. Changing the list while a seat is alive is allowed.
+Edit `roles.toml` for the description, persona, worktree, and permission, and `mapping.toml` for the harness list. An omitted permission is `auto`. You cannot set `permission`. You cannot remove a template while a seat of that template has a stored state other than `killed`. Changing the mapping while a seat is alive is allowed. That seat keeps its launch pair.
 
 ## Board and contracts
 

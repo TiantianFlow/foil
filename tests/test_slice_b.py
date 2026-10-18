@@ -51,7 +51,7 @@ def _repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _seed(repo: Path, name: str, *, window_id: str = "") -> None:
-    path = foil_root(repo) / "run" / "registry.json"
+    path = foil_root(repo) / "fleets" / "main" / "run" / "registry.json"
     payload = {
         "schema_version": SCHEMA_VERSION,
         "fleet_id": "fleet",
@@ -74,18 +74,18 @@ def _seed(repo: Path, name: str, *, window_id: str = "") -> None:
 
 
 def _mail(repo: Path, seat: str) -> list[Path]:
-    directory = foil_root(repo) / "board" / "mail" / seat
+    directory = foil_root(repo) / "fleets" / "main" / "board" / "mail" / seat
     return sorted(directory.glob("*.md")) if directory.is_dir() else []
 
 
 def test_init_creates_registry_and_notes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _repo(tmp_path, monkeypatch)
     root = foil_root(repo)
-    registry = root / "run" / "registry.json"
+    registry = root / "fleets" / "main" / "run" / "registry.json"
     assert registry.is_file()
     assert stat.S_IMODE(registry.stat().st_mode) == 0o600
     assert json.loads(registry.read_text(encoding="utf-8"))["schema_version"] == 1
-    notes = root / "board" / "notes"
+    notes = root / "fleets" / "main" / "board" / "notes"
     assert notes.is_dir()
     note = notes / "plain.txt"
     note.write_text("ordinary\n", encoding="utf-8")
@@ -222,7 +222,7 @@ def test_memory_add_refuses_symlinked_lock(
     victim = tmp_path / "victim"
     victim.write_text("keep\n", encoding="utf-8")
     victim.chmod(0o644)
-    lock = foil_root(repo) / "run" / "memory.lock"
+    lock = foil_root(repo) / "memory" / "lock"
     lock.symlink_to(victim)
 
     assert main(["memory", "add", "prefer small diffs"]) == 1

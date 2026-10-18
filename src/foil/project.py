@@ -18,15 +18,15 @@ SKELETON = (
     "templates/personas",
     "harnesses",
     "memory",
-    "board/mail",
-    "board/notes",
-    "board/room",
-    "board/tasks",
-    "board/results",
-    "run/instructions",
-    "run/plans",
-    "run/fake",
     "skills",
+    "fleets/main/board/mail",
+    "fleets/main/board/notes",
+    "fleets/main/board/tasks",
+    "fleets/main/board/results",
+    "fleets/main/board/room",
+    "fleets/main/run/instructions",
+    "fleets/main/run/plans",
+    "fleets/main/run/fake",
 )
 _OLD_FOIL = (
     "install 0.3.4 beside it, which does not replace the foil on PATH: "
@@ -310,14 +310,79 @@ def _write_json(path: Path, text: str) -> None:
     write_bytes(path, text.encode())
 
 
+def _run_dirs(root: Path) -> list[Path]:
+    found: list[Path] = []
+    legacy = root / "run"
+    if legacy.is_dir() and not legacy.is_symlink():
+        found.append(legacy)
+    fleets = root / "fleets"
+    if fleets.is_dir() and not fleets.is_symlink():
+        for child in fleets.iterdir():
+            run = child / "run"
+            if run.is_dir() and not run.is_symlink():
+                found.append(run)
+    return found
+
+
+def lift_root_runtime(root: Path) -> None:
+    """Move a legacy root ``board/`` and ``run/`` under ``fleets/main/``.
+
+    Globals stay at the project root. A fleet holds only its board, posts,
+    and registry.
+    """
+
+    fleet = root / "fleets" / "main"
+    for name in ("board", "run"):
+        source = root / name
+        if source.is_symlink() or not source.exists():
+            continue
+        target = fleet / name
+        fleet.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            if _empty_dir(target):
+                _remove_empty_tree(target)
+            else:
+                continue
+        shutil.move(str(source), str(target))
+    _retarget_main_runtime(root)
+
+
+def _retarget_main_runtime(root: Path) -> None:
+    """Point stored board and run paths at fleets/main after a root move."""
+
+    fleet = root / "fleets" / "main"
+    run = fleet / "run"
+    if run.is_symlink() or not run.is_dir():
+        return
+    pairs = (
+        (str(root / "board"), str(fleet / "board")),
+        (str(root / "run"), str(fleet / "run")),
+    )
+    for path in run.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        updated = text
+        for old, new in pairs:
+            updated = updated.replace(old, new)
+        if updated != text:
+            path.write_text(updated, encoding="utf-8")
+
+
 def _run_files(root: Path) -> list[Path]:
-    run = root / "run"
-    targets = [run / "registry.json"]
-    for folder in ("plans", "instructions"):
-        directory = run / folder
-        if directory.is_dir():
+    targets: list[Path] = []
+    for run in _run_dirs(root):
+        targets.append(run / "registry.json")
+        for folder in ("plans", "instructions", "archive"):
+            directory = run / folder
+            # A symlink would rewrite files outside the store. Archive and list
+            # already refuse that directory.
+            if directory.is_symlink() or not directory.is_dir():
+                continue
             targets.extend(
-                path for path in directory.iterdir() if path.is_file() and not path.is_symlink()
+                path
+                for path in directory.iterdir()
+                if path.is_file() and not path.is_symlink()
             )
     return [path for path in targets if path.is_file() and not path.is_symlink()]
 
@@ -357,7 +422,9 @@ def _replace_text(root: Path, pairs: list[tuple[str, str]]) -> None:
     )
     if not usable:
         return
-    for path in _run_files(root):
+    from foil.store import exclusive_lock
+
+    def rewrite(path: Path) -> None:
         text = path.read_text(encoding="utf-8")
         replaced = text
         for old, new in usable:
@@ -367,6 +434,22 @@ def _replace_text(root: Path, pairs: list[tuple[str, str]]) -> None:
             )
         if replaced != text:
             _write_json(path, replaced if replaced.endswith("\n") else replaced + "\n")
+
+    for path in _run_files(root):
+        if path.parent.name == "archive":
+            continue
+        if path.name != "registry.json":
+            rewrite(path)
+            continue
+        with exclusive_lock(path.with_suffix(".lock")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            archive = path.parent / "archive"
+            if not archive.is_symlink() and archive.is_dir():
+                for child in archive.iterdir():
+                    if child.is_file() and not child.is_symlink():
+                        rewrite(child)
+            rewrite(path)
 
 
 def _texts_in_run(root: Path) -> list[str]:
@@ -830,6 +913,7 @@ def prepare_project(toplevel: Path) -> tuple[Path, str, bool]:
                 print(exc if isinstance(exc, FoilError) else f"foil: {exc}")
             else:
                 print(f"Moved {legacy} into {root}")
+                lift_root_runtime(root)
                 _repair_worktrees(root, toplevel, relocated=legacy, previous=previous)
                 rewritten = True
         else:
@@ -840,6 +924,7 @@ def prepare_project(toplevel: Path) -> tuple[Path, str, bool]:
                 "foil init again."
             )
     elif _repair_pending(root, toplevel, previous=previous):
+        lift_root_runtime(root)
         _repair_worktrees(root, toplevel, previous=previous)
         rewritten = True
     elif adopted_ok:

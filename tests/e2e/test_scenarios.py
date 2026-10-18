@@ -62,26 +62,26 @@ def _prepare(
         if chosen:
             _set_harness(repo, chosen)
         return repo
-    templates = foil_root(repo) / "templates"
-    for role in ("lead", "implementer", "reviewer"):
-        path = templates / f"{role}.toml"
-        text = re.sub(
-            r'(?m)^id = ".*"$', 'id = "fake"', path.read_text(encoding="utf-8"), count=1
-        )
-        path.write_text(text, encoding="utf-8")
+    mapping = foil_root(repo) / "mapping.toml"
+    text = re.sub(
+        r'(?m)^harness = ".*"$',
+        'harness = "fake"',
+        mapping.read_text(encoding="utf-8"),
+    )
+    mapping.write_text(text, encoding="utf-8")
     return repo
 
 
 def _scripts(repo: Path, fixture: str, seats: dict[str, str]) -> None:
     source = FIXTURES / fixture / "scripts"
-    dest = foil_root(repo) / "run" / "fake"
+    dest = foil_root(repo) / "fleets" / "main" / "run" / "fake"
     dest.mkdir(parents=True, exist_ok=True)
     for seat, name in seats.items():
         shutil.copy(source / name, dest / f"{seat}.json")
 
 
 def _logs(repo: Path) -> str:
-    directory = foil_root(repo) / "run" / "fake"
+    directory = foil_root(repo) / "fleets" / "main" / "run" / "fake"
     if not directory.is_dir():
         return ""
     chunks = []
@@ -102,31 +102,25 @@ def _wait(repo: Path, predicate, timeout: float = 90) -> None:
 def _set_auto(repo: Path) -> None:
     """Live tier only: every default template runs unattended."""
 
-    templates = foil_root(repo) / "templates"
-    for role in ("lead", "implementer", "reviewer"):
-        path = templates / f"{role}.toml"
-        text = re.sub(
-            r'(?m)^permission = ".*"$',
-            'permission = "auto"',
-            path.read_text(encoding="utf-8"),
-            count=1,
-        )
-        path.write_text(text, encoding="utf-8")
+    roles = foil_root(repo) / "roles.toml"
+    text = re.sub(
+        r'(?m)^permission = ".*"$',
+        'permission = "auto"',
+        roles.read_text(encoding="utf-8"),
+    )
+    roles.write_text(text, encoding="utf-8")
 
 
 def _set_harness(repo: Path, harness: str) -> None:
     """Rewrite the harness id of the three default templates."""
 
-    templates = foil_root(repo) / "templates"
-    for role in ("lead", "implementer", "reviewer"):
-        path = templates / f"{role}.toml"
-        text = re.sub(
-            r'(?m)^id = ".*"$',
-            f'id = "{harness}"',
-            path.read_text(encoding="utf-8"),
-            count=1,
-        )
-        path.write_text(text, encoding="utf-8")
+    mapping = foil_root(repo) / "mapping.toml"
+    text = re.sub(
+        r'(?m)^harness = ".*"$',
+        f'harness = "{harness}"',
+        mapping.read_text(encoding="utf-8"),
+    )
+    mapping.write_text(text, encoding="utf-8")
 
 
 def _peek_report(repo: Path) -> str:
@@ -171,7 +165,7 @@ def _close(repo: Path) -> None:
 
 
 def _status(repo: Path) -> str:
-    path = foil_root(repo) / "board" / "status.md"
+    path = foil_root(repo) / "fleets" / "main" / "board" / "status.md"
     if not path.is_file():
         return ""
     return path.read_text(encoding="utf-8")
@@ -205,9 +199,7 @@ def _finish_scenario_1(repo: Path, timeout: float = 90) -> None:
     _no_windows(session)
 
 
-def test_scenario_1_merges_a_reviewed_fix(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_scenario_1_merges_a_reviewed_fix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _prepare(tmp_path, "scenario-1", monkeypatch)
     try:
         _scripts(
@@ -232,14 +224,18 @@ def test_scenario_2_worker_cannot_change_the_fleet(
     try:
         assert main(["seat", "spawn", "lead"]) == 0
         assert main(["seat", "spawn", "implementer"]) == 0
-        before = (foil_root(repo) / "run" / "registry.json").read_text(encoding="utf-8")
+        before = (foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text(
+            encoding="utf-8"
+        )
         monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
         assert main(["seat", "spawn", "reviewer"]) == 1
         assert capsys.readouterr().err == "foil: not allowed\n"
         assert main(["seat", "kill", "lead"]) == 1
         assert capsys.readouterr().err == "foil: not allowed\n"
         monkeypatch.delenv("FOIL_SEAT_ID")
-        after = (foil_root(repo) / "run" / "registry.json").read_text(encoding="utf-8")
+        after = (foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text(
+            encoding="utf-8"
+        )
         assert after == before
     finally:
         _close(repo)
@@ -298,6 +294,13 @@ def test_restart_peek_and_nudge_stay_on_the_same_seat(
         )
         assert killed.returncode == 0
         assert main(["seat", "resume"]) == 0
+        # Widen before peeking. A narrow terminal wraps "implementer-1".
+        for record in load_registry(repo)["seats"].values():
+            subprocess.run(
+                ["tmux", "resize-window", "-t", record["window_id"], "-x", "400"],
+                check=False,
+                capture_output=True,
+            )
         _wait(
             repo,
             lambda: (
@@ -305,14 +308,8 @@ def test_restart_peek_and_nudge_stay_on_the_same_seat(
                 and "foil-fake implementer-1 ready" in pane("implementer-1")
             ),
         )
-        for record in load_registry(repo)["seats"].values():
-            subprocess.run(
-                ["tmux", "resize-window", "-t", record["window_id"], "-x", "400"],
-                check=False,
-                capture_output=True,
-            )
         assert main(["send", "lead", "ping the lead"]) == 0
-        mail = next((foil_root(repo) / "board" / "mail" / "lead").glob("*.md"))
+        mail = next((foil_root(repo) / "fleets" / "main" / "board" / "mail" / "lead").glob("*.md"))
         path = str(mail.resolve())
         _wait(repo, lambda: path in pane("lead"))
         lead = pane("lead")
@@ -363,14 +360,14 @@ def test_scenario_5_accepted_lesson_reaches_the_next_seat(
             {"lead": "lead.json", "implementer-1": "implementer.json"},
         )
         assert main(["seat", "spawn", "lead", "--task", "staff a worker"]) == 0
-        note = foil_root(repo) / "board" / "notes" / "accept.txt"
+        note = foil_root(repo) / "fleets" / "main" / "board" / "notes" / "accept.txt"
         _wait(repo, note.is_file)
         assert note.read_text(encoding="utf-8").strip() == "refused"
-        instruction = foil_root(repo) / "run" / "instructions" / "reader.md"
+        instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "reader.md"
+
         def lesson_landed() -> bool:
-            return (
-                instruction.is_file()
-                and "check the merged tests" in instruction.read_text(encoding="utf-8")
+            return instruction.is_file() and "check the merged tests" in instruction.read_text(
+                encoding="utf-8"
             )
 
         _wait(repo, lesson_landed)
@@ -413,7 +410,7 @@ def test_busy_fake_handles_both_nudges(
         return capsys.readouterr().out
 
     try:
-        fake = foil_root(repo) / "run" / "fake"
+        fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
         fake.mkdir(parents=True, exist_ok=True)
         (fake / "lead.json").write_text(
             """{
@@ -440,13 +437,15 @@ def test_busy_fake_handles_both_nudges(
             capture_output=True,
         )
         assert main(["send", "lead", "nudge-one"]) == 0
-        notes = foil_root(repo) / "board" / "notes"
+        notes = foil_root(repo) / "fleets" / "main" / "board" / "notes"
         _wait(repo, (notes / "busy.txt").is_file)
         assert not (notes / "one.txt").exists()
         assert main(["send", "lead", "nudge-two"]) == 0
         second = next(
             path
-            for path in (foil_root(repo) / "board" / "mail" / "lead").glob("*.md")
+            for path in (foil_root(repo) / "fleets" / "main" / "board" / "mail" / "lead").glob(
+                "*.md"
+            )
             if "nudge-two" in path.read_text(encoding="utf-8")
         )
         assert str(second.resolve()) in pane("lead")
@@ -475,7 +474,7 @@ def test_send_to_a_killed_seat_types_into_no_window(
         after = _panes(session)
         assert after == before
         assert all("do not type this" not in text for text in after.values())
-        mail = foil_root(repo) / "board" / "mail" / "implementer-1"
+        mail = foil_root(repo) / "fleets" / "main" / "board" / "mail" / "implementer-1"
         written = next(mail.glob("*.md"))
         assert all(str(written.resolve()) not in text for text in after.values())
     finally:
@@ -494,15 +493,15 @@ def test_ordinary_answer_stays_with_the_lead_and_post_reaches_every_seat(
         return capsys.readouterr().out
 
     def room_files() -> list[Path]:
-        directory = foil_root(repo) / "board" / "room"
+        directory = foil_root(repo) / "fleets" / "main" / "board" / "room"
         return sorted(path for path in directory.rglob("*.md") if path.is_file())
 
     def note_names() -> list[str]:
-        notes = foil_root(repo) / "board" / "notes"
+        notes = foil_root(repo) / "fleets" / "main" / "board" / "notes"
         return sorted(path.name for path in notes.iterdir() if path.is_file())
 
     try:
-        fake = foil_root(repo) / "run" / "fake"
+        fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
         fake.mkdir(parents=True, exist_ok=True)
         (fake / "lead.json").write_text(
             """{
@@ -543,6 +542,13 @@ def test_ordinary_answer_stays_with_the_lead_and_post_reaches_every_seat(
         assert main(["seat", "spawn", "lead"]) == 0
         assert main(["seat", "spawn", "implementer"]) == 0
         assert main(["seat", "spawn", "reviewer"]) == 0
+        # Widen before peeking. A narrow terminal wraps "implementer-1".
+        for record in load_registry(repo)["seats"].values():
+            subprocess.run(
+                ["tmux", "resize-window", "-t", record["window_id"], "-x", "400"],
+                check=False,
+                capture_output=True,
+            )
         _wait(
             repo,
             lambda: (
@@ -551,15 +557,9 @@ def test_ordinary_answer_stays_with_the_lead_and_post_reaches_every_seat(
                 and "foil-fake reviewer-1 ready" in pane("reviewer-1")
             ),
         )
-        for record in load_registry(repo)["seats"].values():
-            subprocess.run(
-                ["tmux", "resize-window", "-t", record["window_id"], "-x", "400"],
-                check=False,
-                capture_output=True,
-            )
 
         assert main(["send", "lead", "ordinary-answer"]) == 0
-        mailbox = foil_root(repo) / "board" / "mail" / "lead"
+        mailbox = foil_root(repo) / "fleets" / "main" / "board" / "mail" / "lead"
         written = list(mailbox.glob("*.md"))
         assert len(written) == 1
         mail_path = str(written[0].resolve())
@@ -575,7 +575,7 @@ def test_ordinary_answer_stays_with_the_lead_and_post_reaches_every_seat(
         posted = room_files()
         assert len(posted) == 1
         root = posted[0]
-        assert root.parent.parent == foil_root(repo) / "board" / "room"
+        assert root.parent.parent == foil_root(repo) / "fleets" / "main" / "board" / "room"
         assert root.name == f"{root.parent.name}.md"
         fields, body = split_front_matter(root.read_text(encoding="utf-8"))
         assert fields is not None
@@ -666,20 +666,17 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
 
     try:
         version = foil("--version")
-        assert version.stdout.strip() == "foil 0.4.4", version.stderr
+        assert version.stdout.strip() == "foil 0.5.0", version.stderr
         assert Path(shutil.which("foil", path=environment["PATH"]) or "") == bindir / "foil"
         assert foil("init").returncode == 0
-        templates = foil_root(repo) / "templates"
-        for role in ("lead", "implementer", "reviewer"):
-            path = templates / f"{role}.toml"
-            text = re.sub(
-                r'(?m)^id = ".*"$',
-                'id = "fake"',
-                path.read_text(encoding="utf-8"),
-                count=1,
-            )
-            path.write_text(text, encoding="utf-8")
-        fake = foil_root(repo) / "run" / "fake"
+        mapping = foil_root(repo) / "mapping.toml"
+        text = re.sub(
+            r'(?m)^harness = ".*"$',
+            'harness = "fake"',
+            mapping.read_text(encoding="utf-8"),
+        )
+        mapping.write_text(text, encoding="utf-8")
+        fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
         fake.mkdir(parents=True, exist_ok=True)
         (fake / "lead.json").write_text(
             """{
@@ -700,7 +697,7 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
         _wait(repo, lambda: "state: working" in _status(repo))
         sent = foil("send", "lead", "operator ping")
         assert sent.returncode == 0, sent.stderr
-        note = foil_root(repo) / "board" / "notes" / "ping.txt"
+        note = foil_root(repo) / "fleets" / "main" / "board" / "notes" / "ping.txt"
         _wait(repo, note.is_file)
         assert note.read_text(encoding="utf-8") == "pong\n"
         listed = foil("seat", "list")
@@ -746,14 +743,12 @@ def test_star_line_reaches_the_operator_once_per_store_and_no_seat(tmp_path: Pat
         assert line not in foil(second, "init").stdout
         assert line not in foil(first, "init").stdout
 
-        templates = foil_root(first) / "templates"
-        for role in ("lead", "implementer", "reviewer"):
-            path = templates / f"{role}.toml"
-            text = re.sub(
-                r'(?m)^id = ".*"$', 'id = "fake"', path.read_text(encoding="utf-8"), count=1
-            )
-            path.write_text(text, encoding="utf-8")
-        fake = foil_root(first) / "run" / "fake"
+        mapping = foil_root(first) / "mapping.toml"
+        text = re.sub(
+            r'(?m)^harness = ".*"$', 'harness = "fake"', mapping.read_text(encoding="utf-8")
+        )
+        mapping.write_text(text, encoding="utf-8")
+        fake = foil_root(first) / "fleets" / "main" / "run" / "fake"
         fake.mkdir(parents=True, exist_ok=True)
         (fake / "lead.json").write_text(
             '{"steps": [{"when": {"mail_contains": "operator goal"}, "do": ['
@@ -904,21 +899,19 @@ def test_scenario_7_ai_native_onboarding(
     # Five harnesses stay installed throughout, so a guarantee computed only
     # from the install count would still say "two". The report must instead
     # read the ids actually stored in the three templates and say "three".
-    templates = foil_root(repo) / "templates"
-    implementer = templates / "implementer.toml"
-    reviewer = templates / "reviewer.toml"
-    implementer.write_text(
-        implementer.read_text(encoding="utf-8").replace(
-            'id = "claude"', 'id = "codex"', 1
-        ),
-        encoding="utf-8",
+    mapping = foil_root(repo) / "mapping.toml"
+    text = mapping.read_text(encoding="utf-8")
+    text = text.replace(
+        'role = "implementer"\nharness = "claude"',
+        'role = "implementer"\nharness = "codex"',
+        1,
     )
-    reviewer.write_text(
-        reviewer.read_text(encoding="utf-8").replace(
-            'id = "codex"', 'id = "gemini"', 1
-        ),
-        encoding="utf-8",
+    text = text.replace(
+        'role = "reviewer"\nharness = "codex"',
+        'role = "reviewer"\nharness = "gemini"',
+        1,
     )
+    mapping.write_text(text, encoding="utf-8")
     assert main(["init"]) == 0
     second = capsys.readouterr().out
     assert (
@@ -933,12 +926,13 @@ def test_scenario_7_ai_native_onboarding(
         "Two ids can still run the same program or model; set model on a template to choose one."
     ) in second
 
-    for role in ("lead", "implementer", "reviewer"):
-        path = templates / f"{role}.toml"
-        text = re.sub(
-            r'(?m)^id = ".*"$', 'id = "fake"', path.read_text(encoding="utf-8"), count=1
-        )
-        path.write_text(text, encoding="utf-8")
+    mapping = foil_root(repo) / "mapping.toml"
+    text = re.sub(
+        r'(?m)^harness = ".*"$',
+        'harness = "fake"',
+        mapping.read_text(encoding="utf-8"),
+    )
+    mapping.write_text(text, encoding="utf-8")
 
     try:
         _scripts(repo, "scenario-7", {"lead": "lead.json"})
@@ -946,7 +940,7 @@ def test_scenario_7_ai_native_onboarding(
         assert main(["seat", "spawn", "lead", "--task", task]) == 0
 
         # The launch plan forwards HOME by name; it never stores the value.
-        plan_path = foil_root(repo) / "run" / "plans" / "lead.json"
+        plan_path = foil_root(repo) / "fleets" / "main" / "run" / "plans" / "lead.json"
         plan = json.loads(plan_path.read_text(encoding="utf-8"))
         assert "HOME" in plan["env_forward"]
         assert "HOME" not in plan["env"]
@@ -956,9 +950,11 @@ def test_scenario_7_ai_native_onboarding(
 
         # The instruction file carries the persona's own words, not only a
         # pointer to the persona file.
-        instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
+        instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md"
         text = instruction.read_text(encoding="utf-8")
-        persona_words = (templates / "personas" / "lead.md").read_text(encoding="utf-8").strip()
+        persona_words = (
+            foil_root(repo) / "templates" / "personas" / "lead.md"
+        ).read_text(encoding="utf-8").strip()
         assert persona_words in text
         assert "personas/lead.md" not in text
 
@@ -972,6 +968,42 @@ def test_scenario_7_ai_native_onboarding(
         _close(repo)
 
 
+def test_archive_reuses_a_killed_name_against_the_fake_harness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _prepare(tmp_path, "scenario-2", monkeypatch)
+    try:
+        assert main(["seat", "spawn", "lead"]) == 0
+        assert main(["seat", "spawn", "implementer"]) == 0
+        seat = load_registry(repo)["seats"]["implementer-1"]
+        note = Path(seat["worktree"]) / "note.txt"
+        note.write_text("keep\n", encoding="utf-8")
+        assert main(["seat", "archive", "implementer-1"]) == 1
+        assert capsys.readouterr().err == "foil: seat 'implementer-1' is alive\n"
+        assert main(["seat", "kill", "implementer-1"]) == 0
+        assert main(["seat", "archive", "implementer-1"]) == 0
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        assert captured.out == (
+            "archived seat 'implementer-1'\nkept branch foil/implementer-1\n"
+        )
+        assert str(seat["worktree"]) not in captured.out
+        assert note.read_text(encoding="utf-8") == "keep\n"
+        assert "implementer-1" not in load_registry(repo)["seats"]
+        assert main(["seat", "spawn", "implementer", "--name", "implementer-1"]) == 0
+        revived = load_registry(repo)["seats"]["implementer-1"]
+        assert revived["branch"] == "foil/implementer-1-2"
+        assert revived["worktree"] != seat["worktree"]
+        text = (
+            foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "implementer-1.md"
+        ).read_text(
+            encoding="utf-8"
+        )
+        assert text.count("may be from an earlier goal") == 1
+    finally:
+        _close(repo)
+
+
 def test_unattended_templates_and_peek_on_timeout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -979,10 +1011,10 @@ def test_unattended_templates_and_peek_on_timeout(
     repo = _prepare(tmp_path, "scenario-2", monkeypatch)
     _set_auto(repo)
     try:
-        for role in ("lead", "implementer", "reviewer"):
-            text = (foil_root(repo) / "templates" / f"{role}.toml").read_text(encoding="utf-8")
-            assert 'permission = "auto"\n' in text
-            assert 'id = "fake"\n' in text
+        roles = (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
+        mapping = (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
+        assert roles.count('permission = "auto"') >= 3
+        assert mapping.count('harness = "fake"') >= 3
         assert main(["seat", "spawn", "lead"]) == 0
         deadline = time.monotonic() + 20
         ready = ""
@@ -1009,6 +1041,5 @@ def test_e2e_harness_override_rewrites_the_three_templates(
 ) -> None:
     monkeypatch.setenv("FOIL_E2E_HARNESS", "codex")
     repo = _prepare(tmp_path, "scenario-6", monkeypatch, fake=False)
-    for role in ("lead", "implementer", "reviewer"):
-        text = (foil_root(repo) / "templates" / f"{role}.toml").read_text(encoding="utf-8")
-        assert 'id = "codex"\n' in text
+    text = (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
+    assert text.count('harness = "codex"') >= 3
