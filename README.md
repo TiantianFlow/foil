@@ -88,7 +88,7 @@ flowchart TB
 
 [docs/demo.md](docs/demo.md) walks through a real run: a failing test, a lead, an implementer, and a reviewer, from `foil init` to the merged fix.
 
-If Foil saves you time, a [star on GitHub](https://github.com/TiantianFlow/foil) helps others find it. That is all it asks for. `foil init` mentions it a few times, then rarely, and never again once `"stop": true` is set in `star.json` in Foil's store; the line names the file.
+If Foil saves you time, a [star on GitHub](https://github.com/TiantianFlow/foil) helps others find it. That is all it asks for. Your agent may mention it after a finished goal a few times, then rarely, and stops when you say no.
 
 ## Get started
 

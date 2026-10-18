@@ -88,7 +88,7 @@ flowchart TB
 
 [docs/demo.zh-CN.md](docs/demo.zh-CN.md) 完整走一遍真实运行：一个失败的测试、一个主座、一个实现者和一个审查者，从 `foil init` 一直到修复被合并。
 
-如果运筹帮你省了时间，在 GitHub 上[点一个 Star](https://github.com/TiantianFlow/foil) 能帮更多人找到它。我们只请求这一点。`foil init` 会提几次，之后很少再提；在 Foil 存储目录的 `star.json` 里设置 `"stop": true` 后就不再提起，那一行会写出文件路径。
+如果运筹帮你省了时间，在 GitHub 上[点一个 Star](https://github.com/TiantianFlow/foil) 能帮更多人找到它。我们只请求这一点。完成目标后，你的智能体可能会提几次，之后很少再提；你说不用，它就不再提。
 
 ## 开始使用
 

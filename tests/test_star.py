@@ -55,7 +55,7 @@ def test_first_init_shows_the_line_once_and_records_it(
     star = [line for line in lines if line.startswith(LINE)]
     assert len(star) == 1
     assert "https://github.com/TiantianFlow/foil" in star[0]
-    assert str(store_root() / "star.json") in star[0]
+    assert "star.json" not in star[0]
     assert lines.index(star[0]) == len(lines) - 2
     assert lines[-1].startswith("Read ")
     assert _saved() == {

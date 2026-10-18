@@ -713,6 +713,66 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
         _close(repo)
 
 
+def test_star_line_reaches_the_operator_once_per_store_and_no_seat(tmp_path: Path) -> None:
+    bindir = _install_foil(tmp_path)
+    environment = os.environ.copy()
+    environment.pop("FOIL_SEAT_ID", None)
+    environment["PATH"] = os.pathsep.join((str(bindir), environment.get("PATH", "")))
+    line = "For the human: if Foil helps, a GitHub star helps others find it:"
+
+    def repository(name: str) -> Path:
+        repo = tmp_path / name
+        repo.mkdir()
+        assert _git(repo, "init", "--quiet").returncode == 0
+        assert _git(repo, "config", "user.name", "Foil Test").returncode == 0
+        assert _git(repo, "config", "user.email", "foil-test@localhost").returncode == 0
+        assert _git(repo, "commit", "--allow-empty", "-m", "base").returncode == 0
+        return repo
+
+    def foil(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["foil", *args], cwd=repo, check=False, capture_output=True, text=True, env=environment
+        )
+        assert result.returncode == 0, result.stderr
+        return result
+
+    first, second = repository("first"), repository("second")
+    try:
+        report = foil(first, "init").stdout.splitlines()
+        assert [entry for entry in report if entry.startswith(line)] == [
+            f"{line} https://github.com/TiantianFlow/foil"
+        ]
+        assert report[-1].startswith("Read ")
+        assert line not in foil(second, "init").stdout
+        assert line not in foil(first, "init").stdout
+
+        templates = foil_root(first) / "templates"
+        for role in ("lead", "implementer", "reviewer"):
+            path = templates / f"{role}.toml"
+            text = re.sub(
+                r'(?m)^id = ".*"$', 'id = "fake"', path.read_text(encoding="utf-8"), count=1
+            )
+            path.write_text(text, encoding="utf-8")
+        fake = foil_root(first) / "run" / "fake"
+        fake.mkdir(parents=True, exist_ok=True)
+        (fake / "lead.json").write_text(
+            '{"steps": [{"when": {"mail_contains": "operator goal"}, "do": ['
+            '{"write": "board/status.md", "text": "state: done\\n"}]}]}\n',
+            encoding="utf-8",
+        )
+        foil(first, "seat", "spawn", "lead", "--task", "operator goal")
+        _wait(first, lambda: "state: done" in _status(first))
+        assert "GitHub star" not in foil(first, "seat", "peek", "lead").stdout
+        for path in foil_root(first).rglob("*"):
+            if path.is_file() and not path.is_symlink():
+                assert "GitHub star" not in path.read_text(encoding="utf-8", errors="replace")
+        session = str(load_registry(first)["tmux_session"])
+        foil(first, "seat", "kill", "--all")
+        _no_windows(session)
+    finally:
+        _close(first)
+
+
 def test_scenario_6_errors_are_one_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

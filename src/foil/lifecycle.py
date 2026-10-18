@@ -177,10 +177,7 @@ def _print_init_report(
     )
     print(f"Project folder: {foil_root(toplevel)}")
     if star:
-        print(
-            f"For the human: if Foil helps, a GitHub star helps others find it: {STAR_URL} "
-            f'(to stop this line, set "stop": true in {store_root() / "star.json"})'
-        )
+        print(f"For the human: if Foil helps, a GitHub star helps others find it: {STAR_URL}")
     print(f"Read {foil_root(toplevel) / 'skills' / 'operator.md'} and follow it. My goal: <goal>.")
 
 
