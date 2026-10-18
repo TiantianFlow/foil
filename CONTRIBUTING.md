@@ -42,7 +42,7 @@ The live tier runs the same scenarios against the harness CLI that
 `foil init` would select on your `PATH`. It needs that CLI installed and
 already logged in. CI does not run it. The default `pytest` command
 skips it. `FOIL_E2E_HARNESS` is a test-only override: when it is set, those
-tests rewrite the harness `id` line of the three templates after `init`. It is
+tests rewrite the harness id in `mapping.toml` after `init`. It is
 not a command or a flag.
 
 ```sh

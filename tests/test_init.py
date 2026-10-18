@@ -92,14 +92,13 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     repo.mkdir()
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
-    pointer = (
-        f"Read {foil_root(repo) / 'skills' / 'operator.md'} and follow it. My goal: <goal>."
-    )
+    pointer = f"Read {foil_root(repo) / 'skills' / 'operator.md'} and follow it. My goal: <goal>."
     ask = "permission: lead auto, implementer auto, reviewer auto."
     rule = (
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
         "approval prompts, though some harnesses still ask for some commands. "
-        "Set it in each templates/<role>.toml in the project folder; "
+        "Set permission in roles.toml in the project folder. "
+        "An omitted permission is auto. "
         "auto on the lead alone does not "
         "let the workers run unattended."
     )
@@ -126,7 +125,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     ) in first.out
     assert "Wrote templates: lead, implementer, reviewer" in first.out
     assert "documentation-writer" in first.out
-    lead = foil_root(repo) / "templates" / "lead.toml"
+    lead = foil_root(repo) / "roles.toml"
     original = lead.read_text(encoding="utf-8")
     assert 'permission = "auto"\n' in original
 
@@ -167,10 +166,10 @@ def test_init_rerun_reports_the_harness_stored_after_an_edit(
     monkeypatch.setattr(shutil, "which", which)
     assert main(["init"]) == 0
     capsys.readouterr()
-    reviewer = foil_root(repo) / "templates" / "reviewer.toml"
+    reviewer = foil_root(repo) / "mapping.toml"
     original = reviewer.read_text(encoding="utf-8")
-    assert 'id = "codex"' in original
-    edited = original.replace('id = "codex"', 'id = "claude"', 1)
+    assert 'harness = "codex"' in original
+    edited = original.replace('harness = "codex"', 'harness = "claude"', 1)
     reviewer.write_text(edited, encoding="utf-8")
     assert main(["init"]) == 0
     report = capsys.readouterr().out
@@ -191,21 +190,19 @@ def test_init_report_uses_three_for_three_stored_ids(
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
     capsys.readouterr()
-    templates = foil_root(repo) / "templates"
-    implementer = templates / "implementer.toml"
-    reviewer = templates / "reviewer.toml"
-    implementer.write_text(
-        implementer.read_text(encoding="utf-8").replace(
-            'id = "claude"', 'id = "codex"', 1
-        ),
-        encoding="utf-8",
+    mapping = foil_root(repo) / "mapping.toml"
+    text = mapping.read_text(encoding="utf-8")
+    text = text.replace(
+        'role = "implementer"\nharness = "claude"',
+        'role = "implementer"\nharness = "codex"',
+        1,
     )
-    reviewer.write_text(
-        reviewer.read_text(encoding="utf-8").replace(
-            'id = "codex"', 'id = "gemini"', 1
-        ),
-        encoding="utf-8",
+    text = text.replace(
+        'role = "reviewer"\nharness = "codex"',
+        'role = "reviewer"\nharness = "gemini"',
+        1,
     )
+    mapping.write_text(text, encoding="utf-8")
     assert main(["init"]) == 0
     report = capsys.readouterr().out
     assert (

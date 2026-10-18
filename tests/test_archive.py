@@ -36,9 +36,7 @@ _STAMP = "20260101T000000123456Z"
 
 
 def _gone(monkeypatch: pytest.MonkeyPatch) -> None:
-    def probe(
-        self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget
-    ) -> ProbeResult:
+    def probe(self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget) -> ProbeResult:
         del self, fleet_id, seat_id, target
         return ProbeResult(ProbeState.DEAD, False)
 
@@ -71,8 +69,8 @@ def test_archive_frees_a_killed_name_and_keeps_the_worktree(
     capsys.readouterr()
     assert main(["seat", "kill", "implementer-1"]) == 0
     root = foil_root(repo)
-    plan = root / "run" / "plans" / "implementer-1.json"
-    instruction = root / "run" / "instructions" / "implementer-1.md"
+    plan = root / "fleets" / "main" / "run" / "plans" / "implementer-1.json"
+    instruction = root / "fleets" / "main" / "run" / "instructions" / "implementer-1.md"
     assert plan.is_file() and instruction.is_file()
     # A credential-shaped field must not block the prose write.
     raw = json.loads(registry_path(repo).read_text(encoding="utf-8"))
@@ -82,16 +80,14 @@ def test_archive_frees_a_killed_name_and_keeps_the_worktree(
     assert main(["seat", "archive", "implementer-1"]) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert captured.out == (
-        "archived seat 'implementer-1'\nkept branch foil/implementer-1\n"
-    )
+    assert captured.out == ("archived seat 'implementer-1'\nkept branch foil/implementer-1\n")
     assert str(seat["worktree"]) not in captured.out
     assert "implementer-1" not in load_registry(repo)["seats"]
     stored = json.loads(registry_path(repo).read_text(encoding="utf-8"))
     assert stored["schema_version"] == SCHEMA_VERSION == 1
     assert "archive" not in stored
     assert load_registry(repo)["schema_version"] == 1
-    archives = list((root / "run" / "archive").glob("*.txt"))
+    archives = list((root / "fleets" / "main" / "run" / "archive").glob("*.txt"))
     assert len(archives) == 1
     body = archives[0].read_text(encoding="utf-8")
     assert f"worktree: {seat['worktree']}" in body
@@ -103,7 +99,7 @@ def test_archive_frees_a_killed_name_and_keeps_the_worktree(
     branch = ["show-ref", "--verify", "--quiet", "refs/heads/foil/implementer-1"]
     assert _git(repo, branch).returncode == 0
     assert plan.is_file() and instruction.is_file()
-    mailbox = root / "board" / "mail" / "implementer-1"
+    mailbox = root / "fleets" / "main" / "board" / "mail" / "implementer-1"
     assert len(list(mailbox.glob("*.md"))) == 1
 
     assert main(["seat", "list"]) == 0
@@ -112,9 +108,7 @@ def test_archive_frees_a_killed_name_and_keeps_the_worktree(
     assert capsys.readouterr().err == "foil: unknown seat 'implementer-1'\n"
     assert len(list(mailbox.glob("*.md"))) == 1
 
-    def boom(
-        self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget
-    ) -> ProbeResult:
+    def boom(self: TmuxController, fleet_id: str, seat_id: str, target: TmuxTarget) -> ProbeResult:
         del self, fleet_id, seat_id, target
         raise AssertionError("archived list probed tmux")
 
@@ -162,7 +156,7 @@ def test_archive_refuses_without_writing(
 ) -> None:
     repo = _fleet(tmp_path, monkeypatch)
     root = foil_root(repo)
-    archive = root / "run" / "archive"
+    archive = root / "fleets" / "main" / "run" / "archive"
 
     assert main(["seat", "archive", "implementer-1"]) == 1
     assert capsys.readouterr().err == "foil: seat 'implementer-1' is alive\n"
@@ -220,7 +214,7 @@ def test_archive_follows_the_probe_result(
     assert main(["seat", "kill", "implementer-1"]) == 0
     capsys.readouterr()
     original = dict(_seat(repo))
-    archive = foil_root(repo) / "run" / "archive"
+    archive = foil_root(repo) / "fleets" / "main" / "run" / "archive"
 
     def restore() -> None:
         registry = load_registry(repo)
@@ -306,7 +300,7 @@ sys.exit(1)
 
     executable_path = executable
     monkeypatch.setattr("foil.lifecycle.TmuxController", Bound)
-    archive = foil_root(repo) / "run" / "archive"
+    archive = foil_root(repo) / "fleets" / "main" / "run" / "archive"
 
     def prepare(window_id: str) -> None:
         registry = load_registry(repo)
@@ -353,9 +347,9 @@ def test_auto_numbering_reclaims_an_archived_name(
     seats = load_registry(repo)["seats"]
     assert "implementer-1" in seats
     assert seats["implementer-1"]["branch"] == "foil/implementer-1-2"
-    text = (foil_root(repo) / "run" / "instructions" / "implementer-1.md").read_text(
-        encoding="utf-8"
-    )
+    text = (
+        foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "implementer-1.md"
+    ).read_text(encoding="utf-8")
     assert "Run `foil mail list` and read your mail before you act." in text
     assert text.count("may be from an earlier goal") == 1
 
@@ -369,7 +363,9 @@ def test_archive_of_a_seat_without_a_worktree_is_one_line(
     capsys.readouterr()
     assert main(["seat", "archive", "helper"]) == 0
     assert capsys.readouterr().out == "archived seat 'helper'\n"
-    body = next((foil_root(repo) / "run" / "archive").glob("*.txt")).read_text(encoding="utf-8")
+    body = next((foil_root(repo) / "fleets" / "main" / "run" / "archive").glob("*.txt")).read_text(
+        encoding="utf-8"
+    )
     assert "worktree: \n" in body or body.endswith("worktree: \n") or "\nworktree: \n" in body
 
 
@@ -391,7 +387,7 @@ def test_lead_respawn_does_not_archive_the_old_lead(
     repo = _fleet(tmp_path, monkeypatch)
     assert main(["seat", "kill", "lead"]) == 0
     assert main(["seat", "spawn", "lead"]) == 0
-    assert not (foil_root(repo) / "run" / "archive").exists()
+    assert not (foil_root(repo) / "fleets" / "main" / "run" / "archive").exists()
 
 
 def test_same_second_and_a_crash_leave_two_files(
@@ -412,7 +408,7 @@ def test_same_second_and_a_crash_leave_two_files(
     monkeypatch.setattr("foil.lifecycle.write_json", fail_once)
     with pytest.raises(OSError, match="crash"):
         archive_seat(repo, "implementer-1")
-    archive = foil_root(repo) / "run" / "archive"
+    archive = foil_root(repo) / "fleets" / "main" / "run" / "archive"
     first = archive / f"{_STAMP}-implementer-1.txt"
     assert first.is_file()
     kept = first.read_bytes()
@@ -448,7 +444,7 @@ def test_two_archives_do_not_put_the_key_back(
     second.join(5)
     assert sorted(results) == ["foil: unknown seat 'implementer-1'", "ok"]
     assert "implementer-1" not in load_registry(repo)["seats"]
-    assert len(list((foil_root(repo) / "run" / "archive").glob("*.txt"))) == 1
+    assert len(list((foil_root(repo) / "fleets" / "main" / "run" / "archive").glob("*.txt"))) == 1
 
 
 def test_init_rewrites_archive_prose_and_leaves_compact_json(
@@ -459,8 +455,8 @@ def test_init_rewrites_archive_prose_and_leaves_compact_json(
     _store_commit(repo)
     assert main(["init"]) == 0
     old = foil_root(repo)
-    archive = old / "run" / "archive"
-    archive.mkdir()
+    archive = old / "fleets" / "main" / "run" / "archive"
+    archive.mkdir(parents=True)
     old_tree = old / "worktrees" / "implementer-1"
     prose_name = f"{_STAMP}-implementer-1.txt"
     (archive / prose_name).write_text(
@@ -478,12 +474,16 @@ def test_init_rewrites_archive_prose_and_leaves_compact_json(
     capsys.readouterr()
     assert main(["init"]) == 0
     adopted = foil_root(moved)
-    text = (adopted / "run" / "archive" / prose_name).read_text(encoding="utf-8")
+    text = (adopted / "fleets" / "main" / "run" / "archive" / prose_name).read_text(
+        encoding="utf-8"
+    )
     assert f"worktree: {adopted / 'worktrees' / 'implementer-1'}" in text
     assert str(old) not in text
     # A quote is already a boundary, so this compact document is rewritten too.
     # The archive is prose .txt so the walk does not parse it as JSON.
-    rewritten = (adopted / "run" / "archive" / "seat.json").read_text(encoding="utf-8")
+    rewritten = (adopted / "fleets" / "main" / "run" / "archive" / "seat.json").read_text(
+        encoding="utf-8"
+    )
     assert str(old_tree) not in rewritten
     assert str(adopted / "worktrees" / "implementer-1") in rewritten
     texts = _texts_in_run(adopted)
@@ -510,10 +510,14 @@ def test_init_rewrites_archive_prose_and_leaves_compact_json(
     capsys.readouterr()
     assert main(["init"]) == 0
     store = foil_root(legacy_repo)
-    moved_text = (store / "run" / "archive" / prose_name).read_text(encoding="utf-8")
+    moved_text = (store / "fleets" / "main" / "run" / "archive" / prose_name).read_text(
+        encoding="utf-8"
+    )
     assert f"worktree: {store / 'worktrees' / 'implementer-1'}" in moved_text
     assert str(legacy) not in moved_text
-    legacy_json = (store / "run" / "archive" / "seat.json").read_text(encoding="utf-8")
+    legacy_json = (store / "fleets" / "main" / "run" / "archive" / "seat.json").read_text(
+        encoding="utf-8"
+    )
     assert str(legacy_tree) not in legacy_json
     assert str(store / "worktrees" / "implementer-1") in legacy_json
 
@@ -535,7 +539,7 @@ def test_archived_list_ignores_an_unknown_line_and_sorts_newest_first(
     assert main(["seat", "kill", "implementer-1"]) == 0
     assert main(["seat", "archive", "implementer-1"]) == 0
     capsys.readouterr()
-    archive = foil_root(repo) / "run" / "archive"
+    archive = foil_root(repo) / "fleets" / "main" / "run" / "archive"
     current = next(archive.glob("*.txt"))
     current.write_text(current.read_text(encoding="utf-8") + "note: ignore\n", encoding="utf-8")
     older = archive / "19990101T000000000000Z-helper.txt"
@@ -560,7 +564,7 @@ def test_native_resume_does_not_repeat_the_old_mail_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _fleet(tmp_path, monkeypatch)
-    instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
+    instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md"
     assert "may be from an earlier goal" in instruction.read_text(encoding="utf-8")
 
     def matches_window(
@@ -581,9 +585,7 @@ def test_native_resume_does_not_repeat_the_old_mail_warning(
     assert "You were restarted" not in text
 
 
-def test_resume_does_not_unkill_a_seat(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_resume_does_not_unkill_a_seat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _fleet(tmp_path, monkeypatch)
 
     def matches_window(
@@ -773,7 +775,7 @@ def test_init_rewrite_does_not_follow_a_symlinked_archive(tmp_path: Path) -> Non
     outside.mkdir()
     target = outside / "seat.txt"
     target.write_text("worktree: /old/store/worktrees/implementer-1\n", encoding="utf-8")
-    archive = root / "run" / "archive"
+    archive = root / "fleets" / "main" / "run" / "archive"
     archive.parent.mkdir(parents=True)
     archive.symlink_to(outside, target_is_directory=True)
     _replace_text(root, [("/old/store", "/new/store")])

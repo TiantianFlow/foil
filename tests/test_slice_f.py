@@ -27,7 +27,9 @@ def _keys(
         if argv and argv[0] == "display-message":
             window = argv[argv.index("-t") + 1]
             registry = json.loads(
-                (foil_root(Path.cwd()) / "run" / "registry.json").read_text(encoding="utf-8")
+                (foil_root(Path.cwd()) / "fleets" / "main" / "run" / "registry.json").read_text(
+                    encoding="utf-8"
+                )
             )
             seat = next(
                 name

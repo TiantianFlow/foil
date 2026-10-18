@@ -5,7 +5,8 @@ import os
 from pathlib import Path
 found = ""
 root = Path(os.environ["FOIL_HOME"]) / "projects" / os.environ["FOIL_PROJECT"]
-for path in sorted((root / "board/mail/lead").glob("*.md")):
+fleet = os.environ.get("FOIL_FLEET") or "main"
+for path in sorted((root / "fleets" / fleet / "board/mail/lead").glob("*.md")):
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("proposed "):
             found = line.split()[1]

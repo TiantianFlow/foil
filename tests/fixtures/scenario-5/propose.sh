@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 root="${FOIL_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/foil}"
-note="$root/projects/$FOIL_PROJECT/board/notes/accept.txt"
+fleet="${FOIL_FLEET:-main}"
+note="$root/projects/$FOIL_PROJECT/fleets/$fleet/board/notes/accept.txt"
 mkdir -p "$(dirname "$note")"
 id=$(foil memory add "check the merged tests")
 if foil memory accept "$id"; then

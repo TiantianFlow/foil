@@ -10,7 +10,6 @@ import pytest
 from foil.cli import main
 from foil.errors import FoilError
 from foil.lifecycle import init_project, list_seats
-from foil.presets import template_permission
 from foil.project import foil_root
 from foil.roster_ops import (
     add_template,
@@ -120,13 +119,12 @@ def test_roster_add_creates_template_from_persona(
     add_template(project, "researcher", from_file=None)
     out = capsys.readouterr().out
     assert "created template 'researcher'" in out
-    
+
     # Verify template exists and is valid
-    template_path = foil_root(project) / "templates" / "researcher.toml"
-    assert template_path.is_file()
-    content = template_path.read_text()
-    assert 'persona = "personas/researcher.md"' in content
-    assert 'permission = "auto"' in content
+    roles = (foil_root(project) / "roles.toml").read_text(encoding="utf-8")
+    assert 'id = "researcher"' in roles
+    assert 'persona = "personas/researcher.md"' in roles
+    assert 'permission = "auto"' in roles
 
 
 def test_roster_add_duplicate_fails(project: Path) -> None:
@@ -153,19 +151,18 @@ def test_roster_add_from_file(
         'harness = "claude"\n'
         'model = "claude-sonnet-5.5"\n'
         'persona = "personas/researcher.md"\n'
-        'worktree = true\n'
+        "worktree = true\n"
         'permission = "auto"\n',
         encoding="utf-8",
     )
-    
+
     add_template(project, "custom", from_file=str(toml_file))
     out = capsys.readouterr().out
     assert "created template 'custom'" in out
-    
-    template_path = foil_root(project) / "templates" / "custom.toml"
-    assert template_path.is_file()
-    content = template_path.read_text()
-    assert "claude-sonnet-5.5" in content
+
+    mapping = (foil_root(project) / "mapping.toml").read_text(encoding="utf-8")
+    assert 'role = "custom"' in mapping
+    assert "claude-sonnet-5.5" in mapping
 
 
 def test_roster_add_invalid_role_name_fails(project: Path) -> None:
@@ -179,11 +176,10 @@ def test_roster_update_harness(project: Path, capsys: pytest.CaptureFixture[str]
     update_template(project, "lead", "harness", "codex")
     out = capsys.readouterr().out
     assert "updated template 'lead'" in out
-    
-    template_path = foil_root(project) / "templates" / "lead.toml"
-    content = template_path.read_text()
-    assert "[[harness]]" in content
-    assert 'id = "codex"' in content
+
+    content = (foil_root(project) / "mapping.toml").read_text(encoding="utf-8")
+    assert 'role = "lead"' in content
+    assert 'harness = "codex"' in content
 
 
 def test_roster_update_model(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -191,9 +187,8 @@ def test_roster_update_model(project: Path, capsys: pytest.CaptureFixture[str]) 
     update_template(project, "implementer", "model", "claude-opus-5.5")
     out = capsys.readouterr().out
     assert "updated template 'implementer'" in out
-    
-    template_path = foil_root(project) / "templates" / "implementer.toml"
-    content = template_path.read_text()
+
+    content = (foil_root(project) / "mapping.toml").read_text(encoding="utf-8")
     assert 'model = "claude-opus-5.5"' in content
 
 
@@ -202,9 +197,9 @@ def test_roster_update_permission(project: Path, capsys: pytest.CaptureFixture[s
     update_template(project, "reviewer", "permission", "auto")
     out = capsys.readouterr().out
     assert "updated template 'reviewer'" in out
-    
-    template_path = foil_root(project) / "templates" / "reviewer.toml"
-    content = template_path.read_text()
+
+    content = (foil_root(project) / "roles.toml").read_text(encoding="utf-8")
+    assert 'id = "reviewer"' in content
     assert 'permission = "auto"' in content
 
 
@@ -213,9 +208,9 @@ def test_roster_update_worktree(project: Path, capsys: pytest.CaptureFixture[str
     update_template(project, "lead", "worktree", "true")
     out = capsys.readouterr().out
     assert "updated template 'lead'" in out
-    
-    template_path = foil_root(project) / "templates" / "lead.toml"
-    content = template_path.read_text()
+
+    content = (foil_root(project) / "roles.toml").read_text(encoding="utf-8")
+    assert 'id = "lead"' in content
     assert "worktree = true" in content
 
 
@@ -249,14 +244,14 @@ def test_roster_remove_deletes_template(project: Path, capsys: pytest.CaptureFix
     # First add a template
     add_template(project, "researcher", from_file=None)
     capsys.readouterr()  # Clear output
-    
+
     # Then remove it
     remove_template(project, "researcher")
     out = capsys.readouterr().out
     assert "removed template 'researcher'" in out
-    
-    template_path = foil_root(project) / "templates" / "researcher.toml"
-    assert not template_path.exists()
+
+    roles = (foil_root(project) / "roles.toml").read_text(encoding="utf-8")
+    assert 'id = "researcher"' not in roles
 
 
 def test_roster_remove_protected_fails(project: Path) -> None:
@@ -264,10 +259,10 @@ def test_roster_remove_protected_fails(project: Path) -> None:
     with pytest.raises(FoilError, match="cannot remove protected") as caught:
         remove_template(project, "lead")
     assert "\n" not in str(caught.value)
-    
+
     with pytest.raises(FoilError, match="cannot remove protected"):
         remove_template(project, "implementer")
-    
+
     with pytest.raises(FoilError, match="cannot remove protected"):
         remove_template(project, "reviewer")
 
@@ -304,14 +299,17 @@ def test_newline_in_field_and_from_stays_one_line(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A newline in the field or in --from does not split the error."""
-    lead = foil_root(project) / "templates" / "lead.toml"
-    before = lead.read_bytes()
+    root = foil_root(project)
+    before = (
+        (root / "roles.toml").read_bytes(),
+        (root / "mapping.toml").read_bytes(),
+    )
 
     assert main(["roster", "update", "lead", "bad\nfield=value"]) == 1
     updated = capsys.readouterr().err
     assert updated.count("\n") == 1
     assert "invalid field 'badfield'" in updated
-    assert lead.read_bytes() == before
+    assert ((root / "roles.toml").read_bytes(), (root / "mapping.toml").read_bytes()) == before
 
     assert main(["roster", "add", "custom", "--from", "missing\nfile.toml"]) == 1
     missing = capsys.readouterr().err
@@ -323,11 +321,13 @@ def test_newline_in_field_and_from_stays_one_line(
 def test_roster_add_does_not_follow_a_symlink(project: Path) -> None:
     """A template symlink is not treated as a missing file."""
     outside = project / "escaped.toml"
-    link = foil_root(project) / "templates" / "researcher.toml"
+    outside.write_text("keep\n", encoding="utf-8")
+    link = foil_root(project) / "roles.toml"
+    link.unlink()
     link.symlink_to(outside)
     with pytest.raises(FoilError, match="refusing symlink"):
         add_template(project, "researcher", from_file=None)
-    assert not outside.exists()
+    assert outside.read_text(encoding="utf-8") == "keep\n"
     assert link.is_symlink()
 
 
@@ -338,7 +338,8 @@ def test_roster_add_from_file_does_not_follow_a_symlink(
     """--from does not write through a template symlink, then delete the link."""
     outside = project / "escaped.toml"
     outside.write_text("original\n", encoding="utf-8")
-    link = foil_root(project) / "templates" / "custom.toml"
+    link = foil_root(project) / "roles.toml"
+    link.unlink()
     link.symlink_to(outside)
     source = tmp_path / "custom.toml"
     source.write_text("not = a template [\n", encoding="utf-8")
@@ -352,16 +353,13 @@ def test_roster_update_does_not_follow_a_symlink(project: Path) -> None:
     """update refuses a symlinked template instead of writing its target."""
     outside = project / "escaped.toml"
     outside.write_text(
-        'harness = "claude"\n'
-        'persona = "personas/lead.md"\n'
-        "worktree = false\n"
-        'permission = "ask"\n',
+        'harness = "claude"\npersona = "personas/lead.md"\nworktree = false\npermission = "ask"\n',
         encoding="utf-8",
     )
-    link = foil_root(project) / "templates" / "lead.toml"
+    link = foil_root(project) / "roles.toml"
     link.unlink()
     link.symlink_to(outside)
-    with pytest.raises(FoilError, match="unknown template"):
+    with pytest.raises(FoilError, match="refusing symlink"):
         update_template(project, "lead", "model", "other")
     assert "other" not in outside.read_text(encoding="utf-8")
     assert link.is_symlink()
@@ -415,7 +413,7 @@ def test_roster_cli_remove(project: Path, capsys: pytest.CaptureFixture[str]) ->
     # First add a template
     main(["roster", "add", "researcher"])
     capsys.readouterr()
-    
+
     # Then remove it
     code = main(["roster", "remove", "researcher"])
     assert code == 0
@@ -452,22 +450,20 @@ def test_unsafe_role_is_rejected_before_any_path_is_used(project: Path, role: st
 
 
 def test_invalid_update_restores_the_same_bytes(project: Path) -> None:
-    path = foil_root(project) / "templates" / "lead.toml"
-    before = path.read_bytes()
+    before = _roster_bytes(project)
     with pytest.raises(FoilError):
         update_template(project, "lead", "model", 'say "hi"')
-    assert path.read_bytes() == before
+    assert _roster_bytes(project) == before
 
 
 def test_unknown_harness_and_parent_persona_roll_back(project: Path) -> None:
-    path = foil_root(project) / "templates" / "lead.toml"
-    before = path.read_bytes()
+    before = _roster_bytes(project)
     with pytest.raises(FoilError, match="unknown harness"):
         update_template(project, "lead", "harness", "not-a-harness")
-    assert path.read_bytes() == before
+    assert _roster_bytes(project) == before
     with pytest.raises(FoilError, match="must stay inside"):
         update_template(project, "lead", "persona", "../secret.md")
-    assert path.read_bytes() == before
+    assert _roster_bytes(project) == before
 
 
 def test_add_from_invalid_file_leaves_no_template(project: Path) -> None:
@@ -490,8 +486,11 @@ def test_init_report_names_personas_without_templates(
 ) -> None:
     init_project(str(project))
     out = capsys.readouterr().out
-    assert "Available personas (use 'foil roster add'):" in out
-    assert "researcher" in out
+    line = next(item for item in out.splitlines() if item.startswith("Available personas"))
+    names = [item.strip() for item in line.split(":", 1)[1].split(",")]
+    assert "researcher" in names
+    for role in ("lead", "implementer", "reviewer"):
+        assert role not in names
 
 
 def _seat(project: Path, *, state: str) -> None:
@@ -514,14 +513,13 @@ def test_remove_refuses_a_live_seat_and_a_harness_edit_does_not(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _seat(project, state="")
-    path = foil_root(project) / "templates" / "researcher.toml"
     with pytest.raises(FoilError, match="still in use"):
         remove_template(project, "researcher")
-    assert path.is_file()
+    assert 'id = "researcher"' in (foil_root(project) / "roles.toml").read_text(encoding="utf-8")
     update_template(project, "researcher", "harness", "codex")
-    text = path.read_text(encoding="utf-8")
-    assert "[[harness]]" in text
-    assert 'id = "codex"' in text
+    text = (foil_root(project) / "mapping.toml").read_text(encoding="utf-8")
+    assert 'role = "researcher"' in text
+    assert 'harness = "codex"' in text
     assert load_registry(project)["seats"]["researcher-1"]["harness"] == "fake"
     list_seats(project)
     assert "researcher-1\tresearcher\tdead\t\tfake\t" in capsys.readouterr().out
@@ -533,7 +531,9 @@ def test_killed_seat_does_not_block_remove(
     _seat(project, state="killed")
     remove_template(project, "researcher")
     assert "removed template 'researcher'" in capsys.readouterr().out
-    assert not (foil_root(project) / "templates" / "researcher.toml").exists()
+    assert 'id = "researcher"' not in (foil_root(project) / "roles.toml").read_text(
+        encoding="utf-8"
+    )
 
 
 @pytest.mark.parametrize(
@@ -557,6 +557,32 @@ def test_worker_cannot_run_any_roster_command(
     err = capsys.readouterr().err
     assert err.count("\n") == 1
     assert "not allowed" in err
+
+
+def _install(project: Path, role: str, body: str) -> None:
+    from foil.presets import parse_template_text, read_maps, read_roles, save_maps, save_roles
+
+    parsed = parse_template_text(body)
+    roles = [item for item in (read_roles(project) or []) if item["id"] != role]
+    roles.append(
+        {
+            "id": role,
+            "description": "",
+            "persona": parsed["persona"],
+            "worktree": parsed["worktree"],
+            "permission": parsed["permission"],
+        }
+    )
+    save_roles(project, roles)
+    maps = [item for item in read_maps(project) if item["role"] != role]
+    for entry in parsed["harness"]:
+        maps.append({"role": role, "id": entry["id"], "model": entry["model"]})
+    save_maps(project, maps)
+
+
+def _roster_bytes(project: Path) -> bytes:
+    root = foil_root(project)
+    return (root / "roles.toml").read_bytes() + (root / "mapping.toml").read_bytes()
 
 
 def _permission_source(path: Path, permission: str | None) -> Path:
@@ -593,8 +619,9 @@ def test_lead_can_add_from_when_permission_is_auto(
     source = _permission_source(project / "plain.toml", None)
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     assert main(["roster", "add", "custom", "--from", str(source)]) == 0
-    text = (foil_root(project) / "templates" / "custom.toml").read_text(encoding="utf-8")
-    assert "permission" not in text
+    text = (foil_root(project) / "roles.toml").read_text(encoding="utf-8")
+    assert 'id = "custom"' in text
+    assert 'permission = "auto"' in text
     assert "created template 'custom'" in capsys.readouterr().out
 
 
@@ -605,7 +632,8 @@ def test_outside_caller_can_add_from_with_auto_permission(
     source = _permission_source(project / "auto.toml", "auto")
     monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
     assert main(["roster", "add", "custom", "--from", str(source)]) == 0
-    text = (foil_root(project) / "templates" / "custom.toml").read_text(encoding="utf-8")
+    text = (foil_root(project) / "roles.toml").read_text(encoding="utf-8")
+    assert 'id = "custom"' in text
     assert 'permission = "auto"' in text
 
 
@@ -616,16 +644,15 @@ def test_lead_cannot_set_a_leading_dash_model(
 ) -> None:
     """model=--yolo must not be written, or later placed as a harness flag."""
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
-    path = foil_root(project) / "templates" / "implementer.toml"
-    before = path.read_bytes()
+    before = _roster_bytes(project)
     assert main(["roster", "update", "implementer", "model=--yolo"]) == 1
     err = capsys.readouterr().err
     assert err.count("\n") == 1
     assert "must not start with '-'" in err
-    assert path.read_bytes() == before
+    assert _roster_bytes(project) == before
     for field in ("persona", "harness"):
         assert main(["roster", "update", "implementer", f"{field}=--yolo"]) == 1
-        assert path.read_bytes() == before
+        assert _roster_bytes(project) == before
     capsys.readouterr()
 
 
@@ -658,23 +685,23 @@ def test_lead_cannot_inject_permission_through_another_field(
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     assert main(["roster", "add", "custom", "--from", str(source)]) == 0
     capsys.readouterr()
-    path = foil_root(project) / "templates" / "custom.toml"
-    before = path.read_bytes()
+    before = _roster_bytes(project)
     injected = 'm"\npermission = "ask'
     assert main(["roster", "update", "custom", f"model={injected}"]) == 1
     err = capsys.readouterr().err
     assert err.count("\n") == 1
     assert "quote, a backslash, or a control character" in err
-    assert path.read_bytes() == before
-    assert template_permission(path.read_text(encoding="utf-8")) == "auto"
+    assert _roster_bytes(project) == before
+    from foil.presets import load_template
+
+    assert load_template(project, "custom")["permission"] == "auto"
 
 
 def test_in_fleet_update_rolls_back_a_permission_change(project: Path) -> None:
-    path = foil_root(project) / "templates" / "lead.toml"
-    before = path.read_bytes()
+    before = _roster_bytes(project)
     with pytest.raises(FoilError, match="permission is outside the fleet only"):
         update_template(project, "lead", "permission", "ask", in_fleet=True)
-    assert path.read_bytes() == before
+    assert _roster_bytes(project) == before
 
 
 def test_lead_cannot_set_permission(
@@ -682,12 +709,11 @@ def test_lead_cannot_set_permission(
     project: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    path = foil_root(project) / "templates" / "lead.toml"
-    before = path.read_bytes()
+    before = _roster_bytes(project)
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     assert main(["roster", "update", "lead", "permission=ask"]) == 1
     assert "permission is outside the fleet only" in capsys.readouterr().err
-    assert path.read_bytes() == before
+    assert _roster_bytes(project) == before
 
 
 def test_outside_caller_can_set_permission(
@@ -697,7 +723,8 @@ def test_outside_caller_can_set_permission(
 ) -> None:
     monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
     assert main(["roster", "update", "reviewer", "permission=auto"]) == 0
-    text = (foil_root(project) / "templates" / "reviewer.toml").read_text(encoding="utf-8")
+    text = (foil_root(project) / "roles.toml").read_text(encoding="utf-8")
+    assert 'id = "reviewer"' in text
     assert 'permission = "auto"' in text
     assert "updated template 'reviewer'" in capsys.readouterr().out
 
@@ -719,15 +746,16 @@ def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     templates = foil_root(project) / "templates"
-    (templates / "quiet.toml").write_text(
-        'harness = "fake"\npersona = "personas/missing.md"\nworktree = false\n'
-        'permission = "ask"\n',
-        encoding="utf-8",
+    _install(
+        project,
+        "quiet",
+        'harness = "fake"\npersona = "personas/missing.md"\nworktree = false\npermission = "ask"\n',
     )
-    (templates / "stranger.toml").write_text(
+    _install(
+        project,
+        "stranger",
         'harness = "no-such"\npersona = "personas/researcher.md"\nworktree = false\n'
         'permission = "ask"\n',
-        encoding="utf-8",
     )
     harnesses = foil_root(project) / "harnesses"
     (harnesses / "local.toml").write_text(
@@ -735,24 +763,26 @@ def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
         "[permission]\nask = []\nauto = []\n",
         encoding="utf-8",
     )
-    (templates / "local.toml").write_text(
+    _install(
+        project,
+        "local",
         'harness = "local"\npersona = "personas/researcher.md"\nworktree = false\n'
         'permission = "ask"\n',
-        encoding="utf-8",
     )
     (harnesses / "badbytes.toml").write_bytes(b"\xff\xfe")
-    (templates / "r2.toml").write_text(
+    _install(
+        project,
+        "r2",
         'harness = "badbytes"\npersona = "personas/researcher.md"\nworktree = false\n'
         'permission = "ask"\n',
-        encoding="utf-8",
     )
     locked = templates / "personas" / "locked.md"
     locked.write_text("# Locked\n\nYou cannot read this.\n", encoding="utf-8")
     locked.chmod(0)
-    (templates / "sealed.toml").write_text(
-        'harness = "fake"\npersona = "personas/locked.md"\nworktree = false\n'
-        'permission = "ask"\n',
-        encoding="utf-8",
+    _install(
+        project,
+        "sealed",
+        'harness = "fake"\npersona = "personas/locked.md"\nworktree = false\npermission = "ask"\n',
     )
     try:
         assert main(["roster", "list"]) == 0
@@ -801,10 +831,10 @@ def test_unreadable_utf8_persona_lists_with_an_empty_description(
     templates = foil_root(project) / "templates"
     (templates / "personas" / "bad.md").write_bytes(b"# Bad\n\xff\xfe")
     (templates / "personas" / "garbled.md").write_bytes(b"\xff")
-    (templates / "bad.toml").write_text(
-        'harness = "fake"\npersona = "personas/bad.md"\nworktree = false\n'
-        'permission = "ask"\n',
-        encoding="utf-8",
+    _install(
+        project,
+        "bad",
+        'harness = "fake"\npersona = "personas/bad.md"\nworktree = false\npermission = "ask"\n',
     )
     list_roster(project, as_json=False)
     out = capsys.readouterr().out
@@ -869,10 +899,10 @@ def test_a_credential_shaped_persona_line_is_never_printed(
     templates = foil_root(project) / "templates"
     (templates / "personas" / "leaky.md").write_text("# Leaky\n\nghp_canary\n", encoding="utf-8")
     (templates / "personas" / "loose.md").write_text("# Loose\n\nghp_canary\n", encoding="utf-8")
-    (templates / "leaky.toml").write_text(
-        'harness = "fake"\npersona = "personas/leaky.md"\nworktree = false\n'
-        'permission = "ask"\n',
-        encoding="utf-8",
+    _install(
+        project,
+        "leaky",
+        'harness = "fake"\npersona = "personas/leaky.md"\nworktree = false\npermission = "ask"\n',
     )
     registry = load_registry(project)
     registry["seats"]["leaky-1"] = {
@@ -918,9 +948,10 @@ def test_a_persona_through_a_symlinked_directory_is_refused(
     (outside / "x.md").write_text("# X\n\nOutside text.\n", encoding="utf-8")
     templates = foil_root(project) / "templates"
     (templates / "ext").symlink_to(outside, target_is_directory=True)
-    (templates / "ext.toml").write_text(
+    _install(
+        project,
+        "ext",
         'harness = "fake"\npersona = "ext/x.md"\nworktree = false\npermission = "ask"\n',
-        encoding="utf-8",
     )
     from foil.presets import load_template, persona_text
 
@@ -935,30 +966,30 @@ def test_a_persona_through_a_symlinked_directory_is_refused(
     assert "Outside text" not in listed
 
 
-def test_roster_update_rewrites_a_legacy_one_entry_file(project: Path) -> None:
-    path = foil_root(project) / "templates" / "lead.toml"
-    path.write_text(
+def test_roster_update_keeps_the_model_when_the_harness_changes(project: Path) -> None:
+    _install(
+        project,
+        "lead",
         'harness = "claude"\n'
         'model = "opus"\n'
         'persona = "personas/lead.md"\n'
         "worktree = false\n"
         'permission = "auto"\n',
-        encoding="utf-8",
     )
     update_template(project, "lead", "harness", "codex")
-    text = path.read_text(encoding="utf-8")
-    assert "[[harness]]" in text
-    assert 'id = "codex"' in text
+    text = (foil_root(project) / "mapping.toml").read_text(encoding="utf-8")
+    assert 'role = "lead"' in text
+    assert 'harness = "codex"' in text
     assert 'model = "opus"' in text
-    assert 'harness = "' not in text
     from foil.presets import load_template
 
     assert load_template(project, "lead")["harness"] == [{"id": "codex", "model": "opus"}]
 
 
 def test_roster_update_refuses_harness_flags_on_a_list(project: Path) -> None:
-    path = foil_root(project) / "templates" / "lead.toml"
-    path.write_text(
+    _install(
+        project,
+        "lead",
         'persona = "personas/lead.md"\n'
         "worktree = false\n"
         'permission = "auto"\n'
@@ -970,17 +1001,19 @@ def test_roster_update_refuses_harness_flags_on_a_list(project: Path) -> None:
         "[[harness]]\n"
         'id = "codex"\n'
         'model = "gpt-5.5"\n',
-        encoding="utf-8",
     )
-    before = path.read_bytes()
+    before = _roster_bytes(project)
     with pytest.raises(FoilError, match="more than one harness entry"):
         update_template(project, "lead", "harness", "gemini")
     with pytest.raises(FoilError, match="more than one harness entry"):
         update_template(project, "lead", "model", "other")
-    assert path.read_bytes() == before
+    assert _roster_bytes(project) == before
     update_template(project, "lead", "persona", "personas/reviewer.md")
-    text = path.read_text(encoding="utf-8")
-    assert 'id = "claude"' in text
-    assert 'id = "codex"' in text
-    assert 'persona = "personas/reviewer.md"' in text
+    from foil.presets import load_template
 
+    loaded = load_template(project, "lead")
+    assert loaded["harness"] == [
+        {"id": "claude", "model": "opus"},
+        {"id": "codex", "model": "gpt-5.5"},
+    ]
+    assert loaded["persona"] == "personas/reviewer.md"

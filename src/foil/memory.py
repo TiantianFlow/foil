@@ -14,7 +14,7 @@ from foil.store import SAFE_ID, actor, exclusive_lock, private_dir, read_json, s
 
 
 def _lock(toplevel: Path) -> Path:
-    return foil_root(toplevel) / "run" / "memory.lock"
+    return foil_root(toplevel) / "memory" / "lock"
 
 
 def _path(toplevel: Path, lesson_id: str) -> Path:

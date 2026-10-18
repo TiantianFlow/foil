@@ -48,7 +48,7 @@ def test_schema_markers_and_session_name_stay_at_the_0_2_0_contract(tmp_path: Pa
 
 def test_a_0_2_0_shaped_registry_still_loads(tmp_path: Path) -> None:
     repo = tmp_path / "project"
-    path = repo / ".foil" / "run" / "registry.json"
+    path = repo / ".foil" / "fleets" / "main" / "run" / "registry.json"
     path.parent.mkdir(parents=True)
     payload = {
         "schema_version": 1,

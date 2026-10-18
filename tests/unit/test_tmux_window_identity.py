@@ -139,7 +139,7 @@ def test_probe_does_not_ask_tmux_for_an_empty_or_plain_window_id(
     log = tmp_path / "called"
     executable = tmp_path / "tmux"
     executable.write_text(
-        "#!/bin/sh\necho called >> \"$FAKE_TMUX_LOG\"\nexit 1\n",
+        '#!/bin/sh\necho called >> "$FAKE_TMUX_LOG"\nexit 1\n',
         encoding="utf-8",
     )
     executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
@@ -345,7 +345,7 @@ def test_kill_of_a_live_seat_still_stops_its_window(
     assert main(["seat", "kill", "worker"]) == 0
     assert capsys.readouterr().err == ""
     assert _kills(tmp_path) == ["@1"]
-    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text())
     assert saved["seats"]["worker"]["state"] == "killed"
 
 
@@ -376,7 +376,7 @@ def test_kill_of_a_dead_seat_does_not_stop_a_reused_window(
     assert _kills(tmp_path) == []
     state = json.loads((tmp_path / "fake-tmux-state.json").read_text())
     assert "@1" in state["windows"]
-    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text())
     assert saved["seats"]["worker"]["state"] == "killed"
     assert saved["seats"]["other"]["state"] == ""
 
@@ -387,7 +387,7 @@ def test_kill_of_a_dead_seat_does_not_stop_a_reused_window(
     assert _kills(tmp_path) == []
     state = json.loads((tmp_path / "fake-tmux-state.json").read_text())
     assert set(state["windows"]) == {"@0", "@1"}
-    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text())
     assert saved["seats"]["worker"]["state"] == "killed"
     assert saved["seats"]["other"]["state"] == "killed"
 
@@ -414,7 +414,7 @@ def test_kill_of_a_dead_seat_with_no_marker_leaves_the_window(
     assert capsys.readouterr().err == ""
     assert _kills(tmp_path) == []
     assert "@1" in json.loads(state_path.read_text())["windows"]
-    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text())
     assert saved["seats"]["worker"]["state"] == "killed"
 
 
@@ -508,9 +508,11 @@ def test_archive_after_kill_frees_the_name_the_fake_tmux_stopped(
     assert captured.err == ""
     assert captured.out == "archived seat 'worker'\nkept branch foil/worker\n"
     assert "/store/worktrees/worker" not in captured.out
-    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text())
     assert "worker" not in saved["seats"]
-    body = next((foil_root(repo) / "run" / "archive").glob("*.txt")).read_text(encoding="utf-8")
+    body = next((foil_root(repo) / "fleets" / "main" / "run" / "archive").glob("*.txt")).read_text(
+        encoding="utf-8"
+    )
     assert "worktree: /store/worktrees/worker\n" in body
     assert "@1" not in json.loads((tmp_path / "fake-tmux-state.json").read_text())["windows"]
 
@@ -527,9 +529,9 @@ def test_archive_refuses_a_killed_record_whose_fake_window_is_still_running(
     assert main(["seat", "archive", "worker"]) == 1
     assert capsys.readouterr().err == "foil: seat 'worker' window is still running\n"
     assert _kills(tmp_path) == []
-    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text())
     assert saved["seats"]["worker"]["state"] == "killed"
-    assert not (foil_root(repo) / "run" / "archive").exists()
+    assert not (foil_root(repo) / "fleets" / "main" / "run" / "archive").exists()
 
 
 def test_archive_refuses_a_dead_pane_that_still_carries_markers(
@@ -549,7 +551,7 @@ def test_archive_refuses_a_dead_pane_that_still_carries_markers(
     assert capsys.readouterr().err == "foil: seat 'worker' window still exists\n"
     assert _kills(tmp_path) == []
     assert "@1" in json.loads(state_path.read_text())["windows"]
-    saved = json.loads((foil_root(repo) / "run" / "registry.json").read_text())
+    saved = json.loads((foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text())
     assert "worker" in saved["seats"]
 
 
