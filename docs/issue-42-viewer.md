@@ -2,28 +2,28 @@
 
 Issue #42 asks for a UI to view settings and fleets. The visual spec is
 the Magic Patterns design "Foil fleet viewer" linked from the issue.
-The behavior spec is the "Latest requirements" text agreed for the
-issue. This document answers how the viewer is built and run. It adds no
-requirement. Section 10 lists the requirement text the change would land
-in [requirements.md](requirements.md).
+The behavior spec is the text agreed on the issue, as amended there:
+`--port` and service steps are in scope, the full file must be
+viewable, and minor questions follow common practice. This document
+answers how the viewer is built and run. It adds no requirement.
+Section 10 lists the requirement text the change lands in
+[requirements.md](requirements.md).
 
 Read against `main` at 0.5.0, where the layout of PR #45 has landed:
 `harnesses.toml`, `roles.toml`, `mapping.toml`, and `fleets/<id>/` with
 `overrides.toml`, `board/`, and `run/`.
 
-## Decisions to make
+## Summary
 
-| # | Question | Recommendation |
+| # | Question | Answer |
 |---|---|---|
-| 1 | Same repository or a parallel one | Same repository, same package, one module |
-| 2 | Stack | Standard library `http.server`, HTML rendered on the server, inline CSS, a few lines of inline script |
-| 3 | How it runs | `foil view [--port N]` in the foreground, one process per project. Default port 7460, then the next free one, as Jupyter does. An explicit `--port` binds that port or fails |
-| 4 | Daemon | No daemon mode. launchd or `systemd --user` supervises the foreground process. The README and the operator skill give the steps. Foil writes no unit file |
-| 5 | Loopback | The common pattern: bind `127.0.0.1` only, refuse a foreign `Host` or `Origin`, strict CSP, no auth on loopback |
-| 6 | Other local users | Accept and document, as opencode, Syncthing, and Ollama do. Optional basic auth is the later step if it is needed |
-| 7 | Large files | A 1 MiB preview plus a Raw link that streams the whole file. The pane gets a More link |
-
-The rest of this document gives the reasons.
+| 1 | Same repository or a parallel one | Same repository, same package, a new module `foil.view` |
+| 2 | Stack | Standard library `socketserver` and `http.server`, threaded. HTML rendered on the server, inline CSS, a few lines of inline script |
+| 3 | How it runs | `foil view [--port N]` in the foreground, one process per project. Default port 7460, then the next free one up to 7509. An explicit `--port` binds that port or fails |
+| 4 | Service | No daemon mode. launchd or `systemd --user` supervises the foreground process. The README and the operator skill give the steps. Foil writes no unit file |
+| 5 | Loopback | Bind `127.0.0.1`. Accept a loopback `Host` only, and an `Origin` only when it matches that `Host`. GET and HEAD only. Strict headers. No auth on loopback, and the exposure to other local users is stated |
+| 6 | Large files | A 1 MiB preview plus a Raw view of the whole file. Files are opened without following any symlink |
+| 7 | Size | About 800 lines of package Python, CSS included. The N4 reason is stated in the pull request |
 
 ## 1. Same repository or a parallel one
 
@@ -32,85 +32,108 @@ the board, the registry, `seat list`, `peek`, `post`, or the session name
 updates the viewer **in the same change**. Only one repository can keep
 that promise.
 
-| | Same repository, a new module, `foil.view` | Parallel repository |
+| | Same repository, a new module `foil.view` | Parallel repository |
 |---|---|---|
-| Reading the store | Calls the readers the commands already use: `seat_rows`, `peek_text`, `roster_rows`, `read_lessons`, `fleet_overrides`, `read_maps`, `load_preset` | Imports Foil internals, which are not a stable API, or parses the files again and drifts |
+| Reading the store | Calls the same code the commands call, once five small refactors split reading from printing (section 7) | Imports Foil internals, which are not a stable API, or parses the files again and drifts |
 | Staying in step | A format change breaks the viewer's tests in the same pull request | A format change ships and the viewer finds out later |
 | Versions | One version. `foil --version` covers it | Two versions and a compatibility matrix against the registry schema (N7) |
-| Size (N4) | Adds about 550 lines to a package that is already 4,845 lines, against a 2,500 target | Core stays the same size |
+| Size (N4) | Adds about 800 lines to a package that is already 4,845 lines, against a 2,500 target | Core stays the same size |
 | Scope (section 11) | Section 11 must change: it lists "a UI, a server" as out of scope | Section 11 can stay, but the viewer then needs its own requirements |
 
-A third option, a second distribution built from the same repository
-(`foil-view`, depending on `foil-orchestrator==X.Y.Z`), keeps the
-readers shared and the core wheel smaller. Foil has no runtime
-dependencies, so this saves almost nothing. It doubles the release steps.
+A second distribution built from this repository (`foil-view`, pinned
+to `foil-orchestrator==X.Y.Z`) shares the code but doubles the release
+steps, and Foil has no runtime dependencies to save. It is not worth it.
 
-**Recommendation:** same repository, one module. State the N4 reason in
-the pull request: the viewer reuses the command readers so that it cannot
-drift from them, and that is worth the lines.
+**Answer:** same repository, one module. The pull request states the N4
+reason: the viewer reuses the command readers so that it cannot drift
+from them. The CSS stays in the module, so it is counted.
 
 ## 2. Stack
 
 | Option | For | Against |
 |---|---|---|
-| **A. `http.server` and HTML rendered on the server** | Standard library only (N1). No build step. One language. Every value goes through `html.escape` in one place. The page works with scripts off, except the copy button | The page is plain. The popovers are `<details>` elements, not floating panels |
-| B. Build the Magic Patterns React and Tailwind app. Ship the bundle in the package and serve a JSON API | Matches the design pixel for pixel | Needs Node and a lockfile in the repository and in CI. A built bundle of several hundred KB in a Python wheel. Two codebases describe one screen. The design's Google Fonts import must go, because the page may request nothing from another host |
-| C. A Python web framework (Flask, FastAPI) | Familiar | Breaks N1 |
-| D. A terminal UI (curses) | No browser, no port | Not what the issue asks for. Pane text inside a TUI is awkward |
+| **A. Standard library server, HTML rendered on the server** | Standard library only (N1). No build step. One language. The page works with scripts off, except the copy button | The page is plain. The popovers are `<details>` elements, not floating panels |
+| B. Build the Magic Patterns React and Tailwind app, ship the bundle, serve JSON | Matches the design pixel for pixel | Needs Node and a lockfile in the repository and in CI. A built bundle of several hundred KB in a Python wheel. Two codebases describe one screen. The design's Google Fonts import must go, because the page may request nothing from another host |
+| C. A Python web framework | Familiar | Breaks N1 |
+| D. A terminal UI | No browser, no port | Not what the issue asks for |
 
-**Recommendation:** A. The design is the layout and the words, not the
-React code. Its tokens (neutral greys, a 6 px radius, 13 px monospace,
-green, grey, and red state dots) are about 70 lines of CSS. System fonts
+**Answer:** A. The design is the layout and the words, not the React
+code. Its look (neutral greys, a 6 px radius, 13 px monospace, green,
+grey, and red state dots) is about 70 lines of CSS. System fonts
 replace Geist. Dark mode follows `prefers-color-scheme`.
 
-The page has four routes:
+The server is `socketserver.ThreadingTCPServer` with
+`BaseHTTPRequestHandler`, `daemon_threads = True`, and
+`allow_reuse_address = False`. It does not use `http.server.HTTPServer`,
+whose `server_bind` runs a reverse DNS lookup through `socket.getfqdn`.
+A single-threaded server is not enough: a browser keeps idle and
+speculative connections open, and one idle connection holds a
+single-threaded server for its whole socket timeout, so every real
+request waits. Threads remove that. A semaphore caps work at 8 requests
+at once; a request over the cap gets an empty 503.
+
+Routes:
 
 | Route | Screen |
 |---|---|
 | `/` | Fleets list, the help line, Lessons |
 | `/settings` | Roles, Harnesses, Default mapping |
 | `/fleets/<id>` | Attach, Workspace, Overrides, Agents, Board, Posts. `?open=<path>` opens one file |
-| `/fleets/<id>/seats/<name>` | Seat facts, Attach, Pane |
 | `/fleets/<id>/raw?open=<path>` | One listed board file, whole, as plain text (section 6) |
+| `/fleets/<id>/seats/<name>` | Seat facts, Attach, Pane. `?lines=N` sets the pane length |
 
 ## 3. How it runs
 
-- `foil view [--port N]`. Without `--port` it tries 7460, then each
-  next port up to 7509, and binds the first free one, the way Jupyter
-  starts at 8888. A second project's viewer lands on the next port.
-  With `--port N` it binds exactly that port or exits 1 with
-  `foil: port N is in use` (one line, N8). It does not move: a
-  supervisor (section 4) needs the address to stay put. Fifty busy
-  ports is one line too:
-  `foil: no free port in 7460-7509`.
-- It resolves the project the way every command does: `FOIL_PROJECT`,
-  otherwise the Git toplevel of the working directory. A supervised
-  viewer gets that from its working directory.
-- With `FOIL_SEAT_ID` set, it prints
+- **Port.** `foil view [--port N]`. Without `--port` it tries 7460, then
+  each next port up to 7509, and binds the first free one, the way
+  Jupyter starts at 8888 and moves up. Only `EADDRINUSE` moves to the
+  next port; any other bind error is one line and exit 1. With
+  `--port N` it binds exactly that port or exits 1 with
+  `foil: port N is in use`. It does not move, because a supervisor
+  (section 4) needs the address to stay put. `N` must be an integer from
+  1024 to 65535; anything else is `foil: invalid port`. Fifty busy ports
+  is `foil: no free port in 7460-7509`.
+- **Project.** It resolves the project the way every command does:
+  `FOIL_PROJECT`, otherwise the Git toplevel of the working directory. A
+  supervised viewer gets that from its working directory. The header
+  name and the Workspace line come from `project.json`'s recorded
+  checkout, not from the toplevel, so a viewer started in a linked
+  worktree still shows the main checkout's name.
+- **Inside the fleet.** With a non-empty `FOIL_SEAT_ID` (the same test
+  as every authority check), it prints
   `foil: view is outside the fleet only`, exits 1, and binds nothing.
   That check comes first.
-- It prints the address (the `http` scheme, then `127.0.0.1:<port>`) as
-  its only stdout line, flushed, so a script that reads one line works,
-  and so does a supervisor's log.
-- The server handles one request at a time and has a 10 s socket
-  timeout, so a stuck client cannot hold it. Each page costs one tmux
-  probe per seat, plus one capture on a seat page.
-- Ctrl-C and SIGTERM exit 0 with no output. A failure is one line on
-  stderr and exit 1 (N8), which a supervisor restarts after its
-  throttle interval.
-- No PID file, no lock, no state, no access log. Two viewers on one
-  project are two ports and do not interfere. Stopping either leaves
-  seats, windows, the registry, and the board unchanged.
-- The page does not refresh itself. A reload reads the files again.
-  Nothing is cached between requests. A viewer started before tmux or
-  before any fleet shows "no session yet" until a reload finds one.
+- **Output.** Its only stdout line is the address, `http`, then
+  `127.0.0.1:<port>`, with a trailing slash, flushed, so a script that
+  reads one line works and so does a supervisor's log.
+- **Stopping.** Ctrl-C and SIGTERM exit 0 with no output. `foil view`
+  catches `KeyboardInterrupt` itself, because `cli.main` does not, and
+  installs a SIGTERM handler that raises it. The serve loop runs in the
+  main thread, so nothing calls `shutdown()` from inside it.
+- **Errors.** A failure of the command is one line on stderr and exit 1
+  (N8). A failure inside a request never prints: `handle_error`,
+  `log_message`, and `log_error` are overridden, and an unexpected
+  exception in a handler is an empty 500. So the supervisor's log holds
+  the address line and at most one error line per start.
+- **Clients.** Each connection has a 10 s socket timeout. The request
+  line and headers must arrive within 10 s in total, or the connection
+  is closed; this stops a client that drips one byte at a time. A Raw
+  response to a slow reader holds only its own thread.
+- **State.** No PID file, no lock, no state, no access log. Two viewers
+  on one project are two ports and do not interfere. Stopping either
+  leaves seats, windows, the registry, and the board unchanged.
+- **Freshness.** The page does not refresh itself. A reload reads the
+  files again. A viewer started before tmux or before any fleet shows
+  "no session yet" until a reload finds one.
+- **Cost.** A fleet page probes tmux once per seat. A seat page probes
+  that seat twice (state, then peek) and captures once.
 
 ## 4. Running it as a service
 
-Your reading is right. launchd on macOS and `systemd --user` on Linux
-run an ordinary foreground program, start it at login, and restart it
-when it exits. The program needs no daemon mode. It needs four things,
-and `foil view` has them once `--port` exists:
+launchd on macOS and `systemd --user` on Linux run an ordinary
+foreground program, start it at login, and restart it when it fails.
+The program needs no daemon mode. It needs four things, and
+`foil view` has them once `--port` exists:
 
 | The supervisor needs | `foil view` |
 |---|---|
@@ -122,24 +145,30 @@ and `foil view` has them once `--port` exists:
 Foil does not write the unit file. Writing one is a file outside the
 store and would need its own command. The README gives the steps, and
 the operator skill gets an onboarding-style step: when the human asks
-for the viewer to keep running, the agent fills in the repository path,
-the port, and the absolute `foil` path, shows the file, and runs the
-load command only after the human agrees. One service per project; give
-each project its own port.
+for the viewer to keep running, the agent fills in the file, shows it,
+and loads it only after the human agrees.
 
-Three details decide whether a supervised viewer works:
+Rules for a service:
 
-- **`PATH`.** launchd starts agents with `/usr/bin:/bin:/usr/sbin:/sbin`.
-  Homebrew's `tmux` (`/opt/homebrew/bin`) is not on it, so
-  `foil view` would exit `foil: tmux is not installed`, and the
-  Harnesses page would call every CLI uninstalled. The unit sets `PATH`
-  to the human's shell `PATH`, read once with `echo $PATH`.
+- **One service per project, each on its own port, outside 7460-7509.**
+  A port inside that range can be taken by an ad hoc `foil view` while
+  the service is down (at login, or between restarts), and then the
+  bookmark shows another project. The page title carries the project
+  name, so a wrong page is visible.
+- **`PATH`.** launchd starts agents with a minimal `PATH`, so Homebrew's
+  `tmux` is not on it and `foil view` would exit
+  `foil: tmux is not installed`. The Harnesses page would also call
+  every CLI uninstalled. The unit sets `PATH` to the human's login-shell
+  `PATH`. The agent asks the human to run `echo $PATH` in their own
+  terminal, because the agent's own `PATH` may be a harness sandbox's.
 - **The store.** If the human sets `FOIL_HOME` or `XDG_DATA_HOME`, the
   unit sets the same value, or the viewer finds a different store.
 - **tmux.** The service runs as the same user, so it reaches the same
   tmux server socket. It must not set a different `TMUX_TMPDIR`.
+- **Upgrades.** A running service keeps the old code after Foil is
+  updated. Restart it after `uv tool install` or `foil init`.
 
-macOS, `~/Library/LaunchAgents/dev.foil.view.<project>.plist`:
+macOS, `~/Library/LaunchAgents/dev.foil.view.PROJECT.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -151,230 +180,272 @@ macOS, `~/Library/LaunchAgents/dev.foil.view.<project>.plist`:
   </array>
   <key>WorkingDirectory</key><string>/ABSOLUTE/PATH/TO/REPO</string>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>OUTPUT OF echo $PATH</string>
+    <key>PATH</key><string>THE HUMAN'S PATH</string>
   </dict>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardErrorPath</key><string>/tmp/foil-view-PROJECT.log</string>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/ABSOLUTE/HOME/Library/Logs/foil-view-PROJECT.log</string>
+  <key>StandardErrorPath</key><string>/ABSOLUTE/HOME/Library/Logs/foil-view-PROJECT.log</string>
 </dict></plist>
 ```
 
-Load with `launchctl bootstrap gui/$(id -u) <plist>`. Stop with
-`launchctl bootout gui/$(id -u)/dev.foil.view.PROJECT`.
+`SuccessfulExit` false restarts after a failure and not after a clean
+stop, matching systemd's `Restart=on-failure`. The log lives under the
+user's own `~/Library/Logs`, not in the shared `/tmp`. Load with
+`launchctl bootstrap gui/$(id -u) <plist>`. After editing the file, run
+`launchctl bootout gui/$(id -u)/dev.foil.view.PROJECT` first, then
+bootstrap again. A busy port fails once every 30 s and adds one line to
+the log each time.
 
-Linux, `~/.config/systemd/user/foil-view-<project>.service`:
+Linux, `~/.config/systemd/user/foil-view-PROJECT.service`:
 
 ```ini
 [Unit]
 Description=Foil viewer for PROJECT
 
 [Service]
-ExecStart=/ABSOLUTE/PATH/TO/foil view --port PORT
+ExecStart="/ABSOLUTE/PATH/TO/foil" view --port PORT
 WorkingDirectory=/ABSOLUTE/PATH/TO/REPO
-Environment=PATH=OUTPUT_OF_echo_$PATH
+Environment="PATH=THE HUMAN'S PATH, WITH EACH % WRITTEN AS %%"
 Restart=on-failure
-RestartSec=10
+RestartSec=30
 
 [Install]
 WantedBy=default.target
 ```
 
-Load with `systemctl --user enable --now foil-view-<project>`. Stop with
-`systemctl --user disable --now foil-view-<project>`. The log is
-`journalctl --user -u foil-view-<project>`. Without
+Load with `systemctl --user enable --now foil-view-PROJECT`. Stop with
+`systemctl --user disable --now foil-view-PROJECT`. Read the log with
+`journalctl --user -u foil-view-PROJECT`. Without
 `loginctl enable-linger`, it runs only while the user is logged in,
-which is what a viewer wants.
+which suits a viewer.
 
-The log holds the one stdout line and any one-line error. The viewer
-writes no access log, so it records no paths and no pane text.
+The README examples use these placeholders, not real home paths, and
+no `http` URL, so the docs checks pass.
 
 A machine-wide viewer for every project stays out: the agreed text
 opens each repository by running the viewer from it.
 
 ## 5. Loopback, and who can reach it
 
-How other local web UIs do it:
+How other local web UIs handle this:
 
-| App | Bind | Port | Host check | Auth by default |
-|---|---|---|---|---|
-| Jupyter Server | 127.0.0.1 | 8888, then the next free port | Yes. A non-local `Host` gets 403, against DNS rebinding | Token in the printed URL |
-| opencode `serve` / `web` | 127.0.0.1 | `--port` | — | None. `OPENCODE_SERVER_PASSWORD` turns on basic auth, and binding `0.0.0.0` calls for it |
-| Syncthing GUI | 127.0.0.1:8384 | config | Yes, since 0.14.6, against DNS rebinding | None. A GUI password is optional |
-| Ollama API | 127.0.0.1:11434 | `OLLAMA_HOST` | Origin allowlist (`OLLAMA_ORIGINS`) | None |
-| "deepseek-harness" `dsh web` | 127.0.0.1:3080 | — | — | — (one third-party guide; it refuses `0.0.0.0`; not confirmed from an official source) |
+| App | Bind | Host check | Auth by default |
+|---|---|---|---|
+| Jupyter Server | 127.0.0.1, port 8888 then the next free one | A non-local `Host` gets 403, against DNS rebinding. `localhost` and loopback addresses count as local | Token in the printed URL |
+| opencode `serve` / `web` | 127.0.0.1, `--port` | — | None. `OPENCODE_SERVER_PASSWORD` turns on basic auth; binding `0.0.0.0` calls for it |
+| Syncthing GUI | 127.0.0.1:8384 | Since 0.14.6 the GUI answers only to a `localhost`, `127.0.0.1`, or `[::1]` host, against DNS rebinding | None. A GUI password is optional |
 
-The common pattern is: bind loopback only, refuse a foreign `Host` or
-`Origin`, and ship no auth on loopback, with auth optional. Jupyter is
-the exception with a token by default, because a notebook runs code.
-`foil view` runs nothing and types nothing, so it follows the common
-pattern.
+The common pattern is: bind loopback, refuse a non-loopback `Host`, and
+ship no auth on loopback, with auth optional. Jupyter adds a token
+because a notebook runs code. `foil view` runs nothing and types nothing,
+so it follows the common pattern.
 
 What the server does:
 
-- Binds `127.0.0.1` only. Not `0.0.0.0`, not `::`, not `localhost`,
-  which may resolve to `::1` or something else. There is no flag to
-  bind anything else.
-- **Host.** A request whose `Host` is not `127.0.0.1:<port>` gets 403
-  and an empty body, the same rule as Jupyter and Syncthing. A page on
-  `evil.example` that rebinds its name to `127.0.0.1` makes requests the
-  browser counts as same-origin. A same-origin GET carries no `Origin`,
-  but it does carry `Host: evil.example:<port>`, and a page cannot set
-  `Host`.
-- **Origin.** A request whose `Origin` is anything but the viewer's own,
-  including `null`, gets the same empty 403. A navigation with no
-  `Origin` loads the page.
-- Every error response (bad method, bad request line) is an empty body.
-  `send_error` is replaced so the standard error page is never sent.
-- Headers: `Content-Security-Policy: default-src 'none'; style-src
+- **Bind.** `127.0.0.1` only. No flag binds anything else.
+- **Host.** The `Host` hostname must be `127.0.0.1`, `localhost`, or
+  `[::1]`, with any port. A missing `Host`, or any other name, gets 403
+  and an empty body. A page on `evil.example` that rebinds its name to
+  `127.0.0.1` still sends `Host: evil.example:<port>`, and a page cannot
+  set `Host`. Any port is allowed so `ssh -L 8000:127.0.0.1:7460`
+  works; the README already sells use over SSH.
+- **Origin.** When `Origin` is present it must equal `http://` plus the
+  request's own `Host`. Anything else, including `null`, gets the empty
+  403. A navigation with no `Origin` loads the page.
+- **Methods.** GET and HEAD. Every other method gets an empty 405.
+  `send_error` is replaced, so no standard error page is ever sent.
+- **Headers.** `Content-Security-Policy: default-src 'none'; style-src
   'unsafe-inline'; script-src 'nonce-<random>'; base-uri 'none';
-  form-action 'none'; frame-ancestors 'none'`, `Cache-Control:
+  form-action 'none'; frame-ancestors 'none'`,
+  `Cross-Origin-Resource-Policy: same-origin`, `Cache-Control:
   no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy:
-  no-referrer`. The page cannot load anything from another host, even by
-  mistake. The favicon is `data:,`.
-- Pane text, board files, and persona lines are written by agents, so
-  the page treats them as hostile. Each value is escaped once, where it
-  becomes HTML. There are no inline event handlers. `capture-pane` runs
-  without `-e`, so the pane is plain text.
+  no-referrer`. CORP stops another site from loading a viewer response
+  as an image or a script, which carries a valid `Host` and no
+  `Origin`. The page cannot load anything from another host. The
+  favicon is `data:,`.
+- **Hostile text.** Pane text, board files, file names, and persona
+  lines are written by agents. Every value is escaped where it becomes
+  HTML. A value inside a link (`?open=`) is percent-encoded with
+  `urllib.parse.quote`, then escaped; the server decodes it and compares
+  it with the listing. There are no inline event handlers.
+  `capture-pane` runs without `-e`, so the pane is plain text.
+- **Launch argv.** Preset `command` tokens are not scanned when a preset
+  loads. Before the Harnesses table shows a token, the credential scan
+  that mail uses runs on it, and a matching token is shown as
+  `[hidden]`.
 
-Who can still read it:
+Who can still read the page:
 
-- **The same user, including seats.** They can already read the same
-  files in the store. Refusing `foil view` inside the fleet keeps a seat
-  from opening a page that lists every fleet. It does not stop a seat
-  that wants to `curl` a running viewer (F5: cooperative, not hostile).
-- **Other users on the same machine.** The store is mode 0700, and
-  loopback TCP is open to every local user. This is the same exposure
-  opencode, Syncthing, and Ollama accept by default. The README says it
-  in one sentence, next to the service steps, because a service makes
-  the viewer run all day. If shared machines matter later, the common
-  next step is opencode's: an environment variable that turns on basic
-  auth. That fits a unit file (`Environment=`) better than a token in a
-  URL that changes each run.
+- **The same user, including seats.** They can already read the store
+  directly. Refusing `foil view` inside the fleet keeps a seat from
+  opening a page that lists every fleet. It does not stop a seat that
+  `curl`s a running viewer (F5: cooperative, not hostile).
+- **Other users on the same machine.** The project folder is mode 0700
+  and its files are 0600, and the tmux socket is private, so today
+  other users cannot read pane text or the board. Loopback TCP is open
+  to every local user, so while the viewer runs, they can. This is the
+  same trade opencode and Syncthing make by default. It goes into F34
+  and D2, not only the README, so it is a stated limit. The common next
+  step, if it is ever needed, is opencode's: an environment variable
+  that turns on basic auth, which fits a unit file.
 
 ## 6. Large files and long panes
 
-The rule is that the full file can always be seen. The common approach
-for a file viewer (GitHub and GitLab blobs, Jenkins console logs) is a
-size-limited preview plus a link to the raw file, not infinite scroll:
+The full file can always be seen. The common approach for a file viewer
+(GitHub and GitLab blobs, Jenkins console logs) is a size-limited
+preview plus a raw view, not infinite scroll:
 
-- An opened board file renders its first 1 MiB as escaped HTML. When the
-  file is larger, a line under it says `Showing the first 1 MiB of
-  <size>.` beside a **Raw** link.
-- Every opened file has the **Raw** link:
-  `/fleets/<id>/raw?open=<path>`. It streams the whole file as
-  `text/plain; charset=utf-8` with `nosniff` and
-  `Content-Security-Policy: sandbox`, so the browser shows any size,
-  searches it with Ctrl-F, and never runs it. The same listing rule
-  applies: only a path from the board listing is served.
-- The listing shows each file's size from `stat`, not a line count, so a
-  page load does not read every mail file.
-- The pane shows 40 lines, as `seat peek` does. A **More** link reloads
-  the page with `?lines=` doubled, up to tmux's history limit. That is
-  `peek --lines N`, not a new reading of the pane.
-
-Infinite or lazy loading would need a byte-range endpoint and script on
-the page. The raw link gives the full file with neither, so this
-version does not do it.
+- An opened board file shows its first 1 MiB, escaped. When the file is
+  larger, a line says `Showing the first 1 MiB of <size>.`
+- Every opened file has a **Raw** link to
+  `/fleets/<id>/raw?open=<path>`. It streams the whole file in 64 KiB
+  chunks as `text/plain; charset=utf-8` with `nosniff` and
+  `Content-Security-Policy: sandbox`. The browser shows any size,
+  Ctrl-F searches it, and nothing in it runs.
+- **Opening safely.** A listed path is not enough. Between the listing
+  and the open, a seat can swap a file or a directory for a symlink or a
+  FIFO. So the viewer opens the board directory, then each path
+  component with `os.open(name, O_RDONLY | O_NOFOLLOW | O_DIRECTORY,
+  dir_fd=parent)`, then the file with `O_RDONLY | O_NOFOLLOW |
+  O_NONBLOCK`. It requires `S_ISREG` from `fstat` and serves the preview
+  and Raw from that one descriptor. A symlink anywhere on the path, or a
+  file that is not regular, opens nothing and shows
+  `foil: cannot read: <path>`.
+- **Listing.** Walk the board without following symlinks. Skip
+  symlinks, and skip names that start with `.`, which hides the
+  `.<name>.*.tmp` files an atomic write leaves for a moment. Each row
+  shows the size from `lstat`, not a line count, so a page load does not
+  read every mail file.
+- **Pane.** 40 lines by default, as `seat peek`. A **More** link doubles
+  `?lines=` up to 1280. Any other value of `?lines=` is treated as 40.
+  tmux refuses output over 64 KiB (`tmux.py`), so a wide pane can fail
+  before 1280; the page then shows that one-line peek error and offers
+  the shorter capture. This is `peek --lines N`, not a new reading of
+  the pane.
 
 ## 7. Reading the store
 
-- **Reuse, not reimplement.** The viewer calls the functions the
-  commands call. Five small refactors split the printing from the
-  reading, with output unchanged:
-  `seat_rows` from `list_seats`, `peek_text` from `peek_seat`,
-  `roster_rows` from `list_roster`, `read_lessons` from `list_lessons`,
-  and `preset_ids` from `installed_presets`.
+- **Refactors.** Five splits of reading from printing, with command
+  output unchanged: `seat_rows` from `list_seats` (also returning
+  `branch` and `window_id`, which `seat list` keeps out of its output),
+  `peek_text` from `peek_seat`, `roster_rows` from `list_roster`,
+  `read_lessons` from `list_lessons`, and `preset_ids` from
+  `installed_presets`.
 - **Choosing a fleet.** `fleet_dir()` reads `FOIL_FLEET` from the
-  environment. The viewer must read every fleet in one process. Pass the
-  fleet id as an optional argument through `fleet_dir`, `registry_path`,
-  `load_registry`, `fleet_overrides`, `seat_rows`, and `peek_text`. That
-  is cleaner than setting `os.environ` around each read, which only works
-  because the server is single-threaded.
+  environment, and the threaded server cannot set it per request. An
+  optional `fleet` argument goes through `fleet_dir`, `registry_path`,
+  `load_registry`, `fleet_overrides`, `_target`, `_session_name`,
+  `seat_rows`, and `peek_text`. Commands pass nothing and behave as
+  today.
+- **One `git rev-parse` per request.** `foil_root()` runs git on every
+  call, from about 25 call sites. A per-request cache of
+  `_common_dir`, held in a `contextvars.ContextVar` that the handler sets
+  and clears, removes the repeats without changing those signatures.
 - **Fleets** are the directories under `fleets/` whose names are safe
-  ids and that are not symlinks. An unreadable registry or override file
-  is one red line in that fleet's row or section. The other fleets, and
-  the rest of that page, still render.
-- **Settings.** Roles are `roster_rows`, so the description follows the
-  same rule as `roster list`, and a persona with no role is listed as
-  `+ <name>`. Harnesses are every eligible id from `preset_ids`: id,
-  "installed" from `shutil.which(command[0])`, the model ids, `command`
-  joined with spaces and placeholders as written, and the `env` names.
-  Values are never read. `fake` is left out. A list file that does not
-  load is named under the table. The default mapping is one table row per
-  `[[map]]` row, in file order.
+  ids and that are not symlinks.
+- **Errors stay in their section.** Every section is built inside its
+  own `try`. Any exception there (`FoilError`, `TmuxError`, `OSError`,
+  `UnicodeDecodeError`, a TOML error) becomes one red line in that
+  section, using the `FoilError` text when there is one and
+  `foil: unreadable` otherwise. One bad fleet leaves the others; a bad
+  `roles.toml` leaves Harnesses; one bad lesson file empties Lessons
+  into one line and leaves the fleet list.
+- **Settings.** Roles are `roster_rows`, so the description follows
+  `roster list`; a persona with no role is `+ <name>`. Harnesses are
+  every eligible id from `preset_ids`: id, installed from
+  `shutil.which(command[0])`, the model ids, the launch argv, and the
+  `env` names. Values are never read. The argv keeps placeholders as
+  written and quotes only a token that contains whitespace, so token
+  boundaries survive. `fake` is left out. A list file that does not load
+  is named under the table. The default mapping is one row per `[[map]]`
+  row, in file order; an omitted model shows `no model`.
 - **Overrides** show the last row for each role: role, next-spawn model,
-  and the note column when any row has a note.
-- **Next-spawn model.** For a seat's role, the line appears when the
-  last override's model differs from the model of
+  and the note column when any row has a note. An empty file shows "No
+  overrides. The next spawn uses the default mapping."
+- **Next-spawn model.** For a seat's role, the second line appears when
+  the last override's model differs from the model of
   `entries[n % len(entries)]`, where `n` is that role's stored seat
-  count. That is the model spawn would pick without the override (F3).
-- **Attach.** `tmux attach -t <tmux_session>` from the registry, quoted
-  with `shlex.quote`. An empty session says the fleet has not started.
-  A seat with a window id adds `\; select-window -t <window id>`. Nothing
-  is derived from the directory name.
-- **Board and posts.** Walk `fleets/<id>/board/` without following
-  symlinks. A symlinked file or directory is skipped. `room/` is Posts,
-  everything else is Board, and `status.md` comes first. A file is
-  opened only when `?open=` names a path **from that listing**, so a
-  path from the URL never reaches the filesystem and `..` is impossible
-  by construction. The bytes are decoded as UTF-8 with replacement.
-  Section 6 covers size.
-- **Pane.** `peek_text(name, lines=40)`. A `FoilError` is shown as its
-  one line, with no pane text. The capture is not stored, logged, or
-  classified.
-- **Writes nothing.** None of the readers above creates a file. The
-  viewer never calls `ensure_board`, `ensure_registry`, or a function
-  that takes the registry lock. A test enforces this (section 8).
+  count. That is what spawn picks without the override (F3). When the
+  mapping or the overrides fail to load, or the role has no mapping
+  rows, there is no second line, and the section that failed shows its
+  error.
+- **Attach.** From the registry's `tmux_session`:
+  `tmux attach -t '=<session>'`. The `=` makes tmux match the exact
+  name. Without it tmux matches a prefix, and the `main` fleet's session
+  name is a prefix of every other fleet's (`_session_name`), so a gone
+  `main` session would attach to another fleet. An empty session shows
+  "No session yet. This fleet has not started." A seat adds
+  `\; select-window -t <window id>` only when that seat's probe found
+  the window still carrying this fleet's and this seat's markers. A
+  killed seat keeps its old window id, and ids are reused after a tmux
+  restart, so a stored id alone is not trusted. Nothing is derived from
+  the directory name. The operator skill's `tmux attach -t <session>`
+  gains the same `=`.
+- **Posts** are grouped by thread: one heading per `room/<id>/`, its
+  files under it in name order.
+- **Writes nothing.** None of the readers creates a file. The viewer
+  never calls `ensure_board`, `ensure_registry`, `private_dir`, or a
+  function that takes a lock. A test enforces this (section 9).
 
-Every value the page shows is looked up again on each request.
-`foil_root()` runs `git rev-parse` on each call, so a request should
-resolve it once and pass the folder down. That saves tens of git
-processes per page.
+## 8. What the visual design does not cover
 
-## 8. What the design does not cover
+These states are missing from the Magic Patterns design. The agreed
+text decides each one:
 
-The design is ready to build from. These states are missing from it,
-and the agreed text decides each one:
-
-| Gap in the design | Resolution from the agreed text |
+| Gap in the design | Resolution |
 |---|---|
 | The seat page shows "not found" when there is no capture | Every seat opens. A killed seat, or a dead one whose window is gone, shows peek's one-line error |
-| Attach always adds `select-window` | No window id: the fleet command alone. No session: "no session yet" |
+| Attach always adds `select-window` | Only when the window is verified. No session: "no session yet" |
 | No next-spawn model on the seat page | Shown beside the recorded pair |
 | The override type carries a harness | Not shown. Overrides replace the model only |
 | No note column on overrides | Added when any row has a note |
 | One model per role in the default mapping | One row per `[[map]]` row, each with its own model, in order |
 | No persona-only roles | Listed as `+ <name>` |
 | No unreadable-fleet state | One error line in that fleet's row |
+| Posts are a flat list | Grouped by thread |
 | Google Fonts import | Removed. System fonts |
 
 ## 9. Tests
 
-Unit tests use a hand-built project and a stand-in tmux, the same way
-`tests/test_room_post.py` does:
+Unit tests use a hand-built project and a stand-in tmux, the way
+`tests/test_room_post.py` does. The base port is injectable, so tests
+never hold 7460.
 
 - `FOIL_SEAT_ID` set: exit 1, the exact stderr line, and no socket
-  opened. Patch `socketserver.TCPServer` to fail if it is constructed.
-- Origin: none, own, other, and `null`. Host: own and other. Each
-  rejection has an empty body.
-- Every page is fetched over a real socket. The stdout line is checked
-  first.
-- Roles, the persona-only row, an invalid template, harness rows with a
-  missing binary and an invalid `harnesses/<id>.toml`, and mapping rows
-  in order with per-row models.
-- Overrides: none, one, several for one role (the last wins), with a
-  note, and an invalid file.
-- A next-spawn line that appears and one that does not (an override
-  equal to the mapping model).
-- Attach with no session, with a session, and with and without a window
-  id.
-- Ports: with 7460 held, the default binds 7461 and prints it; an
-  explicit busy `--port` is one stderr line and exit 1; SIGTERM exits 0.
-- A file over 1 MiB: the preview is cut with the size line, and Raw
-  returns every byte with `text/plain` and `sandbox`.
-- Board: a symlinked file and a symlinked directory are skipped,
-  `?open=../../project.json` and an unlisted path open nothing, and
-  hostile text such as `<script>` in a board file or pane is escaped.
+  bound (patch `socket.socket.bind` to fail the test). An empty
+  `FOIL_SEAT_ID` serves.
+- Ports: with the base held, the default binds the next port and prints
+  it; with every port in the range held, the range error; an explicit
+  busy `--port`, `foil: port N is in use`; `--port 80` and
+  `--port 70000`, `foil: invalid port`; SIGTERM exits 0.
+- Access: `Host` of `127.0.0.1`, `localhost`, and a forwarded port load;
+  `evil.example` and a missing `Host` get an empty 403; `Origin` equal
+  to the `Host` loads, any other and `null` get an empty 403; POST gets
+  an empty 405; every response carries the headers in section 5.
+- Clients: an idle connection does not delay a second request; a client
+  that sends a header byte every 5 s is closed after 10 s.
+- Every page is fetched over a real socket.
+- Settings: roles, a persona-only row, an invalid `roles.toml` (Roles
+  shows one line, Harnesses still renders), a missing binary, an invalid
+  `harnesses/<id>.toml`, a credential-shaped argv token shown as
+  `[hidden]`, mapping rows in order with per-row models.
+- Overrides: none, one, several for one role (the last wins), a note,
+  an invalid file.
+- Next spawn: a line that appears, and none when the override equals the
+  mapping model.
+- Attach: no session; a session; a verified window; a killed seat with
+  a stale id (no `select-window`); the `=` prefix present.
+- Board: a symlinked file and directory are skipped; a dotfile is
+  skipped; an unlisted `?open=` and `../../project.json` open nothing; a
+  file swapped for a symlink after listing, a parent directory swapped
+  for a symlink, and a FIFO all show `foil: cannot read`, and the FIFO
+  does not hang; a file over 1 MiB shows the cut line, and Raw returns
+  every byte with `text/plain` and `sandbox`; `<script>` in a file name,
+  a file body, and a pane is escaped.
+- Errors: a `TmuxError` during peek is one line in the Pane section; an
+  exception in a handler is an empty 500 and nothing on stderr.
 - A second fleet with a broken registry leaves the first on screen.
 - **Writes nothing:** snapshot every path, mode, and byte under the
   store, crawl every page and every listed file, then compare.
@@ -383,38 +454,59 @@ One end-to-end test with real tmux and the `fake` harness: spawn a
 lead, load its seat page, check that the pane text matches `seat peek`,
 stop the viewer, and check that the window is still there.
 
-Standing checks that change: the command-surface test gains `view`, with
-`--port N` and no positionals. The size report shows the new count.
+Standing checks that change:
+
+- `tests/test_command_surface.py`: `view` with `--port N` and no
+  positionals in `SECTION_6`; `foil view` in `SECTION_6_SYNOPSES`; the
+  asserted counts become "nine top-level commands" and "twenty-three
+  actions".
+- `tests/test_skills.py`: `("view",): {"--port"}` in `FLAGS`, and
+  `("view",)` in the operator's `ROLE_COMMANDS`.
+- The size report shows the new count.
 
 ## 10. Requirement text this change lands
 
-- **Section 6.1:** a row `foil view` | `--port N` (default: the first free port from 7460)
-  | serves the read-only page (F34). The count becomes nine top-level
-  commands and twenty-three actions.
+- **Section 6.1:** a row `foil view` | `--port N` | serves the read-only
+  page (F34). The count becomes nine top-level commands and twenty-three
+  actions.
 - **Section 6.2:** a `view` column: outside the fleet yes, lead no,
   worker no.
-- **F34 (new, under Visibility):** the agreed text, condensed, with
-  these changes. `--port N` binds that port or fails with one line; it
-  is the only flag. The `Host` rule joins the `Origin` rule. An opened
-  file shows a 1 MiB preview and a raw view of the whole file. "No
-  flags" becomes "one flag".
-- **"Keep the screen in step":** one sentence in F34 or in CONTRIBUTING
-  "Rules every change keeps".
+- **F34 (new, under Visibility):** the agreed text, condensed, plus
+  every user-visible rule this design adds: the port range 7460-7509
+  and `--port` validation; the messages `foil: port N is in use`,
+  `foil: no free port in 7460-7509`, `foil: invalid port`, and
+  `foil: view is outside the fleet only`; the stdout line; exit 0 on
+  Ctrl-C and SIGTERM; the `Host`, `Origin`, and method rules; the
+  1 MiB preview, the Raw view and its headers; `?lines=` and its cap;
+  the attach command with `=` and the verified window; and the
+  exposure to other local users.
+- **"Keep the screen in step":** one sentence in F34, and a line in
+  CONTRIBUTING "Rules every change keeps".
+- **Section 8, operator row:** the service step: fill in the unit file
+  with the human's `PATH` and a port outside 7460-7509, show it, load
+  it only after the human agrees, and restart it after an upgrade. The
+  `tmux attach -t '=<session>'` form.
 - **Section 11:** "A UI, a server, MCP, or a hosted service" becomes "A
-  UI or server other than `foil view`, a viewer that writes or types into
-  a pane, a daemon mode or a command that installs a service, MCP, or a
-  hosted service."
+  UI or server other than `foil view`, a viewer that writes or types
+  into a pane, a daemon mode or a command that installs a service, MCP,
+  or a hosted service."
+- **D2:** the README limits gain the viewer's exposure to other local
+  users.
 - **N4:** no text change. The pull request states the reason.
-- **Documentation:** a README section with the launchd and systemd
-  steps and the shared-machine sentence (and D3, the Chinese README); an
-  operator-skill step that fills in the unit file for the human and loads
-  it only after they agree; a row in [architecture.md](architecture.md);
-  and a CHANGELOG entry.
+- **Finish everywhere:** README "runs no daemon" and "no daemon and no
+  GUI" (and the same lines in README.zh-CN.md), and the `pyproject.toml`
+  description "Headless", are reworded: Foil itself runs no daemon, and
+  `foil view` is an optional read-only page. A README section has the
+  service steps. [architecture.md](architecture.md) gains a row for the
+  module. CHANGELOG gets an entry.
 
 ## 11. Settled by common practice
 
 1. Default port: a fixed default with fallback to the next free port,
    as Jupyter does. An explicit `--port` does not fall back.
-2. Shared machines: documented, with no auth on loopback, as opencode,
-   Syncthing, and Ollama do. Optional basic auth through an environment
+2. Other local users: no auth on loopback, stated as a limit, as
+   opencode and Syncthing do. Optional basic auth through an environment
    variable is the later step if it is needed.
+3. Large files: a preview and a raw view, as code hosts and CI logs do.
+4. Service: the platform supervisor runs the foreground process; Foil
+   writes no unit file.
