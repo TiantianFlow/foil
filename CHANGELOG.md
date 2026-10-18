@@ -28,6 +28,18 @@ Do this between goals. Do not resume a seat that was started on 0.4.
 - The init report lists a persona as available only when `roles.toml` has no row for it.
 - `foil post` writes the current fleet's room. Another fleet's room stays unchanged.
 
+## [0.4.5] - 2026-10-18
+
+`foil --version` prints 0.4.5.
+
+### Added
+
+- `foil seat archive NAME` frees a killed worker's name so it can be spawned again. The old record is a prose file under `run/archive/`, and the registry schema stays 1. The worktree, branch, mailbox, plan, and instruction file stay. A dirty tree is left in place on purpose. `foil seat list` omits the archived seat. `foil seat list --archived` prints the stored worktree path and branch. `seat archive` holds the registry lock across its tmux probe. Spawn, kill, and resume re-read the registry under that lock before they write, so they do not put an archived seat back. A `display-message` failure proceeds rather than refuses. A first launch says older mail may be from an earlier goal when the seat is the lead or when that name already has an archive file. A normal worker's first launch does not, and a resume does not rewrite the sentence. (#32)
+
+### Changed
+
+- The command surface is eight top-level commands and twenty-two actions.
+
 ## [0.4.4] - 2026-10-18
 
 `foil --version` prints 0.4.4.
@@ -322,6 +334,7 @@ with mail and status kept in files on disk.
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
 [0.5.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.0
+[0.4.5]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.5
 [0.4.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.4
 [0.4.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.3
 [0.4.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.2

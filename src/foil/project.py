@@ -373,14 +373,17 @@ def _run_files(root: Path) -> list[Path]:
     targets: list[Path] = []
     for run in _run_dirs(root):
         targets.append(run / "registry.json")
-        for folder in ("plans", "instructions"):
+        for folder in ("plans", "instructions", "archive"):
             directory = run / folder
-            if directory.is_dir():
-                targets.extend(
-                    path
-                    for path in directory.iterdir()
-                    if path.is_file() and not path.is_symlink()
-                )
+            # A symlink would rewrite files outside the store. Archive and list
+            # already refuse that directory.
+            if directory.is_symlink() or not directory.is_dir():
+                continue
+            targets.extend(
+                path
+                for path in directory.iterdir()
+                if path.is_file() and not path.is_symlink()
+            )
     return [path for path in targets if path.is_file() and not path.is_symlink()]
 
 
@@ -419,7 +422,9 @@ def _replace_text(root: Path, pairs: list[tuple[str, str]]) -> None:
     )
     if not usable:
         return
-    for path in _run_files(root):
+    from foil.store import exclusive_lock
+
+    def rewrite(path: Path) -> None:
         text = path.read_text(encoding="utf-8")
         replaced = text
         for old, new in usable:
@@ -429,6 +434,22 @@ def _replace_text(root: Path, pairs: list[tuple[str, str]]) -> None:
             )
         if replaced != text:
             _write_json(path, replaced if replaced.endswith("\n") else replaced + "\n")
+
+    for path in _run_files(root):
+        if path.parent.name == "archive":
+            continue
+        if path.name != "registry.json":
+            rewrite(path)
+            continue
+        with exclusive_lock(path.with_suffix(".lock")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            archive = path.parent / "archive"
+            if not archive.is_symlink() and archive.is_dir():
+                for child in archive.iterdir():
+                    if child.is_file() and not child.is_symlink():
+                        rewrite(child)
+            rewrite(path)
 
 
 def _texts_in_run(root: Path) -> list[str]:
