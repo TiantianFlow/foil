@@ -49,7 +49,7 @@ Stop another seat by name. You may not kill yourself, and you may not run `foil 
 foil seat kill implementer-1
 ```
 
-Free a killed worker's name. This does not restart the seat, and it does not delete the branch or uncommitted files. You may not archive yourself. `foil seat list` no longer shows that seat. `foil seat list --archived` shows the stored worktree.
+Free a killed worker's name. This does not restart the seat, and it does not delete the branch, the mailbox, or uncommitted files. You may not archive yourself. `foil seat list` no longer shows that seat. `foil seat list --archived` shows the stored worktree.
 
 ```text
 foil seat archive implementer-1
