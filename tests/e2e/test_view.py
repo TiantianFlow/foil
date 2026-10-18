@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
+from foil.project import foil_root
 from foil.store import load_registry
 from tests.e2e.test_archive import _peek, _windows
 from tests.e2e.test_scenarios import _close, _prepare, _scripts, _status, _wait
@@ -66,6 +67,14 @@ def _states(port: int) -> dict[str, str]:
     return found
 
 
+def _fleet_files(repo: Path) -> dict[str, bytes]:
+    """The registry and every board file, by path."""
+
+    fleet = foil_root(repo) / "fleets" / "main"
+    files = [fleet / "run" / "registry.json", *sorted((fleet / "board").rglob("*"))]
+    return {str(path): path.read_bytes() for path in files if path.is_file()}
+
+
 def _attach(port: int, name: str) -> str:
     page = _page(port, f"/fleets/main/seats/{name}")
     return html.unescape(page.split("<code>")[1].split("</code>")[0])
@@ -103,6 +112,8 @@ def test_the_viewer_follows_a_fleet_from_start_to_teardown(
         assert "1 file" in posts and "room/" in posts
         status = _page(port, "/fleets/main?open=status.md")
         assert "state: done" in status and "- [x] Merge foil/implementer-1" in status
+        raw = _get(port, "/fleets/main/raw?open=status.md")[2]
+        assert raw.decode() == _status(repo)
         window = registry["seats"]["implementer-1"]["window_id"]
         assert _attach(port, "implementer-1") == (
             f"tmux attach -t '={session}' \\; select-window -t {window}"
@@ -124,10 +135,25 @@ def test_the_viewer_follows_a_fleet_from_start_to_teardown(
         window = load_registry(repo)["seats"]["lead"]["window_id"]
         assert _attach(port, "lead").endswith(f"select-window -t {window}")
 
-        # Stopping the viewer leaves the windows; a second viewer reads the same fleet.
+        # Stopping the viewer leaves the windows, the registry, and the board.
+        before = _fleet_files(repo)
         _stop(process)
         assert window in _windows(session)
+        assert _fleet_files(repo) == before
         process, port = _viewer(repo)
+
+        # A pane whose process exited: dead, still attachable, still peekable.
+        target = load_registry(repo)["seats"]["reviewer-1"]["window_id"]
+        pid = subprocess.run(
+            ["tmux", "display-message", "-p", "-t", target, "#{pane_pid}"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        os.kill(int(pid), signal.SIGKILL)
+        _wait(repo, lambda: _states(port)["reviewer-1"] == "dead")
+        assert _attach(port, "reviewer-1").endswith(f"select-window -t {target}")
+        assert "foil-fake reviewer-1 ready" in _page(port, "/fleets/main/seats/reviewer-1").replace(
+            "\n", ""
+        )
 
         # Killed: every seat reads killed, and peek's error replaces the pane.
         assert main(["seat", "kill", "--all"]) == 0

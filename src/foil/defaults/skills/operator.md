@@ -130,7 +130,7 @@ When a check-in reports a dialog or a seat that is not making progress, run `tmu
 
 ## The viewer
 
-`foil view` serves a read-only page for this project: the shared lists, each fleet's seats, board, posts, and overrides, and each seat's pane. Run it from the repository, outside the fleet, and give the human the address it prints. It types nothing and decides nothing. Status still comes from `board/status.md`. Without `--port` it takes the first free port from 7460. While it runs, anyone logged in to this machine can read the page.
+`foil view` serves a read-only page for this project: the shared lists, each fleet's seats, board, posts, and overrides, and each seat's pane. Run it from the repository, outside the fleet, and give the human the address it prints. It types nothing and decides nothing. Status still comes from `board/status.md`. Without `--port` it takes the first free port from 7460 to 7509. While it runs, anyone logged in to this machine can read the page.
 
 ```text
 foil view

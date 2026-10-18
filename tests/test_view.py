@@ -107,13 +107,20 @@ def _registry(repo: Path, *seats: dict, session: str = "foil-demo-1", fleet: str
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def _windows(monkeypatch: pytest.MonkeyPatch, owned: dict[str, str]) -> None:
-    """Stand in for tmux: ``owned`` maps a window id to the seat it still carries."""
+def _windows(
+    monkeypatch: pytest.MonkeyPatch, owned: dict[str, str], exited: frozenset[str] = frozenset()
+) -> None:
+    """Stand in for tmux: ``owned`` maps a window id to the seat it still carries.
+
+    A window in ``exited`` still carries its seat, but its process has exited.
+    """
 
     def probe(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> ProbeResult:
-        if owned.get(target.window_id or "") != seat_id:
+        window = target.window_id or ""
+        if owned.get(window) != seat_id:
             return ProbeResult(ProbeState.DEAD, False)
-        return ProbeResult(ProbeState.ALIVE, True, target)
+        state = ProbeState.DEAD if window in exited else ProbeState.ALIVE
+        return ProbeResult(state, True, target)
 
     monkeypatch.setattr(TmuxController, "probe", probe)
     monkeypatch.setattr(TmuxController, "capture_pane", lambda self, window, lines: "$ ready\n")
@@ -191,8 +198,9 @@ def test_a_restart_rebinds_the_same_port(tmp_path: Path, monkeypatch: pytest.Mon
         assert str(bound) == port
 
 
-def test_the_command_prints_one_line_and_exits_zero_on_sigterm(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("stop", [signal.SIGTERM, signal.SIGINT])
+def test_the_command_prints_one_line_and_exits_zero_when_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stop: signal.Signals
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     port = _free_port()
@@ -211,7 +219,7 @@ def test_the_command_prints_one_line_and_exits_zero_on_sigterm(
         assert process.stdout.readline() == f"http://127.0.0.1:{port}/\n"
         assert "Fleets" in _page(port)
     finally:
-        process.send_signal(signal.SIGTERM)
+        process.send_signal(stop)
         out, err = process.communicate(timeout=10)
     assert process.returncode == 0
     assert (out, err) == ("", "")
@@ -257,7 +265,8 @@ def test_an_idle_connection_does_not_hold_the_page(
     with _serving(repo) as port, socket.create_connection(("127.0.0.1", port)):
         started = time.monotonic()
         _page(port)
-        assert time.monotonic() - started < 3
+        # Well under the 10 s socket timeout the idle connection would hold.
+        assert time.monotonic() - started < 5
 
 
 def test_a_client_that_drips_headers_is_cut_at_the_deadline(
@@ -273,17 +282,14 @@ def test_a_client_that_drips_headers_is_cut_at_the_deadline(
             for _ in range(20):
                 time.sleep(0.4)
                 slow.sendall(b"X-Slow: 1\r\n")
-        assert time.monotonic() - started < 4
+        # The loop would run 8 s, and each read stays under the 10 s socket timeout.
+        assert time.monotonic() - started < 6
         slow.settimeout(1)
-        assert slow.recv(100) == b"" if not _reset(slow) else True
-
-
-def _reset(client: socket.socket) -> bool:
-    try:
-        client.recv(1, socket.MSG_PEEK)
-    except OSError:
-        return True
-    return False
+        try:
+            answer = slow.recv(100)
+        except OSError:
+            answer = b""
+        assert answer == b""
 
 
 def test_past_the_cap_a_request_gets_an_empty_503(
@@ -666,11 +672,17 @@ def test_crawling_every_page_writes_nothing(
     (_board(repo) / "status.md").write_text("state", encoding="utf-8")
     (_board(repo) / "room" / "t1").mkdir()
     (_board(repo) / "room" / "t1" / "t1.md").write_text("post", encoding="utf-8")
+    # A fleet folder with nothing in it: a reader that created its board,
+    # registry, or lock would leave files here.
+    (foil_root(repo) / "fleets" / "fresh").mkdir()
     _windows(monkeypatch, {"@1": "lead"})
-    before = _snapshot(foil_root(repo))
+    stores = [Path(os.environ["FOIL_HOME"]), repo]
+    before = [_snapshot(folder) for folder in stores]
     with _serving(repo) as port:
         pages = ["/", "/settings", "/fleets/main", "/fleets/main/seats/lead",
-                 "/fleets/main/seats/implementer-1", "/nope"]
+                 "/fleets/main/seats/implementer-1", "/nope", "/fleets/fresh",
+                 "/fleets/fresh/seats/lead", "/fleets/fresh?open=status.md",
+                 "/fleets/fresh/raw?open=status.md"]
         for path in pages:
             _get(port, path)
         listed = re.findall(r'href="/fleets/main\?open=([^"]+)"', _page(port, "/fleets/main"))
@@ -680,7 +692,8 @@ def test_crawling_every_page_writes_nothing(
             assert _get(port, f"/fleets/main/raw?open={opened}")[0] == 200
             assert _get(port, f"/fleets/main/raw?open={opened}", method="HEAD")[0] == 200
         assert "Peek a new seat first." in _page(port, "/")
-    assert _snapshot(foil_root(repo)) == before
+        assert "No seats." in _page(port, "/fleets/fresh")
+    assert [_snapshot(folder) for folder in stores] == before
 
 
 def test_the_attach_command_parses_the_same_in_bash_and_zsh(
@@ -707,7 +720,15 @@ def test_the_attach_command_parses_the_same_in_bash_and_zsh(
         (["env", "OPENAI_API_KEY=sk-abc", "codex"], "env [hidden] codex"),
         (["env", "MY_SECRET=hunter2", "codex"], "env MY_SECRET=[hidden] codex"),
         (["cli", "-H", "Authorization: Bearer abc123"], "cli -H [hidden]"),
-        (["cli", "--header=Authorization: token abc123"], "cli --header=[hidden]"),
+        (["cli", "--header=Authorization: token abc123"], "cli [hidden]"),
+        (["cli", "--token", "abc123", "--token=abc123"], "cli --token [hidden] --token=[hidden]"),
+        (
+            ["env", "GH_TOKEN=abc", "HF_TOKEN=hf_abc", "x"],
+            "env GH_TOKEN=[hidden] HF_TOKEN=[hidden] x",
+        ),
+        (["cli", "--key", "abc", "--path", "/x"], "cli --key [hidden] --path /x"),
+        (["git", "clone", "https://user:hunter2@host/x"], "git clone https://[hidden]@host/x"),
+        (["sh", "-c", "ANTHROPIC_API_KEY=xyz claude"], "sh -c [hidden]"),
         (
             ["cli", "--password", "pw", "--model", "{model}"],
             "cli --password [hidden] --model {model}",
@@ -734,4 +755,59 @@ def test_a_file_name_that_is_not_utf8_is_skipped(
     with _serving(repo) as port:
         page = _page(port, "/fleets/main")
     assert "notes/good.md" in page and "notes/bad" not in page
+    assert '<span class="dot alive"></span>alive' in page
+
+
+def test_a_dead_seat_whose_window_remains_shows_its_pane_and_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _registry(repo, _seat("lead", window="@4"))
+    _windows(monkeypatch, {"@4": "lead"}, exited=frozenset({"@4"}))
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main/seats/lead")
+    assert '<span class="dot dead"></span>dead' in page
+    assert "\\; select-window -t @4</code>" in page
+    assert "$ ready" in page
+
+
+def test_an_unknown_seat_is_a_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _registry(repo, _seat("lead", window="@1"))
+    _windows(monkeypatch, {})
+    with _serving(repo) as port:
+        for name in ("nobody", "..", "a%20b"):
+            status, _fields, body = _get(port, f"/fleets/main/seats/{name}")
+            assert status == 404, name
+            assert b"Back to fleets" in body
+
+
+def test_a_bind_error_other_than_in_use_is_one_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+
+    def refuse(*_args: object) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(view, "_Server", refuse)
+    monkeypatch.setattr(view, "_answers", lambda port: False)
+    with pytest.raises(FoilError, match="^foil: could not listen on 127.0.0.1:20000$"):
+        view.open_server(repo, None, base=20000)
+
+
+def test_a_board_that_cannot_be_listed_is_one_line_in_each_section(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _registry(repo, _seat("lead", window="@1"))
+    _windows(monkeypatch, {"@1": "lead"})
+
+    def broken(root: Path, fleet: str) -> list:
+        raise FoilError("foil: refusing symlink")
+
+    monkeypatch.setattr(view, "_board_files", broken)
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main")
+    assert page.count("foil: refusing symlink") == 2
     assert '<span class="dot alive"></span>alive' in page

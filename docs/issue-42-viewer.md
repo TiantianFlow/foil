@@ -141,7 +141,12 @@ Routes:
   files again. A viewer started before tmux or before any fleet shows
   "no session yet" until a reload finds one.
 - **Cost.** A fleet page probes tmux once per seat. A seat page probes
-  that seat twice (state, then peek) and captures once.
+  only that seat: three probes for an alive seat, four for a dead one
+  (state and window ownership, then peek's own state and probe), and
+  one capture. Reusing peek's probe would save one or two calls, and
+  costs a change to `peek_text` that is not worth it at this size.
+- **Connections.** At most 64 at once. Past that a new connection is
+  closed, so idle sockets cannot pile up threads.
 
 ## 4. Running it as a service
 
@@ -293,7 +298,9 @@ What the server does:
   `[hidden]`. So is the token after any flag whose name, with `-` read
   as `_`, contains one of the scan's secret key parts (`api_key`,
   `access_token`, `secret`, `password`, and the rest in `errors.py`), so `--api-key AKIA...` is hidden
-  too. This is best effort, and F34 and D2 say so.
+  too, as are the value after `--token` or `--key`, a `*_TOKEN=` or
+  `*_KEY=` assignment, a header value after a secret name, and URL
+  user info. This is best effort, and F35 and D2 say so.
 
 Who can still read the page:
 
@@ -492,11 +499,12 @@ Standing checks that change:
 ## 10. Requirement text this change lands
 
 - **Section 6.1:** a row `foil view` | `--port N` | serves the read-only
-  page (F34). The count becomes nine top-level commands and twenty-three
+  page (F34, F35, F36). The count becomes nine top-level commands and twenty-three
   actions.
 - **Section 6.2:** a `view` column: outside the fleet yes, lead no,
   worker no.
-- **F34 (new, under Visibility):** the agreed text, condensed, plus
+- **F34, F35, F36 (new, under Visibility):** running and access, the
+  pages, and board files. The agreed text, condensed, plus
   every user-visible rule this design adds: the port range 7460-7509
   and `--port` validation; the messages `foil: port N is in use`,
   `foil: no free port in 7460-7509`, `foil: invalid port`, and
@@ -504,10 +512,12 @@ Standing checks that change:
   Ctrl-C and SIGTERM; the `Host`, `Origin`, and method rules; the
   1 MiB preview, the Raw view and its headers; the best-effort argv
   hiding; `?lines=` and its cap;
-  the attach command with `=` and the verified window; and the
-  exposure to other local users.
-- **"Keep the screen in step":** one sentence in F34, and a line in
-  CONTRIBUTING "Rules every change keeps".
+  the attach command with `=` and the verified window; the 64-connection
+  cap; the skipped dot-files and non-UTF-8 names; and the exposure to
+  other local users.
+- **"Keep the screen in step":** a rule in CONTRIBUTING "Rules every
+  change keeps". It is about how changes are made, so it is not in the
+  requirement rows.
 - **Section 8, operator row:** the service step: fill in the unit file
   with the human's `PATH` and a port outside 7460-7509, show it, load
   it only after the human agrees, and restart it after an upgrade. The

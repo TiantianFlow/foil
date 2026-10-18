@@ -162,7 +162,7 @@ Without `--port` it takes the first free port from 7460 to 7509. It listens on `
 
 ### Keep the viewer running
 
-Foil has no daemon mode. launchd on macOS and `systemd --user` on Linux run `foil view` as it is, start it at login, and restart it when it fails. Your operator agent can fill these in for you. Use one file per project, each with its own port outside 7460-7509, so an ad hoc `foil view` never takes it. Replace each capitalized placeholder:
+Foil has no daemon mode. launchd on macOS and `systemd --user` on Linux run `foil view` as it is, start it at login, and restart it when it fails. Your operator agent can fill these in for you. Use one file per project, each with its own port outside 7460-7509, so an ad hoc `foil view` never takes it. A service keeps the page readable by every account on the machine for as long as you are logged in (see Limits), so set one up only on a machine you do not share. Replace each capitalized placeholder:
 
 - `FOIL`: the absolute path that `command -v foil` prints.
 - `REPO`: the repository's absolute path.

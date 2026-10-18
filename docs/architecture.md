@@ -60,6 +60,8 @@ flowchart TB
   view --> roster_ops
   view --> memory
   view --> presets
+  view --> store
+  view --> project
   lifecycle --> presets
   lifecycle --> board
   lifecycle --> tmuxmod

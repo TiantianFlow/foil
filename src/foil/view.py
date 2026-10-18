@@ -18,7 +18,7 @@ from contextlib import suppress
 from html import escape
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from foil.errors import FoilError, assert_no_secret
@@ -38,6 +38,9 @@ DEADLINE = 10
 SLOTS = 8
 CONNECTIONS = 64
 LOOPBACK = {"127.0.0.1", "localhost", "[::1]"}
+# Argv display only: names the mail scan does not refuse but a launch flag often carries.
+_SECRET_NAME = re.compile(r"token|(^|_)(key|pat|pass|passwd|pwd)$")
+_USERINFO = re.compile(r"(://)[^/@\s]+@")
 HELP = (
     "One project shares roles, harnesses, and the default mapping. Each fleet has its own "
     "seats, board, and posts. This viewer does not type into a pane and does not decide "
@@ -128,6 +131,13 @@ class _Missing(Exception):
     """A fleet or seat this project does not have."""
 
 
+class _Raw(NamedTuple):
+    """A listed board file to stream whole: an open descriptor and its size."""
+
+    handle: int
+    size: int
+
+
 def _error(exc: BaseException) -> str:
     return str(exc) if isinstance(exc, FoilError) else "foil: unreadable"
 
@@ -206,11 +216,18 @@ def _crumbs(items: list[tuple[str, str | None]]) -> str:
 
 
 def _size(count: int) -> str:
-    for unit in ("bytes", "KiB", "MiB"):
-        if count < 1024 or unit == "MiB":
-            return f"{count} {unit}" if unit == "bytes" else f"{count:.1f} {unit}"
-        count /= 1024
-    return ""
+    if count < 1024:
+        return f"{count} bytes"
+    if count < 1024 * 1024:
+        return f"{count / 1024:.1f} KiB"
+    return f"{count / (1024 * 1024):.1f} MiB"
+
+
+def _model(text: str, upcoming: str) -> str:
+    """A recorded model, and under it the override the next spawn takes, if any."""
+
+    shown = _mono(text) if text else _faded("no model")
+    return shown + (f"<small>next spawn {_mono(upcoming)}</small>" if upcoming else "")
 
 
 def _checkout(root: Path) -> str:
@@ -232,31 +249,41 @@ def _fleet_ids(root: Path) -> list[str]:
     )
 
 
-def _argv(command: list[str]) -> str:
-    """Launch argv as written, with credential-shaped tokens hidden (best effort)."""
+def _flagged(value: Any) -> bool:
+    try:
+        assert_no_secret(value)
+    except FoilError:
+        return True
+    return False
 
-    def secret(value: Any) -> bool:
-        try:
-            assert_no_secret(value)
-        except FoilError:
-            return True
-        return False
+
+def _secret_name(word: str) -> bool:
+    name = word.lstrip("-").replace("-", "_").lower()
+    return _flagged({name: ""}) or _SECRET_NAME.search(name) is not None
+
+
+def _secret_value(word: str) -> bool:
+    # The mail scan matches prefixes such as "bearer ", which need the space.
+    return _flagged(word) or _flagged(f"{word} x")
+
+
+def _argv(command: list[str]) -> str:
+    """Launch argv as written, with credential-shaped values hidden (best effort)."""
 
     shown: list[str] = []
     hide_next = False
     for token in command:
-        cut = min((token.find(mark) for mark in "=:" if mark in token), default=-1)
-        words = token.replace("=", " ").replace(":", " ").split()
-        named = any(secret({word.lstrip("-").replace("-", "_"): ""}) for word in words)
-        if hide_next or any(secret(word) or secret(f"{word} x") for word in words):
-            shown.append("[hidden]")
-        elif named and cut >= 0:
-            shown.append(f"{token[: cut + 1]}[hidden]")
-        elif not token or any(char.isspace() for char in token):
-            shown.append(shlex.quote(token))
+        words = [word for word in re.split(r"[\s=:]+", token) if word]
+        if hide_next or any(_secret_value(word) for word in words):
+            text = "[hidden]"
+        elif ("=" in token or ":" in token) and any(_secret_name(word) for word in words):
+            name, _sep, value = token.partition("=")
+            simple = _secret_name(name) and not re.search(r"[\s:]", token)
+            text = f"{name}=[hidden]" if simple else "[hidden]"
         else:
-            shown.append(token)
-        hide_next = named and cut < 0 and token.startswith("-")
+            text = _USERINFO.sub(r"\1[hidden]@", token)
+        shown.append(shlex.quote(text) if not text or any(c.isspace() for c in text) else text)
+        hide_next = token.startswith("-") and "=" not in token and _secret_name(token)
     return " ".join(shown)
 
 
@@ -375,6 +402,7 @@ def _attach(registry: dict, row: dict | None = None) -> str | None:
     session = str(registry.get("tmux_session") or "")
     if not session:
         return None
+    # Always quoted: zsh expands an unquoted "=word" to the path of a command.
     quoted = "'" + ("=" + session).replace("'", "'\\''") + "'"
     command = f"tmux attach -t {quoted}"
     if row is not None and row["owned"]:
@@ -470,7 +498,7 @@ def _board_sections(root: Path, fleet: str, opened: str, here: str) -> str:
     posts = [item for item in files if item[0].startswith("room/")]
 
     def inner(group: list[tuple[str, int]], empty: str, threads: bool) -> str:
-        if any(rel == opened for rel, _size in group):
+        if any(rel == opened for rel, _bytes in group):
             return _guard(lambda: _preview(root, fleet, opened, here))
         if not group:
             return f'<p class="empty">{empty}</p>'
@@ -525,9 +553,7 @@ def _fleet_page(root: Path, fleet: str, opened: str) -> str:
         upcoming = _next_models(root, fleet, registry)
         cells = []
         for row in rows:
-            model = _mono(row["model"]) if row["model"] else _faded("no model")
-            if row["template"] in upcoming:
-                model += f"<small>next spawn {_mono(upcoming[row['template']])}</small>"
+            model = _model(row["model"], upcoming.get(row["template"], ""))
             link = escape(f"{here}/seats/{quote(row['name'])}")
             cells.append(
                 [f'<a class="mono" href="{link}">{escape(row["name"])}</a>',
@@ -560,10 +586,10 @@ def _seat_page(root: Path, fleet: str, name: str, lines: int) -> str:
     row = seat_rows(root, registry, only=name, owned=True)[0]
     upcoming = _next_models(root, fleet, registry).get(row["template"], "")
     launched = f"{row['harness']} / {row['model']}" if row["model"] else row["harness"]
-    model = _mono(launched) + (f"<small>next spawn {_mono(upcoming)}</small>" if upcoming else "")
     facts = [
-        ("Seat", _mono(name)), ("Role", _mono(row["template"])), ("State", _state(row["state"])),
-        ("Harness / model", model), ("Branch", _branch(row)),
+        ("Seat", _mono(name)), ("Role", _mono(row["template"])),
+        ("Description", escape(row["description"])), ("State", _state(row["state"])),
+        ("Harness / model", _model(launched, upcoming)), ("Branch", _branch(row)),
     ]
     here = f"/fleets/{quote(fleet)}/seats/{quote(name)}"
     try:
@@ -589,8 +615,8 @@ def _seat_page(root: Path, fleet: str, name: str, lines: int) -> str:
     )
 
 
-def _route(root: Path, target: str) -> tuple[int, str] | tuple[str, int, int]:
-    """A page as (status, body), or a raw file as ("raw", descriptor, size)."""
+def _route(root: Path, target: str) -> tuple[int, str] | _Raw:
+    """A page as (status, body), or a listed file to stream whole."""
 
     parts = urlsplit(target)
     path = [unquote(item) for item in parts.path.split("/") if item]
@@ -609,10 +635,10 @@ def _route(root: Path, target: str) -> tuple[int, str] | tuple[str, int, int]:
         if len(path) == 2:
             return 200, _fleet_page(root, fleet, opened)
         if path[2:] == ["raw"]:
-            if opened not in {rel for rel, _size in _board_files(root, fleet)}:
+            if opened not in {rel for rel, _bytes in _board_files(root, fleet)}:
                 raise _Missing("No such file on this board.")
             handle = _open_listed(root, fleet, opened)
-            return "raw", handle, os.fstat(handle).st_size
+            return _Raw(handle, os.fstat(handle).st_size)
         if len(path) == 4 and path[2] == "seats":
             return 200, _seat_page(root, fleet, path[3], _lines(query.get("lines", [""])[0]))
         raise _Missing("No such page.")
@@ -645,9 +671,10 @@ def _loopback_host(host: str) -> bool:
 
 class _Handler(BaseHTTPRequestHandler):
     server: _Server
-    server_version = "foil"
-    sys_version = ""
     timeout = DEADLINE
+
+    def version_string(self) -> str:
+        return "foil"
 
     def setup(self) -> None:
         super().setup()
@@ -709,27 +736,28 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             with cached_common_dirs():
                 result = _route(self.server.root, self.path)
-                if result[0] != "raw":
+                if not isinstance(result, _Raw):
                     nonce = secrets.token_urlsafe(16)
-                    page = _document(self.server.root, str(result[1]), nonce)
+                    page = _document(self.server.root, result[1], nonce)
         except Exception:
             self._send(500, b"")
             return
         finally:
             self.server.slots.release()
-        if result[0] == "raw":
-            self._raw(int(result[1]), int(result[2]))
+        if isinstance(result, _Raw):
+            self._raw(result)
             return
         policy = (
             f"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'; "
             "img-src data:; "
             "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         )
-        self._send(int(result[0]), page, policy=policy)
+        self._send(result[0], page, policy=policy)
 
     do_HEAD = do_GET
 
-    def _raw(self, handle: int, size: int) -> None:
+    def _raw(self, raw: _Raw) -> None:
+        handle, size = raw
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
