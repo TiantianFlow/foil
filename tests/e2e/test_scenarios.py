@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from foil import __version__
 from foil.board_ops import split_front_matter
 from foil.cli import main
 from foil.project import foil_root
@@ -790,7 +791,7 @@ def _star_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_star_line_never_repeats_when_the_store_cannot_keep_the_record(tmp_path: Path) -> None:
+def test_star_line_shows_once_under_a_symlinked_data_dir(tmp_path: Path) -> None:
     bindir = _install_foil(tmp_path)
     repo = _star_repo(tmp_path)
     real = tmp_path / "data-on-another-disk"
@@ -799,10 +800,31 @@ def test_star_line_never_repeats_when_the_store_cannot_keep_the_record(tmp_path:
     linked.symlink_to(real)
     environment = {**os.environ, "XDG_DATA_HOME": str(linked)}
     environment.pop("FOIL_HOME", None)
-    for _ in range(3):
-        assert STAR_LINE not in _star_init(bindir, repo, environment)
-    assert (real / "foil" / "projects").is_dir()
-    assert not (real / "foil" / "star.json").exists()
+    shown = [STAR_LINE in _star_init(bindir, repo, environment) for _ in range(3)]
+    assert shown == [True, False, False]
+    assert (real / "foil" / "star.json").is_file()
+
+
+def test_star_record_leaves_the_store_root_mode_and_survives_a_failed_init(
+    tmp_path: Path,
+) -> None:
+    bindir = _install_foil(tmp_path)
+    repo = _star_repo(tmp_path)
+    root = Path(os.environ["FOIL_HOME"])
+    root.mkdir(parents=True, exist_ok=True)
+    root.chmod(0o755)
+    _star_init(bindir, repo, dict(os.environ))
+    assert root.stat().st_mode & 0o777 == 0o755
+    (root / "star.json").unlink()
+    mapping = foil_root(repo) / "mapping.toml"
+    mapping.write_text(mapping.read_text(encoding="utf-8") + 'permission = "bogus"\n')
+    env = {**os.environ, "PATH": os.pathsep.join((str(bindir), os.environ.get("PATH", "")))}
+    failed = subprocess.run(
+        ["foil", "init"], cwd=repo, check=False, capture_output=True, text=True, env=env
+    )
+    assert failed.returncode == 1
+    assert STAR_LINE not in failed.stdout
+    assert not (root / "star.json").exists()
 
 
 def test_star_line_skips_a_deeply_nested_record(tmp_path: Path) -> None:
@@ -816,21 +838,29 @@ def test_star_line_skips_a_deeply_nested_record(tmp_path: Path) -> None:
     assert record.read_text(encoding="utf-8") == text
 
 
-@pytest.mark.parametrize(("recorded", "due"), [("9.9", False), ("0.0", True)])
+@pytest.mark.parametrize(
+    ("shown", "recorded", "due"),
+    [
+        (["2024-01-01", "2024-02-01", "2024-03-01"], "9.9", False),
+        (["2024-01-01", "2024-02-01", "2024-03-01"], "0.0", True),
+        (["2024-01-01", "2024-02-01"], "9.9", True),
+    ],
+)
 def test_star_line_returns_only_for_a_newer_minor(
-    tmp_path: Path, recorded: str, due: bool
+    tmp_path: Path, shown: list[str], recorded: str, due: bool
 ) -> None:
     bindir = _install_foil(tmp_path)
     repo = _star_repo(tmp_path)
     record = Path(os.environ["FOIL_HOME"]) / "star.json"
     record.parent.mkdir(parents=True, exist_ok=True)
-    shown = ["2024-01-01", "2024-02-01", "2024-03-01"]
-    payload = {"schema_version": 1, "shown": shown, "minor": recorded, "stop": False}
+    payload = {"schema_version": 1, "shown": shown, "minor": recorded, "stop": False, "note": "x"}
     record.write_text(json.dumps(payload), encoding="utf-8")
     assert (STAR_LINE in _star_init(bindir, repo, dict(os.environ))) is due
     assert STAR_LINE not in _star_init(bindir, repo, dict(os.environ))
     saved = json.loads(record.read_text(encoding="utf-8"))
     assert len(saved["shown"]) == len(shown) + (1 if due else 0)
+    assert saved["minor"] == max(recorded, ".".join(__version__.split(".")[:2]))
+    assert saved["note"] == "x"
 
 
 def test_scenario_6_errors_are_one_line(

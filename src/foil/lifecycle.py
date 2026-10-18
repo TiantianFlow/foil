@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import uuid
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -77,39 +78,54 @@ def _minor(version: str) -> tuple[int, int]:
 
 
 def _star_due() -> dict | None:
-    """The star record to save before this report, or None when no line is due."""
+    """The star record to save with this report's line, or None when no line is due."""
     path = store_root() / "star.json"
     today = date.today()
-    minor = ".".join(map(str, _minor(__version__)))
-    fresh = {"schema_version": 1, "shown": [today.isoformat()], "minor": minor, "stop": False}
+    running = _minor(__version__)
     if not (path.exists() or path.is_symlink()):
-        return fresh
-    try:
-        record = read_json(path)
-        shown = [date.fromisoformat(day) for day in record["shown"]]
-        stop = record["stop"]
-        newer = _minor(minor) > _minor(str(record["minor"]))
-    except (FoilError, KeyError, TypeError, ValueError, RecursionError):
-        return None
-    if stop is not False or not shown:
-        return None
-    gap = (today - shown[-1]).days
-    if len(shown) <= len(STAR_GAPS):
-        due = gap >= STAR_GAPS[len(shown) - 1]
+        record, shown, seen = {}, [], running
     else:
-        due = gap >= STAR_LATER and newer
-    if not due:
-        return None
-    return {**fresh, "shown": [*record["shown"], today.isoformat()]}
+        try:
+            record = read_json(path)
+            shown = [date.fromisoformat(day) for day in record["shown"]]
+            seen = _minor(str(record["minor"]))
+            stop = record["stop"]
+        except (FoilError, KeyError, TypeError, ValueError, RecursionError):
+            return None
+        if stop is not False or not shown:
+            return None
+        gap = (today - shown[-1]).days
+        if len(shown) <= len(STAR_GAPS):
+            due = gap >= STAR_GAPS[len(shown) - 1]
+        else:
+            due = gap >= STAR_LATER and running > seen
+        if not due:
+            return None
+    return {
+        **record,
+        "schema_version": 1,
+        "shown": [*record.get("shown", []), today.isoformat()],
+        "minor": ".".join(map(str, max(running, seen))),
+        "stop": False,
+    }
 
 
 def _star_saved(record: dict | None) -> bool:
-    """Save first and show only what was saved, so a failing store never repeats the line."""
+    """Write the record atomically. The store root is the user's, so leave its mode alone."""
     if record is None:
         return False
+    path = store_root() / "star.json"
+    temporary = None
     try:
-        write_json(store_root() / "star.json", record)
-    except (FoilError, OSError):
+        descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=".star.", suffix=".tmp")
+        temporary = Path(name)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(record, handle, sort_keys=True)
+            handle.write("\n")
+        os.replace(temporary, path)
+    except (OSError, TypeError, ValueError, RecursionError):
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
         return False
     return True
 
@@ -136,7 +152,7 @@ def _print_init_report(
     had_templates: set[str],
     had_personas: set[str],
     updated_skills: list[str],
-    star: bool,
+    star: dict | None,
 ) -> None:
     print(f"foil {__version__}")
     presets, skipped = installed_presets(toplevel)
@@ -205,7 +221,7 @@ def _print_init_report(
         "let the workers run unattended."
     )
     print(f"Project folder: {foil_root(toplevel)}")
-    if star:
+    if _star_saved(star):
         print(f"For the human: if Foil helps, a GitHub star helps others find it: {STAR_URL}")
     print(f"Read {foil_root(toplevel) / 'skills' / 'operator.md'} and follow it. My goal: <goal>.")
 
@@ -240,8 +256,7 @@ def init_project(directory: str | None) -> None:
     }
     had_personas = set(persona_stems(persona_dir))
     updated_skills = write_default_templates(toplevel)
-    star = _star_saved(_star_due())
-    _print_init_report(toplevel, had_templates, had_personas, updated_skills, star)
+    _print_init_report(toplevel, had_templates, had_personas, updated_skills, _star_due())
 
 
 def _seat_name(registry: dict, template_name: str, requested: str | None) -> str:

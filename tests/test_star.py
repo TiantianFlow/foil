@@ -6,12 +6,13 @@ import json
 import subprocess
 from datetime import date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from foil import __version__, lifecycle
 from foil.cli import main
-from foil.project import store_root
+from foil.project import foil_root, store_root
 
 MINOR = ".".join(__version__.split(".")[:2])
 LINE = "For the human: if Foil helps, a GitHub star helps others find it:"
@@ -157,10 +158,48 @@ def test_a_directory_in_place_of_the_record_shows_nothing(
 def test_a_failed_save_shows_nothing_and_still_finishes_init(
     repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def refuse(*_args: object) -> None:
+    def refuse(*_args: object, **_kwargs: object) -> None:
         raise OSError("read-only")
 
-    monkeypatch.setattr(lifecycle, "write_json", refuse)
+    monkeypatch.setattr(lifecycle, "tempfile", SimpleNamespace(mkstemp=refuse))
     assert LINE not in _init(capsys)
     assert LINE not in _init(capsys)
     assert not (store_root() / "star.json").exists()
+
+
+def test_an_init_that_fails_after_the_check_writes_no_record(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _init(capsys)
+    (store_root() / "star.json").unlink()
+    mapping = foil_root(repo) / "mapping.toml"
+    mapping.write_text(mapping.read_text(encoding="utf-8") + 'permission = "bogus"\n')
+    assert main(["init"]) == 1
+    assert LINE not in capsys.readouterr().out
+    assert not (store_root() / "star.json").exists()
+
+
+def test_the_recorded_minor_never_goes_down(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _record([_ago(20), _ago(14)], "9.9")
+    assert LINE in _init(capsys)
+    assert _saved()["minor"] == "9.9"
+
+
+def test_a_saved_record_keeps_keys_it_does_not_use(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = store_root() / "star.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"schema_version": 1, "shown": [_ago(3)], "minor": MINOR, "stop": False, "note": "x"}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    assert LINE in _init(capsys)
+    assert _saved()["note"] == "x"
+
+
+def test_saving_the_record_leaves_the_store_root_mode_alone(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store_root().mkdir(parents=True, exist_ok=True)
+    store_root().chmod(0o755)
+    assert LINE in _init(capsys)
+    assert store_root().stat().st_mode & 0o777 == 0o755
