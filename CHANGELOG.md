@@ -4,6 +4,14 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- The `foil init` report can end, just before the pointer line, with one line for the human that invites a GitHub star and says how to stop it. It shows on the first `init` in a store, then at least 3 days later, then at least 14 days after that, and afterwards at most once per new minor version, 30 days or more after the last one. `<root>/star.json` records those days per store, not per project; `"stop": true` silences it for good. The record is written after the report prints, and a failed write does not fail `init`. Foil never stars, opens a browser, or reads a GitHub login. The package was already over the 2,500-line target; this adds about 40 lines to `init`, the one report every operator session reads. (#46)
+
+### Changed
+
+- The operator skill relays that line once, after the goal reaches `state: done`, and sets `"stop": true` when the human declines. The README invites a star in one line. Package metadata names the supported agent CLIs.
+
 ## [0.4.4] - 2026-10-18
 
 `foil --version` prints 0.4.4.

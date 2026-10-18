@@ -88,6 +88,8 @@ flowchart TB
 
 [docs/demo.zh-CN.md](docs/demo.zh-CN.md) 完整走一遍真实运行：一个失败的测试、一个主座、一个实现者和一个审查者，从 `foil init` 一直到修复被合并。
 
+如果运筹帮你省了时间，在 GitHub 上[点一个 Star](https://github.com/TiantianFlow/foil) 能帮更多人找到它。我们只请求这一点。`foil init` 会提几次，之后很少再提；在 Foil 存储目录的 `star.json` 里设置 `"stop": true` 后就不再提起，那一行会写出文件路径。
+
 ## 开始使用
 
 你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。信任按每个 harness、每条路径生效。席位的工作树在项目目录里、仓库之外，所以不会沿用仓库的信任。每个席位标签对每个 harness 都要信任一次。停在这些提示上的席位，从外面看就像一个正在工作的席位。操作员回答的是审批对话框：文件夹信任提示、登录提示，或一个停住席位、直到你或操作员批准的提示。更新对话框、首次运行对话框和意见征集由它报告给你，留给你来回答。其他 CLI 要等 `foil init` 建好项目目录之后，用一个小小的预设文件接入。

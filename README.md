@@ -88,6 +88,8 @@ flowchart TB
 
 [docs/demo.md](docs/demo.md) walks through a real run: a failing test, a lead, an implementer, and a reviewer, from `foil init` to the merged fix.
 
+If Foil saves you time, a [star on GitHub](https://github.com/TiantianFlow/foil) helps others find it. That is all it asks for. `foil init` mentions it a few times, then rarely, and never again once `"stop": true` is set in `star.json` in Foil's store; the line names the file.
+
 ## Get started
 
 You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Trust is per harness per path. A seat worktree lives in the project folder, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. A seat waiting on one of those prompts looks, from outside, like a seat that is working. The operator answers an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until you or the operator approve it. It reports an update dialog, a first-run dialog, and an opt-in, and leaves those for you. Another CLI can join with a small preset file once `foil init` has created the project folder.
