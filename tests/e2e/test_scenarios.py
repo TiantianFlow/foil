@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from foil import __version__
 from foil.board_ops import split_front_matter
 from foil.cli import main
 from foil.project import foil_root
@@ -708,6 +709,180 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
         _no_windows(session)
     finally:
         _close(repo)
+
+
+def test_star_line_reaches_the_operator_once_per_store_and_no_seat(tmp_path: Path) -> None:
+    bindir = _install_foil(tmp_path)
+    environment = os.environ.copy()
+    environment.pop("FOIL_SEAT_ID", None)
+    environment["PATH"] = os.pathsep.join((str(bindir), environment.get("PATH", "")))
+    line = "For the human: if Foil helps, a GitHub star helps others find it:"
+
+    def repository(name: str) -> Path:
+        repo = tmp_path / name
+        repo.mkdir()
+        assert _git(repo, "init", "--quiet").returncode == 0
+        assert _git(repo, "config", "user.name", "Foil Test").returncode == 0
+        assert _git(repo, "config", "user.email", "foil-test@localhost").returncode == 0
+        assert _git(repo, "commit", "--allow-empty", "-m", "base").returncode == 0
+        return repo
+
+    def foil(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            ["foil", *args], cwd=repo, check=False, capture_output=True, text=True, env=environment
+        )
+        assert result.returncode == 0, result.stderr
+        return result
+
+    first, second = repository("first"), repository("second")
+    try:
+        report = foil(first, "init").stdout.splitlines()
+        assert [entry for entry in report if entry.startswith(line)] == [
+            f"{line} https://github.com/TiantianFlow/foil"
+        ]
+        assert report[-1].startswith("Read ")
+        assert line not in foil(second, "init").stdout
+        assert line not in foil(first, "init").stdout
+
+        mapping = foil_root(first) / "mapping.toml"
+        text = re.sub(
+            r'(?m)^harness = ".*"$', 'harness = "fake"', mapping.read_text(encoding="utf-8")
+        )
+        mapping.write_text(text, encoding="utf-8")
+        fake = foil_root(first) / "fleets" / "main" / "run" / "fake"
+        fake.mkdir(parents=True, exist_ok=True)
+        (fake / "lead.json").write_text(
+            '{"steps": [{"when": {"mail_contains": "operator goal"}, "do": ['
+            '{"write": "board/status.md", "text": "state: done\\n"}]}]}\n',
+            encoding="utf-8",
+        )
+        foil(first, "seat", "spawn", "lead", "--task", "operator goal")
+        _wait(first, lambda: "state: done" in _status(first))
+        assert "GitHub star" not in foil(first, "seat", "peek", "lead").stdout
+        for path in foil_root(first).rglob("*"):
+            if path.is_file() and not path.is_symlink():
+                assert "GitHub star" not in path.read_text(encoding="utf-8", errors="replace")
+        session = str(load_registry(first)["tmux_session"])
+        foil(first, "seat", "kill", "--all")
+        _no_windows(session)
+    finally:
+        _close(first)
+
+
+STAR_LINE = "For the human: if Foil helps, a GitHub star helps others find it:"
+
+
+def _star_init(bindir: Path, repo: Path, environment: dict[str, str]) -> str:
+    """One installed `foil init`, as an operator runs it: exit 0, nothing on stderr."""
+
+    env = {**environment, "PATH": os.pathsep.join((str(bindir), environment.get("PATH", "")))}
+    env.pop("FOIL_SEAT_ID", None)
+    result = subprocess.run(
+        ["foil", "init"], cwd=repo, check=False, capture_output=True, text=True, env=env
+    )
+    assert (result.returncode, result.stderr) == (0, ""), result.stderr
+    return result.stdout
+
+
+def _star_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "project"
+    repo.mkdir()
+    assert _git(repo, "init", "--quiet").returncode == 0
+    return repo
+
+
+def test_star_line_shows_once_under_a_symlinked_data_dir(tmp_path: Path) -> None:
+    bindir = _install_foil(tmp_path)
+    repo = _star_repo(tmp_path)
+    real = tmp_path / "data-on-another-disk"
+    real.mkdir()
+    linked = tmp_path / "data"
+    linked.symlink_to(real)
+    environment = {**os.environ, "XDG_DATA_HOME": str(linked)}
+    environment.pop("FOIL_HOME", None)
+    shown = [STAR_LINE in _star_init(bindir, repo, environment) for _ in range(3)]
+    assert shown == [True, False, False]
+    assert (real / "foil" / "star.json").is_file()
+
+
+def test_star_record_leaves_the_store_root_mode_and_survives_a_failed_init(
+    tmp_path: Path,
+) -> None:
+    bindir = _install_foil(tmp_path)
+    repo = _star_repo(tmp_path)
+    root = Path(os.environ["FOIL_HOME"])
+    root.mkdir(parents=True, exist_ok=True)
+    root.chmod(0o755)
+    _star_init(bindir, repo, dict(os.environ))
+    assert root.stat().st_mode & 0o777 == 0o755
+    (root / "star.json").unlink()
+    mapping = foil_root(repo) / "mapping.toml"
+    mapping.write_text(mapping.read_text(encoding="utf-8") + 'permission = "bogus"\n')
+    env = {**os.environ, "PATH": os.pathsep.join((str(bindir), os.environ.get("PATH", "")))}
+    failed = subprocess.run(
+        ["foil", "init"], cwd=repo, check=False, capture_output=True, text=True, env=env
+    )
+    assert failed.returncode == 1
+    assert STAR_LINE not in failed.stdout
+    assert not (root / "star.json").exists()
+
+
+def test_star_line_is_not_spent_when_stdout_is_closed(tmp_path: Path) -> None:
+    bindir = _install_foil(tmp_path)
+    repo = _star_repo(tmp_path)
+    env = {**os.environ, "PATH": os.pathsep.join((str(bindir), os.environ.get("PATH", "")))}
+    env.pop("FOIL_SEAT_ID", None)
+    env.pop("PYTHONUNBUFFERED", None)
+    read_fd, write_fd = os.pipe()
+    os.close(read_fd)
+    try:
+        proc = subprocess.Popen(
+            ["foil", "init"], cwd=repo, stdout=write_fd, stderr=subprocess.PIPE, env=env
+        )
+    finally:
+        os.close(write_fd)
+    _, err = proc.communicate(timeout=60)
+    assert (proc.returncode, err) == (1, b"")
+    assert not (Path(os.environ["FOIL_HOME"]) / "star.json").exists()
+    assert STAR_LINE in _star_init(bindir, repo, dict(os.environ))
+
+
+def test_star_line_skips_a_deeply_nested_record(tmp_path: Path) -> None:
+    bindir = _install_foil(tmp_path)
+    repo = _star_repo(tmp_path)
+    record = Path(os.environ["FOIL_HOME"]) / "star.json"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    text = '{"schema_version": 1, "shown": ' + "[" * 100000 + "]" * 100000 + "}"
+    record.write_text(text, encoding="utf-8")
+    assert STAR_LINE not in _star_init(bindir, repo, dict(os.environ))
+    assert record.read_text(encoding="utf-8") == text
+
+
+@pytest.mark.parametrize(
+    ("shown", "recorded", "due"),
+    [
+        (["2024-01-01", "2024-02-01", "2024-03-01"], "9.9", False),
+        (["2024-01-01", "2024-02-01", "2024-03-01"], "0.0", True),
+        (["2024-01-01", "2024-02-01"], "9.9", True),
+    ],
+)
+def test_star_line_returns_only_for_a_newer_minor(
+    tmp_path: Path, shown: list[str], recorded: str, due: bool
+) -> None:
+    bindir = _install_foil(tmp_path)
+    repo = _star_repo(tmp_path)
+    record = Path(os.environ["FOIL_HOME"]) / "star.json"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"schema_version": 1, "shown": shown, "minor": recorded, "stop": False, "note": "x"}
+    record.write_text(json.dumps(payload), encoding="utf-8")
+    assert (STAR_LINE in _star_init(bindir, repo, dict(os.environ))) is due
+    assert STAR_LINE not in _star_init(bindir, repo, dict(os.environ))
+    saved = json.loads(record.read_text(encoding="utf-8"))
+    assert len(saved["shown"]) == len(shown) + (1 if due else 0)
+    running = tuple(int(part) for part in __version__.split(".")[:2])
+    newest = max(running, tuple(int(part) for part in recorded.split(".")))
+    assert saved["minor"] == ".".join(map(str, newest))
+    assert saved["note"] == "x"
 
 
 def test_scenario_6_errors_are_one_line(
