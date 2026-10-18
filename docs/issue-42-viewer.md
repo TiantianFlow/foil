@@ -17,7 +17,7 @@ Read against `main` at 0.5.0, where the layout of PR #45 has landed:
 |---|---|---|
 | 1 | Same repository or a parallel one | Same repository, same package, one module |
 | 2 | Stack | Standard library `http.server`, HTML rendered on the server, inline CSS, a few lines of inline script |
-| 3 | How it runs | `foil view [--port N]` in the foreground, one process per project. Ephemeral port unless `--port` is given |
+| 3 | How it runs | `foil view [--port N]` in the foreground, one process per project. Default port 7460, then the next free one, as Jupyter does. An explicit `--port` binds that port or fails |
 | 4 | Daemon | No daemon mode. launchd or `systemd --user` supervises the foreground process. The README and the operator skill give the steps. Foil writes no unit file |
 | 5 | Loopback | The common pattern: bind `127.0.0.1` only, refuse a foreign `Host` or `Origin`, strict CSP, no auth on loopback |
 | 6 | Other local users | Accept and document, as opencode, Syncthing, and Ollama do. Optional basic auth is the later step if it is needed |
@@ -75,11 +75,14 @@ The page has four routes:
 
 ## 3. How it runs
 
-- `foil view [--port N]`. Without `--port`, or with `--port 0`, the
-  port is ephemeral, so viewers for several projects never collide. With
-  `--port N` it binds that port or exits 1 with
-  `foil: port N is in use` (one line, N8). It does not try the next
-  port: a supervisor (section 4) needs the address to stay put.
+- `foil view [--port N]`. Without `--port` it tries 7460, then each
+  next port up to 7509, and binds the first free one, the way Jupyter
+  starts at 8888. A second project's viewer lands on the next port.
+  With `--port N` it binds exactly that port or exits 1 with
+  `foil: port N is in use` (one line, N8). It does not move: a
+  supervisor (section 4) needs the address to stay put. Fifty busy
+  ports is one line too:
+  `foil: no free port in 7460-7509`.
 - It resolves the project the way every command does: `FOIL_PROJECT`,
   otherwise the Git toplevel of the working directory. A supervised
   viewer gets that from its working directory.
@@ -365,8 +368,8 @@ Unit tests use a hand-built project and a stand-in tmux, the same way
   equal to the mapping model).
 - Attach with no session, with a session, and with and without a window
   id.
-- `--port`: a free port is bound and printed; a busy port is one
-  stderr line and exit 1; SIGTERM exits 0.
+- Ports: with 7460 held, the default binds 7461 and prints it; an
+  explicit busy `--port` is one stderr line and exit 1; SIGTERM exits 0.
 - A file over 1 MiB: the preview is cut with the size line, and Raw
   returns every byte with `text/plain` and `sandbox`.
 - Board: a symlinked file and a symlinked directory are skipped,
@@ -385,7 +388,7 @@ Standing checks that change: the command-surface test gains `view`, with
 
 ## 10. Requirement text this change lands
 
-- **Section 6.1:** a row `foil view` | `--port N` (default 0, ephemeral)
+- **Section 6.1:** a row `foil view` | `--port N` (default: the first free port from 7460)
   | serves the read-only page (F34). The count becomes nine top-level
   commands and twenty-three actions.
 - **Section 6.2:** a `view` column: outside the fleet yes, lead no,
@@ -408,9 +411,10 @@ Standing checks that change: the command-surface test gains `view`, with
   it only after they agree; a row in [architecture.md](architecture.md);
   and a CHANGELOG entry.
 
-## 11. Open questions
+## 11. Settled by common practice
 
-1. Default port: ephemeral (recommended, so projects never collide) or a
-   fixed default such as Jupyter's 8888?
-2. Shared machines: document the exposure now and leave optional basic
-   auth for later (recommended), or add it in this version?
+1. Default port: a fixed default with fallback to the next free port,
+   as Jupyter does. An explicit `--port` does not fall back.
+2. Shared machines: documented, with no auth on loopback, as opencode,
+   Syncthing, and Ollama do. Optional basic auth through an environment
+   variable is the later step if it is needed.
