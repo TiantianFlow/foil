@@ -584,6 +584,8 @@ def spawn_seat(
     persona_text(loaded)
     if task is not None:
         scan(task)
+    # A fleet's first spawn must launch with the fleet id it stores.
+    ensure_registry(root)
     registry = load_registry(root)
     seat = _seat_name(registry, loaded["name"], name)
     stored = sum(item["template"] == loaded["name"] for item in registry["seats"].values())

@@ -10,6 +10,7 @@ Notable changes to Foil, newest first.
 
 ### Fixed
 
+- The first `foil seat spawn` in a new fleet (`FOIL_FLEET` set to a fleet with no registry yet) stored a different fleet id than the one it launched the window with, so that seat always read as `dead`. Spawn now creates the fleet's registry first.
 - `foil seat peek` reports `foil: could not peek seat` when tmux fails during the window check, instead of `foil: unexpected error`.
 - The operator skill tells the human `tmux attach -t '=<session>'`, so a gone `main` session does not attach to another fleet whose name begins with it.
 
