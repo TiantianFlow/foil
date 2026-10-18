@@ -38,17 +38,14 @@ def test_task_mail_does_not_type_into_a_startup_dialog(
     _git(repo, "init", "--quiet")
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
-    templates = foil_root(repo) / "templates"
-    for role in ("lead", "implementer", "reviewer"):
-        path = templates / f"{role}.toml"
-        text = re.sub(
-            r'(?m)^id = ".*"$',
-            'id = "fake"',
-            path.read_text(encoding="utf-8"),
-            count=1,
-        )
-        path.write_text(text, encoding="utf-8")
-    fake = foil_root(repo) / "run" / "fake"
+    mapping = foil_root(repo) / "mapping.toml"
+    text = re.sub(
+        r'(?m)^harness = ".*"$',
+        'harness = "fake"',
+        mapping.read_text(encoding="utf-8"),
+    )
+    mapping.write_text(text, encoding="utf-8")
+    fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
     fake.mkdir(parents=True, exist_ok=True)
     (fake / "lead.json").write_text(
         json.dumps(
@@ -66,7 +63,7 @@ def test_task_mail_does_not_type_into_a_startup_dialog(
     )
     try:
         assert main(["seat", "spawn", "lead", "--task", "write the marker"]) == 0
-        marker = foil_root(repo) / "board" / "notes" / "done.txt"
+        marker = foil_root(repo) / "fleets" / "main" / "board" / "notes" / "done.txt"
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline and not marker.is_file():
             time.sleep(0.1)

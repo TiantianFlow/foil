@@ -177,7 +177,10 @@ def test_onboarding_sentence_names_the_install_source() -> None:
 def test_permission_is_per_template_in_the_onboarding_docs() -> None:
     for relative in ("README.md", "README.zh-CN.md", "skills/operator.md"):
         text = (ROOT / relative).read_text(encoding="utf-8")
-        for name in ("lead.toml", "implementer.toml", "reviewer.toml"):
+        assert "roles.toml" in text, relative
+    for relative in ("README.md", "skills/operator.md"):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        for name in ("lead", "implementer", "reviewer"):
             assert name in text, relative
     for relative in ("README.md", "skills/operator.md"):
         text = (ROOT / relative).read_text(encoding="utf-8")

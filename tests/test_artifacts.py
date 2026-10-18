@@ -46,8 +46,7 @@ INTENDED_WHEEL_MEMBERS = (
     "foil/lifecycle.py",
     "foil/runner.py",
     "foil/tmux.py",
-    "foil/defaults/harnesses/grok.toml",
-    "foil/defaults/harnesses/fake.toml",
+    "foil/defaults/harnesses.toml",
     "foil/defaults/personas/lead.md",
     "foil/defaults/skills/operator.md",
     "foil/defaults/skills/lead.md",
@@ -205,7 +204,7 @@ def test_wheel_metadata_has_public_release_identity(built: Built) -> None:
     metadata = BytesParser().parsebytes(wheel[metadata_name])
 
     assert metadata["Name"] == "foil-orchestrator"
-    assert metadata["Version"] == "0.4.5"
+    assert metadata["Version"] == "0.5.0"
     assert metadata["Requires-Python"] == ">=3.11"
     assert metadata["Author-email"] == (
         "TiantianFlow <177855728+TiantianFlow@users.noreply.github.com>"

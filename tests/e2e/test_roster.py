@@ -79,10 +79,9 @@ def test_roster_full_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert "created template 'researcher'" in add_output
 
     # Verify template file exists
-    researcher_template = foil_root(repo) / "templates" / "researcher.toml"
-    assert researcher_template.is_file()
-    content = researcher_template.read_text()
-    assert 'persona = "personas/researcher.md"' in content
+    roles = (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
+    assert 'id = "researcher"' in roles
+    assert 'persona = "personas/researcher.md"' in roles
 
     # Show the new template
     out = io.StringIO()
@@ -100,7 +99,7 @@ def test_roster_full_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert "updated template 'researcher'" in update_output
 
     # Verify update
-    content = researcher_template.read_text()
+    content = (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
     assert 'model = "claude-opus-5.5"' in content
 
     # List roster again to see researcher
@@ -122,10 +121,9 @@ def test_roster_update_existing_template(tmp_path: Path, monkeypatch: pytest.Mon
     assert "updated template 'lead'" in out.getvalue()
 
     # Verify update
-    lead_template = foil_root(repo) / "templates" / "lead.toml"
-    content = lead_template.read_text()
-    assert '[[harness]]' in content
-    assert 'id = "codex"' in content
+    content = (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
+    assert 'role = "lead"' in content
+    assert 'harness = "codex"' in content
 
     # Update implementer model
     out = io.StringIO()
@@ -134,8 +132,7 @@ def test_roster_update_existing_template(tmp_path: Path, monkeypatch: pytest.Mon
     assert "updated template 'implementer'" in out.getvalue()
 
     # Verify update
-    impl_template = foil_root(repo) / "templates" / "implementer.toml"
-    content = impl_template.read_text()
+    content = (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
     assert 'model = "claude-sonnet-5.5"' in content
 
 
@@ -145,8 +142,8 @@ def test_roster_remove_non_protected(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     # Add researcher
     assert main(["roster", "add", "researcher"]) == 0
-    researcher_template = foil_root(repo) / "templates" / "researcher.toml"
-    assert researcher_template.is_file()
+    roles = (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
+    assert 'id = "researcher"' in roles
 
     # Remove researcher
     out = io.StringIO()
@@ -155,7 +152,7 @@ def test_roster_remove_non_protected(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert "removed template 'researcher'" in out.getvalue()
 
     # Verify template is gone
-    assert not researcher_template.exists()
+    assert 'id = "researcher"' not in (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
 
 
 def test_roster_cannot_remove_protected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -221,15 +218,14 @@ def test_added_role_can_be_spawned(
         assert seat["template"] == "researcher"
         assert seat["harness"] == "fake"
         assert seat["state"] == ""
-        path = foil_root(repo) / "templates" / "researcher.toml"
         capsys.readouterr()
         assert main(["roster", "remove", "researcher"]) == 1
         err = capsys.readouterr().err
         assert err.count("\n") == 1
         assert "still in use" in err
-        assert path.is_file()
+        assert 'id = "researcher"' in (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
         assert main(["roster", "update", "researcher", "harness=codex"]) == 0
-        assert 'id = "codex"' in path.read_text(encoding="utf-8")
+        assert 'harness = "codex"' in (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
         assert main(["seat", "list"]) == 0
         assert "researcher-1\tresearcher\talive\t\tfake\t" in capsys.readouterr().out
     finally:

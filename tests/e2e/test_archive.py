@@ -37,7 +37,8 @@ def _peek(capsys: pytest.CaptureFixture[str], name: str) -> str:
 
 
 def _ready(repo: Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
-    _wait(repo, lambda: f"foil-fake {name} ready" in _peek(capsys, name))
+    needle = f"foil-fake {name} ready"
+    _wait(repo, lambda: needle in _peek(capsys, name).replace("\n", ""))
 
 
 def _list(capsys: pytest.CaptureFixture[str]) -> str:
@@ -60,7 +61,7 @@ def test_exited_fake_leaves_a_window_until_kill(
 ) -> None:
     repo = _prepare(tmp_path, "scenario-2", monkeypatch)
     try:
-        fake = foil_root(repo) / "run" / "fake"
+        fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
         fake.mkdir(parents=True, exist_ok=True)
         (fake / "implementer-1.json").write_text(
             json.dumps({"exit_on_input": True}),
@@ -76,11 +77,11 @@ def test_exited_fake_leaves_a_window_until_kill(
         assert main(["send", "implementer-1", "exit now"]) == 0
         _wait(repo, lambda: "implementer-1\timplementer\tdead\t" in _list(capsys))
         assert window in _windows(session)
-        assert "foil-fake implementer-1 ready" in _peek(capsys, "implementer-1")
+        assert "foil-fake implementer-1 ready" in _peek(capsys, "implementer-1").replace("\n", "")
         assert main(["seat", "archive", "implementer-1"]) == 1
         assert capsys.readouterr().err == "foil: seat 'implementer-1' is dead\n"
         assert "implementer-1" in load_registry(repo)["seats"]
-        assert not (foil_root(repo) / "run" / "archive").exists()
+        assert not (foil_root(repo) / "fleets" / "main" / "run" / "archive").exists()
         assert main(["seat", "kill", "implementer-1"]) == 0
         assert window not in _windows(session)
         assert main(["seat", "archive", "implementer-1"]) == 0
@@ -101,7 +102,7 @@ def test_send_keeps_old_mail_across_archive_and_reuse(
         note = Path(seat["worktree"]) / "note.txt"
         note.write_text("keep\n", encoding="utf-8")
         assert main(["send", "implementer-1", "before-archive"]) == 0
-        mailbox = foil_root(repo) / "board" / "mail" / "implementer-1"
+        mailbox = foil_root(repo) / "fleets" / "main" / "board" / "mail" / "implementer-1"
         before = next(mailbox.glob("*.md"))
         before_bytes = before.read_bytes()
         assert before_bytes.endswith(b"before-archive\n")
@@ -157,8 +158,7 @@ def test_list_shows_the_live_lead_and_the_archived_worktree(
         assert main(["seat", "list", "--archived"]) == 0
         archived = capsys.readouterr().out.strip()
         assert archived == (
-            "implementer-1\timplementer\tkilled\t"
-            f"{seat['worktree']}\tfake\tfoil/implementer-1"
+            f"implementer-1\timplementer\tkilled\t{seat['worktree']}\tfake\tfoil/implementer-1"
         )
         assert window not in archived
         assert note.is_file()
@@ -190,11 +190,13 @@ def test_lead_is_never_archived(
         assert capsys.readouterr().err == "foil: seat 'lead' cannot be archived\n"
         listed = _list(capsys)
         assert "lead\tlead\tkilled\t" in listed
-        archive = foil_root(repo) / "run" / "archive"
+        archive = foil_root(repo) / "fleets" / "main" / "run" / "archive"
         assert not archive.exists()
         assert main(["seat", "spawn", "lead"]) == 0
         assert not archive.exists()
-        text = (foil_root(repo) / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
+        text = (foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md").read_text(
+            encoding="utf-8"
+        )
         assert "may be from an earlier goal" in text
     finally:
         _close(repo)
@@ -213,7 +215,7 @@ def test_a_worker_cannot_archive(
         assert main(["seat", "archive", "implementer-1"]) == 1
         assert capsys.readouterr().err == "foil: not allowed\n"
         assert registry_path(repo).read_bytes() == before
-        assert not (foil_root(repo) / "run" / "archive").exists()
+        assert not (foil_root(repo) / "fleets" / "main" / "run" / "archive").exists()
         assert "lead\tlead\talive\t" in _list(capsys)
         monkeypatch.delenv("FOIL_SEAT_ID")
         assert main(["seat", "archive", "implementer-1"]) == 0
@@ -262,16 +264,16 @@ def test_spawn_without_a_name_reclaims_the_archived_name(
         assert seats["implementer-1"]["branch"] == "foil/implementer-1-2"
         assert seats["implementer-1"]["worktree"].endswith("/implementer-1-2")
         assert _git_ref(repo, "refs/heads/foil/implementer-1")
-        text = (foil_root(repo) / "run" / "instructions" / "implementer-1.md").read_text(
-            encoding="utf-8"
-        )
+        text = (
+            foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "implementer-1.md"
+        ).read_text(encoding="utf-8")
         assert "Run `foil mail list` and read your mail before you act." in text
         assert text.count("may be from an earlier goal") == 1
         assert main(["seat", "spawn", "implementer"]) == 0
         assert "implementer-2" in load_registry(repo)["seats"]
-        fresh = (foil_root(repo) / "run" / "instructions" / "implementer-2.md").read_text(
-            encoding="utf-8"
-        )
+        fresh = (
+            foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "implementer-2.md"
+        ).read_text(encoding="utf-8")
         assert "earlier goal" not in fresh
     finally:
         _close(repo)
@@ -288,7 +290,7 @@ def test_a_second_archive_does_not_overwrite_the_first_file(
         assert main(["seat", "kill", "implementer-1"]) == 0
         assert main(["seat", "archive", "implementer-1"]) == 0
         capsys.readouterr()
-        archive = foil_root(repo) / "run" / "archive"
+        archive = foil_root(repo) / "fleets" / "main" / "run" / "archive"
         first = next(archive.glob("*.txt"))
         kept = first.read_bytes()
         assert main(["seat", "spawn", "implementer", "--name", "implementer-1"]) == 0

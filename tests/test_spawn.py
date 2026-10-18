@@ -56,23 +56,71 @@ def _launch(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 
 
 def _mail(repo: Path, seat: str) -> list[Path]:
-    directory = foil_root(repo) / "board" / "mail" / seat
+    directory = foil_root(repo) / "fleets" / "main" / "board" / "mail" / seat
     return sorted(directory.glob("*.md")) if directory.is_dir() else []
+
+
+def _set_entries(repo: Path, role: str, entries: list[tuple[str, str]]) -> None:
+    from foil.presets import read_maps, save_maps
+
+    maps = [item for item in read_maps(repo) if item["role"] != role]
+    for harness, model in entries:
+        maps.append({"role": role, "id": harness, "model": model})
+    save_maps(repo, maps)
+
+
+def _set_persona(repo: Path, role: str, persona: str) -> None:
+    from foil.presets import read_roles, save_roles
+
+    roles = read_roles(repo) or []
+    for item in roles:
+        if item["id"] == role:
+            item["persona"] = persona
+    save_roles(repo, roles)
+
+
+def _set_worktree(repo: Path, role: str, value: bool) -> None:
+    from foil.presets import read_roles, save_roles
+
+    roles = read_roles(repo) or []
+    for item in roles:
+        if item["id"] == role:
+            item["worktree"] = value
+    save_roles(repo, roles)
+
+
+def _add_role(
+    repo: Path,
+    role: str,
+    harness: str,
+    *,
+    model: str = "",
+    worktree: bool = False,
+    persona: str = "personas/implementer.md",
+) -> None:
+    from foil.presets import read_maps, read_roles, save_maps, save_roles
+
+    roles = list(read_roles(repo) or [])
+    roles.append(
+        {
+            "id": role,
+            "description": "",
+            "persona": persona,
+            "worktree": worktree,
+            "permission": "auto",
+        }
+    )
+    save_roles(repo, roles)
+    maps = list(read_maps(repo))
+    maps.append({"role": role, "id": harness, "model": model})
+    save_maps(repo, maps)
 
 
 def test_spawn_rejects_a_missing_persona_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
-    lead = foil_root(repo) / "templates" / "lead.toml"
-    lead.write_text(
-        lead.read_text(encoding="utf-8").replace(
-            'persona = "personas/lead.md"',
-            'persona = "personas/verfier.md"',
-            1,
-        ),
-        encoding="utf-8",
-    )
+    _set_persona(repo, "lead", "personas/verfier.md")
     capsys.readouterr()
     assert main(["seat", "spawn", "lead"]) == 1
     captured = capsys.readouterr()
@@ -97,15 +145,7 @@ def test_misspelled_persona_leaves_no_implementer_branch_or_worktree(
     _commit(repo)
     _launch(monkeypatch)
     assert main(["seat", "spawn", "lead"]) == 0
-    implementer = foil_root(repo) / "templates" / "implementer.toml"
-    implementer.write_text(
-        implementer.read_text(encoding="utf-8").replace(
-            'persona = "personas/implementer.md"',
-            'persona = "personas/implementr.md"',
-            1,
-        ),
-        encoding="utf-8",
-    )
+    _set_persona(repo, "implementer", "personas/implementr.md")
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     capsys.readouterr()
     assert main(["seat", "spawn", "implementer"]) == 1
@@ -126,15 +166,7 @@ def test_persona_path_outside_templates_leaves_no_implementer_branch(
     assert main(["seat", "spawn", "lead"]) == 0
     outside = foil_root(repo) / "verifier.md"
     outside.write_text("should not be read\n", encoding="utf-8")
-    implementer = foil_root(repo) / "templates" / "implementer.toml"
-    implementer.write_text(
-        implementer.read_text(encoding="utf-8").replace(
-            'persona = "personas/implementer.md"',
-            'persona = "../verifier.md"',
-            1,
-        ),
-        encoding="utf-8",
-    )
+    _set_persona(repo, "implementer", "../verifier.md")
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     capsys.readouterr()
     assert main(["seat", "spawn", "implementer"]) == 1
@@ -155,13 +187,7 @@ def test_spawn_still_fails_when_the_template_names_a_broken_preset(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     (foil_root(repo) / "harnesses" / "zz.toml").write_text('id = "zz"\n', encoding="utf-8")
-    (foil_root(repo) / "templates" / "lead.toml").write_text(
-        'harness = "zz"\n'
-        'persona = "personas/lead.md"\n'
-        "worktree = false\n"
-        'permission = "ask"\n',
-        encoding="utf-8",
-    )
+    _set_entries(repo, "lead", [("zz", "")])
     assert main(["seat", "spawn", "lead"]) == 1
     assert capsys.readouterr().err == "foil: invalid preset\n"
 
@@ -234,7 +260,7 @@ def test_spawn_writes_plan_identity_and_window_id(
     assert "HOME" in plan["env_forward"]
     assert "HOME" not in plan["env"]
     assert plan["argv"][0] == "claude"
-    instruction = foil_root(repo) / "run" / "instructions" / "lead.md"
+    instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md"
     text = instruction.read_text(encoding="utf-8")
     assert text in plan["argv"]
     assert "You are seat `lead`." in text
@@ -251,13 +277,7 @@ def test_launch_plan_forwards_home_for_a_user_preset_with_empty_env(
         'id = "local"\ncommand = ["grok", "{prompt}"]\nsession_id = "none"\nenv = []\n',
         encoding="utf-8",
     )
-    (foil_root(repo) / "templates" / "lead.toml").write_text(
-        'harness = "local"\n'
-        'persona = "personas/lead.md"\n'
-        "worktree = false\n"
-        'permission = "ask"\n',
-        encoding="utf-8",
-    )
+    _set_entries(repo, "lead", [("local", "")])
     assert main(["seat", "spawn", "lead"]) == 0
     plan = json.loads(Path(calls[0]["runner_argv"][3]).read_text(encoding="utf-8"))
     assert plan["argv"][0] == "grok"
@@ -428,15 +448,10 @@ def test_spawn_records_the_model_and_an_older_registry_still_loads(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _launch(monkeypatch)
-    template = foil_root(repo) / "templates" / "lead.toml"
-    original = template.read_text(encoding="utf-8")
-    template.write_text(
-        original.replace('id = "claude"\n', 'id = "claude"\nmodel = "demo-model"\n', 1),
-        encoding="utf-8",
-    )
+    _set_entries(repo, "lead", [("claude", "demo-model")])
     assert main(["seat", "spawn", "lead"]) == 0
     assert load_registry(repo)["seats"]["lead"]["model"] == "demo-model"
-    path = foil_root(repo) / "run" / "registry.json"
+    path = foil_root(repo) / "fleets" / "main" / "run" / "registry.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     del payload["seats"]["lead"]["model"]
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -461,8 +476,7 @@ def test_overlong_auto_name_leaves_the_registry_loadable(
     calls = _launch(monkeypatch)
     assert main(["seat", "spawn", "lead"]) == 0
     name = "a" * 128
-    template = foil_root(repo) / "templates" / f"{name}.toml"
-    template.write_text('harness = "grok"\nworktree = true\n', encoding="utf-8")
+    _add_role(repo, name, "grok", worktree=True)
 
     assert main(["seat", "spawn", name]) == 1
     captured = capsys.readouterr()
@@ -474,8 +488,8 @@ def test_overlong_auto_name_leaves_the_registry_loadable(
     assert name not in reloaded["seats"]
     assert len(calls) == 1
     assert not (repo.parent / "project.foil").exists()
-    plans = foil_root(repo) / "run" / "plans"
-    instructions = foil_root(repo) / "run" / "instructions"
+    plans = foil_root(repo) / "fleets" / "main" / "run" / "plans"
+    instructions = foil_root(repo) / "fleets" / "main" / "run" / "instructions"
     assert all(name not in path.name for path in plans.glob("*"))
     assert all(name not in path.name for path in instructions.glob("*"))
 
@@ -489,8 +503,12 @@ def test_instruction_points_at_the_role_skill(
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     assert main(["seat", "spawn", "reviewer", "--name", "reader"]) == 0
     root = foil_root(repo)
-    lead = (root / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
-    reader = (root / "run" / "instructions" / "reader.md").read_text(encoding="utf-8")
+    lead = (root / "fleets" / "main" / "run" / "instructions" / "lead.md").read_text(
+        encoding="utf-8"
+    )
+    reader = (root / "fleets" / "main" / "run" / "instructions" / "reader.md").read_text(
+        encoding="utf-8"
+    )
     assert ".foil/skills/" not in lead
     assert ".foil/skills/" not in reader
     assert "You plan the goal, staff the fleet" in lead
@@ -506,14 +524,10 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
     calls = _launch(monkeypatch)
     assert main(["seat", "spawn", "lead"]) == 0
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
-    templates = foil_root(repo) / "templates"
     for harness in BUILTIN_IDS:
         if harness == "claude":
             continue
-        templates.joinpath(f"via-{harness}.toml").write_text(
-            f'harness = "{harness}"\nworktree = false\n',
-            encoding="utf-8",
-        )
+        _add_role(repo, f"via-{harness}", harness)
         task = ["--task", "only the goal"] if harness == "fake" else []
         assert main(["seat", "spawn", f"via-{harness}", "--name", f"seat-{harness}", *task]) == 0
     assert capsys.readouterr().err == ""
@@ -523,15 +537,21 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
     assert len(calls) == len(seats)
     for seat, harness in seats.items():
         plan = json.loads(
-            (foil_root(repo) / "run" / "plans" / f"{seat}.json").read_text(encoding="utf-8")
+            (foil_root(repo) / "fleets" / "main" / "run" / "plans" / f"{seat}.json").read_text(
+                encoding="utf-8"
+            )
         )
-        text = (foil_root(repo) / "run" / "instructions" / f"{seat}.md").read_text(encoding="utf-8")
+        text = (
+            foil_root(repo) / "fleets" / "main" / "run" / "instructions" / f"{seat}.md"
+        ).read_text(encoding="utf-8")
         assert text in plan["argv"]
         skill = "lead.md" if seat == "lead" else "worker.md"
         packaged = Path(__file__).resolve().parents[1] / "src" / "foil" / "defaults" / "skills"
         skill_text = (packaged / skill).read_text(encoding="utf-8").strip()
         assert skill_text in text
-        reread = (foil_root(repo) / "run" / "instructions" / f"{seat}.md").resolve()
+        reread = (
+            foil_root(repo) / "fleets" / "main" / "run" / "instructions" / f"{seat}.md"
+        ).resolve()
         assert f"Re-read `{reread}`" in text
         assert "whenever you are woken." in text
         preset = load_preset(repo, harness)
@@ -549,16 +569,22 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
     mail = _mail(repo, "seat-fake")
     assert len(mail) == 1
     assert mail[0].read_text(encoding="utf-8").endswith("only the goal\n")
-    fake = (foil_root(repo) / "run" / "instructions" / "seat-fake.md").read_text(encoding="utf-8")
+    fake = (
+        foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "seat-fake.md"
+    ).read_text(encoding="utf-8")
     assert "only the goal" not in fake
     fake_plan = json.loads(
-        (foil_root(repo) / "run" / "plans" / "seat-fake.json").read_text(encoding="utf-8")
+        (foil_root(repo) / "fleets" / "main" / "run" / "plans" / "seat-fake.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert fake_plan["argv"][fake_plan["argv"].index("--prompt") + 1] == fake
 
 
 def _registry_file(repo: Path) -> dict:
-    return json.loads((foil_root(repo) / "run" / "registry.json").read_text(encoding="utf-8"))
+    return json.loads(
+        (foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8")
+    )
 
 
 _REGISTRY_KEYS = {"schema_version", "fleet_id", "tmux_session", "lead", "seats"}
@@ -608,14 +634,7 @@ def test_legacy_string_harness_spawns_that_pair(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     calls = _launch(monkeypatch)
-    (foil_root(repo) / "templates" / "lead.toml").write_text(
-        'harness = "claude"\n'
-        'model = "opus"\n'
-        'persona = "personas/lead.md"\n'
-        "worktree = false\n"
-        'permission = "auto"\n',
-        encoding="utf-8",
-    )
+    _set_entries(repo, "lead", [("claude", "opus")])
     assert main(["seat", "spawn", "lead"]) == 0
     seat = load_registry(repo)["seats"]["lead"]
     assert seat["harness"] == "claude"
@@ -631,16 +650,8 @@ def test_one_entry_list_spawns_that_entry_every_time(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _launch(monkeypatch)
-    (foil_root(repo) / "templates" / "implementer.toml").write_text(
-        'persona = "personas/implementer.md"\n'
-        "worktree = false\n"
-        'permission = "auto"\n'
-        "\n"
-        "[[harness]]\n"
-        'id = "codex"\n'
-        'model = "gpt-5.5"\n',
-        encoding="utf-8",
-    )
+    _set_worktree(repo, "implementer", False)
+    _set_entries(repo, "implementer", [("codex", "gpt-5.5")])
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "implementer"]) == 0
     assert main(["seat", "spawn", "implementer"]) == 0
@@ -657,20 +668,8 @@ def test_spawns_alternate_and_a_failed_launch_does_not_advance(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     calls = _launch(monkeypatch)
-    (foil_root(repo) / "templates" / "implementer.toml").write_text(
-        'persona = "personas/implementer.md"\n'
-        "worktree = false\n"
-        'permission = "auto"\n'
-        "\n"
-        "[[harness]]\n"
-        'id = "claude"\n'
-        'model = "opus"\n'
-        "\n"
-        "[[harness]]\n"
-        'id = "codex"\n'
-        'model = "gpt-5.5"\n',
-        encoding="utf-8",
-    )
+    _set_worktree(repo, "implementer", False)
+    _set_entries(repo, "implementer", [("claude", "opus"), ("codex", "gpt-5.5")])
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "implementer"]) == 0
     first = load_registry(repo)["seats"]["implementer-1"]
@@ -704,15 +703,12 @@ def test_spawns_alternate_and_a_failed_launch_does_not_advance(
     assert set(_registry_file(repo)) == _REGISTRY_KEYS
 
 
-def test_a_killed_seat_still_counts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_killed_seat_still_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _launch(monkeypatch)
     _killable(monkeypatch)
-    (foil_root(repo) / "templates" / "implementer.toml").write_text(
-        _two_entries("implementer"), encoding="utf-8"
-    )
+    _set_worktree(repo, "implementer", False)
+    _set_entries(repo, "implementer", [("claude", "opus"), ("codex", "gpt-5.5")])
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "implementer"]) == 0
     assert load_registry(repo)["seats"]["implementer-1"]["harness"] == "claude"
@@ -731,9 +727,7 @@ def test_replacing_a_killed_lead_follows_the_one_stored_record(
     repo = _repo(tmp_path, monkeypatch)
     _launch(monkeypatch)
     _killable(monkeypatch)
-    (foil_root(repo) / "templates" / "lead.toml").write_text(
-        _two_entries("lead"), encoding="utf-8"
-    )
+    _set_entries(repo, "lead", [("claude", "opus"), ("codex", "gpt-5.5")])
     assert main(["seat", "spawn", "lead"]) == 0
     assert load_registry(repo)["seats"]["lead"]["harness"] == "claude"
     assert main(["seat", "kill", "lead"]) == 0
@@ -744,3 +738,30 @@ def test_replacing_a_killed_lead_follows_the_one_stored_record(
     assert main(["seat", "spawn", "lead"]) == 0
     assert load_registry(repo)["seats"]["lead"]["harness"] == "codex"
     assert load_registry(repo)["seats"]["lead"]["model"] == "gpt-5.5"
+
+
+def test_fleet_memory_overrides_the_model_on_the_next_spawn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    calls = _launch(monkeypatch)
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["roster", "update", "implementer", "model=opus"]) == 0
+    assert "fleet memory: implementer model = opus" in capsys.readouterr().out
+    monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
+    root = foil_root(repo)
+    assert "opus" not in (root / "mapping.toml").read_text(encoding="utf-8")
+    assert 'model = "opus"' in (root / "fleets" / "main" / "overrides.toml").read_text(
+        encoding="utf-8"
+    )
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    lead = _plan(calls, 0)
+    worker = _plan(calls, 1)
+    assert "Workspace:" in lead["argv"][-1]
+    assert "Posts:" in lead["argv"][-1]
+    assert "implementer: opus" in lead["argv"][-1]
+    assert worker["argv"][worker["argv"].index("--model") + 1] == "opus"
+    assert load_registry(repo)["seats"]["implementer-1"]["model"] == "opus"
+    assert load_registry(repo)["seats"]["implementer-1"]["harness"] == "claude"

@@ -15,10 +15,7 @@ from foil.cli import main
 from foil.project import common_dir, foil_root, project_key, store_root
 
 _ORIGIN = "https://github.com/TiantianFlow/foil.git"
-_ORDER = (
-    "kill them with the old foil (foil seat kill --all), then upgrade, "
-    "then foil init"
-)
+_ORDER = "kill them with the old foil (foil seat kill --all), then upgrade, then foil init"
 _OLD_FOIL = "UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install"
 _STALE = "A stale seat whose tmux window is already gone also counts"
 
@@ -93,9 +90,7 @@ def test_store_root_uses_foil_home_then_xdg_then_the_default(
     assert store_root() == resolved
 
 
-def test_init_uses_the_foil_home_override(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_init_uses_the_foil_home_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _git_env(monkeypatch)
     first = os.environ["FOIL_HOME"]
     override = tmp_path / "override"
@@ -129,9 +124,15 @@ def test_main_linked_and_seat_worktrees_share_one_project(
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     assert main(["seat", "spawn", "implementer"]) == 0
     monkeypatch.delenv("FOIL_SEAT_ID")
-    seat = json.loads((root / "run" / "registry.json").read_text(encoding="utf-8"))
+    seat = json.loads(
+        (root / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8")
+    )
     worktree = Path(seat["seats"]["implementer-1"]["worktree"])
-    plan = json.loads((root / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8"))
+    plan = json.loads(
+        (root / "fleets" / "main" / "run" / "plans" / "implementer-1.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert worktree.is_dir()
     assert root in worktree.parents
     assert plan["env"]["FOIL_PROJECT"] == key
@@ -180,9 +181,9 @@ def test_init_adopts_an_orphaned_record_and_repairs_worktrees(
     monkeypatch.delenv("FOIL_SEAT_ID")
     old_root = foil_root(repo)
     label = Path(
-        json.loads((old_root / "run" / "registry.json").read_text(encoding="utf-8"))["seats"][
-            "implementer-1"
-        ]["worktree"]
+        json.loads(
+            (old_root / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8")
+        )["seats"]["implementer-1"]["worktree"]
     ).name
     moved = tmp_path / "moved" / "project"
     moved.parent.mkdir()
@@ -202,15 +203,19 @@ def test_init_adopts_an_orphaned_record_and_repairs_worktrees(
     listed = _git(moved, "worktree", "list", "--porcelain")
     assert str(worktree) in listed.stdout
     assert _git(worktree, "status", "--porcelain").stdout == ""
-    registry = json.loads((adopted / "run" / "registry.json").read_text(encoding="utf-8"))
+    registry = json.loads(
+        (adopted / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8")
+    )
     assert registry["seats"]["implementer-1"]["worktree"] == str(worktree)
     plan = json.loads(
-        (adopted / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8")
+        (adopted / "fleets" / "main" / "run" / "plans" / "implementer-1.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert plan["cwd"] == str(worktree)
-    instruction = (adopted / "run" / "instructions" / "implementer-1.md").read_text(
-        encoding="utf-8"
-    )
+    instruction = (
+        adopted / "fleets" / "main" / "run" / "instructions" / "implementer-1.md"
+    ).read_text(encoding="utf-8")
     assert str(old_root) not in instruction
     assert str(adopted) in instruction
 
@@ -226,7 +231,9 @@ def test_init_adopts_an_orphaned_record_and_repairs_worktrees(
     capsys.readouterr()
     assert main(["seat", "resume", "implementer-1"]) == 0
     resumed = json.loads(
-        (adopted / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8")
+        (adopted / "fleets" / "main" / "run" / "plans" / "implementer-1.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert Path(resumed["cwd"]) == worktree
     assert worktree.is_dir()
@@ -244,7 +251,9 @@ def test_init_adopts_a_moved_repo_with_no_origin_by_root_commit(
     root_commit = _git(repo, "rev-list", "--max-parents=0", "HEAD").stdout.strip()
     assert main(["init"]) == 0
     old_root = foil_root(repo)
-    (old_root / "board" / "notes" / "kept.md").write_text("state\n", encoding="utf-8")
+    (old_root / "fleets" / "main" / "board" / "notes" / "kept.md").write_text(
+        "state\n", encoding="utf-8"
+    )
     moved = tmp_path / "moved" / "project"
     moved.parent.mkdir()
     monkeypatch.chdir(tmp_path)
@@ -256,7 +265,9 @@ def test_init_adopts_a_moved_repo_with_no_origin_by_root_commit(
     adopted = foil_root(moved)
     assert f"Adopted {old_root.name} as {adopted}" in report
     assert not old_root.exists()
-    assert (adopted / "board" / "notes" / "kept.md").read_text(encoding="utf-8") == "state\n"
+    assert (adopted / "fleets" / "main" / "board" / "notes" / "kept.md").read_text(
+        encoding="utf-8"
+    ) == "state\n"
     record = json.loads((adopted / "project.json").read_text(encoding="utf-8"))
     assert record["path"] == str(moved.resolve())
     assert record["origin"] == ""
@@ -267,8 +278,7 @@ def test_init_adopts_a_moved_repo_with_no_origin_by_root_commit(
     blank = adopted.parent / "blank"
     blank.mkdir()
     (blank / "project.json").write_text(
-        json.dumps({"path": str(tmp_path / "removed"), "origin": "", "created": "old"})
-        + "\n",
+        json.dumps({"path": str(tmp_path / "removed"), "origin": "", "created": "old"}) + "\n",
         encoding="utf-8",
     )
     again = tmp_path / "again" / "project"
@@ -456,7 +466,9 @@ def test_lead_only_adopt_and_legacy_move_rewrite_stored_paths(
     assert main(["seat", "spawn", "lead"]) == 0
     old_root = foil_root(repo)
     old_checkout = str(repo.resolve())
-    lead_plan = json.loads((old_root / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    lead_plan = json.loads(
+        (old_root / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+    )
     assert lead_plan["cwd"] == old_checkout
     moved = tmp_path / "moved" / "project"
     moved.parent.mkdir()
@@ -466,12 +478,18 @@ def test_lead_only_adopt_and_legacy_move_rewrite_stored_paths(
     capsys.readouterr()
     assert main(["init"]) == 0
     adopted = foil_root(moved)
-    plan = json.loads((adopted / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    plan = json.loads(
+        (adopted / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+    )
     assert plan["cwd"] == str(moved.resolve())
-    instruction = (adopted / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
+    instruction = (adopted / "fleets" / "main" / "run" / "instructions" / "lead.md").read_text(
+        encoding="utf-8"
+    )
     assert str(old_root) not in instruction
     assert str(adopted) in instruction
-    registry = json.loads((adopted / "run" / "registry.json").read_text(encoding="utf-8"))
+    registry = json.loads(
+        (adopted / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8")
+    )
     assert str(old_root) not in json.dumps(registry)
 
     legacy_repo = _repo(tmp_path / "legacy", monkeypatch)
@@ -495,10 +513,14 @@ def test_lead_only_adopt_and_legacy_move_rewrite_stored_paths(
     assert main(["init"]) == 0
     store = foil_root(legacy_repo)
     assert not legacy.exists()
-    moved_instruction = (store / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
+    moved_instruction = (store / "fleets" / "main" / "run" / "instructions" / "lead.md").read_text(
+        encoding="utf-8"
+    )
     assert ".foil/board" not in moved_instruction
-    assert str(store / "board") in moved_instruction
-    moved_plan = json.loads((store / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    assert str(store / "fleets" / "main" / "board") in moved_instruction
+    moved_plan = json.loads(
+        (store / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+    )
     assert moved_plan["cwd"] == str(legacy_repo.resolve())
 
 
@@ -516,7 +538,7 @@ def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
     moved = capsys.readouterr().out
     assert f"Moved {legacy} into {foil_root(quiet)}" in moved
     assert not legacy.exists()
-    kept = foil_root(quiet) / "board" / "notes" / "keep.txt"
+    kept = foil_root(quiet) / "fleets" / "main" / "board" / "notes" / "keep.txt"
     assert kept.read_text(encoding="utf-8") == "kept\n"
 
     busy = _repo(tmp_path / "busy", monkeypatch)
@@ -537,7 +559,7 @@ def test_init_moves_a_quiet_legacy_folder_and_instructs_otherwise(
     assert "move the" not in error
     assert kept.is_dir()
     assert not foil_root(busy).exists()
-    assert not (foil_root(busy) / "board" / "marker.txt").exists()
+    assert not (foil_root(busy) / "fleets" / "main" / "board" / "marker.txt").exists()
 
 
 def test_init_refuses_a_stale_seat_without_creating_a_store(
@@ -579,7 +601,9 @@ def test_init_refuses_a_stale_seat_without_creating_a_store(
     assert main(["init"]) == 0
     assert f"Moved {legacy} into {foil_root(repo)}" in capsys.readouterr().out
     assert not legacy.exists()
-    assert (foil_root(repo) / "board" / "marker.txt").read_text(encoding="utf-8") == "stay\n"
+    assert (foil_root(repo) / "fleets" / "main" / "board" / "marker.txt").read_text(
+        encoding="utf-8"
+    ) == "stay\n"
 
 
 def test_a_command_names_the_upgrade_when_a_legacy_folder_remains(
@@ -674,9 +698,7 @@ def test_a_command_inside_a_legacy_seat_worktree_finds_the_main_checkout(
     seat, _recorded = _legacy_seat(repo, "implementer-1")
     legacy = repo / ".foil"
     (legacy / "run" / "registry.json").write_text(
-        json.dumps(
-            {"seats": {"lead": {"state": ""}, "implementer-1": {"state": "dead"}}}
-        ),
+        json.dumps({"seats": {"lead": {"state": ""}, "implementer-1": {"state": "dead"}}}),
         encoding="utf-8",
     )
     monkeypatch.chdir(seat)
@@ -731,7 +753,9 @@ def test_a_user_worktree_and_a_foil_home_are_not_rewritten(
     )
     assert main(["init"]) == 0
     store = foil_root(repo)
-    plan = json.loads((store / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    plan = json.loads(
+        (store / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+    )
     assert plan["cwd"] == checkout
     assert plan["note"] == str(home / "projects")
     assert str(store) not in plan["cwd"]
@@ -773,16 +797,20 @@ def test_a_renamed_repository_with_no_seat_worktree_rewrites_the_old_prefix(
     store = foil_root(renamed)
     stored = "".join(
         path.read_text(encoding="utf-8")
-        for path in (store / "run").rglob("*")
+        for path in (store / "fleets" / "main" / "run").rglob("*")
         if path.is_file()
     )
     assert old not in stored
     assert json.dumps(old)[1:-1] not in stored
     assert str(legacy) not in stored
-    plan = json.loads((store / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    plan = json.loads(
+        (store / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+    )
     assert plan["cwd"] == str(renamed.resolve())
-    instruction = (store / "run" / "instructions" / "lead.md").read_text(encoding="utf-8")
-    assert str(store / "board") in instruction
+    instruction = (store / "fleets" / "main" / "run" / "instructions" / "lead.md").read_text(
+        encoding="utf-8"
+    )
+    assert str(store / "fleets" / "main" / "board") in instruction
 
 
 def test_a_renamed_repository_rewrites_the_old_worktree_prefix(
@@ -844,7 +872,7 @@ def test_a_renamed_repository_rewrites_the_old_worktree_prefix(
     assert old_seat not in listed
     stored = "".join(
         path.read_text(encoding="utf-8")
-        for path in (store / "run").rglob("*")
+        for path in (store / "fleets" / "main" / "run").rglob("*")
         if path.is_file()
     )
     assert old_seat not in stored
@@ -852,7 +880,9 @@ def test_a_renamed_repository_rewrites_the_old_worktree_prefix(
     old_repo = str(repo.resolve())
     assert old_repo not in stored
     assert json.dumps(old_repo)[1:-1] not in stored
-    lead = json.loads((store / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    lead = json.loads(
+        (store / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+    )
     assert lead["cwd"] == str(renamed.resolve())
 
 
@@ -865,8 +895,8 @@ def test_adopt_rewrites_a_stale_foil_project_key(
     assert main(["init"]) == 0
     old = foil_root(repo)
     stale = "old-project-key"
-    (old / "run" / "plans").mkdir(parents=True, exist_ok=True)
-    (old / "run" / "plans" / "lead.json").write_text(
+    (old / "fleets" / "main" / "run" / "plans").mkdir(parents=True, exist_ok=True)
+    (old / "fleets" / "main" / "run" / "plans" / "lead.json").write_text(
         json.dumps({"cwd": str(repo.resolve()), "env": {"FOIL_PROJECT": stale}}) + "\n",
         encoding="utf-8",
     )
@@ -879,15 +909,19 @@ def test_adopt_rewrites_a_stale_foil_project_key(
     capsys.readouterr()
     assert main(["init"]) == 0
     adopted = foil_root(moved)
-    plan = json.loads((adopted / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    plan = json.loads(
+        (adopted / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+    )
     assert plan["env"]["FOIL_PROJECT"] == project_key(common_dir(moved))
-    assert stale not in (adopted / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+    assert stale not in (adopted / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(
+        encoding="utf-8"
+    )
 
 
 def _stored_run(root: Path) -> str:
     return "".join(
         path.read_text(encoding="utf-8")
-        for path in (root / "run").rglob("*")
+        for path in (root / "fleets" / "main" / "run").rglob("*")
         if path.is_file()
     )
 
@@ -904,8 +938,11 @@ def test_a_second_init_finishes_an_adopt_repair_the_first_run_failed(
     old = foil_root(repo)
     # Spawn records the instruction's own path. Replace that with the board
     # and mail paths a later resume would read, then add a worktree seat.
-    (old / "run" / "instructions" / "lead.md").write_text(
-        f"Board: `{old / 'board'}`.\nMail: `{old / 'board' / 'mail'}`.\n",
+    (old / "fleets" / "main" / "run" / "instructions" / "lead.md").write_text(
+        "Board: `{board}`.\nMail: `{mail}`.\n".format(
+            board=old / "fleets" / "main" / "board",
+            mail=old / "fleets" / "main" / "board" / "mail",
+        ),
         encoding="utf-8",
     )
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
@@ -913,16 +950,19 @@ def test_a_second_init_finishes_an_adopt_repair_the_first_run_failed(
     monkeypatch.delenv("FOIL_SEAT_ID")
     # Spawn records each instruction's own path. A resume reads the board
     # and mail paths, so those are what the retry has to rewrite.
-    (old / "run" / "instructions" / "implementer-1.md").write_text(
-        f"Board: `{old / 'board'}`.\nMail: `{old / 'board' / 'mail'}`.\n",
+    (old / "fleets" / "main" / "run" / "instructions" / "implementer-1.md").write_text(
+        "Board: `{board}`.\nMail: `{mail}`.\n".format(
+            board=old / "fleets" / "main" / "board",
+            mail=old / "fleets" / "main" / "board" / "mail",
+        ),
         encoding="utf-8",
     )
-    (old / "run" / "plans" / "lead.json").write_text(
+    (old / "fleets" / "main" / "run" / "plans" / "lead.json").write_text(
         json.dumps(
             {
                 "cwd": str(repo.resolve()),
-                "board": str(old / "board"),
-                "mail": str(old / "board" / "mail"),
+                "board": str(old / "fleets" / "main" / "board"),
+                "mail": str(old / "fleets" / "main" / "board" / "mail"),
             }
         )
         + "\n",
@@ -947,17 +987,19 @@ def test_a_second_init_finishes_an_adopt_repair_the_first_run_failed(
     capsys.readouterr()
     assert main(["init"]) == 1
     adopted = foil_root(moved)
-    stale = (adopted / "run" / "registry.json").read_text(encoding="utf-8")
+    stale = (adopted / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8")
     assert str(old) in stale
     capsys.readouterr()
     assert main(["init"]) == 0
     repaired = _stored_run(adopted)
     assert str(old) not in repaired
     assert str(adopted / "worktrees") in repaired
-    assert str(adopted / "board") in repaired
-    plan = json.loads((adopted / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
-    assert plan["board"] == str(adopted / "board")
-    assert plan["mail"] == str(adopted / "board" / "mail")
+    assert str(adopted / "fleets" / "main" / "board") in repaired
+    plan = json.loads(
+        (adopted / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+    )
+    assert plan["board"] == str(adopted / "fleets" / "main" / "board")
+    assert plan["mail"] == str(adopted / "fleets" / "main" / "board" / "mail")
 
 
 def test_a_second_init_finishes_a_repair_the_first_run_failed(
@@ -975,9 +1017,7 @@ def test_a_second_init_finishes_a_repair_the_first_run_failed(
     seat = legacy / "worktrees" / "implementer-1"
     _git(repo, "worktree", "add", "--quiet", "-b", "foil/implementer-1", str(seat))
     (legacy / "run" / "registry.json").write_text(
-        json.dumps(
-            {"seats": {"implementer-1": {"state": "killed", "worktree": str(seat)}}}
-        ),
+        json.dumps({"seats": {"implementer-1": {"state": "killed", "worktree": str(seat)}}}),
         encoding="utf-8",
     )
     (legacy / "run" / "plans").mkdir()
@@ -1004,7 +1044,7 @@ def test_a_second_init_finishes_a_repair_the_first_run_failed(
     assert "foil: could not repair worktrees" in capsys.readouterr().err
     store = foil_root(repo)
     moved = store / "worktrees" / "implementer-1"
-    stored = (store / "run" / "registry.json").read_text(encoding="utf-8")
+    stored = (store / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8")
     assert str(seat) in stored
     assert str(moved) not in stored
 
@@ -1014,9 +1054,11 @@ def test_a_second_init_finishes_a_repair_the_first_run_failed(
     assert str(moved) in repaired
     assert str(seat) not in repaired
     assert str(legacy) not in repaired
-    assert str(store / "board") in repaired
+    assert str(store / "fleets" / "main" / "board") in repaired
     plan = json.loads(
-        (store / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8")
+        (store / "fleets" / "main" / "run" / "plans" / "implementer-1.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert plan["cwd"] == str(moved)
     assert "prunable" not in _git(repo, "worktree", "list", "--porcelain").stdout
@@ -1033,25 +1075,27 @@ def test_a_plain_reinit_leaves_a_missing_seat_plan_unchanged(
     assert main(["init"]) == 0
     store = foil_root(repo)
     missing = store / "worktrees" / "implementer-1"
-    (store / "run" / "plans").mkdir(parents=True, exist_ok=True)
-    (store / "run" / "plans" / "implementer-1.json").write_text(
+    (store / "fleets" / "main" / "run" / "plans").mkdir(parents=True, exist_ok=True)
+    (store / "fleets" / "main" / "run" / "plans" / "implementer-1.json").write_text(
         json.dumps({"cwd": str(missing)}) + "\n", encoding="utf-8"
     )
     before = {
-        path.relative_to(store / "run"): path.read_bytes()
-        for path in (store / "run").rglob("*")
+        path.relative_to(store / "fleets" / "main" / "run"): path.read_bytes()
+        for path in (store / "fleets" / "main" / "run").rglob("*")
         if path.is_file()
     }
     capsys.readouterr()
     assert main(["init"]) == 0
     after = {
-        path.relative_to(store / "run"): path.read_bytes()
-        for path in (store / "run").rglob("*")
+        path.relative_to(store / "fleets" / "main" / "run"): path.read_bytes()
+        for path in (store / "fleets" / "main" / "run").rglob("*")
         if path.is_file()
     }
     assert after == before
     plan = json.loads(
-        (store / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8")
+        (store / "fleets" / "main" / "run" / "plans" / "implementer-1.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert plan["cwd"] == str(missing)
 
@@ -1076,13 +1120,13 @@ def test_a_failed_adopt_retries_from_the_checkout_recorded_before_the_write(
     assert main(["seat", "spawn", "implementer"]) == 0
     monkeypatch.delenv("FOIL_SEAT_ID")
     old = foil_root(repo)
-    (old / "run" / "plans").mkdir(parents=True, exist_ok=True)
-    (old / "run" / "instructions").mkdir(exist_ok=True)
-    (old / "run" / "plans" / "lead.json").write_text(
+    (old / "fleets" / "main" / "run" / "plans").mkdir(parents=True, exist_ok=True)
+    (old / "fleets" / "main" / "run" / "instructions").mkdir(exist_ok=True)
+    (old / "fleets" / "main" / "run" / "plans" / "lead.json").write_text(
         json.dumps({"cwd": str(repo.resolve())}) + "\n", encoding="utf-8"
     )
-    (old / "run" / "instructions" / "lead.md").write_text(
-        f"Board: `{old / 'board'}`.\n", encoding="utf-8"
+    (old / "fleets" / "main" / "run" / "instructions" / "lead.md").write_text(
+        f"Board: `{old / 'fleets' / 'main' / 'board'}`.\n", encoding="utf-8"
     )
     moved = tmp_path / "moved" / "project"
     moved.parent.mkdir()
@@ -1125,8 +1169,10 @@ def test_a_failed_adopt_retries_from_the_checkout_recorded_before_the_write(
     stored = _stored_run(adopted)
     assert str(repo.resolve()) not in stored
     assert str(old) not in stored
-    assert str(adopted / "board") in stored
-    plan = json.loads((adopted / "run" / "plans" / "lead.json").read_text(encoding="utf-8"))
+    assert str(adopted / "fleets" / "main" / "board") in stored
+    plan = json.loads(
+        (adopted / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
+    )
     assert plan["cwd"] == str(moved.resolve())
     again = json.loads((adopted / "project.json").read_text(encoding="utf-8"))
     assert again["path"] == str(moved.resolve())
@@ -1171,11 +1217,13 @@ def test_init_repairs_a_killed_seat_worktree_during_a_legacy_move(
     assert "prunable" not in listed.stdout
     assert _git(moved, "status", "--porcelain").stdout == ""
     registry = json.loads(
-        (foil_root(repo) / "run" / "registry.json").read_text(encoding="utf-8")
+        (foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text(encoding="utf-8")
     )
     assert registry["seats"]["implementer-1"]["worktree"] == str(moved)
     plan = json.loads(
-        (foil_root(repo) / "run" / "plans" / "implementer-1.json").read_text(encoding="utf-8")
+        (foil_root(repo) / "fleets" / "main" / "run" / "plans" / "implementer-1.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert plan["cwd"] == str(moved)
 
@@ -1193,9 +1241,7 @@ def test_init_reports_a_failed_worktree_repair(
     seat = legacy / "worktrees" / "implementer-1"
     _git(repo, "worktree", "add", "--quiet", "-b", "foil/implementer-1", str(seat))
     (legacy / "run" / "registry.json").write_text(
-        json.dumps(
-            {"seats": {"implementer-1": {"state": "killed", "worktree": str(seat)}}}
-        ),
+        json.dumps({"seats": {"implementer-1": {"state": "killed", "worktree": str(seat)}}}),
         encoding="utf-8",
     )
     real_run = subprocess.run
@@ -1211,7 +1257,9 @@ def test_init_reports_a_failed_worktree_repair(
     moved = foil_root(repo) / "worktrees" / "implementer-1"
     assert moved.is_dir()
     assert not legacy.exists()
-    stored = (foil_root(repo) / "run" / "registry.json").read_text(encoding="utf-8")
+    stored = (foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text(
+        encoding="utf-8"
+    )
     assert str(seat) in stored
     assert str(moved) not in stored
 
@@ -1264,7 +1312,9 @@ def test_a_legacy_move_replaces_a_fresh_skeleton(
     assert f"Moved {legacy} into {store}" in report
     assert "already taken" not in report
     assert not legacy.exists()
-    assert (store / "board" / "notes" / "kept.md").read_text(encoding="utf-8") == "state\n"
+    assert (store / "fleets" / "main" / "board" / "notes" / "kept.md").read_text(
+        encoding="utf-8"
+    ) == "state\n"
     record = json.loads((store / "project.json").read_text(encoding="utf-8"))
     assert record["path"] == str(repo.resolve())
 
@@ -1273,7 +1323,7 @@ def _seed_store(repo: Path) -> Path:
     """A store folder that already has project.json, as a refused 0.4.0 init left."""
 
     store = foil_root(repo)
-    (store / "board").mkdir(parents=True)
+    (store / "fleets" / "main" / "board").mkdir(parents=True)
     (store / "project.json").write_text(
         json.dumps(
             {
@@ -1331,7 +1381,7 @@ def test_a_live_fleet_in_an_initialized_store_is_still_named(
         encoding="utf-8",
     )
     store = _seed_store(repo)
-    (store / "board" / "notes").mkdir(parents=True)
+    (store / "fleets" / "main" / "board" / "notes").mkdir(parents=True)
     assert main(["init"]) == 1
     collision = capsys.readouterr()
     assert "foil: an old .foil/" in collision.out + collision.err
@@ -1388,9 +1438,9 @@ def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
     _git(repo, "worktree", "add", "--quiet", "-b", "foil/implementer-1", str(seat))
     gitdir = (seat / ".git").read_text(encoding="utf-8")
     store = foil_root(repo)
-    (store / "run").mkdir(parents=True)
+    (store / "fleets" / "main" / "run").mkdir(parents=True)
     (store / "templates").mkdir()
-    (store / "run" / "owned.txt").write_text("store\n", encoding="utf-8")
+    (store / "fleets" / "main" / "run" / "owned.txt").write_text("store\n", encoding="utf-8")
 
     assert main(["init"]) == 0
     collision = capsys.readouterr().out
@@ -1402,9 +1452,11 @@ def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
     assert (legacy / "run").is_dir()
     assert (legacy / "templates").is_dir()
     assert (seat / ".git").read_text(encoding="utf-8") == gitdir
-    assert not (store / "board" / "notes" / "keep.txt").exists()
+    assert not (store / "fleets" / "main" / "board" / "notes" / "keep.txt").exists()
     assert not (store / "worktrees").exists()
-    assert (store / "run" / "owned.txt").read_text(encoding="utf-8") == "store\n"
+    assert (store / "fleets" / "main" / "run" / "owned.txt").read_text(
+        encoding="utf-8"
+    ) == "store\n"
     listed = _git(repo, "worktree", "list", "--porcelain")
     assert str(seat) in listed.stdout
     assert "prunable" not in listed.stdout

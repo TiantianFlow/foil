@@ -1,7 +1,7 @@
 # 运筹 · Foil
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.5-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.5.0-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -98,10 +98,10 @@ flowchart TB
 Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.
 ```
 
-要在两个目标之间更新，顺序是先停掉、再升级、最后 `foil init`：目标完成后运行 `foil seat kill --all`，再运行一次安装命令，然后在每个项目里运行 `foil init`，再启动主座。还留着 0.3.x 仓库内 `.foil/` 的项目，要在运行安装命令之前用那个旧的 `foil` 停掉。tmux 窗口已经不在的过期席位同样算在内。如果 `PATH` 上已经没有那个旧的 `foil`，就在旁边安装 0.3.4，这不会替换当前的 `foil`：`UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。用 pipx 则是：`PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。那些席位还在时不要运行 `foil init`，也不要把那个目录挪走。上一个目标留在报告打印的项目目录里的 `board/status.md` 已经写着 `state: done`，所以启动前先记下它的 `updated` 行，等它变化。`foil seat kill --all` 之后两种情况都可能出现，所以要检查：运行 `tmux ls`。如果列出了任何会话，预设里点名的 `env` 变量来自该服务器，启动前用 `tmux set-environment -g NAME VALUE` 设置。如果它说没有服务器在运行，下一次启动会从你的 shell 拉起服务器。
+要从 0.4 升到 0.5，在两个目标之间做，不要恢复 0.4 启动的席位。`foil init` 会在 `fleets/main/` 里还没有对应目录、或目录是空的时候，把项目根上的 `board/` 和 `run/` 移进去。它不读取 `templates/<role>.toml`。`init` 之后，把每个角色的 harness、model、worktree 和 permission 抄进 `roles.toml` 和 `mapping.toml`。新写的清单是 `permission = "auto"`，并且不写 `model`。`memory/` 里的教训和席位工作树都留着。`FOIL_FLEET` 默认是 `main`。要在两个目标之间更新，顺序是先停掉、再升级、最后 `foil init`：目标完成后运行 `foil seat kill --all`，再运行一次安装命令，然后在每个项目里运行 `foil init`，再启动主座。还留着 0.3.x 仓库内 `.foil/` 的项目，要在运行安装命令之前用那个旧的 `foil` 停掉。tmux 窗口已经不在的过期席位同样算在内。如果 `PATH` 上已经没有那个旧的 `foil`，就在旁边安装 0.3.4，这不会替换当前的 `foil`：`UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。用 pipx 则是：`PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。那些席位还在时不要运行 `foil init`，也不要把那个目录挪走。上一个目标留在报告打印的项目目录里的 `board/status.md` 已经写着 `state: done`，所以启动前先记下它的 `updated` 行，等它变化。`foil seat kill --all` 之后两种情况都可能出现，所以要检查：运行 `tmux ls`。如果列出了任何会话，预设里点名的 `env` 变量来自该服务器，启动前用 `tmux set-environment -g NAME VALUE` 设置。如果它说没有服务器在运行，下一次启动会从你的 shell 拉起服务器。
 
 - Agent 安装运筹并运行 `foil init`。如果命令打印 `foil: no harness installed`，它什么都没写。先安装上面的某个 CLI，再运行一次 `foil init`。
-- 它读报告，运行 `foil roster list`，并请你在本仓库里把每个 harness id 运行一次，接受它的文件夹信任、更新、首次运行和意见征集对话框，或者请你确认已经完成。它用 `foil roster` 设置每个模板的 harness 列表和 `permission`，也可以直接改报告打印的项目目录里的 `templates/lead.toml`、`templates/implementer.toml` 和 `templates/reviewer.toml`。`init` 写入一项。`roster update` 的 `harness` 和 `model` 改的是这一项。更长的列表要改文件，一次启动取的是该角色已经存下的席位记录条数所对应的那一项。只把主座改成 `auto` 不会让工人席位无人值守。限制一节说明 `auto` 仍可能让席位停在审批提示上。
+- 它读报告，运行 `foil roster list`，并请你在本仓库里把每个 harness id 运行一次，接受它的文件夹信任、更新、首次运行和意见征集对话框，或者请你确认已经完成。它用 `foil roster` 设置每个模板的 harness 列表和 `permission`，也可以直接改报告打印的项目目录里的三份清单：`harnesses.toml`、`roles.toml` 和 `mapping.toml`。`init` 为每个角色写入一条映射，并且 `permission = "auto"`。每个舰队共用这三份清单。`FOIL_FLEET` 选择舰队，默认是 `main`。`roster update` 的 `harness`，以及舰队外的 `model`，改的是这一项。舰队里的 `model` 写入该舰队的 `overrides.toml`，下一次启动会带上它。更长的列表改 `mapping.toml`，一次启动取的是该角色已经存下的席位记录条数所对应的那一项。只把主座改成 `auto` 不会让工人席位无人值守。限制一节说明 `auto` 仍可能让席位停在审批提示上。
 - 它做首次运行检查，然后把目标发出去。
 - 它自己从不做项目本身的工作。
 

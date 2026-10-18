@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 
 from foil.errors import FoilError
-from foil.project import discover_project, foil_root, is_initialized, refuse_legacy_layout
+from foil.project import discover_project, is_initialized, refuse_legacy_layout
+from foil.store import fleet_dir
 
 
 def board_root() -> Path:
@@ -17,7 +18,7 @@ def board_root() -> Path:
     refuse_legacy_layout(toplevel)
     if not is_initialized(toplevel):
         raise FoilError("foil: not in a foil project")
-    return (foil_root(toplevel) / "board").resolve()
+    return (fleet_dir(toplevel) / "board").resolve()
 
 
 def _flow_list(value: str) -> list[str] | None:
