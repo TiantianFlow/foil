@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-10-18
+
+`foil --version` prints 0.4.4.
+
 ### Added
 
 - `foil post` writes one `room/v1` file under `board/room/<id>/` and types one nudge into every other alive seat. A seat whose stored state is empty still receives that nudge when the window check passes. An outside caller reaches every alive seat. `--re` writes a child in that thread and wakes the same set. `--decline` writes a child whose body is `decline`, stores an empty `nudged`, and types nothing. The package was already over the 2,500-line target; this is a thin wrapper beside mail. (#33)
@@ -293,6 +297,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.4.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.4
 [0.4.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.3
 [0.4.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.2
 [0.4.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.1
