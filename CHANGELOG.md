@@ -4,15 +4,29 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-18
+
+`foil --version` prints 0.5.0.
+
+### Breaking
+
+- The roster is three shared lists in the project folder: `harnesses.toml`, `roles.toml`, and `mapping.toml`. Permission defaults to `auto`. `templates/<role>.toml` is not read. Several fleets can run on one repository and one checkout. `FOIL_FLEET` selects a fleet and defaults to `main`. Each fleet has its own board, posts, registry, and `overrides.toml` under `fleets/<id>/`. (#43)
+- From inside the fleet, `foil roster update ROLE model=VALUE` writes that fleet's `overrides.toml` and leaves `mapping.toml` unchanged. The next spawn applies that model as the harness model flag. Resume still uses the model recorded on the seat. (#43)
+
+### Upgrade from 0.4
+
+Do this between goals. Do not resume a seat that was started on 0.4.
+
+1. With 0.4 still on `PATH`, run `foil seat kill --all` in the project. A stale seat whose tmux window is already gone also counts.
+2. Upgrade Foil. `foil --version` prints `foil 0.5.0`.
+3. Run `foil init` in the project. It moves a project-root `board/` and `run/` under `fleets/main/` when that fleet's copies are absent or empty, and it rewrites those absolute prefixes inside that fleet's `run/`. It writes the three lists when they are missing. It does not read `templates/<role>.toml`.
+4. Copy each role's harness, model, worktree, and permission from the old template file into `roles.toml` and `mapping.toml`. A list `init` just wrote uses `permission = "auto"` and omits `model`. Set `permission` from outside the fleet.
+5. Lessons in `memory/` and seat worktrees stay. Spawn the lead again. `FOIL_FLEET` defaults to `main`, which is the lifted fleet.
+
 ### Fixed
 
 - The init report lists a persona as available only when `roles.toml` has no row for it.
 - `foil post` writes the current fleet's room. Another fleet's room stays unchanged.
-
-### Changed
-
-- Config is three shared lists: `harnesses.toml`, `roles.toml`, and `mapping.toml`. Permission defaults to `auto`. Several fleets can run on one repository. They share those lists and the checkout. `FOIL_FLEET` selects a fleet and defaults to `main`. Each fleet has its own board, posts, registry, and `overrides.toml`. (#43)
-- From inside the fleet, `foil roster update ROLE model=VALUE` writes that fleet's overrides and leaves the shared mapping unchanged. The lead re-reads `overrides.toml`. The next spawn applies that model as the harness model flag. Resume still uses the model recorded on the seat. (#43)
 
 ## [0.4.4] - 2026-10-18
 
@@ -307,6 +321,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.5.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.0
 [0.4.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.4
 [0.4.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.3
 [0.4.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.2

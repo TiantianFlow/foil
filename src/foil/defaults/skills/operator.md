@@ -194,6 +194,8 @@ One foil install serves every project on this machine. Updating it changes the c
 4. Re-copy any user-level copy of this skill.
 5. Note `updated` in `board/status.md`, then spawn the lead as in the first-run check. The previous goal's file already says `state: done`, so wait until `updated` changes.
 
+From 0.4 to 0.5, use that order between goals. Do not resume a seat started on 0.4. `foil init` moves a project-root `board/` and `run/` under `fleets/main/` when that fleet's copies are absent or empty. It writes `harnesses.toml`, `roles.toml`, and `mapping.toml` when they are missing. It does not read `templates/<role>.toml`. After init, copy each role's harness, model, worktree, and permission from those old files into the lists. A new list uses `permission = "auto"` and omits `model`. Set `permission` from outside the fleet. Lessons in `memory/` and seat worktrees stay. `FOIL_FLEET` defaults to `main`.
+
 After `foil seat kill --all`, either case can occur, so check. Run `tmux ls`. If it lists any session, a server is running: a variable a harness preset names in `env` comes from that server. Set it with `tmux set-environment -g NAME VALUE` before you spawn. If it says no server is running, the next spawn starts a server from your shell.
 
 ## Adding a role
