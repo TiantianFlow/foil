@@ -20,6 +20,7 @@ SKELETON = (
     "memory",
     "board/mail",
     "board/notes",
+    "board/room",
     "board/tasks",
     "board/results",
     "run/instructions",

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from foil.board_ops import split_front_matter
 from foil.cli import main
 from foil.project import foil_root
 from foil.store import load_registry
@@ -481,6 +482,145 @@ def test_send_to_a_killed_seat_types_into_no_window(
         _close(repo)
 
 
+def test_ordinary_answer_stays_with_the_lead_and_post_reaches_every_seat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _prepare(tmp_path, "scenario-2", monkeypatch)
+
+    def pane(name: str) -> str:
+        if main(["seat", "peek", name]) != 0:
+            capsys.readouterr()
+            return ""
+        return capsys.readouterr().out
+
+    def room_files() -> list[Path]:
+        directory = foil_root(repo) / "board" / "room"
+        return sorted(path for path in directory.rglob("*.md") if path.is_file())
+
+    def note_names() -> list[str]:
+        notes = foil_root(repo) / "board" / "notes"
+        return sorted(path.name for path in notes.iterdir() if path.is_file())
+
+    try:
+        fake = foil_root(repo) / "run" / "fake"
+        fake.mkdir(parents=True, exist_ok=True)
+        (fake / "lead.json").write_text(
+            """{
+  "steps": [
+    {"when": {"mail_contains": "ordinary-answer"}, "do": [
+      {"write": "board/notes/lead-mail.txt", "text": "opened"}
+    ]},
+    {"when": {"mail_contains": "room-marker"}, "do": [
+      {"write": "board/notes/lead-room.txt", "text": "opened"}
+    ]}
+  ]
+}
+""",
+            encoding="utf-8",
+        )
+        (fake / "implementer-1.json").write_text(
+            """{
+  "steps": [
+    {"when": {"mail_contains": "room-marker"}, "do": [
+      {"write": "board/notes/implementer-1-room.txt", "text": "opened"}
+    ]}
+  ]
+}
+""",
+            encoding="utf-8",
+        )
+        (fake / "reviewer-1.json").write_text(
+            """{
+  "steps": [
+    {"when": {"mail_contains": "room-marker"}, "do": [
+      {"write": "board/notes/reviewer-1-room.txt", "text": "opened"}
+    ]}
+  ]
+}
+""",
+            encoding="utf-8",
+        )
+        assert main(["seat", "spawn", "lead"]) == 0
+        assert main(["seat", "spawn", "implementer"]) == 0
+        assert main(["seat", "spawn", "reviewer"]) == 0
+        _wait(
+            repo,
+            lambda: (
+                "foil-fake lead ready" in pane("lead")
+                and "foil-fake implementer-1 ready" in pane("implementer-1")
+                and "foil-fake reviewer-1 ready" in pane("reviewer-1")
+            ),
+        )
+        for record in load_registry(repo)["seats"].values():
+            subprocess.run(
+                ["tmux", "resize-window", "-t", record["window_id"], "-x", "400"],
+                check=False,
+                capture_output=True,
+            )
+
+        assert main(["send", "lead", "ordinary-answer"]) == 0
+        mailbox = foil_root(repo) / "board" / "mail" / "lead"
+        written = list(mailbox.glob("*.md"))
+        assert len(written) == 1
+        mail_path = str(written[0].resolve())
+        _wait(repo, lambda: f"user {mail_path}" in pane("lead"))
+        assert f"user {mail_path}" in pane("lead")
+        assert mail_path not in pane("implementer-1")
+        assert mail_path not in pane("reviewer-1")
+        assert room_files() == []
+        _wait(repo, lambda: note_names() == ["lead-mail.txt"])
+        assert note_names() == ["lead-mail.txt"]
+
+        assert main(["post", "room-marker"]) == 0
+        posted = room_files()
+        assert len(posted) == 1
+        root = posted[0]
+        assert root.parent.parent == foil_root(repo) / "board" / "room"
+        assert root.name == f"{root.parent.name}.md"
+        fields, body = split_front_matter(root.read_text(encoding="utf-8"))
+        assert fields is not None
+        assert fields["from"] == "user"
+        assert "room-marker" in body
+        assert fields["nudged"] == ["implementer-1", "lead", "reviewer-1"]
+        room_path = str(root.resolve())
+        nudge = f"user {room_path}"
+        seats = ("lead", "implementer-1", "reviewer-1")
+        _wait(repo, lambda: all(nudge in pane(name) for name in seats))
+        for name in seats:
+            text = pane(name)
+            assert nudge in text
+            assert "room-marker" not in text
+        _wait(
+            repo,
+            lambda: note_names()
+            == [
+                "implementer-1-room.txt",
+                "lead-mail.txt",
+                "lead-room.txt",
+                "reviewer-1-room.txt",
+            ],
+        )
+
+        session = str(load_registry(repo)["tmux_session"])
+        before = _panes(session)
+        notes_before = note_names()
+        parent = root.read_bytes()
+        assert main(["post", "--re", str(root.resolve()), "--decline"]) == 0
+        declined = room_files()
+        assert len(declined) == 2
+        child = next(path for path in declined if path != root)
+        assert child.parent == root.parent
+        fields, body = split_front_matter(child.read_text(encoding="utf-8"))
+        assert fields is not None
+        assert body == "decline\n"
+        assert fields["nudged"] == []
+        assert root.read_bytes() == parent
+        assert _panes(session) == before
+        assert note_names() == notes_before
+    finally:
+        _close(repo)
+
+
 def _install_foil(tmp_path: Path) -> Path:
     venv = tmp_path / "operator-venv"
     python = venv / "bin" / "python"
@@ -526,7 +666,7 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
 
     try:
         version = foil("--version")
-        assert version.stdout.strip() == "foil 0.4.3", version.stderr
+        assert version.stdout.strip() == "foil 0.4.4", version.stderr
         assert Path(shutil.which("foil", path=environment["PATH"]) or "") == bindir / "foil"
         assert foil("init").returncode == 0
         templates = foil_root(repo) / "templates"

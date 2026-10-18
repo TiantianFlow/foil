@@ -93,6 +93,18 @@ def _run_action(foil: Path, action: dict, log_path: Path) -> bool:
     return False
 
 
+def _nudged_path(line: str) -> Path | None:
+    """The file named by a nudge. Mail and room use one line shape."""
+
+    sender, separator, raw = line.partition(" ")
+    if not separator or not sender.strip() or not raw.strip():
+        return None
+    path = Path(raw.strip())
+    if not path.is_absolute():
+        return None
+    return path
+
+
 def _handle(
     mail: Path,
     *,
@@ -142,6 +154,8 @@ def main() -> int:
                 handled.add(line.strip())
     print(f"foil-fake {seat} ready", flush=True)
     _log(log_path, f"ready session={args.session}")
+    # Startup re-reads this seat's mailbox only. Room files are not scanned:
+    # a hand-written room file wakes nobody, and a decline types nothing.
     mailbox = foil / "board" / "mail" / seat
     if mailbox.is_dir():
         for mail in sorted(mailbox.glob("*.md")):
@@ -160,11 +174,11 @@ def main() -> int:
         if exit_on_input:
             return 0
         print(line, flush=True)
-        _path = line.split(" ", 1)[1] if " " in line else ""
-        if not _path:
+        nudged = _nudged_path(line)
+        if nudged is None:
             continue
         _handle(
-            Path(_path),
+            nudged,
             foil=foil,
             steps=steps,
             handled=handled,

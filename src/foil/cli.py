@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from foil import __version__
-from foil.board import send_mail
+from foil.board import post_room, send_mail
 from foil.board_ops import board_list, board_read
 from foil.errors import FoilError
 from foil.lifecycle import (
@@ -44,6 +44,7 @@ _ALLOWED = {
     "list": {OUTSIDE, LEAD, WORKER},
     "peek": {OUTSIDE, LEAD, WORKER},
     "send": {OUTSIDE, LEAD, WORKER},
+    "post": {OUTSIDE, LEAD, WORKER},
     "mail-read": {OUTSIDE, LEAD, WORKER},
     "mail-list": {LEAD, WORKER},
     "board-read": {OUTSIDE, LEAD, WORKER},
@@ -115,6 +116,11 @@ def _build_parser() -> argparse.ArgumentParser:
     send = sub.add_parser("send", help="Write mail and nudge the recipient")
     send.add_argument("TO", metavar="TO")
     send.add_argument("TEXT", metavar="TEXT")
+
+    post = sub.add_parser("post", help="Write a room file and nudge other seats")
+    post.add_argument("--re", metavar="PATH")
+    post.add_argument("--decline", action="store_true")
+    post.add_argument("TEXT", nargs="?", metavar="TEXT")
 
     mail = sub.add_parser("mail", help="Read mail files")
     mail_sub = mail.add_subparsers(dest="mail_command", required=True)
@@ -227,6 +233,17 @@ def _run(args: argparse.Namespace) -> int:
     if args.command == "send":
         authorize("send")
         send_mail(root, args.TO, _text_arg(args.TEXT))
+        return 0
+    if args.command == "post":
+        authorize("post")
+        if args.decline:
+            if args.TEXT is not None:
+                raise FoilError("foil: --decline takes no text")
+            post_room(root, "", reply=args.re, decline=True)
+        else:
+            if args.TEXT is None:
+                raise FoilError("foil: TEXT is required")
+            post_room(root, _text_arg(args.TEXT), reply=args.re)
         return 0
     if args.command == "mail":
         action = args.mail_command

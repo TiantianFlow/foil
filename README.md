@@ -1,7 +1,7 @@
 # Foil · 运筹
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.4.3-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.4.4-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -19,7 +19,7 @@ Foil turns the coding agents you already use (Claude Code, Codex, Gemini, OpenCo
 
 The pattern that works is a split: one agent plans, another implements, a third reviews. Claude Code even ships an `opusplan` setting that plans with Opus and builds with Sonnet. Across tools, though, the split usually means you do the plumbing: copy the plan into another terminal, relay the result back, remind each agent what was decided.
 
-Foil makes the split a structure. The lead plans, spawns workers by role, sends them tasks as mail, and merges their branches. You talk to one operator agent, and the lead does the managing.
+Foil makes the split a structure. The lead plans, spawns workers by role, and merges their branches. The task file `board/tasks/<id>.md` is the brief, and the mail is the pointer to it. `foil seat spawn --task` writes that mail and does not write the task file. You talk to one operator agent, and the lead does the managing.
 
 ### A clean-context check that doesn't take "done" for an answer
 
@@ -46,14 +46,14 @@ flowchart TB
   end
 
   subgraph disk["On disk"]
-    board[("<b>project folder/board</b><br/>mail · status.md")]
+    board[("<b>project folder/board</b><br/>mail · room · status.md")]
     tree[("<b>Git worktree</b><br/>branch foil/implementer-1")]
   end
 
   you <-->|chat| operator
   operator -->|"foil init · seat spawn lead<br/>send · seat peek"| foil
   lead -->|"seat spawn · seat kill · send"| foil
-  foil -->|"launch seats · write mail · type a nudge line"| fleet
+  foil -->|"launch seats · send mail to one seat<br/>or post a room file that nudges every other alive seat"| fleet
   fleet <-->|read and write| disk
   impl -->|commit| tree
   lead -->|merge| tree
@@ -73,9 +73,9 @@ flowchart TB
 
 - **You** talk only to the operator agent.
 - **Operator agent**: any harness you like, with its normal interface. It follows the operator skill and never does the project work itself.
-- **foil**: this command-line tool. It launches seats in tmux, writes mail, and types a one-line nudge into the recipient's window. It runs no daemon and never interprets what is on a seat's screen.
+- **foil**: this command-line tool. It launches seats in tmux. `foil send` writes one mail file and nudges that recipient. `foil post` writes one room file and nudges every other alive seat. The body is not typed. Both wait 200ms, then send Enter once. It runs no daemon and never interprets what is on a seat's screen.
 - **Lead, implementer, reviewer**: agent CLIs running headless in tmux windows, each started with its role's instructions. By default only the implementer gets its own Git worktree and branch.
-- **Board**: mail, notes, and `status.md`, as plain files in the project folder `foil init` prints. That folder is outside the repository. Seats read mail with `foil mail` and other board files with `foil board`.
+- **Board**: mail, room threads, notes, and `status.md`, as plain files in the project folder `foil init` prints. That folder is outside the repository. Seats read mail with `foil mail` and other board files, including room threads, with `foil board`.
 
 ## Built to stay out of the way
 
@@ -157,7 +157,7 @@ Templates default to `permission = "auto"`. An omitted permission runs the seat 
 
 Foil never interprets what is on a seat's screen. `foil seat peek` prints the raw tmux capture, and `foil seat list` reports `alive`, `dead`, or `killed` from whether the seat's window still exists, not from what is on its screen. Agents say whether they are blocked or done in board files. Foil does not scrape a pane, does not decide that a dialog is present, and does not send the keys.
 
-A nudge is typed even when the window is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path. It waits 200ms, then sends Enter once, so a harness that treats Enter inside a fast burst as an unsent paste submits the line instead of leaving it in the input. The message body is never typed. If the agent is not waiting for input, those keystrokes still go into the window. Foil does not look at the screen to decide, and it does not send Enter again.
+A nudge is typed even when the window is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path. `foil post` writes one room file and types that same line into every other alive seat. Either command waits 200ms, then sends Enter once, so a harness that treats Enter inside a fast burst as an unsent paste submits the line instead of leaving it in the input. The message body is never typed. `foil post --re PATH --decline` writes a room file and types nothing. If the agent is not waiting for input, those keystrokes still go into the window. Foil does not look at the screen to decide, and it does not send Enter again.
 
 ## Learn more
 
