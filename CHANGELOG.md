@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-19
+
+`foil --version` prints 0.5.2.
+
 ### Added
 
 - `foil view [--port N]` serves a read-only page for the project on `127.0.0.1`: the fleets and lessons, the three shared lists, and for each fleet its attach command, overrides, seats, board, and posts, with each seat's raw pane. It writes nothing and types nothing. Without `--port` it takes the first free port from 7460 to 7509. It refuses a non-loopback `Host`, a foreign `Origin`, and any method but GET and HEAD. A board file shows a 1 MiB preview and a raw view of the whole file, and no file is opened through a symlink. It has no login, so while it runs any local account can read it. The README shows how to keep it running under launchd or `systemd --user`. (#42)
@@ -355,6 +359,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.5.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.2
 [0.5.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.1
 [0.5.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.0
 [0.4.5]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.5
