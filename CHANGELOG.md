@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-19
+
+`foil --version` prints 0.5.1.
+
 ### Added
 
 - The `foil init` report can end, just before the pointer line, with one line for the human that invites a GitHub star. It shows on the first `init` in a store, then at least 3 days later, then at least 14 days after that, and afterwards at most once per newer minor version, 30 days or more after the last one. `<root>/star.json` records those days per store, not per project, and the line does not name it; `"stop": true` silences it for good. The record is written after the rest of the report has been flushed, just before the line, and the line prints only when that write succeeded, so a store Foil cannot write never repeats it and an `init` that fails writes no record; a failed write does not fail `init`, and it leaves the store root's mode unchanged. Foil never stars, opens a browser, or reads a GitHub login. The package was already over the 2,500-line target; this adds about 70 lines to `init`, the one report every operator session reads. (#46)
@@ -341,6 +345,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.5.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.1
 [0.5.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.0
 [0.4.5]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.5
 [0.4.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.4
