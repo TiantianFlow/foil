@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -559,6 +561,27 @@ def test_worker_cannot_run_any_roster_command(
     assert "not allowed" in err
 
 
+def _seal(path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``path`` unreadable, even where chmod alone does not (as root)."""
+    path.chmod(0)
+    try:
+        path.read_bytes()
+    except PermissionError:
+        return
+    read_text, read_bytes = Path.read_text, Path.read_bytes
+
+    def refuse(original: Callable[..., Any]) -> Callable[..., Any]:
+        def read(self: Path, *args: Any, **kwargs: Any) -> Any:
+            if self.resolve() == path.resolve():
+                raise PermissionError(13, "Permission denied", str(self))
+            return original(self, *args, **kwargs)
+
+        return read
+
+    monkeypatch.setattr(Path, "read_text", refuse(read_text))
+    monkeypatch.setattr(Path, "read_bytes", refuse(read_bytes))
+
+
 def _install(project: Path, role: str, body: str) -> None:
     from foil.presets import parse_template_text, read_maps, read_roles, save_maps, save_roles
 
@@ -743,7 +766,7 @@ def test_roster_authority_lead_can_list(
 
 
 def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
-    project: Path, capsys: pytest.CaptureFixture[str]
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     templates = foil_root(project) / "templates"
     _install(
@@ -778,7 +801,7 @@ def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
     )
     locked = templates / "personas" / "locked.md"
     locked.write_text("# Locked\n\nYou cannot read this.\n", encoding="utf-8")
-    locked.chmod(0)
+    _seal(locked, monkeypatch)
     _install(
         project,
         "sealed",
@@ -859,7 +882,7 @@ def test_unreadable_utf8_persona_lists_with_an_empty_description(
 
 
 def test_seat_list_keeps_an_unreadable_template(
-    project: Path, capsys: pytest.CaptureFixture[str]
+    project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     templates = foil_root(project) / "templates"
     (templates / "garbled.toml").write_bytes(b"\xff\xfe")
@@ -868,7 +891,7 @@ def test_seat_list_keeps_an_unreadable_template(
         'harness = "fake"\npersona = "personas/lead.md"\nworktree = false\npermission = "ask"\n',
         encoding="utf-8",
     )
-    locked.chmod(0)
+    _seal(locked, monkeypatch)
     registry = load_registry(project)
     for name, template in (("lead-1", "lead"), ("garbled-1", "garbled"), ("locked-1", "locked")):
         registry["seats"][name] = {
