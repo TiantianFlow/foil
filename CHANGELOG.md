@@ -4,6 +4,11 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Fixed
+
+- In `foil view`, an open info explanation closes on a click anywhere else or on Escape, not only on its own icon. (#54)
+- The Installed column in `foil view` settings shows where it found each command, and its explanation says that it checks the viewer's own `PATH`, which a seat started from another shell may not share. (#54)
+
 ### Changed
 
 - The test suite runs in parallel by default with pytest-xdist, one worker per CPU. On a 4-CPU machine the full run drops from about 4.5 minutes to about 1.2 minutes. `-n 0` runs it in one process. (#52)
