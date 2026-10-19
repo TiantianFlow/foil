@@ -765,3 +765,14 @@ def test_fleet_memory_overrides_the_model_on_the_next_spawn(
     assert worker["argv"][worker["argv"].index("--model") + 1] == "opus"
     assert load_registry(repo)["seats"]["implementer-1"]["model"] == "opus"
     assert load_registry(repo)["seats"]["implementer-1"]["harness"] == "claude"
+
+
+def test_the_first_spawn_in_a_new_fleet_stores_the_fleet_id_it_launched_with(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    monkeypatch.setenv("FOIL_FLEET", "other")
+    assert not (foil_root(repo) / "fleets" / "other" / "run" / "registry.json").exists()
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert calls[0]["fleet_id"] == load_registry(repo, "other")["fleet_id"]

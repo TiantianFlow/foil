@@ -20,6 +20,7 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/board_ops.py` | Reads and lists board files. Paths must stay inside the project folder's `board/`. |
 | `src/foil/memory.py` | Stores project lessons as JSON files. |
 | `src/foil/runner.py` | Execs the argv in a launch plan. It does not choose that argv. |
+| `src/foil/view.py` | Serves `foil view`, a read-only page on `127.0.0.1`. It calls the same readers as `seat list`, `seat peek`, `roster list`, and `memory list`, and writes nothing. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |
 
 ### Module layers
@@ -37,6 +38,7 @@ flowchart TB
   board_ops["<b>board_ops.py</b><br/>read and list board files"]
   roster_ops["<b>roster_ops.py</b><br/>list · show · add · update · remove"]
   memory["<b>memory.py</b><br/>lessons"]
+  view["<b>view.py</b><br/>read-only page on 127.0.0.1"]
 
   presets["<b>presets.py</b><br/>templates · harness presets · argv"]
   tmuxmod["<b>tmux.py</b><br/>windows by exact id and markers<br/>calls tmux"]
@@ -53,6 +55,13 @@ flowchart TB
   cli --> roster_ops
   cli --> memory
   cli --> project
+  cli --> view
+  view --> lifecycle
+  view --> roster_ops
+  view --> memory
+  view --> presets
+  view --> store
+  view --> project
   lifecycle --> presets
   lifecycle --> board
   lifecycle --> tmuxmod
@@ -77,7 +86,7 @@ flowchart TB
   classDef base fill:#e5e7eb,stroke:#374151,color:#1f2937
   classDef apart fill:#fde68a,stroke:#b45309,color:#1f2937
   class cli entry
-  class lifecycle,board,mail_ops,board_ops,roster_ops,memory core
+  class lifecycle,board,mail_ops,board_ops,roster_ops,memory,view core
   class presets,tmuxmod,store,project base
   class runner apart
 ```

@@ -4,6 +4,16 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- `foil view [--port N]` serves a read-only page for the project on `127.0.0.1`: the fleets and lessons, the three shared lists, and for each fleet its attach command, overrides, seats, board, and posts, with each seat's raw pane. It writes nothing and types nothing. Without `--port` it takes the first free port from 7460 to 7509. It refuses a non-loopback `Host`, a foreign `Origin`, and any method but GET and HEAD. A board file shows a 1 MiB preview and a raw view of the whole file, and no file is opened through a symlink. It has no login, so while it runs any local account can read it. The README shows how to keep it running under launchd or `systemd --user`. (#42)
+
+### Fixed
+
+- The first `foil seat spawn` in a new fleet (`FOIL_FLEET` set to a fleet with no registry yet) stored a different fleet id than the one it launched the window with, so that seat always read as `dead`. Spawn now creates the fleet's registry first.
+- `foil seat peek` reports `foil: could not peek seat` when tmux fails during the window check, instead of `foil: unexpected error`.
+- The operator skill tells the human `tmux attach -t '=<session>'`, so a gone `main` session does not attach to another fleet whose name begins with it.
+
 ## [0.5.1] - 2026-10-19
 
 `foil --version` prints 0.5.1.

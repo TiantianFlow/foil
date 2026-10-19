@@ -73,7 +73,7 @@ flowchart TB
 
 - **你**只和操作员 Agent 对话。
 - **操作员 Agent**：你喜欢的任何 harness，带着它原本的界面。它按操作员技能行事，自己从不做项目本身的工作。
-- **foil**：就是这个命令行工具。它在 tmux 里启动席位。`foil send` 写成一份邮件文件，并提醒那个收件人。`foil post` 写成一份房间文件，并提醒其他每个仍在运行的席位。正文不会被打进窗口。两者都等待 200ms，然后发送一次 Enter。它不跑守护进程，也从不解读席位屏幕上显示的内容。
+- **foil**：就是这个命令行工具。它在 tmux 里启动席位。`foil send` 写成一份邮件文件，并提醒那个收件人。`foil post` 写成一份房间文件，并提醒其他每个仍在运行的席位。正文不会被打进窗口。两者都等待 200ms，然后发送一次 Enter。它自己不跑守护进程，也从不解读席位屏幕上显示的内容。`foil view` 是一个可选的只读网页，在浏览器里看。
 - **主座、实现者、审查者**：在 tmux 窗口里无界面运行的 Agent CLI，每个都带着自己角色的指令启动。默认只有实现者拥有自己的 Git worktree 和分支。
 - **看板**：邮件、房间线程、笔记和 `status.md`，都是普通文件，放在 `foil init` 报告打印的项目目录里。这个目录在仓库之外。席位用 `foil mail` 读邮件，用 `foil board` 读板上的其他文件，包括房间线程。
 
@@ -81,7 +81,7 @@ flowchart TB
 
 - **由你自己的 Agent 来管理舰队。** 你不需要操作仪表盘，也不用亲手把 Agent 连在一起。你只要告诉自己常用的那个 Agent 想做什么，用哪个界面都行，只要它能在你的仓库里执行命令。它按一份技能文件行事：启动主座、查看进展、转达问题。
 - **每个 CLI 都按原样使用。** 运筹用每个 CLI 自己公开的命令行参数启动它，并用你会用的方式和它交流：往它的窗口里打一行短短的提醒，消息本身放在文件里。它从不读屏幕去猜 Agent 在做什么，所以 CLI 升级很少会让它失效；接入新的 CLI 只需要一个小小的预设文件，不用写代码。
-- **有 tmux 的地方就能跑。** 一个命令行工具，没有守护进程，也没有图形界面，可以在 Linux 或 macOS 上运行，本机或通过 SSH 连到远程机器都行。关掉终端，舰队照样工作；用 tmux 重新连上即可。
+- **有 tmux 的地方就能跑。** 一个命令行工具，自己没有守护进程，另有一个可选的只读网页，可以在 Linux 或 macOS 上运行，本机或通过 SSH 连到远程机器都行。关掉终端，舰队照样工作；用 tmux 重新连上即可。
 - **没有暗箱。** 邮件、任务、状态和经验都是普通文件，工作成果落在普通的 Git 分支上。你可以直接阅读、搜索或修改其中任何一项。它们经得住 tmux 会话被杀或机器重启，`foil seat resume` 会把席位重新拉起来。
 
 ## 演示
@@ -151,6 +151,80 @@ foil seat peek lead
 
 运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在对话框上。操作员回答的是审批对话框：文件夹信任提示、登录提示，或一个停住席位、直到有人批准的提示。更新对话框、首次运行对话框和意见征集由它报告给你，留给你来回答。那些要你在窗口里处理（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入）。CLI 在窗格里完成不了的登录，先手动登录一次，然后 `foil seat kill lead`，再重新启动主座。如果 `foil seat list` 显示这个主座是 `dead`，`foil seat kill lead` 会清掉它。等它消失之后再做一次首次运行检查。
 
+## 在浏览器里查看
+
+在仓库里运行 `foil view`，它会为这个项目提供一个只读网页，并打印网页地址。首页列出各个舰队和项目的经验。设置页显示三份共用清单。每个舰队页显示连接命令、覆盖、席位、看板和帖子，每个席位页显示它的原始窗格。它不往窗格里打任何按键，也不判断进度；进度仍然看 `board/status.md`。停掉它，每个席位都保持原样。
+
+```sh
+foil view
+foil view --port 8790
+```
+
+不加 `--port` 时，它使用 7460 到 7509 之间第一个空闲端口。它只监听 `127.0.0.1`。要从另一台机器访问，用 SSH 转发端口，例如 `ssh -L 8790:127.0.0.1:8790 host`。
+
+### 让查看器一直运行
+
+运筹没有守护进程模式。macOS 上的 launchd 和 Linux 上的 `systemd --user` 可以原样运行 `foil view`，登录时启动它，失败时重启它。你的操作员 Agent 可以替你填好这些文件。每个项目一个文件，各用一个 7460-7509 之外的端口，这样临时运行的 `foil view` 不会占走它。服务运行期间，这台机器上的每个账号都能读到这个网页，只要你还登录着（见“限制”），所以只在不与他人共用的机器上设置它。把每个大写占位符换掉：
+
+- `FOIL`：`command -v foil` 打印的绝对路径。
+- `REPO`：仓库的绝对路径。
+- `PORT`：端口。
+- `YOUR_PATH`：在你自己的终端里运行 `echo $PATH` 打印的内容。服务启动时的 `PATH` 很少，没有你的 `PATH` 就找不到 tmux 和你的 Agent CLI。
+- `HOME_DIR`：你的主目录的绝对路径。
+
+如果你设置了 `FOIL_HOME`、`XDG_DATA_HOME` 或 `TMUX_TMPDIR`，在 `PATH` 旁边加上同样的值；`TMUX_TMPDIR` 不一致时，查看器找不到席位的窗口，会把每个席位都显示为 dead。升级运筹之后重启这个服务。
+
+macOS，`~/Library/LaunchAgents/dev.foil.view.PROJECT.plist`：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.foil.view.PROJECT</string>
+  <key>ProgramArguments</key><array>
+    <string>FOIL</string><string>view</string><string>--port</string><string>PORT</string>
+  </array>
+  <key>WorkingDirectory</key><string>REPO</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>YOUR_PATH</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>HOME_DIR/Library/Logs/foil-view-PROJECT.log</string>
+  <key>StandardErrorPath</key><string>HOME_DIR/Library/Logs/foil-view-PROJECT.log</string>
+</dict></plist>
+```
+
+```sh
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.foil.view.PROJECT.plist
+launchctl bootout gui/$(id -u)/dev.foil.view.PROJECT
+```
+
+第一行启动它，第二行停止它。改过文件之后，先停止再启动。它在失败后重启，最多每 30 秒一次；正常停止后不重启。
+
+Linux，`~/.config/systemd/user/foil-view-PROJECT.service`。把 `YOUR_PATH` 里的每个 `%` 写成 `%%`：
+
+```ini
+[Unit]
+Description=Foil viewer for PROJECT
+
+[Service]
+ExecStart="FOIL" view --port PORT
+WorkingDirectory=REPO
+Environment="PATH=YOUR_PATH"
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user enable --now foil-view-PROJECT
+systemctl --user disable --now foil-view-PROJECT
+journalctl --user -u foil-view-PROJECT
+```
+
+它在你登录期间运行。
+
 ## 限制
 
 运筹保护的是遵守说明的席位，不是把恶意进程隔离开。席位身份来自运筹启动它时设置的环境变量 `FOIL_SEAT_ID`。没有哪个参数能让一个席位自称是另一个席位。在这台机器上你能做的事，以你的身份运行的进程也能做。
@@ -158,6 +232,8 @@ foil seat peek lead
 模板默认是 `permission = "auto"`。省略 `permission` 时，席位无人值守地运行。把 `permission` 设成 `"ask"` 是模板重新选择提示的方式：那个席位会停在第一个审批提示上。把 `permission` 设成 `auto` 会插入该预设的自动批准参数。对 Claude，这些参数是 `--permission-mode` 和 `auto`。Claude Code 的 auto 模式仍可能在某些命令前询问，所以 auto 席位可能停在审批提示上。要看一眼新席位。那个席位仍然是你。
 
 运筹从不解读窗口里的内容。`foil seat peek` 打印 tmux 原样捕获的文本，`foil seat list` 报告 `alive`、`dead` 或 `killed`，依据是席位的窗口还在不在，而不是屏幕上显示了什么。Agent 是否卡住、是否做完，由它们自己写在看板文件里。运筹不会抓取窗格，不会判断对话框是否出现，也不会发送按键。
+
+`foil view` 没有登录。你的项目文件夹只有你能读，但 `127.0.0.1` 上的端口对这台机器上的每个账号都开放，所以查看器运行期间，任何登录这台机器的人都能读到它，包括窗格文本和看板文件。它会尽力隐藏启动命令里看起来像凭据的参数。在别人也会登录的机器上，用完就停掉它。
 
 即使窗口不在输入提示符，提醒也会被打进去。`foil send` 先把邮件写成文件，再往收件人的窗口打一行：发件人、一个空格、邮件文件的绝对路径。`foil post` 写成一份房间文件，再把同样的一行打进其他每个仍在运行的席位。两者都等待 200ms，然后发送一次 Enter，这样把快速连击里的 Enter 当成未发送粘贴的 harness 会提交这一行，而不是把它留在输入行里。消息正文从不被打进窗口。`foil post --re PATH --decline` 写成一份房间文件，但不打任何按键。如果 Agent 并不在等输入，这些按键仍然会进入窗口。运筹不会先看窗口再决定打不打，也不会再发送一次 Enter。
 

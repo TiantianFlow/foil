@@ -34,6 +34,7 @@ FLAGS = {
     ("roster", "add"): {"--from"},
     ("roster", "update"): set(),
     ("roster", "remove"): set(),
+    ("view",): {"--port"},
 }
 
 ROLE_COMMANDS = {
@@ -54,6 +55,7 @@ ROLE_COMMANDS = {
         ("roster", "show"),
         ("roster", "add"),
         ("roster", "update"),
+        ("view",),
     },
     "lead.md": {
         ("seat", "spawn"),

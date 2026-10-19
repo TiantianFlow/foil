@@ -8,6 +8,9 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -42,6 +45,7 @@ _UPGRADE = (
     f"then foil init. When that foil is no longer on PATH, {_OLD_FOIL}"
 )
 _RESOLVED_HOME: dict[str, Path] = {}
+_COMMON_DIRS: ContextVar[dict[Path, Path] | None] = ContextVar("foil_common_dirs", default=None)
 
 
 def require_host_tools() -> None:
@@ -60,11 +64,27 @@ def common_dir(start: Path | None = None) -> Path:
     return _common_dir(cwd)
 
 
+@contextmanager
+def cached_common_dirs() -> Iterator[None]:
+    """Run git once per directory inside this block. The viewer wraps each request."""
+
+    token = _COMMON_DIRS.set({})
+    try:
+        yield
+    finally:
+        _COMMON_DIRS.reset(token)
+
+
 def _common_dir(cwd: Path) -> Path:
+    cache = _COMMON_DIRS.get()
+    if cache is not None and cwd in cache:
+        return cache[cwd]
     raw = _git_line(cwd, "--git-common-dir")
     path = Path(raw)
     if not path.is_absolute():
         path = (cwd / path).resolve()
+    if cache is not None:
+        cache[cwd] = path
     return path
 
 
