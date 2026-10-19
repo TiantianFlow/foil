@@ -7,12 +7,17 @@ Notable changes to Foil, newest first.
 ### Added
 
 - `foil view [--port N]` serves a read-only page for the project on `127.0.0.1`: the fleets and lessons, the three shared lists, and for each fleet its attach command, overrides, seats, board, and posts, with each seat's raw pane. It writes nothing and types nothing. Without `--port` it takes the first free port from 7460 to 7509. It refuses a non-loopback `Host`, a foreign `Origin`, and any method but GET and HEAD. A board file shows a 1 MiB preview and a raw view of the whole file, and no file is opened through a symlink. It has no login, so while it runs any local account can read it. The README shows how to keep it running under launchd or `systemd --user`. (#42)
+- The `foil init` report can end, just before the pointer line, with one line for the human that invites a GitHub star. It shows on the first `init` in a store, then at least 3 days later, then at least 14 days after that, and afterwards at most once per newer minor version, 30 days or more after the last one. `<root>/star.json` records those days per store, not per project, and the line does not name it; `"stop": true` silences it for good. The record is written after the rest of the report has been flushed, just before the line, and the line prints only when that write succeeded, so a store Foil cannot write never repeats it and an `init` that fails writes no record; a failed write does not fail `init`, and it leaves the store root's mode unchanged. Foil never stars, opens a browser, or reads a GitHub login. The package was already over the 2,500-line target; this adds about 70 lines to `init`, the one report every operator session reads. (#46)
 
 ### Fixed
 
 - The first `foil seat spawn` in a new fleet (`FOIL_FLEET` set to a fleet with no registry yet) stored a different fleet id than the one it launched the window with, so that seat always read as `dead`. Spawn now creates the fleet's registry first.
 - `foil seat peek` reports `foil: could not peek seat` when tmux fails during the window check, instead of `foil: unexpected error`.
 - The operator skill tells the human `tmux attach -t '=<session>'`, so a gone `main` session does not attach to another fleet whose name begins with it.
+
+### Changed
+
+- The operator skill relays that line once, after the goal reaches `state: done`, and sets `"stop": true` when the human declines. The README invites a star in one line. Package metadata names the supported agent CLIs.
 
 ## [0.5.0] - 2026-10-18
 

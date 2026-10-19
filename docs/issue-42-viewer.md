@@ -300,7 +300,7 @@ What the server does:
   `access_token`, `secret`, `password`, and the rest in `errors.py`), so `--api-key AKIA...` is hidden
   too, as are the value after `--token` or `--key`, a `*_TOKEN=` or
   `*_KEY=` assignment, a header value after a secret name, and URL
-  user info. This is best effort, and F35 and D2 say so.
+  user info. This is best effort, and F38 and D2 say so.
 
 Who can still read the page:
 
@@ -312,7 +312,7 @@ Who can still read the page:
   and its files are 0600, and the tmux socket is private, so today
   other users cannot read pane text or the board. Loopback TCP is open
   to every local user, so while the viewer runs, they can. This is the
-  same trade opencode and Syncthing make by default. It goes into F34
+  same trade opencode and Syncthing make by default. It goes into F37
   and D2, not only the README, so it is a stated limit. The common next
   step, if it is ever needed, is opencode's: an environment variable
   that turns on basic auth, which fits a unit file.
@@ -499,11 +499,11 @@ Standing checks that change:
 ## 10. Requirement text this change lands
 
 - **Section 6.1:** a row `foil view` | `--port N` | serves the read-only
-  page (F34, F35, F36). The count becomes nine top-level commands and twenty-three
+  page (F37, F38, F39). The count becomes nine top-level commands and twenty-three
   actions.
 - **Section 6.2:** a `view` column: outside the fleet yes, lead no,
   worker no.
-- **F34, F35, F36 (new, under Visibility):** running and access, the
+- **F37, F38, F39 (new, under Visibility):** running and access, the
   pages, and board files. The agreed text, condensed, plus
   every user-visible rule this design adds: the port range 7460-7509
   and `--port` validation; the messages `foil: port N is in use`,

@@ -1,4 +1,4 @@
-"""`foil view` (F34): a read-only page over real sockets, with tmux stood in."""
+"""`foil view` (F37): a read-only page over real sockets, with tmux stood in."""
 
 from __future__ import annotations
 

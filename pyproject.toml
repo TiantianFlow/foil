@@ -5,23 +5,40 @@ build-backend = "hatchling.build"
 [project]
 name = "foil-orchestrator"
 version = "0.5.0"
-description = "Durable coordination for complementary CLI-agent fleets, with a read-only local viewer"
+description = "Your agents' loyal opposition: Claude Code, Codex, Gemini, OpenCode, and Grok as a small team that plans, implements, reviews, and merges in tmux, with a read-only local viewer"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [
   { name = "TiantianFlow", email = "177855728+TiantianFlow@users.noreply.github.com" },
 ]
-keywords = ["agents", "cli", "orchestration", "tmux"]
+keywords = [
+  "agents",
+  "ai-agents",
+  "claude-code",
+  "cli",
+  "code-review",
+  "codex",
+  "coding-agents",
+  "gemini",
+  "git-worktree",
+  "multi-agent",
+  "opencode",
+  "orchestration",
+  "tmux",
+]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
+  "Intended Audience :: Developers",
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: MacOS",
   "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development",
+  "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = []
 

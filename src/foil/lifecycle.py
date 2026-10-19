@@ -8,8 +8,9 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from foil import __version__
@@ -44,9 +45,11 @@ from foil.project import (
     project_record,
     require_host_tools,
     rewrite_stored_paths,
+    store_root,
 )
 from foil.store import (
     SAFE_ID,
+    SCHEMA_VERSION,
     SEAT_FIELDS,
     create_exclusive,
     ensure_registry,
@@ -62,6 +65,72 @@ from foil.store import (
     write_json,
 )
 from foil.tmux import ProbeState, TmuxController, TmuxError, TmuxTarget
+
+STAR_URL = "https://github.com/TiantianFlow/foil"
+STAR_GAPS = (3, 14)  # days before the second and the third star line
+STAR_LATER = 30  # days before one more line on a new minor version
+
+
+def _minor(version: str) -> tuple[int, int]:
+    match = re.match(r"(\d+)\.(\d+)", version)
+    if not match:
+        raise ValueError(version)
+    return int(match[1]), int(match[2])
+
+
+def _star_due() -> dict | None:
+    """The star record to save with this report's line, or None when no line is due."""
+    path = store_root() / "star.json"
+    today = date.today()
+    running = _minor(__version__)
+    if not (path.exists() or path.is_symlink()):
+        record, shown, seen = {}, [], running
+    else:
+        try:
+            record = read_json(path)
+            shown = [date.fromisoformat(day) for day in record["shown"]]
+            seen = _minor(str(record["minor"]))
+            stop = record["stop"]
+        except (FoilError, KeyError, TypeError, ValueError, RecursionError):
+            return None
+        if stop is not False or not shown:
+            return None
+        gap = (today - shown[-1]).days
+        if len(shown) <= len(STAR_GAPS):
+            due = gap >= STAR_GAPS[len(shown) - 1]
+        else:
+            due = gap >= STAR_LATER and running > seen
+        if not due:
+            return None
+    return {
+        **record,
+        "schema_version": SCHEMA_VERSION,
+        "shown": [*record.get("shown", []), today.isoformat()],
+        "minor": ".".join(map(str, max(running, seen))),
+        "stop": False,
+    }
+
+
+def _star_saved(record: dict | None) -> bool:
+    """Write the record atomically. The store root is the user's, so leave its mode alone."""
+    if record is None:
+        return False
+    path = store_root() / "star.json"
+    temporary = None
+    try:
+        descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=".star.", suffix=".tmp")
+        temporary = Path(name)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(record, handle, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except (OSError, TypeError, ValueError, RecursionError):
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        return False
+    return True
 
 
 def _names(items: list[str]) -> str:
@@ -154,6 +223,10 @@ def _print_init_report(
         "let the workers run unattended."
     )
     print(f"Project folder: {foil_root(toplevel)}")
+    # Flush first: a closed stdout then fails before the record is spent.
+    sys.stdout.flush()
+    if _star_saved(_star_due()):
+        print(f"For the human: if Foil helps, a GitHub star helps others find it: {STAR_URL}")
     print(f"Read {foil_root(toplevel) / 'skills' / 'operator.md'} and follow it. My goal: <goal>.")
 
 
