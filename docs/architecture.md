@@ -20,7 +20,7 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/board_ops.py` | Reads and lists board files. Paths must stay inside the project folder's `board/`. |
 | `src/foil/memory.py` | Stores project lessons as JSON files. |
 | `src/foil/runner.py` | Execs the argv in a launch plan. It does not choose that argv. |
-| `src/foil/view.py` | Serves `foil view`, a read-only page on `127.0.0.1`. It calls the same readers as `seat list`, `seat peek`, `roster list`, and `memory list`, and writes nothing. |
+| `src/foil/view.py` | Serves `foil view`, a read-only page on `127.0.0.1`. It calls the same readers as `seat list`, `seat peek`, `roster list`, and `memory list`, and writes nothing. At start it reads `tailscale status --json` once, so a request that `tailscale serve` forwards from the owner's login can load under the tailnet name. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |
 
 ### Module layers

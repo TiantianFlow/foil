@@ -4,6 +4,16 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- `foil view` can be opened over Tailscale through `tailscale serve`. It still listens on `127.0.0.1` only. Under this machine's tailnet name it serves only requests Tailscale marks as from the login that owns the machine; Funnel traffic, tagged devices, and other users get an empty 403. (#48)
+
+### Changed
+
+- `foil view` gives no raw view of a board file over 16 MiB. (#48)
+- A `foil view` page build gives tmux at most 10 seconds in total, so a hung tmux call no longer holds one of the 8 build slots past the request. (#48)
+- The Agents info text says that `foil seat archive` frees a killed seat's name and that an archived seat is not listed. docs/requirements.md now lists every info text, and a test checks that the page serves exactly those. (#48)
+
 ## [0.5.2] - 2026-10-19
 
 `foil --version` prints 0.5.2.
