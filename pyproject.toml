@@ -55,6 +55,7 @@ foil = "foil.cli:main"
 dev = [
   "hypothesis",
   "pytest",
+  "pytest-xdist",
   "ruff",
 ]
 
@@ -86,7 +87,7 @@ exclude = [
 packages = ["src/foil"]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra -n auto"
 testpaths = ["tests"]
 pythonpath = ["src", "."]
 markers = [
