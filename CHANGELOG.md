@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Changed
+
+- The test suite runs in parallel by default with pytest-xdist, one worker per CPU. On a 4-CPU machine the full run drops from about 4.5 minutes to about 1.2 minutes. `-n 0` runs it in one process. (#52)
+
 ## [0.5.2] - 2026-10-19
 
 `foil --version` prints 0.5.2.
