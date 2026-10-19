@@ -328,11 +328,11 @@ def _worktree(toplevel: Path, seat: str) -> tuple[str, str]:
     raise FoilError("foil: could not name worktree")
 
 
-def _session_name(toplevel: Path) -> str:
+def _session_name(toplevel: Path, fleet: str | None = None) -> str:
     slug = re.sub(r"[^A-Za-z0-9]+", "-", toplevel.name).strip("-")[:32] or "repo"
     digest = hashlib.sha256(str(toplevel.resolve()).encode()).hexdigest()[:8]
     base = f"foil-{slug}-{digest}"
-    fleet = fleet_id()
+    fleet = fleet or fleet_id()
     if fleet == "main":
         return base
     extra = re.sub(r"[^A-Za-z0-9]+", "-", fleet).strip("-")[:32] or "fleet"
@@ -626,6 +626,25 @@ def _state(registry: dict, name: str, record: dict[str, str]) -> str:
     return "alive" if owned else "dead"
 
 
+def _owned(registry: dict, name: str, record: dict[str, str], state: str) -> bool:
+    """Whether the seat's window still carries this fleet and this seat, dead pane or not."""
+
+    window = record.get("window_id") or ""
+    if state != "dead" or not window.startswith("@"):
+        return state == "alive"
+    target = TmuxTarget(
+        session_name=str(registry.get("tmux_session") or ""),
+        window_name=name,
+        session_id=None,
+        window_id=window,
+    )
+    try:
+        probe = TmuxController().probe(str(registry["fleet_id"]), name, target)
+    except TmuxError:
+        return False
+    return bool(probe.identity_matches)
+
+
 def spawn_seat(
     root: Path,
     template: str,
@@ -638,6 +657,8 @@ def spawn_seat(
     persona_text(loaded)
     if task is not None:
         scan(task)
+    # A fleet's first spawn must launch with the fleet id it stores.
+    ensure_registry(root)
     registry = load_registry(root)
     seat = _seat_name(registry, loaded["name"], name)
     stored = sum(item["template"] == loaded["name"] for item in registry["seats"].values())
@@ -712,9 +733,11 @@ def _drop_mail(path: Path | None) -> None:
         path.unlink()
 
 
-def _target(registry: dict, root: Path, seat_name: str, window: str) -> TmuxTarget:
+def _target(
+    registry: dict, root: Path, seat_name: str, window: str, fleet: str | None = None
+) -> TmuxTarget:
     return TmuxTarget(
-        session_name=str(registry.get("tmux_session") or _session_name(root)),
+        session_name=str(registry.get("tmux_session") or _session_name(root, fleet)),
         window_name=seat_name,
         session_id=None,
         window_id=window,
@@ -978,28 +1001,47 @@ def _list_archived(root: Path, *, as_json: bool) -> None:
         )
 
 
-def list_seats(root: Path, *, as_json: bool = False, archived: bool = False) -> None:
-    if archived:
-        _list_archived(root, as_json=as_json)
-        return
-    registry = load_registry(root)
+def seat_rows(
+    root: Path, registry: dict, *, only: str | None = None, owned: bool = False
+) -> list[dict]:
+    """Seat facts for `seat list`, plus branch and window id.
+
+    ``only`` keeps one seat. ``owned`` adds whether its window still carries
+    this fleet and seat, which costs a second probe for a dead seat.
+    """
+
     rows = []
     for seat_name, record in sorted(registry["seats"].items()):
+        if only is not None and seat_name != only:
+            continue
         try:
             description = read_description(load_template(root, record["template"]))
         except (FoilError, OSError, UnicodeDecodeError):
             description = ""
+        state = _state(registry, seat_name, record)
         rows.append(
             {
                 "name": seat_name,
                 "template": record["template"],
-                "state": _state(registry, seat_name, record),
+                "state": state,
                 "worktree": record["worktree"],
                 "harness": record.get("harness", ""),
                 "model": record.get("model", ""),
                 "description": description,
+                "branch": record.get("branch", ""),
+                "window_id": record.get("window_id", ""),
+                "owned": owned and _owned(registry, seat_name, record, state),
             }
         )
+    return rows
+
+
+def list_seats(root: Path, *, as_json: bool = False, archived: bool = False) -> None:
+    if archived:
+        _list_archived(root, as_json=as_json)
+        return
+    keys = ("name", "template", "state", "worktree", "harness", "model", "description")
+    rows = [{key: row[key] for key in keys} for row in seat_rows(root, load_registry(root))]
     if as_json:
         print(json.dumps(rows, sort_keys=True))
         return
@@ -1012,24 +1054,32 @@ def list_seats(root: Path, *, as_json: bool = False, archived: bool = False) -> 
 
 
 def peek_seat(root: Path, name: str, *, lines: int) -> None:
+    sys.stdout.write(peek_text(root, name, lines=lines))
+
+
+def peek_text(root: Path, name: str, *, lines: int, fleet: str | None = None) -> str:
     if lines < 1:
         raise FoilError("foil: invalid lines")
-    registry = load_registry(root)
+    registry = load_registry(root, fleet)
     record = _known(registry, name)
     state = _state(registry, name, record)
     window = record.get("window_id") or ""
     controller = TmuxController()
-    probe = (
-        controller.probe(str(registry["fleet_id"]), name, _target(registry, root, name, window))
-        if window
-        else None
-    )
+    try:
+        probe = (
+            controller.probe(
+                str(registry["fleet_id"]), name, _target(registry, root, name, window, fleet)
+            )
+            if window
+            else None
+        )
+    except TmuxError as exc:
+        raise FoilError("foil: could not peek seat") from exc
     # A dead pane is still this seat's pane when the markers match.
     owned = probe is not None and probe.observed is not None and bool(probe.identity_matches)
     if state == "killed" or not owned:
         raise FoilError(f"foil: seat '{name}' is {state}")
     try:
-        text = controller.capture_pane(probe.observed.window_id or "", lines)
+        return controller.capture_pane(probe.observed.window_id or "", lines)
     except TmuxError as exc:
         raise FoilError("foil: could not peek seat") from exc
-    sys.stdout.write(text)
