@@ -39,11 +39,13 @@ _budget = threading.local()
 def time_budget(seconds: float) -> Iterator[None]:
     """Every tmux call in this thread ends within ``seconds``; one still running is stopped."""
 
-    _budget.until = time.monotonic() + seconds
+    outer = getattr(_budget, "until", None)
+    until = time.monotonic() + seconds
+    _budget.until = until if outer is None else min(outer, until)
     try:
         yield
     finally:
-        _budget.until = None
+        _budget.until = outer
 
 
 class TmuxError(RuntimeError):

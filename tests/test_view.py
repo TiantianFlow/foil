@@ -824,25 +824,32 @@ def test_the_tailnet_name_loads_only_for_the_owner_login(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     monkeypatch.setattr(view, "tailnet", lambda: NODE)
-    owner = {"Tailscale-User-Login": NODE[1]}
+    owner = {"Tailscale-User-Login": NODE[1], "X-Forwarded-Host": NODE[0]}
     with _serving(repo) as port:
         for host in (NODE[0], f"{NODE[0]}:8443", NODE[0].upper()):
-            assert _get(port, host=host, headers=owner)[0] == 200, host
+            forwarded = {**owner, "X-Forwarded-Host": host}
+            assert _get(port, host=host, headers=forwarded)[0] == 200, host
         for origin in (f"https://{NODE[0]}", f"http://{NODE[0]}"):
             assert _get(port, host=NODE[0], headers={**owner, "Origin": origin})[0] == 200
         refused = [
             {},
-            {"Tailscale-User-Login": "other@github"},
-            {"Tailscale-User-Login": NODE[1].upper()},
+            {"X-Forwarded-Host": NODE[0]},
+            {"Tailscale-User-Login": NODE[1]},
+            {**owner, "X-Forwarded-Host": "other.example"},
+            {**owner, "Tailscale-User-Login": "other@github"},
+            {**owner, "Tailscale-User-Login": NODE[1].upper()},
             {**owner, "Origin": "https://evil.example"},
             {**owner, "Origin": "null"},
-            {"Tailscale-Funnel-Request": "?1"},
+            {"Tailscale-Funnel-Request": "?1", "X-Forwarded-Host": NODE[0]},
         ]
         for headers in refused:
             status, _fields, body = _get(port, host=NODE[0], headers=headers)
             assert (status, body) == (403, b""), headers
         # Two values cannot be told apart from a forwarded one plus a forged one.
-        twice = f"GET / HTTP/1.0\r\nHost: {NODE[0]}\r\nTailscale-User-Login: {NODE[1]}\r\n"
+        twice = (
+            f"GET / HTTP/1.0\r\nHost: {NODE[0]}\r\nX-Forwarded-Host: {NODE[0]}\r\n"
+            f"Tailscale-User-Login: {NODE[1]}\r\n"
+        )
         with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
             client.sendall(f"{twice}Tailscale-User-Login: {NODE[1]}\r\n\r\n".encode())
             assert client.recv(100).split()[1] == b"403"
@@ -851,13 +858,46 @@ def test_the_tailnet_name_loads_only_for_the_owner_login(
         assert _get(port)[0] == 200
 
 
+def test_a_forwarded_request_with_a_loopback_host_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # serve routes on SNI and copies the client's Host, so another tailnet user
+    # can send Host: localhost through it.
+    repo = _repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(view, "tailnet", lambda: NODE)
+    with _serving(repo) as port:
+        for field in view.PROXIED:
+            for host in (f"127.0.0.1:{port}", "localhost", "[::1]:8000"):
+                status, _fields, body = _get(port, host=host, headers={field: "x"})
+                assert (status, body) == (403, b""), (field, host)
+        assert _get(port)[0] == 200
+
+
+def test_tailscale_status_is_read_once_per_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    calls: list[int] = []
+    monkeypatch.setattr(view, "tailnet", lambda: calls.append(1) or NODE)
+    held = socket.socket()
+    held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    held.bind(("127.0.0.1", 0))
+    held.listen()
+    base = held.getsockname()[1]
+    with held:
+        server = view.open_server(repo, None, base=base)
+        server.server_close()
+    assert calls == [1] and server.tailnet == NODE
+
+
 def test_without_tailscale_the_tailnet_name_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     monkeypatch.setattr(view, "tailnet", lambda: None)
     with _serving(repo) as port:
-        status, _fields, body = _get(port, host=NODE[0], headers={"Tailscale-User-Login": NODE[1]})
+        headers = {"Tailscale-User-Login": NODE[1], "X-Forwarded-Host": NODE[0]}
+        status, _fields, body = _get(port, host=NODE[0], headers=headers)
     assert (status, body) == (403, b"")
 
 
@@ -943,6 +983,8 @@ def test_a_tmux_call_past_the_budget_is_stopped(tmp_path: Path) -> None:
         controller._run(["has-session"])
     with time_budget(0.5), pytest.raises(TmuxError):
         time.sleep(0.6)
+        controller._run(["has-session"])
+    with time_budget(0.3), time_budget(30), pytest.raises(TmuxError):
         controller._run(["has-session"])
     assert time.monotonic() - started < 3
 

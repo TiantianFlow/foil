@@ -46,6 +46,10 @@ DEADLINE = 10
 SLOTS = 8
 CONNECTIONS = 64
 LOOPBACK = {"127.0.0.1", "localhost", "[::1]"}
+# tailscale serve sets these on every request it forwards; a local browser sends none.
+PROXIED = (
+    "X-Forwarded-For", "X-Forwarded-Host", "Tailscale-User-Login", "Tailscale-Funnel-Request"
+)
 # Argv display only: names the mail scan does not refuse but a launch flag often carries.
 _SECRET_NAME = re.compile(r"token|(^|_)(key|pat|pass|passwd|pwd)$")
 _USERINFO = re.compile(r"(://)[^/@\s]+@")
@@ -763,13 +767,21 @@ class _Handler(BaseHTTPRequestHandler):
         host = self.headers.get("Host") or ""
         origin = self.headers.get("Origin")
         name = _host_name(host)
+        # serve routes on SNI and copies the client's Host, so a forwarded request
+        # can claim a loopback name.
         if name in LOOPBACK:
-            return origin is None or origin == f"http://{host}"
+            proxied = any(field in self.headers for field in PROXIED)
+            return not proxied and (origin is None or origin == f"http://{host}")
         node = self.server.tailnet
         if node is None or name != node[0]:
             return False
         logins = self.headers.get_all("Tailscale-User-Login") or []
-        return logins == [node[1]] and origin in (None, f"https://{host}", f"http://{host}")
+        forwarded = self.headers.get_all("X-Forwarded-Host") or []
+        return (
+            logins == [node[1]]
+            and forwarded == [host]
+            and origin in (None, f"https://{host}", f"http://{host}")
+        )
 
     def do_GET(self) -> None:
         if not self._allowed():
@@ -823,9 +835,9 @@ class _Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, root: Path, port: int) -> None:
+    def __init__(self, root: Path, port: int, node: tuple[str, str] | None = None) -> None:
         self.root = root
-        self.tailnet = tailnet()
+        self.tailnet = node
         self.slots = threading.BoundedSemaphore(SLOTS)
         self.connections = threading.BoundedSemaphore(CONNECTIONS)
         super().__init__(("127.0.0.1", port), _Handler)
@@ -860,11 +872,11 @@ def _answers(port: int) -> bool:
         return False
 
 
-def _bind(root: Path, port: int) -> _Server | None:
+def _bind(root: Path, port: int, node: tuple[str, str] | None) -> _Server | None:
     if _answers(port):
         return None
     try:
-        return _Server(root, port)
+        return _Server(root, port, node)
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
             return None
@@ -874,10 +886,11 @@ def _bind(root: Path, port: int) -> _Server | None:
 def open_server(root: Path, port: str | None, *, base: int = BASE_PORT) -> _Server:
     """Bind the first free port from ``base``, or exactly ``port``."""
 
+    node = tailnet()
     if port is None:
         server = None
         for candidate in range(base, base + PORT_SPAN):
-            server = _bind(root, candidate)
+            server = _bind(root, candidate, node)
             if server is not None:
                 break
         if server is None:
@@ -885,7 +898,7 @@ def open_server(root: Path, port: str | None, *, base: int = BASE_PORT) -> _Serv
     else:
         if not (port.isdecimal() and port.isascii() and 1024 <= int(port) <= 65535):
             raise FoilError("foil: invalid port")
-        server = _bind(root, int(port))
+        server = _bind(root, int(port), node)
         if server is None:
             raise FoilError(f"foil: port {int(port)} is in use")
     return server
