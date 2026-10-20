@@ -66,8 +66,10 @@ TIPS = {
     "asks the harness to skip prompts. ask stops at the first approval. Worktree means that "
     "seat gets its own branch. The description is the first line of the persona.",
     "Harnesses": "How one CLI is launched, and the model ids that list names. Spawn does not "
-    "refuse a model that is absent from the list. Installed means the command is on PATH. "
-    "A file harnesses/<id>.toml replaces that one id.",
+    "refuse a model that is absent from the list. Installed means this viewer found the "
+    "command on the PATH it was started with, at the path shown. A seat looks the command "
+    "up on the PATH of the foil command that launched it, so a viewer started elsewhere, "
+    "such as a service, can differ. A file harnesses/<id>.toml replaces that one id.",
     "Default mapping": "The shared default in mapping.toml. The next spawn takes the row at "
     "that role's seat count, including killed seats. An omitted model starts the harness "
     "with no model. A fleet override replaces the model only, and only on the next spawn. "
@@ -137,7 +139,10 @@ border:1px solid var(--line);border-radius:6px;box-shadow:0 4px 12px #0002}
 _SCRIPT = """document.querySelectorAll('button[data-copy]').forEach(b=>b.addEventListener(
 'click',async()=>{try{await navigator.clipboard.writeText(b.dataset.copy);
 b.textContent='Copied'}catch(e){b.textContent='Copy failed'}
-setTimeout(()=>{b.textContent='Copy'},1600)}))"""
+setTimeout(()=>{b.textContent='Copy'},1600)}))
+const tips=()=>document.querySelectorAll('details.tip[open]')
+document.addEventListener('click',e=>tips().forEach(d=>{if(!d.contains(e.target))d.open=false}))
+document.addEventListener('keydown',e=>{if(e.key==='Escape')tips().forEach(d=>{d.open=false})})"""
 
 
 class _Missing(Exception):
@@ -359,7 +364,8 @@ def _settings_page(root: Path) -> str:
                 continue
             env = preset["env"]
             names = f"<small>env: {escape(', '.join(env))}</small>" if env else ""
-            installed = "yes" if shutil.which(preset["command"][0]) else _faded("no")
+            found = shutil.which(preset["command"][0])
+            installed = f"yes<small>{escape(found)}</small>" if found else _faded("no")
             models = _mono(", ".join(preset["models"])) if preset["models"] else _faded("none")
             launch = f"<code>{escape(_argv(preset['command']))}</code>{names}"
             rows.append([_mono(harness_id), installed, models, launch])

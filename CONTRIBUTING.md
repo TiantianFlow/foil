@@ -17,13 +17,19 @@ cd foil
 uv sync --frozen --extra dev
 ```
 
+`tests/test_view_browser.py` runs the `foil view` page in headless Chromium.
+Install that browser once:
+
+```sh
+uv run --frozen --extra dev playwright install --only-shell chromium
+```
+
 ## Run the checks
 
 CI runs these. Run them before opening a pull request.
 
 ```sh
-uv run --frozen --extra dev pytest --ignore=tests/e2e
-uv run --frozen --extra dev pytest tests/e2e -m "not e2e_live"
+uv run --frozen --extra dev pytest -m "not e2e_live"
 uv run --frozen --extra dev ruff check .
 uv build
 ```
