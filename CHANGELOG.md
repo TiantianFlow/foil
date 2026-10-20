@@ -8,8 +8,15 @@ Notable changes to Foil, newest first.
 
 - `foil view` can be opened over Tailscale through `tailscale serve`. It still listens on `127.0.0.1` only. Under this machine's tailnet name it serves only requests Tailscale marks as from the login that owns the machine; Funnel traffic, tagged devices, and other users get an empty 403. (#48)
 
+### Fixed
+
+- In `foil view`, an open info explanation closes on a click anywhere else or on Escape, not only on its own icon. (#54)
+- The Installed column in `foil view` settings shows where it found each command, and its explanation says that it checks the viewer's own `PATH`, which a seat started from another shell may not share. (#54)
+
 ### Changed
 
+- `tests/test_view_browser.py` runs the `foil view` page in headless Chromium through Playwright, a new dev dependency, and checks the info pop-ups and the Copy button. CI installs Chromium for it. (#54)
+- CI runs the unit and end-to-end tests as separate jobs at the same time instead of one after the other. Lint, build, and the wheel smoke test run in the shorter end-to-end job. The `Python 3.11` and `Python 3.12` checks now pass only when every job passed. (#54)
 - `foil view` refuses a request with a loopback `Host` that carries `X-Forwarded-For`, `X-Forwarded-Host`, `Tailscale-User-Login`, or `Tailscale-Funnel-Request`, so a reverse proxy in front of it on this machine now gets an empty 403. (#48)
 - `foil view` gives no raw view of a board file over 16 MiB. (#48)
 - A `foil view` page build gives tmux at most 10 seconds in total, so a hung tmux call no longer holds one of the 8 build slots past the request. (#48)
