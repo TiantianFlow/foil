@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from foil.errors import FoilError
 
@@ -222,6 +223,25 @@ def discover_project(start: Path | None = None) -> Path:
     return git_toplevel(start)
 
 
+def _origin_identity(url: str) -> str:
+    """The remote as an identity. HTTP userinfo is a credential and is not kept.
+
+    ``git remote get-url`` applies ``insteadOf``, so a clean ``https://`` remote
+    can come back with a token in the userinfo. SSH forms are left as git prints
+    them; ``git@host:path`` is not a URL with a scheme.
+    """
+
+    if "://" not in url:
+        return url
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        return url
+    host = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
 def _origin(toplevel: Path) -> str:
     try:
         result = subprocess.run(
@@ -232,7 +252,7 @@ def _origin(toplevel: Path) -> str:
         )
     except OSError:
         return ""
-    return result.stdout.strip() if result.returncode == 0 else ""
+    return _origin_identity(result.stdout.strip()) if result.returncode == 0 else ""
 
 
 def _root_commit(toplevel: Path) -> str:
@@ -987,7 +1007,11 @@ def _adopt(projects: Path, toplevel: Path) -> Path | None:
     origin = _origin(toplevel)
     gone = _gone_records(projects)
     if origin:
-        matches = [folder for folder, record in gone if record.get("origin") == origin]
+        matches = [
+            folder
+            for folder, record in gone
+            if _origin_identity(record.get("origin", "")) == origin
+        ]
         several = (
             "foil: several stored projects match this origin and their "
             "recorded paths are gone"

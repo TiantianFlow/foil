@@ -12,6 +12,7 @@ Notable changes to Foil, newest first.
 
 ### Fixed
 
+- `foil init` stores the origin remote without HTTP userinfo, and adopt matches that form. A token in the remote URL, or one git inserts through `insteadOf`, is not written into `project.json`.
 - In `foil view`, an open info explanation closes on a click anywhere else or on Escape, not only on its own icon. (#54)
 - The Installed column in `foil view` settings shows where it found each command, and its explanation says that it checks the viewer's own `PATH`, which a seat started from another shell may not share. (#54)
 
