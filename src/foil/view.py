@@ -1,4 +1,6 @@
-"""`foil view`: a read-only page for one project on 127.0.0.1. It writes nothing.
+"""`foil view`: a read-only page for every project on this host, on 127.0.0.1.
+
+It writes nothing.
 
 The tailnet reaches it only through `tailscale serve`, which keeps the request's `Host`
 and sets `Tailscale-User-Login` after deleting any value the client sent.
@@ -30,8 +32,16 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 from foil.errors import FoilError, assert_no_secret
 from foil.lifecycle import peek_text, seat_rows
 from foil.memory import read_lessons
-from foil.presets import fleet_overrides, load_preset, preset_ids, read_maps, select_harness
-from foil.project import cached_common_dirs, foil_root, project_record
+from foil.presets import (
+    entry_label,
+    fleet_overrides,
+    load_preset,
+    preset_ids,
+    read_maps,
+    select_harness,
+    spawn_entry,
+)
+from foil.project import cached_common_dirs, foil_root, project_record, store_root
 from foil.roster_ops import roster_rows
 from foil.store import SAFE_ID, load_registry
 from foil.tmux import time_budget
@@ -53,6 +63,12 @@ PROXIED = (
 # Argv display only: names the mail scan does not refuse but a launch flag often carries.
 _SECRET_NAME = re.compile(r"token|(^|_)(key|pat|pass|passwd|pwd)$")
 _USERINFO = re.compile(r"(://)[^/@\s]+@")
+_KEY = re.compile(r"[A-Za-z0-9-]{1,128}")
+PROJECTS = (
+    "Every project in this user's Foil store on this machine. A project is one repository. "
+    "Open one to see its fleets, settings, and seats. This viewer does not type into a pane "
+    "and does not decide progress."
+)
 HELP = (
     "One project shares roles, harnesses, and the default mapping. Each fleet has its own "
     "seats, board, and posts. This viewer does not type into a pane and does not decide "
@@ -70,14 +86,18 @@ TIPS = {
     "A file harnesses/<id>.toml replaces that one id.",
     "Default mapping": "The shared default in mapping.toml. The next spawn takes the row at "
     "that role's seat count, including killed seats. An omitted model starts the harness "
-    "with no model. A fleet override replaces the model only, and only on the next spawn. "
-    "Resume keeps the harness and model recorded on the seat.",
+    "with no model. A fleet's override rows for a role replace that role's rows, only in "
+    "that fleet and only on the next spawn. Resume keeps the harness and model recorded on "
+    "the seat.",
     "Attach": "The session name stored for this fleet. The viewer does not type into the pane.",
     "Workspace": "The checkout recorded for the project. Every fleet on this repository "
     "shares it. Seat worktrees are separate branches.",
-    "Overrides": "This fleet's overrides.toml. The last row for a role is the model the next "
-    "spawn uses. The harness still comes from the default mapping. A running seat keeps its "
-    "last launch. Resume does not read this file.",
+    "Overrides": "This fleet's overrides.toml. A role's rows, in order, replace its default "
+    "mapping rows in this fleet, and the next spawn takes the row at that role's seat count. "
+    "A row with no harness keeps the harness the default mapping selects. A running seat "
+    "keeps its last launch. Resume does not read this file.",
+    "Projects": "Each project's recorded checkout. A project whose checkout is gone, or now "
+    "belongs to another project folder, has no link until foil init runs in that checkout.",
     "Agents": "Alive means the window exists and the process is running. Dead means the "
     "window is gone or the process has exited, and the seat was not killed. A dead window "
     "can still be peeked. Killed means foil seat kill. A killed seat stays listed and its "
@@ -300,11 +320,11 @@ def _argv(command: list[str]) -> str:
     return " ".join(shown)
 
 
-def _fleets_page(root: Path) -> str:
+def _fleets_page(root: Path, base: str) -> str:
     def fleets() -> str:
         rows = []
         for fleet in _fleet_ids(root):
-            link = f'<a class="mono" href="/fleets/{quote(fleet)}">{escape(fleet)}</a>'
+            link = f'<a class="mono" href="{base}/fleets/{quote(fleet)}">{escape(fleet)}</a>'
             try:
                 states = [row["state"] for row in seat_rows(root, load_registry(root, fleet))]
             except Exception as exc:
@@ -323,13 +343,14 @@ def _fleets_page(root: Path) -> str:
         return _table(["Id", "State", "Text"], rows, "No lessons.")
 
     return (
-        f'<div><h1>Fleets</h1><p class="muted">{escape(HELP)}</p></div>'
+        _crumbs([("Projects", "/"), (_project_name(root), None)])
+        + f'<div><h1>Fleets</h1><p class="muted">{escape(HELP)}</p></div>'
         + _section("Fleets", _guard(fleets))
         + _section("Lessons", _guard(lessons))
     )
 
 
-def _settings_page(root: Path) -> str:
+def _settings_page(root: Path, base: str) -> str:
     def roles() -> str:
         loaded, personas = roster_rows(root)
         rows = [
@@ -376,7 +397,7 @@ def _settings_page(root: Path) -> str:
     harness_box = _guard(harnesses)
     note = "; ".join(f"{path} skipped: {reason}" for path, reason in skipped)
     return (
-        _crumbs([(_project_name(root), "/"), ("Settings", None)])
+        _crumbs([("Projects", "/"), (_project_name(root), base), ("Settings", None)])
         + "<h1>Settings</h1>"
         + _section("Roles", _guard(roles))
         + _section("Harnesses", harness_box, note=note)
@@ -384,30 +405,23 @@ def _settings_page(root: Path) -> str:
     )
 
 
-def _last_overrides(root: Path, fleet: str) -> dict[str, dict[str, str]]:
-    last: dict[str, dict[str, str]] = {}
-    for item in fleet_overrides(root, fleet):
-        last.pop(item["role"], None)
-        last[item["role"]] = item
-    return last
-
-
-def _next_models(root: Path, fleet: str, registry: dict) -> dict[str, str]:
-    """Per role, the override model when it changes what the next spawn takes (F3)."""
+def _next_entries(root: Path, fleet: str, registry: dict) -> dict[str, str]:
+    """Per role, the pair the next spawn takes when an override changes it (F3)."""
 
     try:
-        last = _last_overrides(root, fleet)
+        rows = fleet_overrides(root, fleet)
         maps = read_maps(root)
     except Exception:
         return {}
     found = {}
-    for role, item in last.items():
+    for role in dict.fromkeys(item["role"] for item in rows):
         entries = [row for row in maps if row["role"] == role]
         if not entries:
             continue
         stored = sum(seat["template"] == role for seat in registry["seats"].values())
-        if item["model"] != select_harness(entries, stored)["model"]:
-            found[role] = item["model"]
+        upcoming = spawn_entry(root, role, entries, stored, fleet)
+        if entry_label(upcoming) != entry_label(select_harness(entries, stored)):
+            found[role] = entry_label(upcoming)
     return found
 
 
@@ -539,8 +553,8 @@ def _board_sections(root: Path, fleet: str, opened: str, here: str) -> str:
     )
 
 
-def _fleet_page(root: Path, fleet: str, opened: str) -> str:
-    here = f"/fleets/{quote(fleet)}"
+def _fleet_page(root: Path, fleet: str, opened: str, base: str) -> str:
+    here = f"{base}/fleets/{quote(fleet)}"
     try:
         registry = load_registry(root, fleet)
         rows = seat_rows(root, registry)
@@ -550,14 +564,17 @@ def _fleet_page(root: Path, fleet: str, opened: str) -> str:
         attach = f"<span>Attach{_tip('Attach')}</span>{_failed(exc)}"
 
     def overrides() -> str:
-        last = _last_overrides(root, fleet)
-        noted = any(item["note"] for item in last.values())
+        rows = fleet_overrides(root, fleet)
+        noted = any(item["note"] for item in rows)
         cells = [
-            [_mono(item["role"]), _mono(item["model"])] + ([escape(item["note"])] if noted else [])
-            for item in last.values()
+            [_mono(item["role"]),
+             _mono(item["id"]) if item["id"] else _faded("default mapping"),
+             _mono(item["model"]) if item["model"] else _faded("no model")]
+            + ([escape(item["note"])] if noted else [])
+            for item in rows
         ]
         return _table(
-            ["Role", "Next spawn model"] + (["Note"] if noted else []),
+            ["Role", "Harness", "Model"] + (["Note"] if noted else []),
             cells,
             "No overrides. The next spawn uses the default mapping.",
         )
@@ -565,7 +582,7 @@ def _fleet_page(root: Path, fleet: str, opened: str) -> str:
     def agents() -> str:
         if registry is None:
             return _failed(failure or Exception())
-        upcoming = _next_models(root, fleet, registry)
+        upcoming = _next_entries(root, fleet, registry)
         cells = []
         for row in rows:
             model = _model(row["model"], upcoming.get(row["template"], ""))
@@ -581,7 +598,7 @@ def _fleet_page(root: Path, fleet: str, opened: str) -> str:
     workspace = _guard(lambda: f"<code>{escape(_checkout(root))}</code>")
     noun = "seat" if len(rows) == 1 else "seats"
     return (
-        _crumbs([(_project_name(root), "/"), (fleet, None)])
+        _crumbs([("Projects", "/"), (_project_name(root), base), (fleet, None)])
         + f'<div class="facts">{attach}'
         + f"<span>Workspace{_tip('Workspace')}</span>{workspace}</div>"
         + _section("Overrides", _guard(overrides))
@@ -594,19 +611,20 @@ def _lines(value: str) -> int:
     return int(value) if value.isdecimal() and 1 <= int(value) <= MAX_LINES else 40
 
 
-def _seat_page(root: Path, fleet: str, name: str, lines: int) -> str:
+def _seat_page(root: Path, fleet: str, name: str, lines: int, base: str) -> str:
     registry = load_registry(root, fleet)
     if not SAFE_ID.fullmatch(name) or name not in registry["seats"]:
         raise _Missing(f"No seat named {name} in fleet {fleet}.")
     row = seat_rows(root, registry, only=name, owned=True)[0]
-    upcoming = _next_models(root, fleet, registry).get(row["template"], "")
+    upcoming = _next_entries(root, fleet, registry).get(row["template"], "")
     launched = f"{row['harness']} / {row['model']}" if row["model"] else row["harness"]
     facts = [
         ("Seat", _mono(name)), ("Role", _mono(row["template"])),
         ("Description", escape(row["description"])), ("State", _state(row["state"])),
         ("Harness / model", _model(launched, upcoming)), ("Branch", _branch(row)),
     ]
-    here = f"/fleets/{quote(fleet)}/seats/{quote(name)}"
+    fleet_link = f"{base}/fleets/{quote(fleet)}"
+    here = f"{fleet_link}/seats/{quote(name)}"
     try:
         pane = peek_text(root, name, lines=lines, fleet=fleet)
     except Exception as exc:
@@ -623,33 +641,102 @@ def _seat_page(root: Path, fleet: str, name: str, lines: int) -> str:
         pane_box = f'{more}<pre aria-label="Captured pane text">{escape(pane)}</pre>'
         meta = f"{len(pane.splitlines())} lines"
     return (
-        _crumbs([(_project_name(root), "/"), (fleet, f"/fleets/{quote(fleet)}"), (name, None)])
+        _crumbs(
+            [("Projects", "/"), (_project_name(root), base), (fleet, fleet_link), (name, None)]
+        )
         + f'<div class="box">{_table([label for label, _ in facts], [[v for _, v in facts]])}</div>'
         + f'<div class="facts">{_command(_attach(registry, row))}</div>'
         + _section("Pane", pane_box, meta=meta)
     )
 
 
-def _route(root: Path, target: str) -> tuple[int, str] | _Raw:
-    """A page as (status, body), or a listed file to stream whole."""
+class _Project(NamedTuple):
+    """One folder in the store, and its checkout when that resolves back to it."""
+
+    key: str
+    name: str
+    checkout: str
+    root: Path | None
+
+
+def _projects() -> list[_Project]:
+    directory = store_root() / "projects"
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    found = []
+    for folder in sorted(directory.iterdir()):
+        if not _KEY.fullmatch(folder.name) or folder.is_symlink() or not folder.is_dir():
+            continue
+        if not (folder / "project.json").is_file():
+            continue
+        found.append(_project(folder))
+    return found
+
+
+def _project(folder: Path) -> _Project:
+    checkout = project_record(folder).get("path", "")
+    root = None
+    with suppress(Exception):
+        if checkout and Path(checkout).is_dir():
+            candidate = Path(checkout)
+            if foil_root(candidate).resolve() == folder.resolve():
+                root = candidate
+    return _Project(folder.name, Path(checkout).name or folder.name, checkout, root)
+
+
+def _projects_page() -> str:
+    def projects() -> str:
+        rows = []
+        for item in _projects():
+            if item.root is None:
+                name = _mono(item.name)
+                fleets = _faded("checkout gone or moved")
+            else:
+                name = f'<a class="mono" href="/projects/{quote(item.key)}">{escape(item.name)}</a>'
+                fleets = escape(str(len(_fleet_ids(item.root))))
+            checkout = _mono(item.checkout) if item.checkout else _faded("not recorded")
+            rows.append([name, checkout, fleets])
+        return _table(["Project", "Checkout", "Fleets"], rows, "No projects. Run foil init.")
+
+    return (
+        f'<div><h1>Projects</h1><p class="muted">{escape(PROJECTS)}</p></div>'
+        + _section("Projects", _guard(projects))
+    )
+
+
+def _route(target: str) -> tuple[int, str, tuple[str, str] | None] | _Raw:
+    """A page as (status, body, project name and link), or a listed file to stream whole."""
 
     parts = urlsplit(target)
     path = [unquote(item) for item in parts.path.split("/") if item]
     query = parse_qs(parts.query)
     opened = query.get("open", [""])[0]
+    home: tuple[str, str] | None = None
     try:
         if not path:
-            return 200, _fleets_page(root)
-        if path == ["settings"]:
-            return 200, _settings_page(root)
-        if len(path) < 2 or path[0] != "fleets":
+            return 200, _projects_page(), None
+        if len(path) < 2 or path[0] != "projects" or not _KEY.fullmatch(path[1]):
             raise _Missing("No such page.")
-        if path[1] not in _fleet_ids(root):
-            raise _Missing(f"No fleet named {path[1]} in this project.")
-        fleet = path[1]
-        if len(path) == 2:
-            return 200, _fleet_page(root, fleet, opened)
-        if path[2:] == ["raw"]:
+        folder = store_root() / "projects" / path[1]
+        if folder.is_symlink() or not (folder / "project.json").is_file():
+            raise _Missing(f"No project named {path[1]} on this machine.")
+        project = _project(folder)
+        if project.root is None:
+            raise _Missing(f"The checkout of {project.name} is gone or moved. Run foil init in it.")
+        root, base, rest = project.root, f"/projects/{quote(project.key)}", path[2:]
+        home = (project.name, base)
+        if not rest:
+            return 200, _fleets_page(root, base), home
+        if rest == ["settings"]:
+            return 200, _settings_page(root, base), home
+        if len(rest) < 2 or rest[0] != "fleets":
+            raise _Missing("No such page.")
+        if rest[1] not in _fleet_ids(root):
+            raise _Missing(f"No fleet named {rest[1]} in this project.")
+        fleet = rest[1]
+        if len(rest) == 2:
+            return 200, _fleet_page(root, fleet, opened, base), home
+        if rest[2:] == ["raw"]:
             if opened not in {rel for rel, _bytes in _board_files(root, fleet)}:
                 raise _Missing("No such file on this board.")
             handle = _open_listed(root, fleet, opened)
@@ -657,29 +744,36 @@ def _route(root: Path, target: str) -> tuple[int, str] | _Raw:
             if size > RAW_CAP:
                 os.close(handle)
                 cap = f"foil: the raw view stops at {_size(RAW_CAP)}; this file is {_size(size)}"
-                return 413, _failed(FoilError(cap))
+                return 413, _failed(FoilError(cap)), home
             return _Raw(handle, size)
-        if len(path) == 4 and path[2] == "seats":
-            return 200, _seat_page(root, fleet, path[3], _lines(query.get("lines", [""])[0]))
+        if len(rest) == 4 and rest[2] == "seats":
+            lines = _lines(query.get("lines", [""])[0])
+            return 200, _seat_page(root, fleet, rest[3], lines, base), home
         raise _Missing("No such page.")
     except _Missing as exc:
-        return 404, f'<p class="empty">{escape(str(exc))} <a href="/">Back to fleets</a></p>'
+        back = f'<a href="{escape(home[1])}">Back to fleets</a>' if home else (
+            '<a href="/">Back to projects</a>'
+        )
+        return 404, f'<p class="empty">{escape(str(exc))} {back}</p>', home
     except Exception as exc:
-        return 500, _failed(exc)
+        return 500, _failed(exc), home
 
 
-def _document(root: Path, body: str, nonce: str) -> bytes:
-    try:
-        name = _project_name(root)
-    except Exception:
-        name = root.name
+def _document(home: tuple[str, str] | None, body: str, nonce: str) -> bytes:
+    title = f"{home[0]} · Foil" if home else "Projects · Foil"
+    links = (
+        f'<a class="name mono" href="{escape(home[1])}">{escape(home[0])}</a>'
+        f'<a class="link" href="{escape(home[1])}/settings">Settings</a>'
+        if home
+        else ""
+    )
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f'<link rel="icon" href="data:,"><title>{escape(name)} · Foil</title>'
+        f'<link rel="icon" href="data:,"><title>{escape(title)}</title>'
         f"<style>{_CSS}</style></head><body><header>"
-        f'<a class="name mono" href="/">{escape(name)}</a>'
-        '<a class="link" href="/settings">Settings</a></header>'
+        '<a class="name" href="/">Foil</a>'
+        f"{links}</header>"
         f'<main>{body}</main><script nonce="{nonce}">{_SCRIPT}</script></body></html>'
     ).encode()
 
@@ -792,10 +886,10 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             with cached_common_dirs(), time_budget(DEADLINE):
-                result = _route(self.server.root, self.path)
+                result = _route(self.path)
                 if not isinstance(result, _Raw):
                     nonce = secrets.token_urlsafe(16)
-                    page = _document(self.server.root, result[1], nonce)
+                    page = _document(result[2], result[1], nonce)
         except Exception:
             self._send(500, b"")
             return
@@ -835,8 +929,7 @@ class _Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, root: Path, port: int, node: tuple[str, str] | None = None) -> None:
-        self.root = root
+    def __init__(self, port: int, node: tuple[str, str] | None = None) -> None:
         self.tailnet = node
         self.slots = threading.BoundedSemaphore(SLOTS)
         self.connections = threading.BoundedSemaphore(CONNECTIONS)
@@ -872,18 +965,18 @@ def _answers(port: int) -> bool:
         return False
 
 
-def _bind(root: Path, port: int, node: tuple[str, str] | None) -> _Server | None:
+def _bind(port: int, node: tuple[str, str] | None) -> _Server | None:
     if _answers(port):
         return None
     try:
-        return _Server(root, port, node)
+        return _Server(port, node)
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
             return None
         raise FoilError(f"foil: could not listen on 127.0.0.1:{port}") from None
 
 
-def open_server(root: Path, port: str | None, *, base: int = BASE_PORT) -> _Server:
+def open_server(port: str | None, *, base: int = BASE_PORT) -> _Server:
     """Bind the first free port from ``base``, or exactly ``port``."""
 
     if port is not None and not (
@@ -894,26 +987,26 @@ def open_server(root: Path, port: str | None, *, base: int = BASE_PORT) -> _Serv
     if port is None:
         server = None
         for candidate in range(base, base + PORT_SPAN):
-            server = _bind(root, candidate, node)
+            server = _bind(candidate, node)
             if server is not None:
                 break
         if server is None:
             raise FoilError(f"foil: no free port in {base}-{base + PORT_SPAN - 1}")
     else:
-        server = _bind(root, int(port), node)
+        server = _bind(int(port), node)
         if server is None:
             raise FoilError(f"foil: port {int(port)} is in use")
     return server
 
 
-def serve(root: Path, port: str | None, *, base: int = BASE_PORT) -> int:
+def serve(port: str | None, *, base: int = BASE_PORT) -> int:
     def stop(_signum: int, _frame: object) -> None:
         raise KeyboardInterrupt
 
     previous = signal.signal(signal.SIGTERM, stop)
     server = None
     try:
-        server = open_server(root, port, base=base)
+        server = open_server(port, base=base)
         print(f"http://127.0.0.1:{server.server_address[1]}/", flush=True)
         server.serve_forever()
     except KeyboardInterrupt:

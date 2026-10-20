@@ -153,7 +153,7 @@ Run `foil seat peek lead`, and do the same for a seat that was just spawned or r
 
 ## See it in a browser
 
-`foil view`, run in the repository, serves a read-only page for this project and prints its address. The page lists the fleets and the project's lessons. Settings shows the three shared lists. Each fleet shows its attach command, overrides, seats, board, and posts, and each seat shows its raw pane. It types nothing into a pane and decides nothing about progress; that is still `board/status.md`. Stopping it leaves every seat as it was.
+`foil view`, run from any directory, serves one read-only page for every Foil project on this machine and prints its address. The page lists the projects. Each project lists its fleets and lessons, and its Settings shows the three shared lists. Each fleet shows its attach command, overrides, seats, board, and posts, and each seat shows its raw pane. It types nothing into a pane and decides nothing about progress; that is still `board/status.md`. Stopping it leaves every seat as it was.
 
 ```sh
 foil view
@@ -166,51 +166,50 @@ To open it from your other devices on Tailscale, put `tailscale serve` in front 
 
 ### Keep the viewer running
 
-Foil has no daemon mode. launchd on macOS and `systemd --user` on Linux run `foil view` as it is, start it at login, and restart it when it fails. Your operator agent can fill these in for you. Use one file per project, each with its own port outside 7460-7509, so an ad hoc `foil view` never takes it. A service keeps the page readable by every account on the machine for as long as you are logged in (see Limits), so set one up only on a machine you do not share. Replace each capitalized placeholder:
+Foil has no daemon mode. launchd on macOS and `systemd --user` on Linux run `foil view` as it is, start it at login, and restart it when it fails. Your operator agent can fill these in for you. One service covers every project on the machine. Give it a port outside 7460-7509, so an ad hoc `foil view` never takes it. A service keeps the page readable by every account on the machine for as long as you are logged in (see Limits), so set one up only on a machine you do not share. Replace each capitalized placeholder:
 
 - `FOIL`: the absolute path that `command -v foil` prints.
-- `REPO`: the repository's absolute path.
 - `PORT`: the port.
 - `YOUR_PATH`: what `echo $PATH` prints in your own terminal. A service starts with a minimal `PATH`, and without yours it cannot find tmux or your agent CLIs.
 - `HOME_DIR`: your home directory's absolute path.
 
 If you set `FOIL_HOME`, `XDG_DATA_HOME`, or `TMUX_TMPDIR`, add the same value next to `PATH`; without the same `TMUX_TMPDIR`, the viewer cannot find your seats' windows and shows every seat dead. Restart the service after you upgrade Foil.
 
-macOS, `~/Library/LaunchAgents/dev.foil.view.PROJECT.plist`:
+macOS, `~/Library/LaunchAgents/dev.foil.view.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
-  <key>Label</key><string>dev.foil.view.PROJECT</string>
+  <key>Label</key><string>dev.foil.view</string>
   <key>ProgramArguments</key><array>
     <string>FOIL</string><string>view</string><string>--port</string><string>PORT</string>
   </array>
-  <key>WorkingDirectory</key><string>REPO</string>
+  <key>WorkingDirectory</key><string>HOME_DIR</string>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>YOUR_PATH</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ThrottleInterval</key><integer>30</integer>
-  <key>StandardOutPath</key><string>HOME_DIR/Library/Logs/foil-view-PROJECT.log</string>
-  <key>StandardErrorPath</key><string>HOME_DIR/Library/Logs/foil-view-PROJECT.log</string>
+  <key>StandardOutPath</key><string>HOME_DIR/Library/Logs/foil-view.log</string>
+  <key>StandardErrorPath</key><string>HOME_DIR/Library/Logs/foil-view.log</string>
 </dict></plist>
 ```
 
 ```sh
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.foil.view.PROJECT.plist
-launchctl bootout gui/$(id -u)/dev.foil.view.PROJECT
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.foil.view.plist
+launchctl bootout gui/$(id -u)/dev.foil.view
 ```
 
 The first line starts it and the second stops it. After you edit the file, stop it before you start it again. It restarts after a failure, at most once every 30 seconds, and not after a clean stop.
 
-Linux, `~/.config/systemd/user/foil-view-PROJECT.service`. Write each `%` in `YOUR_PATH` as `%%`:
+Linux, `~/.config/systemd/user/foil-view.service`. Write each `%` in `YOUR_PATH` as `%%`:
 
 ```ini
 [Unit]
-Description=Foil viewer for PROJECT
+Description=Foil viewer
 
 [Service]
 ExecStart="FOIL" view --port PORT
-WorkingDirectory=REPO
+WorkingDirectory=HOME_DIR
 Environment="PATH=YOUR_PATH"
 Restart=on-failure
 RestartSec=30
@@ -220,9 +219,9 @@ WantedBy=default.target
 ```
 
 ```sh
-systemctl --user enable --now foil-view-PROJECT
-systemctl --user disable --now foil-view-PROJECT
-journalctl --user -u foil-view-PROJECT
+systemctl --user enable --now foil-view
+systemctl --user disable --now foil-view
+journalctl --user -u foil-view
 ```
 
 It runs while you are logged in.

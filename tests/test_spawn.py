@@ -761,10 +761,56 @@ def test_fleet_memory_overrides_the_model_on_the_next_spawn(
     worker = _plan(calls, 1)
     assert "Workspace:" in lead["argv"][-1]
     assert "Posts:" in lead["argv"][-1]
-    assert "implementer: opus" in lead["argv"][-1]
+    assert "implementer: claude/opus" in lead["argv"][-1]
     assert worker["argv"][worker["argv"].index("--model") + 1] == "opus"
     assert load_registry(repo)["seats"]["implementer-1"]["model"] == "opus"
     assert load_registry(repo)["seats"]["implementer-1"]["harness"] == "claude"
+
+
+def test_a_fleet_list_replaces_the_mapping_list_in_that_fleet_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    _set_entries(repo, "implementer", [("claude", "opus"), ("codex", "gpt-5.5")])
+    mapping = (foil_root(repo) / "mapping.toml").read_bytes()
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["roster", "update", "implementer", "model=x"]) == 1
+    assert "harness=ID/MODEL" in capsys.readouterr().err
+    assert main(["roster", "update", "implementer", "harness=codex/gpt-5.5,claude/sonnet"]) == 0
+    assert "implementer harness = codex/gpt-5.5,claude/sonnet" in capsys.readouterr().out
+    assert main(["roster", "update", "implementer", "harness=nope"]) == 1
+    monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
+    assert (foil_root(repo) / "mapping.toml").read_bytes() == mapping
+    for role in ("lead", "implementer", "implementer", "implementer"):
+        assert main(["seat", "spawn", role]) == 0
+    monkeypatch.setenv("FOIL_FLEET", "other")
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    seats = load_registry(repo, "main")["seats"].values()
+    pairs = [(seat["harness"], seat["model"]) for seat in seats if seat["template"] != "lead"]
+    assert pairs == [("codex", "gpt-5.5"), ("claude", "sonnet"), ("codex", "gpt-5.5")]
+    other = load_registry(repo, "other")["seats"]["implementer-1"]
+    assert (other["harness"], other["model"]) == ("claude", "opus")
+
+
+def test_an_older_model_only_row_keeps_the_mapping_harness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    _set_entries(repo, "implementer", [("claude", "opus"), ("codex", "gpt-5.5")])
+    (foil_root(repo) / "fleets" / "main").mkdir(parents=True, exist_ok=True)
+    (foil_root(repo) / "fleets" / "main" / "overrides.toml").write_text(
+        '[[override]]\nrole = "implementer"\nmodel = "big"\n', encoding="utf-8"
+    )
+    for role in ("lead", "implementer", "implementer"):
+        assert main(["seat", "spawn", role]) == 0
+    seats = load_registry(repo)["seats"].values()
+    pairs = [(seat["harness"], seat["model"]) for seat in seats if seat["template"] != "lead"]
+    assert pairs == [("claude", "big"), ("codex", "big")]
 
 
 def test_the_first_spawn_in_a_new_fleet_stores_the_fleet_id_it_launched_with(

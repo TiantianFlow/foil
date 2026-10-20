@@ -29,7 +29,7 @@ _TEMPLATE_KEYS = {"harness", "model", "persona", "worktree", "permission"}
 _ENTRY_KEYS = {"id", "model"}
 _ROLE_KEYS = {"id", "description", "persona", "worktree", "permission"}
 _MAP_KEYS = {"role", "harness", "model"}
-_FLEET_KEYS = {"role", "model", "note"}
+_FLEET_KEYS = {"role", "harness", "model", "note"}
 _PRESET_SAME = ("command", "permission", "resume", "session_id", "env", "unverified", "models")
 _ROLES = ("lead", "implementer", "reviewer")
 BUILTIN_IDS = ("claude", "codex", "gemini", "opencode", "grok", "fake")
@@ -365,11 +365,11 @@ def save_maps(toplevel: Path, maps: list[dict[str, str]]) -> None:
 def render_fleet(items: list[dict[str, str]]) -> str:
     blocks: list[str] = []
     for item in items:
-        lines = [
-            "[[override]]",
-            f"role = {_toml_basic(item['role'])}",
-            f"model = {_toml_basic(item['model'])}",
-        ]
+        lines = ["[[override]]", f"role = {_toml_basic(item['role'])}"]
+        if item["id"]:
+            lines.append(f"harness = {_toml_basic(item['id'])}")
+        if item["model"]:
+            lines.append(f"model = {_toml_basic(item['model'])}")
         if item.get("note"):
             lines.append(f"note = {_toml_basic(item['note'])}")
         blocks.append("\n".join(lines))
@@ -377,7 +377,10 @@ def render_fleet(items: list[dict[str, str]]) -> str:
 
 
 def fleet_overrides(toplevel: Path, fleet: str | None = None) -> list[dict[str, str]]:
-    """Fleet memory. The last override for a role is the one spawn uses."""
+    """Fleet memory. A role's rows, in order, are that fleet's list for the role.
+
+    ``id`` is empty on a row that names only a model (the older form).
+    """
 
     text = _optional_text(fleet_dir(toplevel, fleet) / "overrides.toml")
     if text is None or not text.strip():
@@ -393,37 +396,66 @@ def fleet_overrides(toplevel: Path, fleet: str | None = None) -> list[dict[str, 
         if not isinstance(item, dict) or set(item) - _FLEET_KEYS:
             _fail("fleet memory")
         role = item.get("role")
+        harness = item.get("harness", "")
         model = item.get("model", "")
         note = item.get("note", "")
         if (
             not isinstance(role, str)
             or not SAFE_ID.fullmatch(role)
+            or not isinstance(harness, str)
+            or (harness and not SAFE_ID.fullmatch(harness))
             or not isinstance(model, str)
-            or not model
+            or not (model or harness)
             or model.startswith("-")
             or not isinstance(note, str)
         ):
             _fail("fleet memory")
         scan(model)
         scan(note)
-        found.append({"role": role, "model": model, "note": note})
+        found.append({"role": role, "id": harness, "model": model, "note": note})
     return found
 
 
-def fleet_model(toplevel: Path, role: str) -> str | None:
-    chosen = None
-    for item in fleet_overrides(toplevel):
-        if item["role"] == role:
-            chosen = item["model"]
-    return chosen
+def spawn_entry(
+    toplevel: Path,
+    role: str,
+    entries: list[dict[str, str]],
+    count: int,
+    fleet: str | None = None,
+) -> dict[str, str]:
+    """The harness and model the next spawn of ``role`` takes (F3).
+
+    The fleet's rows for the role, when it has any, replace the mapping list.
+    A row with no harness keeps the id the mapping selects.
+    """
+
+    chosen = select_harness(entries, count)
+    rows = [item for item in fleet_overrides(toplevel, fleet) if item["role"] == role]
+    if not rows:
+        return chosen
+    row = select_harness(rows, count)
+    return {"id": row["id"] or chosen["id"], "model": row["model"]}
 
 
-def remember_model(toplevel: Path, role: str, model: str) -> None:
-    if not SAFE_ID.fullmatch(role) or not model or model.startswith("-"):
+def fleet_list(toplevel: Path, role: str) -> list[dict[str, str]]:
+    """This fleet's list for ``role`` when every row names a harness, else empty."""
+
+    rows = [item for item in fleet_overrides(toplevel) if item["role"] == role]
+    if not all(item["id"] for item in rows):
+        return []
+    return [{"id": item["id"], "model": item["model"]} for item in rows]
+
+
+def remember_entries(toplevel: Path, role: str, entries: list[dict[str, str]]) -> None:
+    """Replace this fleet's rows for ``role`` with ``entries``, in order."""
+
+    if not SAFE_ID.fullmatch(role) or not entries:
         _fail("fleet memory")
-    scan(model)
+    for entry in entries:
+        _entry(entry["id"], entry["model"])
+        scan(entry["model"])
     items = [item for item in fleet_overrides(toplevel) if item["role"] != role]
-    items.append({"role": role, "model": model, "note": ""})
+    items += [{"role": role, "id": e["id"], "model": e["model"], "note": ""} for e in entries]
     path = fleet_dir(toplevel) / "overrides.toml"
     if path.is_symlink():
         raise FoilError("foil: refusing symlink")
@@ -607,14 +639,11 @@ def launch_command(
     toplevel: Path, name: str, *, prompt: str, session_id: str | None = None
 ) -> list[str]:
     template = load_template(toplevel, name)
-    entry = template["harness"][0]
+    entry = spawn_entry(toplevel, name, template["harness"], 0)
     preset = load_preset(toplevel, entry["id"])
-    model = fleet_model(toplevel, name)
-    if model is None:
-        model = entry["model"] or None
     return expand_argv(
         preset,
-        model=model,
+        model=entry["model"] or None,
         prompt=prompt,
         session_id=session_id,
         permission=template["permission"],

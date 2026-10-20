@@ -9,6 +9,7 @@ from foil.errors import FoilError, shown
 from foil.presets import (
     description_of,
     entry_label,
+    fleet_list,
     installed_harness,
     load_preset,
     load_template,
@@ -20,7 +21,7 @@ from foil.presets import (
     read_description,
     read_maps,
     read_roles,
-    remember_model,
+    remember_entries,
     save_maps,
     save_roles,
     template_permission,
@@ -56,6 +57,39 @@ def _formatted_value(field: str, value: str) -> str:
             "foil: value must not contain a quote, a backslash, or a control character"
         )
     return f'"{value}"'
+
+
+def _entries(value: str, current: list[dict[str, str]]) -> list[dict[str, str]]:
+    """A ``harness`` value: ``ID[/MODEL][,ID[/MODEL]...]``, the form ``roster list`` prints.
+
+    A single bare id on a one-entry list keeps that entry's model.
+    """
+
+    _formatted_value("harness", value)
+    if "," not in value and "/" not in value and len(current) == 1:
+        return [{"id": value, "model": current[0]["model"]}]
+    entries = []
+    for label in value.split(","):
+        harness_id, _sep, model = label.partition("/")
+        if not SAFE_ID.fullmatch(harness_id) or model.startswith("-"):
+            raise FoilError(f"foil: invalid harness entry '{shown(label)}'")
+        entries.append({"id": harness_id, "model": model})
+    return entries
+
+
+def _new_entries(
+    role: str, field: str, value: str, current: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    """The list a ``harness`` or ``model`` update leaves. One model cannot edit a list."""
+
+    if field == "harness":
+        return _entries(value, current)
+    if len(current) != 1:
+        raise FoilError(
+            f"foil: template '{role}' has more than one harness entry; "
+            "set the whole list with harness=ID/MODEL,ID/MODEL"
+        )
+    return [{"id": current[0]["id"], "model": value}]
 
 
 def _persona_inside(persona: str) -> None:
@@ -278,21 +312,17 @@ def _update_listed(
         raise FoilError("foil: refusing symlink")
     roles = list(read_roles(toplevel) or [])
     maps = list(read_maps(toplevel))
-    indexes = [index for index, item in enumerate(maps) if item["role"] == role]
-    if field in {"harness", "model"} and len(indexes) != 1:
-        raise FoilError(
-            f"foil: template '{role}' has more than one harness entry; "
-            f"edit {shown(str(maps_path))}"
-        )
+    current = [item for item in maps if item["role"] == role]
     _formatted_value(field, value)
     original_roles = roles_path.read_bytes()
     original_maps = maps_path.read_bytes() if maps_path.is_file() else None
     previous = str(template.get("permission", "auto"))
     row = next(item for item in roles if item["id"] == role)
-    if field == "harness":
-        maps[indexes[0]]["id"] = value
-    elif field == "model":
-        maps[indexes[0]]["model"] = value
+    if field in {"harness", "model"}:
+        entries = _new_entries(role, field, value, current)
+        place = maps.index(current[0]) if current else len(maps)
+        rest = [item for item in maps if item["role"] != role]
+        maps = rest[:place] + [{"role": role, **entry} for entry in entries] + rest[place:]
     elif field == "persona":
         row["persona"] = value
         try:
@@ -318,6 +348,19 @@ def _update_listed(
     print(f"foil: updated template '{role}': {field} = {value}")
 
 
+def _remember(toplevel: Path, role: str, field: str, value: str) -> None:
+    """An in-fleet harness or model edit: this fleet's overrides, not the mapping."""
+
+    current = fleet_list(toplevel, role) or load_template(toplevel, role)["harness"]
+    _formatted_value(field, value)
+    entries = _new_entries(role, field, value, current)
+    for entry in entries:
+        load_preset(toplevel, entry["id"])
+    remember_entries(toplevel, role, entries)
+    shown_value = value if field == "model" else ",".join(entry_label(e) for e in entries)
+    print(f"foil: fleet memory: {role} {field} = {shown_value}")
+
+
 def update_template(
     toplevel: Path,
     role: str,
@@ -334,11 +377,8 @@ def update_template(
         fields = ", ".join(sorted(_TEMPLATE_FIELDS))
         raise FoilError(f"foil: invalid field '{shown(field)}'. Valid fields: {fields}")
 
-    if field == "model" and in_fleet:
-        load_template(toplevel, role)
-        _formatted_value(field, value)
-        remember_model(toplevel, role, value)
-        print(f"foil: fleet memory: {role} model = {value}")
+    if field in {"harness", "model"} and in_fleet:
+        _remember(toplevel, role, field, value)
         return
 
     template = load_template(toplevel, role)

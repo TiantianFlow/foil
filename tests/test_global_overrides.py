@@ -50,7 +50,7 @@ def test_fleet_memory_is_what_spawn_puts_on_the_model_flag(
     assert main(["seat", "spawn", "implementer"]) == 0
     lead = _plan(calls, 0)["argv"][-1]
     assert str(overrides.resolve()) in lead
-    assert "implementer: opus" in lead
+    assert "implementer: claude/opus" in lead
     assert "model flag" in lead
     worker = _plan(calls, 1)["argv"]
     assert worker[worker.index("--model") + 1] == "opus"

@@ -26,7 +26,7 @@ from foil.errors import FoilError
 from foil.project import foil_root
 from foil.store import SCHEMA_VERSION
 from foil.tmux import ProbeResult, ProbeState, TmuxController, TmuxError, TmuxTarget
-from tests.test_slice_b import _repo
+from tests.test_slice_b import _git, _repo
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,9 +37,18 @@ def _free_port() -> int:
         return probe.getsockname()[1]
 
 
+# The project page every relative path in these tests is under; see _aim.
+_PREFIX = [""]
+
+
+def _aim(repo: Path) -> None:
+    _PREFIX[0] = f"/projects/{foil_root(repo).name}"
+
+
 @contextmanager
 def _serving(repo: Path, port: str | None = None) -> Iterator[int]:
-    server = view.open_server(repo, port, base=_free_port())
+    _aim(repo)
+    server = view.open_server(port, base=_free_port())
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -56,7 +65,12 @@ def _get(
     host: str | None = "",
     headers: dict[str, str] | None = None,
     method: str = "GET",
+    top: bool = False,
 ) -> tuple[int, dict[str, str], bytes]:
+    """GET ``path`` under the aimed project's page, or exactly ``path`` when ``top``."""
+
+    if not top:
+        path = _PREFIX[0] + (path if path != "/" else "")
     lines = [f"{method} {path} HTTP/1.0"]
     if host is not None:
         lines.append(f"Host: {host or f'127.0.0.1:{port}'}")
@@ -72,8 +86,8 @@ def _get(
     return status, fields, body
 
 
-def _page(port: int, path: str = "/") -> str:
-    status, _fields, body = _get(port, path)
+def _page(port: int, path: str = "/", *, top: bool = False) -> str:
+    status, _fields, body = _get(port, path, top=top)
     assert status == 200, (path, status, body[:200])
     return body.decode()
 
@@ -151,42 +165,73 @@ def test_view_inside_the_fleet_refuses_before_it_binds(
 def test_an_empty_seat_id_is_outside_the_fleet(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    repo = _repo(tmp_path, monkeypatch)
-    called: list[tuple[Path, str | None]] = []
-    monkeypatch.setattr("foil.view.serve", lambda root, port: called.append((root, port)) or 0)
+    _repo(tmp_path, monkeypatch)
+    called: list[str | None] = []
+    monkeypatch.setattr("foil.view.serve", lambda port: called.append(port) or 0)
     monkeypatch.setenv("FOIL_SEAT_ID", "")
     assert main(["view", "--port", "9999"]) == 0
-    assert called == [(repo, "9999")]
+    assert called == ["9999"]
+
+
+def test_one_viewer_lists_and_opens_every_project_on_the_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _repo(tmp_path, monkeypatch)
+    second = tmp_path / "second"
+    second.mkdir()
+    _git(second)
+    monkeypatch.chdir(second)
+    assert main(["init"]) == 0
+    gone = tmp_path / "gone"
+    gone.mkdir()
+    _git(gone)
+    monkeypatch.chdir(gone)
+    assert main(["init"]) == 0
+    gone_key = foil_root(gone).name
+    shutil.rmtree(gone)
+    monkeypatch.chdir(tmp_path)
+    (foil_root(second) / "fleets" / "other").mkdir()
+    with _serving(first) as port:
+        top = _page(port, "/", top=True)
+        for repo in (first, second):
+            assert f'href="/projects/{foil_root(repo).name}">{repo.name}</a>' in top
+        assert "gone</span>" in top and "checkout gone or moved" in top
+        assert f'href="/projects/{gone_key}"' not in top
+        _aim(second)
+        page = _page(port, "/")
+        assert f'href="/projects/{foil_root(second).name}/fleets/other"' in page
+        assert f'href="/projects/{foil_root(first).name}"' not in page
+        assert "foil init" in _get(port, f"/projects/{gone_key}", top=True)[2].decode()
+        for path in (f"/projects/{gone_key}", "/projects/nope", "/projects/..", "/fleets/main"):
+            assert _get(port, path, top=True)[0] == 404
 
 
 def test_the_default_port_moves_past_a_held_one_and_an_explicit_port_does_not(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    repo = _repo(tmp_path, monkeypatch)
     with socket.socket() as held:
         held.bind(("127.0.0.1", 0))
         held.listen()
         base = held.getsockname()[1]
-        server = view.open_server(repo, None, base=base)
+        server = view.open_server(None, base=base)
         try:
             assert server.server_address[1] != base
             assert base < server.server_address[1] < base + view.PORT_SPAN
         finally:
             server.server_close()
         with pytest.raises(FoilError, match=f"^foil: port {base} is in use$"):
-            view.open_server(repo, str(base))
+            view.open_server(str(base))
 
 
 def test_a_full_range_and_invalid_ports_are_one_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    repo = _repo(tmp_path, monkeypatch)
     monkeypatch.setattr(view, "_answers", lambda port: True)
     with pytest.raises(FoilError, match="^foil: no free port in 20000-20049$"):
-        view.open_server(repo, None, base=20000)
+        view.open_server(None, base=20000)
     for value in ("80", "0", "1023", "70000", "abc", "-1", "٣٠٠٠"):
         with pytest.raises(FoilError, match="^foil: invalid port$"):
-            view.open_server(repo, value)
+            view.open_server(value)
 
 
 def test_a_restart_rebinds_the_same_port(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -203,12 +248,13 @@ def test_the_command_prints_one_line_and_exits_zero_when_stopped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stop: signal.Signals
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
+    _aim(repo)
     port = _free_port()
     env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
     env.pop("FOIL_SEAT_ID", None)
     process = subprocess.Popen(
         [sys.executable, "-m", "foil", "view", "--port", str(port)],
-        cwd=repo,
+        cwd=tmp_path,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -218,6 +264,7 @@ def test_the_command_prints_one_line_and_exits_zero_when_stopped(
         assert process.stdout is not None
         assert process.stdout.readline() == f"http://127.0.0.1:{port}/\n"
         assert "Fleets" in _page(port)
+        assert f'href="{_PREFIX[0]}">{repo.name}</a>' in _page(port, "/", top=True)
     finally:
         process.send_signal(stop)
         out, err = process.communicate(timeout=10)
@@ -363,7 +410,7 @@ def test_an_invalid_roles_file_leaves_the_rest_of_settings(
 # Fleet page
 
 
-def test_overrides_show_the_last_row_per_role_and_the_next_spawn_model(
+def test_overrides_show_every_row_and_the_pair_the_next_spawn_takes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
@@ -384,17 +431,22 @@ def test_overrides_show_the_last_row_per_role_and_the_next_spawn_model(
     assert "reviewer-1" in page
     (foil_root(repo) / "fleets" / "main" / "overrides.toml").write_text(
         '[[override]]\nrole = "reviewer"\nmodel = "small"\n\n'
-        '[[override]]\nrole = "reviewer"\nmodel = "big"\nnote = "harder review"\n',
+        '[[override]]\nrole = "reviewer"\nmodel = "big"\nnote = "harder review"\n\n'
+        '[[override]]\nrole = "lead"\nharness = "gemini"\n',
         encoding="utf-8",
     )
     with _serving(repo) as port:
         page = _page(port, "/fleets/main")
     overrides = page.split("<h2>Overrides")[1].split("</section>")[0]
-    assert "big" in overrides and "small" not in overrides and "harder review" in overrides
+    assert "small" in overrides and "big" in overrides and "harder review" in overrides
+    assert "default mapping" in overrides and "gemini" in overrides
     agents = page.split("<h2>Agents")[1].split("</section>")[0]
-    assert "next spawn <span class=\"mono\">big</span>" in agents
+    # reviewer-1 is stored, so the next reviewer takes the second row.
     reviewer = agents.split("reviewer-1</a>")[1].split("</tr>")[0]
     assert "fast" in reviewer
+    assert re.search(r'next spawn <span class="mono">[a-z]+/big</span>', reviewer)
+    lead = agents.split("lead</a>")[1].split("</tr>")[0]
+    assert 'next spawn <span class="mono">gemini</span>' in lead
 
 
 def test_no_next_spawn_line_when_the_override_matches_the_mapping(
@@ -515,7 +567,7 @@ def test_one_broken_fleet_leaves_the_others(
         fleets = _page(port, "/")
         other = _page(port, "/fleets/other")
         assert _get(port, "/fleets/nope")[0] == 404
-    assert '<a class="mono" href="/fleets/main">main</a></td><td>1</td>' in fleets
+    assert f'<a class="mono" href="{_PREFIX[0]}/fleets/main">main</a></td><td>1</td>' in fleets
     assert "foil: invalid record" in fleets
     assert "foil: invalid record" in other and "No overrides." in other
 
@@ -621,7 +673,7 @@ def test_a_large_file_previews_one_mebibyte_and_raw_serves_it_whole(
         page = _page(port, "/fleets/main?open=notes/big.log")
         status, fields, body = _get(port, "/fleets/main/raw?open=notes/big.log")
     assert "Showing the first 1 MiB of 1.3 MiB." in page
-    assert 'href="/fleets/main/raw?open=notes/big.log"' in page
+    assert f'href="{_PREFIX[0]}/fleets/main/raw?open=notes/big.log"' in page
     assert len(page) < len(payload) + 20000
     assert status == 200 and body == payload
     assert fields["Content-Type"] == "text/plain; charset=utf-8"
@@ -638,7 +690,8 @@ def test_a_slow_raw_download_is_not_cut_at_the_header_deadline(
     (_board(repo) / "notes" / "big.bin").write_bytes(payload)
     with _serving(repo) as port, socket.create_connection(("127.0.0.1", port)) as client:
         client.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
-        request = f"GET /fleets/main/raw?open=notes/big.bin HTTP/1.0\r\nHost: 127.0.0.1:{port}"
+        target = f"{_PREFIX[0]}/fleets/main/raw?open=notes/big.bin"
+        request = f"GET {target} HTTP/1.0\r\nHost: 127.0.0.1:{port}"
         client.sendall(f"{request}\r\n\r\n".encode())
         started, data = time.monotonic(), b""
         while chunk := client.recv(262144):
@@ -685,7 +738,8 @@ def test_crawling_every_page_writes_nothing(
                  "/fleets/fresh/raw?open=status.md"]
         for path in pages:
             _get(port, path)
-        listed = re.findall(r'href="/fleets/main\?open=([^"]+)"', _page(port, "/fleets/main"))
+        _get(port, "/", top=True)
+        listed = re.findall(r'href="[^"]*/fleets/main\?open=([^"]+)"', _page(port, "/fleets/main"))
         assert len(listed) == 2
         for opened in listed:
             assert _get(port, f"/fleets/main?open={opened}")[0] == 200
@@ -785,7 +839,6 @@ def test_an_unknown_seat_is_a_404(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 def test_a_bind_error_other_than_in_use_is_one_line(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    repo = _repo(tmp_path, monkeypatch)
 
     def refuse(*_args: object) -> None:
         raise PermissionError(13, "Permission denied")
@@ -793,7 +846,7 @@ def test_a_bind_error_other_than_in_use_is_one_line(
     monkeypatch.setattr(view, "_Server", refuse)
     monkeypatch.setattr(view, "_answers", lambda port: False)
     with pytest.raises(FoilError, match="^foil: could not listen on 127.0.0.1:20000$"):
-        view.open_server(repo, None, base=20000)
+        view.open_server(None, base=20000)
 
 
 def test_a_board_that_cannot_be_listed_is_one_line_in_each_section(
@@ -876,7 +929,6 @@ def test_a_forwarded_request_with_a_loopback_host_is_refused(
 def test_tailscale_status_is_read_once_per_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    repo = _repo(tmp_path, monkeypatch)
     calls: list[int] = []
     monkeypatch.setattr(view, "tailnet", lambda: calls.append(1) or NODE)
     held = socket.socket()
@@ -885,7 +937,7 @@ def test_tailscale_status_is_read_once_per_start(
     held.listen()
     base = held.getsockname()[1]
     with held:
-        server = view.open_server(repo, None, base=base)
+        server = view.open_server(None, base=base)
         server.server_close()
     assert calls == [1] and server.tailnet == NODE
 
@@ -1033,14 +1085,16 @@ def test_the_info_text_the_page_serves_is_the_text_f38_names(
     assert _requirement_tips() == view.TIPS
     f38 = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8").split("| F38 |")[1]
     assert f"`{view.HELP}`" in f38.split("\n")[0]
+    assert f"`{view.PROJECTS}`" in f38.split("\n")[0]
     repo = _repo(tmp_path, monkeypatch)
     _registry(repo, _seat("lead", window="@1"))
     _windows(monkeypatch, {"@1": "lead"})
     with _serving(repo) as port:
-        served = "".join(
+        served = _page(port, "/", top=True) + "".join(
             _page(port, path)
             for path in ("/", "/settings", "/fleets/main", "/fleets/main/seats/lead")
         )
     found = {html.unescape(item) for item in re.findall(r'</summary><p>(.*?)</p>', served)}
     assert found == set(view.TIPS.values())
     assert html.escape(view.HELP) in served
+    assert html.escape(view.PROJECTS) in served

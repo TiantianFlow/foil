@@ -153,7 +153,7 @@ foil seat peek lead
 
 ## 在浏览器里查看
 
-在仓库里运行 `foil view`，它会为这个项目提供一个只读网页，并打印网页地址。首页列出各个舰队和项目的经验。设置页显示三份共用清单。每个舰队页显示连接命令、覆盖、席位、看板和帖子，每个席位页显示它的原始窗格。它不往窗格里打任何按键，也不判断进度；进度仍然看 `board/status.md`。停掉它，每个席位都保持原样。
+在任意目录运行 `foil view`，它会为这台机器上的所有运筹项目提供一个只读网页，并打印网页地址。首页列出各个项目。每个项目页列出它的舰队和经验，它的设置页显示三份共用清单。每个舰队页显示连接命令、覆盖、席位、看板和帖子，每个席位页显示它的原始窗格。它不往窗格里打任何按键，也不判断进度；进度仍然看 `board/status.md`。停掉它，每个席位都保持原样。
 
 ```sh
 foil view
@@ -166,51 +166,50 @@ foil view --port 8790
 
 ### 让查看器一直运行
 
-运筹没有守护进程模式。macOS 上的 launchd 和 Linux 上的 `systemd --user` 可以原样运行 `foil view`，登录时启动它，失败时重启它。你的操作员 Agent 可以替你填好这些文件。每个项目一个文件，各用一个 7460-7509 之外的端口，这样临时运行的 `foil view` 不会占走它。服务运行期间，这台机器上的每个账号都能读到这个网页，只要你还登录着（见“限制”），所以只在不与他人共用的机器上设置它。把每个大写占位符换掉：
+运筹没有守护进程模式。macOS 上的 launchd 和 Linux 上的 `systemd --user` 可以原样运行 `foil view`，登录时启动它，失败时重启它。你的操作员 Agent 可以替你填好这些文件。一个服务就覆盖这台机器上的所有项目。给它一个 7460-7509 之外的端口，这样临时运行的 `foil view` 不会占走它。服务运行期间，这台机器上的每个账号都能读到这个网页，只要你还登录着（见“限制”），所以只在不与他人共用的机器上设置它。把每个大写占位符换掉：
 
 - `FOIL`：`command -v foil` 打印的绝对路径。
-- `REPO`：仓库的绝对路径。
 - `PORT`：端口。
 - `YOUR_PATH`：在你自己的终端里运行 `echo $PATH` 打印的内容。服务启动时的 `PATH` 很少，没有你的 `PATH` 就找不到 tmux 和你的 Agent CLI。
 - `HOME_DIR`：你的主目录的绝对路径。
 
 如果你设置了 `FOIL_HOME`、`XDG_DATA_HOME` 或 `TMUX_TMPDIR`，在 `PATH` 旁边加上同样的值；`TMUX_TMPDIR` 不一致时，查看器找不到席位的窗口，会把每个席位都显示为 dead。升级运筹之后重启这个服务。
 
-macOS，`~/Library/LaunchAgents/dev.foil.view.PROJECT.plist`：
+macOS，`~/Library/LaunchAgents/dev.foil.view.plist`：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
-  <key>Label</key><string>dev.foil.view.PROJECT</string>
+  <key>Label</key><string>dev.foil.view</string>
   <key>ProgramArguments</key><array>
     <string>FOIL</string><string>view</string><string>--port</string><string>PORT</string>
   </array>
-  <key>WorkingDirectory</key><string>REPO</string>
+  <key>WorkingDirectory</key><string>HOME_DIR</string>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>YOUR_PATH</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ThrottleInterval</key><integer>30</integer>
-  <key>StandardOutPath</key><string>HOME_DIR/Library/Logs/foil-view-PROJECT.log</string>
-  <key>StandardErrorPath</key><string>HOME_DIR/Library/Logs/foil-view-PROJECT.log</string>
+  <key>StandardOutPath</key><string>HOME_DIR/Library/Logs/foil-view.log</string>
+  <key>StandardErrorPath</key><string>HOME_DIR/Library/Logs/foil-view.log</string>
 </dict></plist>
 ```
 
 ```sh
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.foil.view.PROJECT.plist
-launchctl bootout gui/$(id -u)/dev.foil.view.PROJECT
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.foil.view.plist
+launchctl bootout gui/$(id -u)/dev.foil.view
 ```
 
 第一行启动它，第二行停止它。改过文件之后，先停止再启动。它在失败后重启，最多每 30 秒一次；正常停止后不重启。
 
-Linux，`~/.config/systemd/user/foil-view-PROJECT.service`。把 `YOUR_PATH` 里的每个 `%` 写成 `%%`：
+Linux，`~/.config/systemd/user/foil-view.service`。把 `YOUR_PATH` 里的每个 `%` 写成 `%%`：
 
 ```ini
 [Unit]
-Description=Foil viewer for PROJECT
+Description=Foil viewer
 
 [Service]
 ExecStart="FOIL" view --port PORT
-WorkingDirectory=REPO
+WorkingDirectory=HOME_DIR
 Environment="PATH=YOUR_PATH"
 Restart=on-failure
 RestartSec=30
@@ -220,9 +219,9 @@ WantedBy=default.target
 ```
 
 ```sh
-systemctl --user enable --now foil-view-PROJECT
-systemctl --user disable --now foil-view-PROJECT
-journalctl --user -u foil-view-PROJECT
+systemctl --user enable --now foil-view
+systemctl --user disable --now foil-view
+journalctl --user -u foil-view
 ```
 
 它在你登录期间运行。
