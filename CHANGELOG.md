@@ -4,8 +4,16 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- `foil view` can be opened over Tailscale through `tailscale serve`. It still listens on `127.0.0.1` only. Under this machine's tailnet name it serves only requests Tailscale marks as from the login that owns the machine; Funnel traffic, tagged devices, and other users get an empty 403. (#48)
+
 ### Changed
 
+- `foil view` refuses a request with a loopback `Host` that carries `X-Forwarded-For`, `X-Forwarded-Host`, `Tailscale-User-Login`, or `Tailscale-Funnel-Request`, so a reverse proxy in front of it on this machine now gets an empty 403. (#48)
+- `foil view` gives no raw view of a board file over 16 MiB. (#48)
+- A `foil view` page build gives tmux at most 10 seconds in total, so a hung tmux call no longer holds one of the 8 build slots past the request. (#48)
+- The Agents info text says that `foil seat archive` frees a killed seat's name and that an archived seat is not listed. docs/requirements.md now lists every info text, and a test checks that the page serves exactly those. (#48)
 - The test suite runs in parallel by default with pytest-xdist, one worker per CPU. On a 4-CPU machine the full run drops from about 4.5 minutes to about 1.2 minutes. `-n 0` runs it in one process. (#52)
 
 ## [0.5.2] - 2026-10-19

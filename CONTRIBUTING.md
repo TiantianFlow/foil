@@ -70,9 +70,11 @@ FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live -n 0
 4. **Keep docs tidy.** List every new document in docs/README.md, name
    release plans `plan-vX.Y.Z.md`, and add notable changes to
    CHANGELOG.md under "Unreleased".
-5. **Keep the viewer in step.** A change to the lists, the overrides,
-   memory, the board, the registry, `seat list`, `seat peek`, `post`, or
-   the session name updates `foil view` and its tests in the same change.
+5. **Keep the viewer in step.** Any change a person can see in
+   `foil view`, including its info text, updates the page, its tests, and
+   docs/requirements.md (F37 to F39) in the same change. That covers a new
+   command or state that changes what a fleet, a seat, or a list shows,
+   not only the features the page has today.
 
 ## Before you ask for review
 
@@ -95,7 +97,9 @@ and what you did not verify.
    worktrees, windows, and files.
 4. **Finish the change everywhere.** After changing a behavior or a
    message, search the READMEs, `docs/`, `skills/`, `src/`, and `tests/`
-   for the old wording, and update every hit in the same change.
+   for the old wording, and update every hit in the same change. Then
+   open `foil view` on a project that uses the change, and check that the
+   page and its info text still say what the feature now does.
 5. **Test the tests.** Revert your fix and watch each new test fail.
    Assert on outcomes, such as files, branches, windows, and exit codes,
    before asserting on printed text. A test that pins today's output also
