@@ -1,8 +1,13 @@
-"""`foil view`: a read-only page for one project on 127.0.0.1. It writes nothing."""
+"""`foil view`: a read-only page for one project on 127.0.0.1. It writes nothing.
+
+The tailnet reaches it only through `tailscale serve`, which keeps the request's `Host`
+and sets `Tailscale-User-Login` after deleting any value the client sent.
+"""
 
 from __future__ import annotations
 
 import errno
+import json
 import os
 import re
 import secrets
@@ -12,6 +17,7 @@ import signal
 import socket
 import socketserver
 import stat
+import subprocess
 import threading
 from collections.abc import Callable
 from contextlib import suppress
@@ -28,16 +34,22 @@ from foil.presets import fleet_overrides, load_preset, preset_ids, read_maps, se
 from foil.project import cached_common_dirs, foil_root, project_record
 from foil.roster_ops import roster_rows
 from foil.store import SAFE_ID, load_registry
+from foil.tmux import time_budget
 
 BASE_PORT = 7460
 PORT_SPAN = 50
 PREVIEW = 1024 * 1024
+RAW_CAP = 16 * 1024 * 1024
 CHUNK = 64 * 1024
 MAX_LINES = 1280
 DEADLINE = 10
 SLOTS = 8
 CONNECTIONS = 64
 LOOPBACK = {"127.0.0.1", "localhost", "[::1]"}
+# tailscale serve sets these on every request it forwards; a local browser sends none.
+PROXIED = (
+    "X-Forwarded-For", "X-Forwarded-Host", "Tailscale-User-Login", "Tailscale-Funnel-Request"
+)
 # Argv display only: names the mail scan does not refuse but a launch flag often carries.
 _SECRET_NAME = re.compile(r"token|(^|_)(key|pat|pass|passwd|pwd)$")
 _USERINFO = re.compile(r"(://)[^/@\s]+@")
@@ -68,7 +80,8 @@ TIPS = {
     "last launch. Resume does not read this file.",
     "Agents": "Alive means the window exists and the process is running. Dead means the "
     "window is gone or the process has exited, and the seat was not killed. A dead window "
-    "can still be peeked. Killed means foil seat kill, and that name stays reserved.",
+    "can still be peeked. Killed means foil seat kill. A killed seat stays listed and its "
+    "name stays reserved until foil seat archive frees it. An archived seat is not listed.",
     "Board": "This fleet's shared folder. Mail is to one seat. Notes are scratch and wake "
     "nobody. status.md is the lead's report, including the checklist. tasks/ is the brief. "
     "results/ is the report. The viewer shows the files as written.",
@@ -473,10 +486,12 @@ def _preview(root: Path, fleet: str, rel: str, here: str) -> str:
         os.close(handle)
     text = data.decode("utf-8", errors="replace")
     cut = _faded(f"Showing the first 1 MiB of {_size(size)}.") if size > PREVIEW else ""
-    raw = f"{here}/raw?open={quote(rel)}"
+    raw = f'<a href="{escape(f"{here}/raw?open={quote(rel)}")}">Raw</a>'
+    if size > RAW_CAP:
+        raw = _faded(f"No raw view over {_size(RAW_CAP)}.")
     return (
         f'<p class="bar"><a href="{escape(here)}">&larr; Back</a>{_mono(rel)}'
-        f'<a href="{escape(raw)}">Raw</a>{cut}</p><pre>{escape(text)}</pre>'
+        f"{raw}{cut}</p><pre>{escape(text)}</pre>"
     )
 
 
@@ -638,7 +653,12 @@ def _route(root: Path, target: str) -> tuple[int, str] | _Raw:
             if opened not in {rel for rel, _bytes in _board_files(root, fleet)}:
                 raise _Missing("No such file on this board.")
             handle = _open_listed(root, fleet, opened)
-            return _Raw(handle, os.fstat(handle).st_size)
+            size = os.fstat(handle).st_size
+            if size > RAW_CAP:
+                os.close(handle)
+                cap = f"foil: the raw view stops at {_size(RAW_CAP)}; this file is {_size(size)}"
+                return 413, _failed(FoilError(cap))
+            return _Raw(handle, size)
         if len(path) == 4 and path[2] == "seats":
             return 200, _seat_page(root, fleet, path[3], _lines(query.get("lines", [""])[0]))
         raise _Missing("No such page.")
@@ -664,9 +684,31 @@ def _document(root: Path, body: str, nonce: str) -> bytes:
     ).encode()
 
 
-def _loopback_host(host: str) -> bool:
+def _host_name(host: str) -> str:
     match = re.fullmatch(r"(\[::1\]|[A-Za-z0-9.-]+)(?::\d{1,5})?", host)
-    return match is not None and match.group(1).lower() in LOOPBACK
+    return match.group(1).lower() if match else ""
+
+
+def tailnet() -> tuple[str, str] | None:
+    """This machine's tailnet name and owner login, when Tailscale runs here untagged."""
+
+    binary = shutil.which("tailscale")
+    if binary is None:
+        return None
+    try:
+        result = subprocess.run(
+            [binary, "status", "--json"], capture_output=True, text=True, timeout=5, check=False
+        )
+        status = json.loads(result.stdout)
+        node = status["Self"]
+        name = str(node["DNSName"]).rstrip(".").lower()
+        login = str(status["User"][str(node["UserID"])]["LoginName"])
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+        return None
+    running = result.returncode == 0 and status.get("BackendState") == "Running"
+    if not running or node.get("Tags") or not _host_name(name) or not login.isascii():
+        return None
+    return name, login
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -724,7 +766,22 @@ class _Handler(BaseHTTPRequestHandler):
     def _allowed(self) -> bool:
         host = self.headers.get("Host") or ""
         origin = self.headers.get("Origin")
-        return _loopback_host(host) and (origin is None or origin == f"http://{host}")
+        name = _host_name(host)
+        # serve routes on SNI and copies the client's Host, so a forwarded request
+        # can claim a loopback name.
+        if name in LOOPBACK:
+            proxied = any(field in self.headers for field in PROXIED)
+            return not proxied and (origin is None or origin == f"http://{host}")
+        node = self.server.tailnet
+        if node is None or name != node[0]:
+            return False
+        logins = self.headers.get_all("Tailscale-User-Login") or []
+        forwarded = self.headers.get_all("X-Forwarded-Host") or []
+        return (
+            logins == [node[1]]
+            and forwarded == [host]
+            and origin in (None, f"https://{host}", f"http://{host}")
+        )
 
     def do_GET(self) -> None:
         if not self._allowed():
@@ -734,7 +791,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(503, b"")
             return
         try:
-            with cached_common_dirs():
+            with cached_common_dirs(), time_budget(DEADLINE):
                 result = _route(self.server.root, self.path)
                 if not isinstance(result, _Raw):
                     nonce = secrets.token_urlsafe(16)
@@ -778,8 +835,9 @@ class _Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, root: Path, port: int) -> None:
+    def __init__(self, root: Path, port: int, node: tuple[str, str] | None = None) -> None:
         self.root = root
+        self.tailnet = node
         self.slots = threading.BoundedSemaphore(SLOTS)
         self.connections = threading.BoundedSemaphore(CONNECTIONS)
         super().__init__(("127.0.0.1", port), _Handler)
@@ -814,11 +872,11 @@ def _answers(port: int) -> bool:
         return False
 
 
-def _bind(root: Path, port: int) -> _Server | None:
+def _bind(root: Path, port: int, node: tuple[str, str] | None) -> _Server | None:
     if _answers(port):
         return None
     try:
-        return _Server(root, port)
+        return _Server(root, port, node)
     except OSError as exc:
         if exc.errno == errno.EADDRINUSE:
             return None
@@ -828,18 +886,21 @@ def _bind(root: Path, port: int) -> _Server | None:
 def open_server(root: Path, port: str | None, *, base: int = BASE_PORT) -> _Server:
     """Bind the first free port from ``base``, or exactly ``port``."""
 
+    if port is not None and not (
+        port.isdecimal() and port.isascii() and 1024 <= int(port) <= 65535
+    ):
+        raise FoilError("foil: invalid port")
+    node = tailnet()
     if port is None:
         server = None
         for candidate in range(base, base + PORT_SPAN):
-            server = _bind(root, candidate)
+            server = _bind(root, candidate, node)
             if server is not None:
                 break
         if server is None:
             raise FoilError(f"foil: no free port in {base}-{base + PORT_SPAN - 1}")
     else:
-        if not (port.isdecimal() and port.isascii() and 1024 <= int(port) <= 65535):
-            raise FoilError("foil: invalid port")
-        server = _bind(root, int(port))
+        server = _bind(root, int(port), node)
         if server is None:
             raise FoilError(f"foil: port {int(port)} is in use")
     return server
