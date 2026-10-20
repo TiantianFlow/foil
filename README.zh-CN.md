@@ -103,7 +103,7 @@ Install Foil from https://github.com/TiantianFlow/foil, onboard this repository 
 要从 0.4 升到 0.5，在两个目标之间做，不要恢复 0.4 启动的席位。`foil init` 会在 `fleets/main/` 里还没有对应目录、或目录是空的时候，把项目根上的 `board/` 和 `run/` 移进去。它不读取 `templates/<role>.toml`。`init` 之后，把每个角色的 harness、model、worktree 和 permission 抄进 `roles.toml` 和 `mapping.toml`。新写的清单是 `permission = "auto"`，并且不写 `model`。`memory/` 里的教训和席位工作树都留着。`FOIL_FLEET` 默认是 `main`。要在两个目标之间更新，顺序是先停掉、再升级、最后 `foil init`：目标完成后运行 `foil seat kill --all`，再运行一次安装命令，然后在每个项目里运行 `foil init`，再启动主座。还留着 0.3.x 仓库内 `.foil/` 的项目，要在运行安装命令之前用那个旧的 `foil` 停掉。tmux 窗口已经不在的过期席位同样算在内。如果 `PATH` 上已经没有那个旧的 `foil`，就在旁边安装 0.3.4，这不会替换当前的 `foil`：`UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。用 pipx 则是：`PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。那些席位还在时不要运行 `foil init`，也不要把那个目录挪走。上一个目标留在报告打印的项目目录里的 `board/status.md` 已经写着 `state: done`，所以启动前先记下它的 `updated` 行，等它变化。`foil seat kill --all` 之后两种情况都可能出现，所以要检查：运行 `tmux ls`。如果列出了任何会话，预设里点名的 `env` 变量来自该服务器，启动前用 `tmux set-environment -g NAME VALUE` 设置。如果它说没有服务器在运行，下一次启动会从你的 shell 拉起服务器。
 
 - Agent 安装运筹并运行 `foil init`。如果命令打印 `foil: no harness installed`，它什么都没写。先安装上面的某个 CLI，再运行一次 `foil init`。
-- 它读报告，运行 `foil roster list`，并请你在本仓库里把每个 harness id 运行一次，接受它的文件夹信任、更新、首次运行和意见征集对话框，或者请你确认已经完成。它用 `foil roster` 设置每个模板的 harness 列表和 `permission`，也可以直接改报告打印的项目目录里的三份清单：`harnesses.toml`、`roles.toml` 和 `mapping.toml`。`init` 为每个角色写入一条映射，并且 `permission = "auto"`。每个舰队共用这三份清单。`FOIL_FLEET` 选择舰队，默认是 `main`。`roster update` 的 `harness`，以及舰队外的 `model`，改的是这一项。舰队里的 `model` 写入该舰队的 `overrides.toml`，下一次启动会带上它。更长的列表改 `mapping.toml`，一次启动取的是该角色已经存下的席位记录条数所对应的那一项。只把主座改成 `auto` 不会让工人席位无人值守。限制一节说明 `auto` 仍可能让席位停在审批提示上。
+- 它读报告，运行 `foil roster list`，并请你在本仓库里把每个 harness id 运行一次，接受它的文件夹信任、更新、首次运行和意见征集对话框，或者请你确认已经完成。它用 `foil roster` 设置每个模板的 harness 列表和 `permission`，也可以直接改报告打印的项目目录里的三份清单：`harnesses.toml`、`roles.toml` 和 `mapping.toml`。`init` 为每个角色写入一条映射，并且 `permission = "auto"`。每个舰队共用这三份清单。`FOIL_FLEET` 选择舰队，默认是 `main`。`roster update ROLE harness=ID/MODEL,ID/MODEL` 一次设置角色的整个列表，`model` 只改只有一项的列表。在舰队里，两者都改写该舰队的 `overrides.toml`，下一次启动会带上它。一次启动取的是该角色已经存下的席位记录条数所对应的那一项。只把主座改成 `auto` 不会让工人席位无人值守。限制一节说明 `auto` 仍可能让席位停在审批提示上。
 - 它做首次运行检查，然后把目标发出去。
 - 它自己从不做项目本身的工作。
 
@@ -234,7 +234,7 @@ journalctl --user -u foil-view
 
 运筹从不解读窗口里的内容。`foil seat peek` 打印 tmux 原样捕获的文本，`foil seat list` 报告 `alive`、`dead` 或 `killed`，依据是席位的窗口还在不在，而不是屏幕上显示了什么。Agent 是否卡住、是否做完，由它们自己写在看板文件里。运筹不会抓取窗格，不会判断对话框是否出现，也不会发送按键。
 
-`foil view` 没有登录。你的项目文件夹只有你能读，但 `127.0.0.1` 上的端口对这台机器上的每个账号都开放，所以查看器运行期间，任何登录这台机器的人都能读到它，包括窗格文本和看板文件。它会尽力隐藏启动命令里看起来像凭据的参数。在别人也会登录的机器上，用完就停掉它。tailnet 检查只保护 tailnet 名称：这台机器上的账号仍然可以在 `127.0.0.1` 上读到这个页面。
+`foil view` 没有登录。你的项目文件夹只有你能读，但 `127.0.0.1` 上的端口对这台机器上的每个账号都开放，所以查看器运行期间，任何登录这台机器的人都能读到它，包括每个项目的窗格文本和看板文件。它会尽力隐藏启动命令里看起来像凭据的参数。在别人也会登录的机器上，用完就停掉它。tailnet 检查只保护 tailnet 名称：这台机器上的账号仍然可以在 `127.0.0.1` 上读到这个页面。
 
 即使窗口不在输入提示符，提醒也会被打进去。`foil send` 先把邮件写成文件，再往收件人的窗口打一行：发件人、一个空格、邮件文件的绝对路径。`foil post` 写成一份房间文件，再把同样的一行打进其他每个仍在运行的席位。两者都等待 200ms，然后发送一次 Enter，这样把快速连击里的 Enter 当成未发送粘贴的 harness 会提交这一行，而不是把它留在输入行里。消息正文从不被打进窗口。`foil post --re PATH --decline` 写成一份房间文件，但不打任何按键。如果 Agent 并不在等输入，这些按键仍然会进入窗口。运筹不会先看窗口再决定打不打，也不会再发送一次 Enter。
 

@@ -206,6 +206,28 @@ def test_one_viewer_lists_and_opens_every_project_on_the_host(
             assert _get(port, path, top=True)[0] == 404
 
 
+def test_a_project_folder_that_does_not_resolve_back_has_no_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    projects = foil_root(repo).parent
+    # A folder that records a live checkout which belongs to another folder.
+    borrowed = projects / "borrowed-abc123"
+    borrowed.mkdir()
+    shutil.copy(foil_root(repo) / "project.json", borrowed / "project.json")
+    blank = projects / "blank-abc123"
+    blank.mkdir()
+    (blank / "project.json").write_text("{}", encoding="utf-8")
+    (projects / "linked-abc123").symlink_to(foil_root(repo))
+    with _serving(repo) as port:
+        top = _page(port, "/", top=True)
+        assert "not recorded" in top and "linked-abc123" not in top
+        for key in ("borrowed-abc123", "blank-abc123", "linked-abc123"):
+            assert f'href="/projects/{key}"' not in top
+            assert _get(port, f"/projects/{key}", top=True)[0] == 404
+            assert _get(port, f"/projects/{key}/fleets/main", top=True)[0] == 404
+
+
 def test_the_default_port_moves_past_a_held_one_and_an_explicit_port_does_not(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

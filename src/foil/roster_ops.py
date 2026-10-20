@@ -351,7 +351,8 @@ def _update_listed(
 def _remember(toplevel: Path, role: str, field: str, value: str) -> None:
     """An in-fleet harness or model edit: this fleet's overrides, not the mapping."""
 
-    current = fleet_list(toplevel, role) or load_template(toplevel, role)["harness"]
+    template = load_template(toplevel, role)
+    current = fleet_list(toplevel, role) or template["harness"]
     _formatted_value(field, value)
     entries = _new_entries(role, field, value, current)
     for entry in entries:

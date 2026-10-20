@@ -659,18 +659,25 @@ class _Project(NamedTuple):
     root: Path | None
 
 
-def _projects() -> list[_Project]:
+def _store() -> Path | None:
     directory = store_root() / "projects"
-    if directory.is_symlink() or not directory.is_dir():
+    return None if directory.is_symlink() or not directory.is_dir() else directory
+
+
+def _listed_folder(folder: Path) -> bool:
+    return (
+        _KEY.fullmatch(folder.name) is not None
+        and not folder.is_symlink()
+        and folder.is_dir()
+        and (folder / "project.json").is_file()
+    )
+
+
+def _projects() -> list[_Project]:
+    directory = _store()
+    if directory is None:
         return []
-    found = []
-    for folder in sorted(directory.iterdir()):
-        if not _KEY.fullmatch(folder.name) or folder.is_symlink() or not folder.is_dir():
-            continue
-        if not (folder / "project.json").is_file():
-            continue
-        found.append(_project(folder))
-    return found
+    return [_project(folder) for folder in sorted(directory.iterdir()) if _listed_folder(folder)]
 
 
 def _project(folder: Path) -> _Project:
@@ -717,8 +724,9 @@ def _route(target: str) -> tuple[int, str, tuple[str, str] | None] | _Raw:
             return 200, _projects_page(), None
         if len(path) < 2 or path[0] != "projects" or not _KEY.fullmatch(path[1]):
             raise _Missing("No such page.")
-        folder = store_root() / "projects" / path[1]
-        if folder.is_symlink() or not (folder / "project.json").is_file():
+        directory = _store()
+        folder = directory / path[1] if directory is not None else None
+        if folder is None or not _listed_folder(folder):
             raise _Missing(f"No project named {path[1]} on this machine.")
         project = _project(folder)
         if project.root is None:
