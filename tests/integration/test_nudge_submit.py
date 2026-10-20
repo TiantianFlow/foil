@@ -47,7 +47,10 @@ while time.monotonic() < end:
             gap = 0.0 if last is None else now - last
             status = "held" if len(pending) >= 3 and gap <= __BURST__ else "submitted"
             text = pending.decode("utf-8", "replace")
-            result.write_text(f"{status}\\n{text}\\n{gap:.4f}\\n", encoding="utf-8")
+            # The test polls for the file, so it must appear already written.
+            partial = result.with_name(result.name + ".partial")
+            partial.write_text(f"{status}\\n{text}\\n{gap:.4f}\\n", encoding="utf-8")
+            os.replace(partial, result)
             raise SystemExit(0)
         pending.append(byte)
         last = now
