@@ -10,12 +10,14 @@ permissions:
 
 jobs:
   test:
-    name: Python ${{ matrix.python-version }}
+    name: Python ${{ matrix.python-version }} ${{ matrix.suite }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
+        # The two tiers run as separate jobs at the same time.
+        suite: [unit, e2e]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -23,18 +25,44 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install tmux
         run: sudo apt-get update && sudo apt-get install -y tmux
+      - if: matrix.suite == 'unit'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+      - name: Install Chromium for the viewer's browser tests
+        if: matrix.suite == 'unit'
+        run: uv run --no-config --frozen --isolated --extra dev playwright install --with-deps --only-shell chromium
       - name: Test
+        if: matrix.suite == 'unit'
         run: uv run --no-config --frozen --isolated --extra dev pytest --ignore=tests/e2e
       - name: End-to-end user journeys
+        if: matrix.suite == 'e2e'
         run: uv run --no-config --frozen --isolated --extra dev pytest tests/e2e -m "not e2e_live"
       - name: Lint
+        if: matrix.suite == 'e2e'
         run: uv run --no-config --frozen --isolated --extra dev ruff check .
       - name: Build
+        if: matrix.suite == 'e2e'
         run: uv build --no-config
       - name: Smoke-test installed wheel
+        if: matrix.suite == 'e2e'
         run: |
           wheel_env="$RUNNER_TEMP/foil-wheel-smoke"
           uv venv --no-config "$wheel_env"
           uv pip install --no-config --python "$wheel_env/bin/python" dist/foil_orchestrator-*.whl
           version="$(uv run --no-config --frozen --isolated python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           test "$("$wheel_env/bin/foil" --version)" = "foil $version"
+
+  # The required checks are named "Python 3.11" and "Python 3.12". Each passes only when
+  # every test job above passed, so neither tier can fail without blocking a merge.
+  gate:
+    name: Python ${{ matrix.python-version }}
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - run: test "${{ needs.test.result }}" = success

@@ -10,11 +10,18 @@ Notable changes to Foil, newest first.
 - A fleet's `overrides.toml` rows can name a `harness` as well as a `model`, and a role's rows rotate in spawn order like the mapping's. Inside the fleet, `roster update ROLE harness=...` writes them, so one fleet can move a role to another harness or to a list of pairs without changing the default mapping. (#55)
 - `foil view` can be opened over Tailscale through `tailscale serve`. It still listens on `127.0.0.1` only. Under this machine's tailnet name it serves only requests Tailscale marks as from the login that owns the machine; Funnel traffic, tagged devices, and other users get an empty 403. (#48)
 
+### Fixed
+
+- In `foil view`, an open info explanation closes on a click anywhere else or on Escape, not only on its own icon. (#54)
+- The Installed column in `foil view` settings shows where it found each command, and its explanation says that it checks the viewer's own `PATH`, which a seat started from another shell may not share. (#54)
+
 ### Changed
 
 - `foil view` serves one page for every project on the machine, so one viewer (and one launchd or systemd service) is enough for a host. It runs from any directory. The page opens on the project list; a project's pages moved under `/projects/<key>/`. A project whose recorded checkout is gone or moved is listed without a link. (#55)
 - Inside the fleet, `roster update ROLE harness=...` now writes that fleet's `overrides.toml` instead of the shared `mapping.toml`, as `model` already did, and every row Foil writes there names the harness, so a later change to that role's default harness does not reach that fleet. `model` on a role with more than one entry is refused instead of putting every new seat of that role, on every harness in its list, on the same model. (#55)
 - An `overrides.toml` with several model-only rows for one role now rotates through them instead of using only the last. Rows Foil writes are unaffected; this changes only a hand-edited file. (#55)
+- `tests/test_view_browser.py` runs the `foil view` page in headless Chromium through Playwright, a new dev dependency, and checks the info pop-ups and the Copy button. CI installs Chromium for it. (#54)
+- CI runs the unit and end-to-end tests as separate jobs at the same time instead of one after the other. Lint, build, and the wheel smoke test run in the shorter end-to-end job. The `Python 3.11` and `Python 3.12` checks now pass only when every job passed. (#54)
 - `foil view` refuses a request with a loopback `Host` that carries `X-Forwarded-For`, `X-Forwarded-Host`, `Tailscale-User-Login`, or `Tailscale-Funnel-Request`, so a reverse proxy in front of it on this machine now gets an empty 403. (#48)
 - `foil view` gives no raw view of a board file over 16 MiB. (#48)
 - A `foil view` page build gives tmux at most 10 seconds in total, so a hung tmux call no longer holds one of the 8 build slots past the request. (#48)

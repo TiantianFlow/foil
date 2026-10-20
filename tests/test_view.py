@@ -417,6 +417,27 @@ def test_settings_show_the_three_lists(tmp_path: Path, monkeypatch: pytest.Monke
     assert "no model" in rows
 
 
+def test_installed_shows_where_the_viewer_found_the_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    probe = bin_dir / "probe-cli"
+    probe.write_text("#!/bin/sh\n", encoding="utf-8")
+    probe.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    (foil_root(repo) / "harnesses" / "probe.toml").write_text(
+        'id = "probe"\ncommand = ["probe-cli", "{prompt}"]\nsession_id = "none"\n'
+        "env = []\nmodels = []\n",
+        encoding="utf-8",
+    )
+    with _serving(repo) as port:
+        page = _page(port, "/settings")
+    row = page.split("probe</span>")[1].split("</tr>")[0]
+    assert f"<td>yes<small>{html.escape(str(probe))}</small></td>" in row
+
+
 def test_an_invalid_roles_file_leaves_the_rest_of_settings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
