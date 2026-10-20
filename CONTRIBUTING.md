@@ -35,6 +35,10 @@ and skips the live tier:
 uv run --frozen --extra dev pytest
 ```
 
+pytest runs the tests in parallel, one worker per CPU (pytest-xdist's
+`-n auto`). Add `-n 0` to run them in one process, for example to use
+`pdb` or to time a single test.
+
 The end-to-end tests start real tmux sessions. The default tier points
 templates at the `fake` harness, so it needs no agent CLI and no login.
 
@@ -46,7 +50,7 @@ tests rewrite the harness id in `mapping.toml` after `init`. It is
 not a command or a flag.
 
 ```sh
-FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live
+FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live -n 0
 ```
 
 ## Rules every change keeps

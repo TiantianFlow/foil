@@ -13,6 +13,7 @@ Notable changes to Foil, newest first.
 - `foil view` gives no raw view of a board file over 16 MiB. (#48)
 - A `foil view` page build gives tmux at most 10 seconds in total, so a hung tmux call no longer holds one of the 8 build slots past the request. (#48)
 - The Agents info text says that `foil seat archive` frees a killed seat's name and that an archived seat is not listed. docs/requirements.md now lists every info text, and a test checks that the page serves exactly those. (#48)
+- The test suite runs in parallel by default with pytest-xdist, one worker per CPU. On a 4-CPU machine the full run drops from about 4.5 minutes to about 1.2 minutes. `-n 0` runs it in one process. (#52)
 
 ## [0.5.2] - 2026-10-19
 
