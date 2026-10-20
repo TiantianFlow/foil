@@ -23,6 +23,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install tmux
         run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: Install Chromium for the viewer's browser tests
+        run: uv run --no-config --frozen --isolated --extra dev playwright install --with-deps chromium
       - name: Test
         run: uv run --no-config --frozen --isolated --extra dev pytest --ignore=tests/e2e
       - name: End-to-end user journeys

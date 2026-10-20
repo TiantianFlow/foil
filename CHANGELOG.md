@@ -11,6 +11,7 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
+- `tests/test_view_browser.py` runs the `foil view` page in headless Chromium through Playwright, a new dev dependency, and checks the info pop-ups and the Copy button. CI installs Chromium for it. (#54)
 - The test suite runs in parallel by default with pytest-xdist, one worker per CPU. On a 4-CPU machine the full run drops from about 4.5 minutes to about 1.2 minutes. `-n 0` runs it in one process. (#52)
 
 ## [0.5.2] - 2026-10-19
