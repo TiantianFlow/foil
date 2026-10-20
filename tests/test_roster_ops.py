@@ -1009,7 +1009,7 @@ def test_roster_update_keeps_the_model_when_the_harness_changes(project: Path) -
     assert load_template(project, "lead")["harness"] == [{"id": "codex", "model": "opus"}]
 
 
-def test_roster_update_refuses_harness_flags_on_a_list(project: Path) -> None:
+def test_roster_update_edits_a_list_only_as_a_whole(project: Path) -> None:
     _install(
         project,
         "lead",
@@ -1025,18 +1025,24 @@ def test_roster_update_refuses_harness_flags_on_a_list(project: Path) -> None:
         'id = "codex"\n'
         'model = "gpt-5.5"\n',
     )
-    before = _roster_bytes(project)
-    with pytest.raises(FoilError, match="more than one harness entry"):
-        update_template(project, "lead", "harness", "gemini")
-    with pytest.raises(FoilError, match="more than one harness entry"):
-        update_template(project, "lead", "model", "other")
-    assert _roster_bytes(project) == before
-    update_template(project, "lead", "persona", "personas/reviewer.md")
-    from foil.presets import load_template
+    from foil.presets import load_template, read_maps
 
-    loaded = load_template(project, "lead")
-    assert loaded["harness"] == [
-        {"id": "claude", "model": "opus"},
+    before = _roster_bytes(project)
+    with pytest.raises(FoilError, match="more than one harness entry.*harness=ID/MODEL"):
+        update_template(project, "lead", "model", "other")
+    for bad in ("claude/opus,", "claude/opus,codex/-x", "claude,bad id", "nope/x"):
+        with pytest.raises(FoilError):
+            update_template(project, "lead", "harness", bad)
+    assert _roster_bytes(project) == before
+    others = [row for row in read_maps(project) if row["role"] != "lead"]
+    update_template(project, "lead", "harness", "codex/gpt-5.5,claude,gemini/pro/2")
+    assert load_template(project, "lead")["harness"] == [
         {"id": "codex", "model": "gpt-5.5"},
+        {"id": "claude", "model": ""},
+        {"id": "gemini", "model": "pro/2"},
     ]
-    assert loaded["persona"] == "personas/reviewer.md"
+    assert [row for row in read_maps(project) if row["role"] != "lead"] == others
+    update_template(project, "lead", "harness", "gemini")
+    assert load_template(project, "lead")["harness"] == [{"id": "gemini", "model": ""}]
+    update_template(project, "lead", "persona", "personas/reviewer.md")
+    assert load_template(project, "lead")["persona"] == "personas/reviewer.md"

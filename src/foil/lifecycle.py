@@ -21,7 +21,6 @@ from foil.presets import (
     _builtin,
     entry_label,
     expand_argv,
-    fleet_model,
     fleet_overrides,
     installed_harness,
     installed_presets,
@@ -31,7 +30,7 @@ from foil.presets import (
     persona_text,
     read_description,
     read_roles,
-    select_harness,
+    spawn_entry,
     write_default_templates,
 )
 from foil.project import (
@@ -444,7 +443,10 @@ def _instruction(
         override_path = (fleet_dir(root) / "overrides.toml").resolve()
         overrides = fleet_overrides(root)
         memory = (
-            "\n".join(f"- {item['role']}: {item['model']}" for item in overrides)
+            "\n".join(
+                f"- {item['role']}: {entry_label(item) if item['id'] else item['model']}"
+                for item in overrides
+            )
             if overrides
             else "none"
         )
@@ -456,12 +458,12 @@ def _instruction(
                 f"Profiles: `{foil_root(root) / 'roles.toml'}`.",
                 f"Default mapping: `{foil_root(root) / 'mapping.toml'}`.",
                 f"Fleet memory: `{override_path}`. Re-read that file before you spawn.",
-                "Spawn applies the model in that file as the harness model flag.",
-                "You do not pass a model flag.",
+                "A role's rows in that file replace its default list for this fleet.",
+                "You do not pass a harness or a model flag.",
                 "Current overrides:",
                 memory,
-                "Record one with `foil roster update ROLE model=VALUE`. "
-                "That leaves the default mapping unchanged.",
+                "Record them with `foil roster update ROLE harness=ID/MODEL,ID/MODEL` "
+                "or, for one entry, `model=VALUE`. That leaves the default mapping unchanged.",
             ]
         )
     if restarted:
@@ -662,10 +664,8 @@ def spawn_seat(
     registry = load_registry(root)
     seat = _seat_name(registry, loaded["name"], name)
     stored = sum(item["template"] == loaded["name"] for item in registry["seats"].values())
-    chosen = select_harness(loaded["harness"], stored)
-    model = fleet_model(root, loaded["name"])
-    if model is None:
-        model = chosen["model"]
+    chosen = spawn_entry(root, loaded["name"], loaded["harness"], stored)
+    model = chosen["model"]
     preset = load_preset(root, chosen["id"])
     native = str(uuid.uuid4()) if preset["session_id"] == "generated" else ""
     worktree, branch = _worktree(root, seat) if loaded["worktree"] else ("", "")

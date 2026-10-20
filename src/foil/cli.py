@@ -187,7 +187,7 @@ def _build_parser() -> argparse.ArgumentParser:
     roster_remove = roster_sub.add_parser("remove", help="Remove a template")
     roster_remove.add_argument("ROLE", metavar="ROLE")
 
-    view = sub.add_parser("view", help="Serve a read-only page for this project")
+    view = sub.add_parser("view", help="Serve a read-only page for every project on this host")
     view.add_argument("--port", metavar="N")
 
     return parser
@@ -218,7 +218,7 @@ def _run(args: argparse.Namespace) -> int:
         # Imported here so other commands do not load the HTTP server modules.
         from foil.view import serve
 
-        return serve(_require_project(), args.port)
+        return serve(args.port)
     root = _require_project()
     if args.command == "seat":
         action = args.seat_command

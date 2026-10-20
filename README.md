@@ -103,7 +103,7 @@ Install Foil from https://github.com/TiantianFlow/foil, onboard this repository 
 To update between goals, kill first, then upgrade, then `foil init`. From 0.4 to 0.5, do not resume a seat started on 0.4. `foil init` moves a project-root `board/` and `run/` under `fleets/main/` when that fleet's copies are absent or empty, and it does not read `templates/<role>.toml`. After init, copy each role's harness, model, worktree, and permission into `roles.toml` and `mapping.toml`. A new list uses `permission = "auto"` and omits `model`. Lessons in `memory/` and seat worktrees stay. `FOIL_FLEET` defaults to `main`. Run `foil seat kill --all` once the goal is done, run the install line again, run `foil init` in each project, then spawn the lead. A project that still has an in-repo `.foil/` from 0.3.x is killed with that old `foil` before the install line runs. A stale seat whose tmux window is already gone also counts. If that old `foil` is no longer on `PATH`, install 0.3.4 beside the current one, which does not replace it: `UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then run `DIR/bin/foil seat kill --all`. With pipx: `PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then run `DIR/bin/foil seat kill --all`. Do not run `foil init` while those seats remain, and do not move that directory aside. The previous goal's `board/status.md`, in the project folder the report prints, already says `state: done`, so note its `updated` line before you spawn and wait for it to change. After `foil seat kill --all`, either case can occur, so check: run `tmux ls`. If it lists any session, a named preset `env` variable comes from that server and is set with `tmux set-environment -g NAME VALUE` before spawn. If it says no server is running, the next spawn starts a server from your shell.
 
 - The agent installs Foil and runs `foil init`. If that command prints `foil: no harness installed`, it wrote nothing. Install one of the CLIs above and run `foil init` again.
-- It reads the report, runs `foil roster list`, and asks you to run each harness id once in this repository and accept its folder-trust, update, first-run, and opt-in prompts, or to confirm that is done. It sets each template's harness list and `permission` with `foil roster`, or by editing the three lists in the project folder the report printed: `harnesses.toml`, `roles.toml`, and `mapping.toml`. `init` writes one mapping entry per role and `permission = "auto"`. Every fleet shares those lists. `FOIL_FLEET` selects a fleet and defaults to `main`. `roster update` `harness` and, from outside the fleet, `model` edit that entry. From inside the fleet, `model` writes that fleet's `overrides.toml`, and the next spawn applies it. A longer list is edited in `mapping.toml`, and a spawn takes the entry at the count of seats already stored for that role. `auto` on the lead alone does not let the workers run unattended. Limits says what `auto` still does: the seat can stop on an approval prompt.
+- It reads the report, runs `foil roster list`, and asks you to run each harness id once in this repository and accept its folder-trust, update, first-run, and opt-in prompts, or to confirm that is done. It sets each template's harness list and `permission` with `foil roster`, or by editing the three lists in the project folder the report printed: `harnesses.toml`, `roles.toml`, and `mapping.toml`. `init` writes one mapping entry per role and `permission = "auto"`. Every fleet shares those lists. `FOIL_FLEET` selects a fleet and defaults to `main`. `roster update ROLE harness=ID/MODEL,ID/MODEL` sets a role's whole list, and `model` edits a one-entry list. From inside the fleet, both write that fleet's `overrides.toml` instead, and the next spawn applies it. A spawn takes the entry at the count of seats already stored for that role. `auto` on the lead alone does not let the workers run unattended. Limits says what `auto` still does: the seat can stop on an approval prompt.
 - It runs the first-run check and sends the goal.
 - It never does the project work itself.
 
@@ -153,7 +153,7 @@ Run `foil seat peek lead`, and do the same for a seat that was just spawned or r
 
 ## See it in a browser
 
-`foil view`, run in the repository, serves a read-only page for this project and prints its address. The page lists the fleets and the project's lessons. Settings shows the three shared lists. Each fleet shows its attach command, overrides, seats, board, and posts, and each seat shows its raw pane. It types nothing into a pane and decides nothing about progress; that is still `board/status.md`. Stopping it leaves every seat as it was.
+`foil view`, run from any directory, serves one read-only page for every Foil project on this machine and prints its address. The page lists the projects. Each project lists its fleets and lessons, and its Settings shows the three shared lists. Each fleet shows its attach command, overrides, seats, board, and posts, and each seat shows its raw pane. It types nothing into a pane and decides nothing about progress; that is still `board/status.md`. Stopping it leaves every seat as it was.
 
 ```sh
 foil view
@@ -166,51 +166,50 @@ To open it from your other devices on Tailscale, put `tailscale serve` in front 
 
 ### Keep the viewer running
 
-Foil has no daemon mode. launchd on macOS and `systemd --user` on Linux run `foil view` as it is, start it at login, and restart it when it fails. Your operator agent can fill these in for you. Use one file per project, each with its own port outside 7460-7509, so an ad hoc `foil view` never takes it. A service keeps the page readable by every account on the machine for as long as you are logged in (see Limits), so set one up only on a machine you do not share. Replace each capitalized placeholder:
+Foil has no daemon mode. launchd on macOS and `systemd --user` on Linux run `foil view` as it is, start it at login, and restart it when it fails. Your operator agent can fill these in for you. One service covers every project on the machine. Give it a port outside 7460-7509, so an ad hoc `foil view` never takes it. A service keeps the page readable by every account on the machine for as long as you are logged in (see Limits), so set one up only on a machine you do not share. Replace each capitalized placeholder:
 
 - `FOIL`: the absolute path that `command -v foil` prints.
-- `REPO`: the repository's absolute path.
 - `PORT`: the port.
 - `YOUR_PATH`: what `echo $PATH` prints in your own terminal. A service starts with a minimal `PATH`, and without yours it cannot find tmux or your agent CLIs.
 - `HOME_DIR`: your home directory's absolute path.
 
 If you set `FOIL_HOME`, `XDG_DATA_HOME`, or `TMUX_TMPDIR`, add the same value next to `PATH`; without the same `TMUX_TMPDIR`, the viewer cannot find your seats' windows and shows every seat dead. Restart the service after you upgrade Foil.
 
-macOS, `~/Library/LaunchAgents/dev.foil.view.PROJECT.plist`:
+macOS, `~/Library/LaunchAgents/dev.foil.view.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
-  <key>Label</key><string>dev.foil.view.PROJECT</string>
+  <key>Label</key><string>dev.foil.view</string>
   <key>ProgramArguments</key><array>
     <string>FOIL</string><string>view</string><string>--port</string><string>PORT</string>
   </array>
-  <key>WorkingDirectory</key><string>REPO</string>
+  <key>WorkingDirectory</key><string>HOME_DIR</string>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>YOUR_PATH</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ThrottleInterval</key><integer>30</integer>
-  <key>StandardOutPath</key><string>HOME_DIR/Library/Logs/foil-view-PROJECT.log</string>
-  <key>StandardErrorPath</key><string>HOME_DIR/Library/Logs/foil-view-PROJECT.log</string>
+  <key>StandardOutPath</key><string>HOME_DIR/Library/Logs/foil-view.log</string>
+  <key>StandardErrorPath</key><string>HOME_DIR/Library/Logs/foil-view.log</string>
 </dict></plist>
 ```
 
 ```sh
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.foil.view.PROJECT.plist
-launchctl bootout gui/$(id -u)/dev.foil.view.PROJECT
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.foil.view.plist
+launchctl bootout gui/$(id -u)/dev.foil.view
 ```
 
 The first line starts it and the second stops it. After you edit the file, stop it before you start it again. It restarts after a failure, at most once every 30 seconds, and not after a clean stop.
 
-Linux, `~/.config/systemd/user/foil-view-PROJECT.service`. Write each `%` in `YOUR_PATH` as `%%`:
+Linux, `~/.config/systemd/user/foil-view.service`. Write each `%` in `YOUR_PATH` as `%%`:
 
 ```ini
 [Unit]
-Description=Foil viewer for PROJECT
+Description=Foil viewer
 
 [Service]
 ExecStart="FOIL" view --port PORT
-WorkingDirectory=REPO
+WorkingDirectory=HOME_DIR
 Environment="PATH=YOUR_PATH"
 Restart=on-failure
 RestartSec=30
@@ -220,9 +219,9 @@ WantedBy=default.target
 ```
 
 ```sh
-systemctl --user enable --now foil-view-PROJECT
-systemctl --user disable --now foil-view-PROJECT
-journalctl --user -u foil-view-PROJECT
+systemctl --user enable --now foil-view
+systemctl --user disable --now foil-view
+journalctl --user -u foil-view
 ```
 
 It runs while you are logged in.
@@ -235,7 +234,7 @@ Templates default to `permission = "auto"`. An omitted permission runs the seat 
 
 Foil never interprets what is on a seat's screen. `foil seat peek` prints the raw tmux capture, and `foil seat list` reports `alive`, `dead`, or `killed` from whether the seat's window still exists, not from what is on its screen. Agents say whether they are blocked or done in board files. Foil does not scrape a pane, does not decide that a dialog is present, and does not send the keys.
 
-`foil view` has no login. Your project folder is private to you, but a port on `127.0.0.1` is open to every account on the machine, so while the viewer runs anyone logged in can read it, including pane text and board files. It hides launch-command tokens that look like credentials, as a best effort. On a machine other people log in to, stop it when you are done. The tailnet check guards only the tailnet name: an account on this machine can still read the page on `127.0.0.1`.
+`foil view` has no login. Your project folders are private to you, but a port on `127.0.0.1` is open to every account on the machine, so while the viewer runs anyone logged in can read it, including every project's pane text and board files. It hides launch-command tokens that look like credentials, as a best effort. On a machine other people log in to, stop it when you are done. The tailnet check guards only the tailnet name: an account on this machine can still read the page on `127.0.0.1`.
 
 A nudge is typed even when the window is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path. `foil post` writes one room file and types that same line into every other alive seat. Either command waits 200ms, then sends Enter once, so a harness that treats Enter inside a fast burst as an unsent paste submits the line instead of leaving it in the input. The message body is never typed. `foil post --re PATH --decline` writes a room file and types nothing. If the agent is not waiting for input, those keystrokes still go into the window. Foil does not look at the screen to decide, and it does not send Enter again.
 
