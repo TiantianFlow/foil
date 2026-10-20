@@ -10,3 +10,7 @@ This file is for coding agents working on Foil itself.
 - Before you ask for review, work through "Before you ask for review" in
   CONTRIBUTING.md, and report what you verified, against which version,
   and what you did not.
+- Before merging, run one independent review that covers the change,
+  privacy, and publish safety. Repeat only when that review finds
+  something worth fixing. A round that finds nothing worth fixing is
+  done. Do not keep tuning.

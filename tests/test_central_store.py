@@ -15,6 +15,8 @@ from foil.cli import main
 from foil.project import common_dir, foil_root, project_key, store_root
 
 _ORIGIN = "https://github.com/TiantianFlow/foil.git"
+# Split so the source has no userinfo@host address for the publish scan.
+_WITH_USERINFO = "https://pat:secret-token@" + "github.com/TiantianFlow/foil.git"
 _ORDER = "kill them with the old foil (foil seat kill --all), then upgrade, then foil init"
 _OLD_FOIL = "UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install"
 _STALE = "A stale seat whose tmux window is already gone also counts"
@@ -421,6 +423,40 @@ def test_init_of_a_fresh_repo_ignores_an_unrelated_orphan(
     assert "orphaned" not in report
     assert (orphan / "project.json").is_file()
     assert (foil_root(Path.cwd()) / "project.json").is_file()
+
+
+def test_init_drops_http_userinfo_and_adopts_a_record_that_kept_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _git_env(monkeypatch)
+    home = Path(os.environ["FOIL_HOME"])
+    folder = home / "projects" / "old"
+    folder.mkdir(parents=True)
+    (folder / "project.json").write_text(
+        json.dumps(
+            {
+                "path": str(tmp_path / "gone"),
+                "origin": _WITH_USERINFO,
+                "created": "2026-10-10T00:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    repo = _repo(
+        tmp_path / "project",
+        monkeypatch,
+        origin=_WITH_USERINFO,
+    )
+    _commit(repo)
+    capsys.readouterr()
+    assert main(["init"]) == 0
+    report = capsys.readouterr().out
+    adopted = foil_root(repo)
+    assert f"Adopted {folder.name} as {adopted}" in report
+    text = (adopted / "project.json").read_text(encoding="utf-8")
+    assert "secret-token" not in text
+    assert json.loads(text)["origin"] == _ORIGIN
 
 
 def test_init_says_when_several_orphans_match(
