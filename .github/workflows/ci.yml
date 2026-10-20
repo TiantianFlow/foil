@@ -23,12 +23,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install tmux
         run: sudo apt-get update && sudo apt-get install -y tmux
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
       - name: Install Chromium for the viewer's browser tests
-        run: uv run --no-config --frozen --isolated --extra dev playwright install --with-deps chromium
-      - name: Test
-        run: uv run --no-config --frozen --isolated --extra dev pytest --ignore=tests/e2e
-      - name: End-to-end user journeys
-        run: uv run --no-config --frozen --isolated --extra dev pytest tests/e2e -m "not e2e_live"
+        run: uv run --no-config --frozen --isolated --extra dev playwright install --with-deps --only-shell chromium
+      # One run keeps every xdist worker busy until the last test, unit and end-to-end alike.
+      - name: Test and end-to-end user journeys
+        run: uv run --no-config --frozen --isolated --extra dev pytest -m "not e2e_live"
       - name: Lint
         run: uv run --no-config --frozen --isolated --extra dev ruff check .
       - name: Build
