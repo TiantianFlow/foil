@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -29,6 +32,22 @@ _IDENTITY_FORMAT = "#{session_id}\t#{window_id}\t#{window_name}"
 NUDGE_ENTER_DELAY = 0.2
 
 
+_budget = threading.local()
+
+
+@contextmanager
+def time_budget(seconds: float) -> Iterator[None]:
+    """Every tmux call in this thread ends within ``seconds``; one still running is stopped."""
+
+    outer = getattr(_budget, "until", None)
+    until = time.monotonic() + seconds
+    _budget.until = until if outer is None else min(outer, until)
+    try:
+        yield
+    finally:
+        _budget.until = outer
+
+
 class TmuxError(RuntimeError):
     """A tmux operation could not be completed safely."""
 
@@ -52,13 +71,17 @@ class TmuxController:
         self.timeout = timeout
 
     def _run(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
+        until = getattr(_budget, "until", None)
+        limit = self.timeout if until is None else min(self.timeout, until - time.monotonic())
+        if limit <= 0:
+            raise TmuxError("tmux command could not be executed")
         try:
             return subprocess.run(
                 [self.executable, *argv],
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=self.timeout,
+                timeout=limit,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise TmuxError("tmux command could not be executed") from exc

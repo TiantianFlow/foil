@@ -832,3 +832,236 @@ def test_a_board_that_cannot_be_listed_is_one_line_in_each_section(
         page = _page(port, "/fleets/main")
     assert page.count("foil: refusing symlink") == 2
     assert '<span class="dot alive"></span>alive' in page
+
+
+# Tailnet
+
+
+NODE = ("box.tail1234.ts.net", "owner@github")
+
+
+def test_the_tailnet_name_loads_only_for_the_owner_login(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(view, "tailnet", lambda: NODE)
+    owner = {"Tailscale-User-Login": NODE[1], "X-Forwarded-Host": NODE[0]}
+    with _serving(repo) as port:
+        for host in (NODE[0], f"{NODE[0]}:8443", NODE[0].upper()):
+            forwarded = {**owner, "X-Forwarded-Host": host}
+            assert _get(port, host=host, headers=forwarded)[0] == 200, host
+        for origin in (f"https://{NODE[0]}", f"http://{NODE[0]}"):
+            assert _get(port, host=NODE[0], headers={**owner, "Origin": origin})[0] == 200
+        refused = [
+            {},
+            {"X-Forwarded-Host": NODE[0]},
+            {"Tailscale-User-Login": NODE[1]},
+            {**owner, "X-Forwarded-Host": "other.example"},
+            {**owner, "Tailscale-User-Login": "other@github"},
+            {**owner, "Tailscale-User-Login": NODE[1].upper()},
+            {**owner, "Origin": "https://evil.example"},
+            {**owner, "Origin": "null"},
+            {"Tailscale-Funnel-Request": "?1", "X-Forwarded-Host": NODE[0]},
+        ]
+        for headers in refused:
+            status, _fields, body = _get(port, host=NODE[0], headers=headers)
+            assert (status, body) == (403, b""), headers
+        # Two values cannot be told apart from a forwarded one plus a forged one.
+        twice = (
+            f"GET / HTTP/1.0\r\nHost: {NODE[0]}\r\nX-Forwarded-Host: {NODE[0]}\r\n"
+            f"Tailscale-User-Login: {NODE[1]}\r\n"
+        )
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
+            client.sendall(f"{twice}Tailscale-User-Login: {NODE[1]}\r\n\r\n".encode())
+            assert client.recv(100).split()[1] == b"403"
+        # Another name on the tailnet, and loopback rules are unchanged.
+        assert _get(port, host="other.tail1234.ts.net", headers=owner)[0] == 403
+        assert _get(port)[0] == 200
+
+
+def test_a_forwarded_request_with_a_loopback_host_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # serve routes on SNI and copies the client's Host, so another tailnet user
+    # can send Host: localhost through it.
+    repo = _repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(view, "tailnet", lambda: NODE)
+    with _serving(repo) as port:
+        for field in view.PROXIED:
+            for host in (f"127.0.0.1:{port}", "localhost", "[::1]:8000"):
+                status, _fields, body = _get(port, host=host, headers={field: "x"})
+                assert (status, body) == (403, b""), (field, host)
+        assert _get(port)[0] == 200
+
+
+def test_tailscale_status_is_read_once_per_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    calls: list[int] = []
+    monkeypatch.setattr(view, "tailnet", lambda: calls.append(1) or NODE)
+    held = socket.socket()
+    held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    held.bind(("127.0.0.1", 0))
+    held.listen()
+    base = held.getsockname()[1]
+    with held:
+        server = view.open_server(repo, None, base=base)
+        server.server_close()
+    assert calls == [1] and server.tailnet == NODE
+
+
+def test_without_tailscale_the_tailnet_name_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(view, "tailnet", lambda: None)
+    with _serving(repo) as port:
+        headers = {"Tailscale-User-Login": NODE[1], "X-Forwarded-Host": NODE[0]}
+        status, _fields, body = _get(port, host=NODE[0], headers=headers)
+    assert (status, body) == (403, b"")
+
+
+def _status(**changes: object) -> dict:
+    status: dict = {
+        "BackendState": "Running",
+        "Self": {"DNSName": "Box.tail1234.ts.net.", "UserID": 42},
+        "User": {"42": {"LoginName": "owner@github"}},
+    }
+    status.update(changes)
+    return status
+
+
+@pytest.mark.parametrize(
+    ("output", "code", "expected"),
+    [
+        (json.dumps(_status()), 0, ("box.tail1234.ts.net", "owner@github")),
+        (json.dumps(_status(BackendState="Stopped")), 0, None),
+        (json.dumps(_status(Self={"DNSName": "box.ts.net.", "UserID": 42, "Tags": ["tag:x"]})),
+         0, None),
+        (json.dumps(_status(User={"42": {"LoginName": "ownér@github"}})), 0, None),
+        (json.dumps(_status(User={})), 0, None),
+        (json.dumps(_status()), 1, None),
+        ("not json", 0, None),
+    ],
+)
+def test_tailnet_reads_the_running_untagged_node(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, output: str, code: int, expected: object
+) -> None:
+    folder = tmp_path / "bin"
+    folder.mkdir()
+    (folder / "status.json").write_text(output, encoding="utf-8")
+    script = folder / "tailscale"
+    script.write_text(
+        '#!/bin/sh\n[ "$*" = "status --json" ] || exit 9\n'
+        f'cat "{folder}/status.json"\nexit {code}\n'
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{folder}{os.pathsep}{os.environ['PATH']}")
+    assert view.tailnet() == expected
+
+
+def test_no_tailscale_on_path_is_no_tailnet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    assert view.tailnet() is None
+
+
+# Caps on one request
+
+
+def test_a_file_over_the_raw_cap_has_no_raw_view(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    monkeypatch.setattr(view, "RAW_CAP", 1024)
+    (_board(repo) / "notes" / "small.log").write_bytes(b"x" * 1024)
+    (_board(repo) / "notes" / "big.log").write_bytes(b"x" * 1025)
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main?open=notes/big.log")
+        status, _fields, body = _get(port, "/fleets/main/raw?open=notes/big.log")
+        small = _get(port, "/fleets/main/raw?open=notes/small.log")
+    assert "/raw?open=" not in page and "No raw view over 1.0 KiB." in page
+    assert status == 413 and b"x" * 1025 not in body
+    assert b"the raw view stops at 1.0 KiB; this file is 1.0 KiB" in body
+    assert small[0] == 200 and small[2] == b"x" * 1024
+
+
+def _hung_tmux(tmp_path: Path) -> Path:
+    script = tmp_path / "hung-tmux"
+    script.write_text(f'#!/bin/sh\necho $$ >> "{tmp_path}/hung.pids"\nexec sleep 30\n')
+    script.chmod(0o755)
+    return script
+
+
+def test_a_tmux_call_past_the_budget_is_stopped(tmp_path: Path) -> None:
+    from foil.tmux import time_budget
+
+    controller = TmuxController(str(_hung_tmux(tmp_path)))
+    started = time.monotonic()
+    with time_budget(0.5), pytest.raises(TmuxError):
+        controller._run(["has-session"])
+    with time_budget(0.5), pytest.raises(TmuxError):
+        time.sleep(0.6)
+        controller._run(["has-session"])
+    with time_budget(0.3), time_budget(30), pytest.raises(TmuxError):
+        controller._run(["has-session"])
+    assert time.monotonic() - started < 3
+
+
+def test_a_hung_tmux_does_not_hold_a_build_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _registry(repo, _seat("lead", window="@1"), _seat("implementer-1", window="@2"))
+    hung = TmuxController(str(_hung_tmux(tmp_path)))
+
+    def probe(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> ProbeResult:
+        hung._run(["list-windows"])
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(TmuxController, "probe", probe)
+    monkeypatch.setattr(view, "DEADLINE", 1)
+    monkeypatch.setattr(view, "SLOTS", 1)
+    with _serving(repo) as port:
+        started = time.monotonic()
+        # Each page probes two seats; the second probe gets no time left.
+        first = _get(port, "/fleets/main")
+        second = _get(port, "/fleets/main")
+    assert time.monotonic() - started < 5
+    assert first[0] != 503 and second[0] != 503
+    pids = (tmp_path / "hung.pids").read_text().split()
+    assert len(pids) == 2
+    for pid in pids:
+        with pytest.raises(ProcessLookupError):
+            os.kill(int(pid), 0)
+
+
+# Info text
+
+
+def _requirement_tips() -> dict[str, str]:
+    text = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
+    table = text.split("The info explanations F38 names")[1].split("\n\n")[1]
+    rows = [line.strip("|").split(" | ", 1) for line in table.splitlines()[2:]]
+    return {name.strip(): body.strip() for name, body in rows}
+
+
+def test_the_info_text_the_page_serves_is_the_text_f38_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert _requirement_tips() == view.TIPS
+    f38 = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8").split("| F38 |")[1]
+    assert f"`{view.HELP}`" in f38.split("\n")[0]
+    repo = _repo(tmp_path, monkeypatch)
+    _registry(repo, _seat("lead", window="@1"))
+    _windows(monkeypatch, {"@1": "lead"})
+    with _serving(repo) as port:
+        served = "".join(
+            _page(port, path)
+            for path in ("/", "/settings", "/fleets/main", "/fleets/main/seats/lead")
+        )
+    found = {html.unescape(item) for item in re.findall(r'</summary><p>(.*?)</p>', served)}
+    assert found == set(view.TIPS.values())
+    assert html.escape(view.HELP) in served
