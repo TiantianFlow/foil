@@ -1,6 +1,6 @@
 """`foil view` in a real browser: the page's own script, which the HTML tests do not run.
 
-It needs Chromium for Playwright: `uv run --frozen --extra dev playwright install chromium`.
+It needs Chromium for Playwright: `uv run --frozen --extra dev playwright install --only-shell chromium`.
 """
 
 from __future__ import annotations

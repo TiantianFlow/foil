@@ -10,12 +10,14 @@ permissions:
 
 jobs:
   test:
-    name: Python ${{ matrix.python-version }}
+    name: Python ${{ matrix.python-version }}${{ matrix.suite == 'e2e' && ' e2e' || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
+        # The two tiers run as separate jobs at the same time.
+        suite: [unit, e2e]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -23,20 +25,28 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install tmux
         run: sudo apt-get update && sudo apt-get install -y tmux
-      - uses: actions/cache@v4
+      - if: matrix.suite == 'unit'
+        uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
       - name: Install Chromium for the viewer's browser tests
+        if: matrix.suite == 'unit'
         run: uv run --no-config --frozen --isolated --extra dev playwright install --with-deps --only-shell chromium
-      # One run keeps every xdist worker busy until the last test, unit and end-to-end alike.
-      - name: Test and end-to-end user journeys
-        run: uv run --no-config --frozen --isolated --extra dev pytest -m "not e2e_live"
+      - name: Test
+        if: matrix.suite == 'unit'
+        run: uv run --no-config --frozen --isolated --extra dev pytest --ignore=tests/e2e
+      - name: End-to-end user journeys
+        if: matrix.suite == 'e2e'
+        run: uv run --no-config --frozen --isolated --extra dev pytest tests/e2e -m "not e2e_live"
       - name: Lint
+        if: matrix.suite == 'e2e'
         run: uv run --no-config --frozen --isolated --extra dev ruff check .
       - name: Build
+        if: matrix.suite == 'e2e'
         run: uv build --no-config
       - name: Smoke-test installed wheel
+        if: matrix.suite == 'e2e'
         run: |
           wheel_env="$RUNNER_TEMP/foil-wheel-smoke"
           uv venv --no-config "$wheel_env"
