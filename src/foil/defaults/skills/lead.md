@@ -96,15 +96,16 @@ The roster is `roles.toml` and `mapping.toml` in the project folder. Every fleet
 foil roster list
 foil roster show implementer
 foil roster update implementer model=claude-sonnet-4-5
+foil roster update reviewer harness=codex/gpt-5.5,claude/claude-opus-4-1
 foil roster add researcher
 foil roster remove old-role
 ```
 
 To add a role whose persona file exists, use `foil roster add <role>`. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. Personas live in the project folder's `templates/personas/`. A role that commits needs `worktree = true`.
 
-`foil roster add ROLE` creates a template when `personas/ROLE.md` is already on disk. A role you add arrives as `auto`, and you cannot set `permission`. A caller outside the fleet sets `ask` when a seat must stop for the human. `foil roster update ROLE model=VALUE` records fleet memory for that role. The next spawn of the role uses that model. The default mapping stays. Use it so a researcher or reviewer can be given a stronger model for that ask. Re-read `overrides.toml` before you spawn. Spawn applies that model as the harness model flag. You do not pass a model flag. `harness` is refused when the mapping has more than one entry. Edit that list in `mapping.toml`. `model` still records fleet memory when the list is longer. `foil roster update ROLE persona=VALUE` points an existing template at a persona file. Neither command sets `permission`. A new seat takes the entry at the count of seats already stored for that role, including killed seats. A seat already alive keeps the harness and model from its last launch, and resume uses that pair.
+`foil roster add ROLE` creates a template when `personas/ROLE.md` is already on disk. A role you add arrives as `auto`, and you cannot set `permission`. A caller outside the fleet sets `ask` when a seat must stop for the human. `foil roster update ROLE harness=ID/MODEL,ID/MODEL` records fleet memory for that role: that list replaces the role's list in your fleet, in the form `roster list` prints, and the next spawn takes the entry at the role's seat count. `foil roster update ROLE model=VALUE` does the same for a role with one entry, and is refused when the list is longer. The default mapping stays. Use them so a researcher or reviewer can be given a stronger model for that ask. Re-read `overrides.toml` before you spawn. Spawn applies the harness and model from that file. You do not pass a harness or a model flag. `foil roster update ROLE persona=VALUE` points an existing template at a persona file. Neither command sets `permission`. A new seat takes the entry at the count of seats already stored for that role, including killed seats. A seat already alive keeps the harness and model from its last launch, and resume uses that pair.
 
-Edit `roles.toml` for the description, persona, worktree, and permission, and `mapping.toml` for the harness list. An omitted permission is `auto`. You cannot set `permission`. You cannot remove a template while a seat of that template has a stored state other than `killed`. Changing the mapping while a seat is alive is allowed. That seat keeps its launch pair.
+Edit `roles.toml` for the description, persona, worktree, and permission, and `mapping.toml` for the default harness list. An omitted permission is `auto`. You cannot set `permission`. You cannot remove a template while a seat of that template has a stored state other than `killed`. Changing the mapping while a seat is alive is allowed. That seat keeps its launch pair.
 
 ## Board and contracts
 

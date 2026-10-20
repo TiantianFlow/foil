@@ -81,7 +81,7 @@ foil roster update implementer model=claude-sonnet-4-5
 foil roster add researcher
 ```
 
-The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add` without `--from` uses the first installed harness, `worktree = false`, and `permission = auto`. Set `permission` from outside the fleet; the lead cannot, including on `foil roster add --from` when the file's permission is not `auto`. An omitted permission is `auto`. `foil roster update ROLE harness=ID` and, from outside the fleet, `foil roster update ROLE model=MODEL` edit one mapping row in `mapping.toml`. From inside the fleet, `model` writes that fleet's `overrides.toml`. The next spawn applies that model as the harness model flag. The default mapping stays. Re-read `overrides.toml` before you spawn. A longer mapping list is edited in `mapping.toml`. `harness` is refused on a longer list. Inside the fleet, `model` is still recorded. Posts for that fleet are `board/room/` under the fleet directory. Do not remove a template while a seat of that template has a stored state other than `killed`. Changing the list while a seat is alive is allowed. That seat keeps the harness and model it was launched with, and resume uses that pair. Edit `roles.toml` and `mapping.toml` when you prefer to change them by hand.
+The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. `foil roster add` without `--from` uses the first installed harness, `worktree = false`, and `permission = auto`. Set `permission` from outside the fleet; the lead cannot, including on `foil roster add --from` when the file's permission is not `auto`. An omitted permission is `auto`. `foil roster update ROLE harness=ID/MODEL,ID/MODEL` sets the role's whole list in `mapping.toml`, in the form `roster list` prints, and `foil roster update ROLE model=MODEL` sets the model of a one-entry list. A single id with no `/` keeps that entry's model. From inside the fleet, both write that fleet's `overrides.toml` instead, and the default mapping stays. The next spawn takes the harness and model from that fleet's list. Re-read `overrides.toml` before you spawn. `model` is refused on a longer list. Posts for that fleet are `board/room/` under the fleet directory. Do not remove a template while a seat of that template has a stored state other than `killed`. Changing the list while a seat is alive is allowed. That seat keeps the harness and model it was launched with, and resume uses that pair. Edit `roles.toml` and `mapping.toml` when you prefer to change them by hand.
 
 ## Picking a harness and a model
 
@@ -93,7 +93,7 @@ Keep the principles few.
 - Give a large context to roles that read a lot.
 - Pair `auto` with a worktree. A seat that runs unattended and can commit should have its own branch.
 
-The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist. Do not reorder `init`'s harness assignment. Change a one-entry harness or model afterwards with `roster update`. Edit a longer list in `mapping.toml`.
+The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist. Do not reorder `init`'s harness assignment. Change the list afterwards with `roster update ROLE harness=ID/MODEL,ID/MODEL`.
 
 ## Personas from outside
 
@@ -132,14 +132,14 @@ When a check-in reports a dialog or a seat that is not making progress, run `tmu
 
 ## The viewer
 
-`foil view` serves a read-only page for this project: the shared lists, each fleet's seats, board, posts, and overrides, and each seat's pane. Run it from the repository, outside the fleet, and give the human the address it prints. It types nothing and decides nothing. Status still comes from `board/status.md`. Without `--port` it takes the first free port from 7460 to 7509. While it runs, anyone logged in to this machine can read the page.
+`foil view` serves one read-only page for every project on this machine: each project's shared lists, each fleet's seats, board, posts, and overrides, and each seat's pane. Run it from any directory, outside the fleet, and give the human the address it prints. It types nothing and decides nothing. Status still comes from `board/status.md`. Without `--port` it takes the first free port from 7460 to 7509. While it runs, anyone logged in to this machine can read the page.
 
 ```text
 foil view
 foil view --port 8790
 ```
 
-When the human wants the viewer to keep running, write a launchd agent on macOS or a `systemd --user` unit on Linux from the README section "Keep the viewer running". Fill in the absolute path of the foil command, the repository as the working directory, a port outside 7460-7509, and the `PATH` the human prints with `echo $PATH` in their own terminal. Your own `PATH` may not be theirs. Show the human the file and load it only after they agree. Foil writes no unit file.
+When the human wants the viewer to keep running, write a launchd agent on macOS or a `systemd --user` unit on Linux from the README section "Keep the viewer running". One service covers every project. Fill in the absolute path of the foil command, the home directory as the working directory, a port outside 7460-7509, and the `PATH` the human prints with `echo $PATH` in their own terminal. Your own `PATH` may not be theirs. Show the human the file and load it only after they agree. Foil writes no unit file.
 
 ## Relay and nudge
 

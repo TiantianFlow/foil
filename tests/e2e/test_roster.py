@@ -225,7 +225,11 @@ def test_added_role_can_be_spawned(
         assert "still in use" in err
         assert 'id = "researcher"' in (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
         assert main(["roster", "update", "researcher", "harness=codex"]) == 0
-        assert 'harness = "codex"' in (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
+        overrides = foil_root(repo) / "fleets" / "main" / "overrides.toml"
+        assert 'harness = "codex"' in overrides.read_text(encoding="utf-8")
+        assert 'harness = "codex"' not in (foil_root(repo) / "mapping.toml").read_text(
+            encoding="utf-8"
+        )
         assert main(["seat", "list"]) == 0
         assert "researcher-1\tresearcher\talive\t\tfake\t" in capsys.readouterr().out
     finally:

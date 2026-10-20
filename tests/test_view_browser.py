@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import Browser, Page, expect, sync_playwright
 
+from foil.project import foil_root
 from tests.test_slice_b import _repo
 from tests.test_view import _registry, _seat, _serving, _windows
 
@@ -24,7 +25,8 @@ def browser() -> Iterator[Browser]:
         launched.close()
 
 
-def _open(browser: Browser, port: int, path: str) -> tuple[Page, list[str]]:
+def _open(browser: Browser, port: int, repo: Path, path: str) -> tuple[Page, list[str]]:
+    path = f"/projects/{foil_root(repo).name}{path}"
     origin = f"http://127.0.0.1:{port}"
     context = browser.new_context()
     context.grant_permissions(["clipboard-read", "clipboard-write"], origin=origin)
@@ -45,7 +47,7 @@ def test_an_info_popup_closes_on_a_click_elsewhere_or_escape(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     with _serving(repo) as port:
-        page, errors = _open(browser, port, "/settings")
+        page, errors = _open(browser, port, repo, "/settings")
         icons = page.locator("details.tip summary")
         assert icons.count() >= 2
         closed = [False] * icons.count()
@@ -74,7 +76,7 @@ def test_copy_puts_the_attach_command_on_the_clipboard(
     _registry(repo, _seat("lead", window="@4"))
     _windows(monkeypatch, {"@4": "lead"})
     with _serving(repo) as port:
-        page, errors = _open(browser, port, "/fleets/main")
+        page, errors = _open(browser, port, repo, "/fleets/main")
         button = page.locator("button[data-copy]")
         button.click()
         expect(button).to_have_text("Copied")

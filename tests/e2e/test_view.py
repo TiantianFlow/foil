@@ -21,7 +21,7 @@ from foil.project import foil_root
 from foil.store import load_registry
 from tests.e2e.test_archive import _peek, _windows
 from tests.e2e.test_scenarios import _close, _prepare, _scripts, _status, _wait
-from tests.test_view import _get
+from tests.test_view import _aim, _get
 
 pytestmark = pytest.mark.e2e
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +29,7 @@ SEATS = ("implementer-1", "lead", "reviewer-1")
 
 
 def _viewer(repo: Path) -> tuple[subprocess.Popen[str], int]:
+    _aim(repo)
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
