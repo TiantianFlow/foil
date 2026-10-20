@@ -162,7 +162,7 @@ foil view --port 8790
 
 不加 `--port` 时，它使用 7460 到 7509 之间第一个空闲端口。它只监听 `127.0.0.1`。要从另一台机器访问，用 SSH 转发端口，例如 `ssh -L 8790:127.0.0.1:8790 host`。
 
-要从你在 Tailscale 上的其他设备打开它，在它前面放上 `tailscale serve`，例如 `tailscale serve --bg 8790`，然后打开这条命令打印的 `https://` 地址。没有任何东西监听你的局域网或 tailnet 地址；Tailscale 把每个请求转发到 `127.0.0.1`。`foil view` 在启动时检查 Tailscale，所以请在 Tailscale 运行之后再启动或重启它。在 tailnet 名称下，它只响应 Tailscale 标明来自这台机器所属登录账号的请求。Funnel 流量、带标签的设备和其他用户的设备都得到空的 403。`tailscale serve reset` 停止共享。
+要从你在 Tailscale 上的其他设备打开它，在它前面放上 `tailscale serve`，例如 `tailscale serve --bg 8790`，然后打开这条命令打印的 `https://` 地址。没有任何东西监听你的局域网或 tailnet 地址；Tailscale 把每个请求转发到 `127.0.0.1`。`foil view` 在启动时检查 Tailscale，所以请在 Tailscale 运行之后，以及这台机器登录另一个账号或被加上标签之后，再启动或重启它。在 tailnet 名称下，它只响应 Tailscale 标明来自这台机器所属登录账号的请求。Funnel 流量、带标签的设备和其他用户的设备都得到空的 403。请使用上面的 HTTPS 形式，或 `--http`。`tailscale serve --tcp`、`--tls-terminated-tcp` 和 `tailscale funnel --tcp` 转发原始字节，不带这个检查读取的请求头，所以它们放进来的任何人都能读到这个页面。`tailscale serve reset` 停止共享。
 
 ### 让查看器一直运行
 

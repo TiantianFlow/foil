@@ -886,6 +886,10 @@ def _bind(root: Path, port: int, node: tuple[str, str] | None) -> _Server | None
 def open_server(root: Path, port: str | None, *, base: int = BASE_PORT) -> _Server:
     """Bind the first free port from ``base``, or exactly ``port``."""
 
+    if port is not None and not (
+        port.isdecimal() and port.isascii() and 1024 <= int(port) <= 65535
+    ):
+        raise FoilError("foil: invalid port")
     node = tailnet()
     if port is None:
         server = None
@@ -896,8 +900,6 @@ def open_server(root: Path, port: str | None, *, base: int = BASE_PORT) -> _Serv
         if server is None:
             raise FoilError(f"foil: no free port in {base}-{base + PORT_SPAN - 1}")
     else:
-        if not (port.isdecimal() and port.isascii() and 1024 <= int(port) <= 65535):
-            raise FoilError("foil: invalid port")
         server = _bind(root, int(port), node)
         if server is None:
             raise FoilError(f"foil: port {int(port)} is in use")

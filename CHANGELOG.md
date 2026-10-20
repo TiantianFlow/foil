@@ -10,6 +10,7 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
+- `foil view` refuses a request with a loopback `Host` that carries `X-Forwarded-For`, `X-Forwarded-Host`, `Tailscale-User-Login`, or `Tailscale-Funnel-Request`, so a reverse proxy in front of it on this machine now gets an empty 403. (#48)
 - `foil view` gives no raw view of a board file over 16 MiB. (#48)
 - A `foil view` page build gives tmux at most 10 seconds in total, so a hung tmux call no longer holds one of the 8 build slots past the request. (#48)
 - The Agents info text says that `foil seat archive` frees a killed seat's name and that an archived seat is not listed. docs/requirements.md now lists every info text, and a test checks that the page serves exactly those. (#48)

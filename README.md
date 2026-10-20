@@ -162,7 +162,7 @@ foil view --port 8790
 
 Without `--port` it takes the first free port from 7460 to 7509. It listens on `127.0.0.1` only. To reach it from another machine, forward the port over SSH, for example `ssh -L 8790:127.0.0.1:8790 host`.
 
-To open it from your other devices on Tailscale, put `tailscale serve` in front of it, for example `tailscale serve --bg 8790`, and open the `https://` address that command prints. Nothing listens on your LAN or tailnet address; Tailscale forwards each request to `127.0.0.1`. `foil view` checks Tailscale when it starts, so start or restart it after Tailscale is up. Under the tailnet name, it serves only requests that Tailscale marks as coming from the login that owns this machine. Funnel traffic, tagged devices, and devices of other users get an empty 403. `tailscale serve reset` stops sharing it.
+To open it from your other devices on Tailscale, put `tailscale serve` in front of it, for example `tailscale serve --bg 8790`, and open the `https://` address that command prints. Nothing listens on your LAN or tailnet address; Tailscale forwards each request to `127.0.0.1`. `foil view` checks Tailscale when it starts, so start or restart it after Tailscale is up, and after this machine signs in to another account or is tagged. Under the tailnet name, it serves only requests that Tailscale marks as coming from the login that owns this machine. Funnel traffic, tagged devices, and devices of other users get an empty 403. Use the HTTPS form above, or `--http`. `tailscale serve --tcp`, `--tls-terminated-tcp`, and `tailscale funnel --tcp` forward raw bytes without the headers this check reads, so anyone they let in can read the page. `tailscale serve reset` stops sharing it.
 
 ### Keep the viewer running
 
