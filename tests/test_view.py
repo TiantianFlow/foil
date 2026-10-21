@@ -620,17 +620,25 @@ def test_overrides_show_every_row_and_the_pair_the_next_spawn_takes(
     assert re.search(r'next spawn <span class="mono">[a-z]+ / big</span>', reviewer)
     lead = agents.split("lead</a>")[1].split("</tr>")[0]
     assert 'next spawn <span class="mono">gemini / harness default</span>' in lead
-    # One reviewer is stored, so the second of the two reviewer entries is marked next.
+    # One reviewer is stored, so the second of the two reviewer cards is marked next.
     reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
-    assert re.search(r'<li class="next"><i>2</i><span class="mono">[^<]*/ big</span>', reviewers)
-    assert reviewers.count("<li") == 2
+    assert "Rotation" in reviewers
+    assert 'class="card"' in reviewers
+    assert "<ol" not in reviewers and "<li" not in reviewers
+    cards = re.findall(r'<span class="card(?: next)?">.*?</span>', reviewers)
+    assert len(cards) == 2
+    assert "next" not in cards[0]
+    assert "big" in cards[1] and "next" in cards[1]
     # Two reviewers stored and two entries: the rotation wraps back to the first.
     _registry(repo, _seat("lead"), _seat("reviewer-1", model="fast"), _seat("reviewer-2"))
     with _serving(repo) as port:
         page = _page(port, "/fleets/main")
     overrides = page.split("<h2>Fleet overrides")[1].split("</section>")[0]
     reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
-    assert re.search(r'<li class="next"><i>1</i><span class="mono">[^<]*/ small</span>', reviewers)
+    assert "Rotation" in reviewers
+    cards = re.findall(r'<span class="card(?: next)?">.*?</span>', reviewers)
+    assert "small" in cards[0] and "next" in cards[0]
+    assert "next" not in cards[1]
 
 
 def test_no_next_spawn_line_when_the_override_matches_the_mapping(
@@ -723,6 +731,44 @@ def test_settings_names_layers_and_keeps_settings_out_of_the_breadcrumb(
     assert 'class="badge"' in mapping
     assert "harness default" in mapping
     assert 'class="card"' in mapping or "<small>" in mapping.split("Rotation", 1)[1]
+
+
+def test_settings_list_personas_with_a_source_badge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F38: both settings pages list personas with no role, each with a source badge.
+
+    ``/settings`` is the global layer. A persona with no global file is packaged.
+    A project file is not a global row.
+    """
+    repo = _repo(tmp_path, monkeypatch)
+    home = Path(os.environ["FOIL_HOME"])
+    (home / "personas").mkdir()
+    (home / "personas" / "researcher.md").write_text(
+        "A researcher who is not a role.\n", encoding="utf-8"
+    )
+    (foil_root(repo) / "personas").mkdir()
+    (foil_root(repo) / "personas" / "critic.md").write_text(
+        "A project critic who is not a role.\n", encoding="utf-8"
+    )
+    with _serving(repo) as port:
+        global_page = _get(port, "/settings", top=True)[2].decode()
+        project = _page(port, "/settings")
+
+    def persona_row(page: str, name: str) -> str:
+        roles = page.split("<h2>Roles", 1)[1].split("</section>", 1)[0]
+        assert f"+ {name}" in roles, roles[:800]
+        return roles.split(f"+ {name}", 1)[1].split("</tr>", 1)[0]
+
+    researcher = persona_row(global_page, "researcher")
+    assert _badges(researcher) == ["global"]
+    assert "no role" in researcher
+    packaged = persona_row(global_page, "documentation-writer")
+    assert _badges(packaged) == ["packaged"]
+    assert "critic" not in global_page.split("<h2>Roles", 1)[1].split("</section>", 1)[0]
+    assert _badges(persona_row(project, "researcher")) == ["global"]
+    assert _badges(persona_row(project, "critic")) == ["project"]
+    assert _badges(persona_row(project, "documentation-writer")) == ["packaged"]
 
 
 def test_an_empty_fleet_overrides_section_is_one_per_role_line(

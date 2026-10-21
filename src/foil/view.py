@@ -414,10 +414,17 @@ def _card(entry: dict[str, str]) -> str:
     )
 
 
-def _rotation(entries: list[dict[str, str]]) -> str:
-    """Pair cards in order. Settings do not number seats or mark a next seat."""
+def _rotation(entries: list[dict[str, str]], upcoming: int | None = None) -> str:
+    """Pair cards in order. A fleet marks the next seat; settings do not."""
 
-    return 'Rotation <span class="cards">' + "".join(_card(entry) for entry in entries) + "</span>"
+    cards = []
+    for index, entry in enumerate(entries):
+        card = _card(entry)
+        if index == upcoming:
+            card = card.replace('class="card"', 'class="card next"', 1)
+            card = card.replace("</span>", "<b>next</b></span>", 1)
+        cards.append(card)
+    return 'Rotation <span class="cards">' + "".join(cards) + "</span>"
 
 
 def _text_file(path: Path) -> str | None:
@@ -499,19 +506,6 @@ def _global_harnesses() -> tuple[list[tuple[str, dict, str]], list[tuple[str, st
                 continue
             layer[harness_id] = "global"
     return [(key, chosen[key], layer[key]) for key in sorted(chosen)], skipped
-
-
-def _pairs(entries: list[dict[str, str]], upcoming: int | None = None) -> str:
-    """One role's list as numbered pair chips, the entry the next spawn takes marked."""
-
-    chips = []
-    for index, entry in enumerate(entries):
-        harness = entry["id"] or "default harness"
-        label = escape(f"{harness} / {entry['model'] or 'harness default'}")
-        mark = "<b>next</b>" if index == upcoming else ""
-        cls = ' class="next"' if index == upcoming else ""
-        chips.append(f'<li{cls}><i>{index + 1}</i><span class="mono">{label}</span>{mark}</li>')
-    return f'<ol class="pairs">{"".join(chips)}</ol>'
 
 
 def _by_role(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
@@ -630,6 +624,27 @@ def _personas(root: Path, loaded: list, written: list[dict[str, str]]) -> list[d
     return _packaged_personas({name for name, _row in loaded})
 
 
+def _persona_badge(root: Path | None, name: str) -> str:
+    """The layer that owns this persona file. A missing global file is packaged."""
+
+    if root is not None:
+        project = foil_root(root) / "personas" / f"{name}.md"
+        if project.is_file() and not project.is_symlink():
+            return "project"
+    stored = store_root() / "personas" / f"{name}.md"
+    if stored.is_file() and not stored.is_symlink():
+        return "global"
+    return "packaged"
+
+
+def _persona_rows(root: Path | None, personas: list[dict[str, str]]) -> list[list[str]]:
+    return [
+        [_mono(f"+ {item['name']}") + _badge(_persona_badge(root, item["name"])),
+         escape(item["description"]), _faded("no role"), ""]
+        for item in personas
+    ]
+
+
 def _layers() -> str:
     names = "".join(f"<span>{name}</span>" for name in ("Packaged", "Global", "Project", "Fleet"))
     return f'<p class="layers">{names}</p>'
@@ -673,10 +688,7 @@ def _settings_page(root: Path, base: str) -> _Page:
                   "", ""]
             for name, row in loaded
         ]
-        rows += [
-            [_mono(f"+ {item['name']}"), escape(item["description"]), _faded("no role"), ""]
-            for item in personas
-        ]
+        rows += _persona_rows(root, personas)
         return _table(["Role", "Description", "Permission", "Worktree"], rows)
 
     skipped: list[tuple[str, str]] = []
@@ -734,6 +746,28 @@ def _global_settings_page() -> _Page:
              "yes" if item.get("worktree") else _faded("no")]
             for item in found
         ]
+        named = {str(item["id"]) for item in found}
+        personas = []
+        seen: set[str] = set()
+        packaged = Path(str(files("foil").joinpath("defaults", "personas")))
+        for directory in (store_root() / "personas", packaged):
+            if directory.is_symlink() or not directory.is_dir():
+                continue
+            for path in sorted(directory.glob("*.md")):
+                name = path.name[:-3]
+                if (
+                    name in named
+                    or name in seen
+                    or path.is_symlink()
+                    or not path.is_file()
+                ):
+                    continue
+                seen.add(name)
+                personas.append(
+                    {"name": name, "description": description_of(path.read_text(encoding="utf-8"))}
+                )
+        personas.sort(key=lambda item: item["name"])
+        rows += _persona_rows(None, personas)
         return _table(["Role", "Description", "Permission", "Worktree"], rows, "No rows.")
 
     def harnesses() -> str:
@@ -1073,7 +1107,7 @@ def _fleet_page(root: Path, fleet: str, query: dict, base: str) -> _Page:
             note = f"<small>{escape(notes)}</small>" if notes else ""
             href = f"{base}/settings" if role in mapped else "/settings"
             name = f'<a href="{escape(href)}">{_mono(role)}</a>'
-            lines.append([name, _pairs(entries, mark) + note])
+            lines.append([name, _rotation(entries, mark) + note])
         return _table(["Role", "Entries, in order"], lines, _FLEET_NONE)
 
     def agents() -> str:
