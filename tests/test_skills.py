@@ -665,13 +665,26 @@ _WITHDRAWN = (
 
 
 def test_normative_docs_do_not_name_a_withdrawn_release() -> None:
-    """A requirement, the operator skill, and the READMEs name no withdrawn release."""
+    """A normative doc names no withdrawn release.
 
-    normative = (
+    History stays out: the changelog records the withdrawn headings, and a plan
+    or an issue note may name the version it was written against.
+    """
+
+    normative = [
         ROOT / "docs" / "requirements.md",
-        ROOT / "src" / "foil" / "defaults" / "skills" / "operator.md",
         ROOT / "README.md",
         ROOT / "README.zh-CN.md",
+        ROOT / "CONTRIBUTING.md",
+    ]
+    normative += sorted((ROOT / "src" / "foil" / "defaults" / "skills").glob("*.md"))
+    normative += sorted((ROOT / "skills").glob("*.md"))
+    # docs/README.md is the index of the plan files, and its rows name the
+    # version each plan was written for. That is the same history as the plans.
+    normative += sorted(
+        path
+        for path in (ROOT / "docs").glob("*.md")
+        if path.name != "README.md" and not path.name.startswith(("plan-", "issue-"))
     )
     for path in normative:
         text = path.read_text(encoding="utf-8")
@@ -680,7 +693,7 @@ def test_normative_docs_do_not_name_a_withdrawn_release() -> None:
 
 
 def test_breaking_leads_with_the_init_deletion() -> None:
-    """The first Breaking bullet of the newest release is the unread init deletion."""
+    """The first Breaking bullet of 0.6.0 is the unread init deletion."""
 
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     current = text.split("## [0.6.0]", 1)[1].split("\n## ", 1)[0]
