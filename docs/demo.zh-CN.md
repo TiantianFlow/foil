@@ -40,20 +40,24 @@ Read /var/foil/projects/your-repo-1a2b3c/skills/operator.md and follow it. My go
 
 ## 2. 给每个角色选 harness 和权限
 
-每个角色是项目目录 `templates/` 里的一个模板。init 会给三个模板选同一个已安装的 CLI。
-你可以给每个角色换一个，比如主座用擅长规划的模型，审查者用另一家厂商的模型：
+每个角色是全局清单 `<root>/roles.toml` 和 `<root>/mapping.toml` 里的一行。init 会给三个模板选同一个已安装的 CLI。
+你可以给每个角色换一个，比如主座用擅长规划的模型，审查者用另一家厂商的模型。`foil roster update` 写入同样的行。`--project` 覆盖是项目目录下的同名文件，要在 `foil init` 之后再写，因为 init 会删掉它找到的项目副本。
 
 ```toml
-# <项目目录>/templates/implementer.toml
+# <root>/roles.toml
+[[role]]
+id = "implementer"
 persona = "personas/implementer.md"
 worktree = true
 permission = "auto"
 
-[[harness]]
-id = "codex"
+# <root>/mapping.toml
+[[map]]
+role = "implementer"
+harness = "codex"
 ```
 
-再写一个 `[[harness]]` 项，并可以带上 `model`，这个角色之后每增加一个席位就取列表中的下一项。只有一项时就一直用这一项。
+再写一个 `[[map]]` 行，并可以带上 `model`，这个角色之后每增加一个席位就取列表中的下一项。只有一项时就一直用这一项。
 
 `worktree = true` 让每个实现者拥有自己的 Git worktree 和分支。省略 `permission` 时
 取值是 `auto`，席位无人值守地运行。`permission = "ask"` 是显式选择：
@@ -66,7 +70,7 @@ id = "codex"
 `foil init` 给出的那一行，并写上你的目标：
 
 ```text
-Read <project folder>/skills/operator.md and follow it. My goal: make the tests pass.
+Read <root>/skills/operator.md and follow it. My goal: make the tests pass.
 ```
 
 这个 Agent 就成了操作员。它先确认主座能正常启动，再把目标发给主座。手动做同样的事：

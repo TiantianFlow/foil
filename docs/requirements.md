@@ -366,7 +366,7 @@ harness = "claude"
 [[map]]
 role = "implementer"
 harness = "codex"
-model = "gpt-5.5"
+model = "gpt-6.1-sol"
 ```
 
 A profile is one `[[role]]` row. Each mapping row is one `[[map]]` with `role`, `harness`, and an optional `model`. `roster add --from FILE` reads one document with `persona`, `worktree`, `permission`, and `[[harness]]` entries, and writes those into the two lists. That document is not stored.

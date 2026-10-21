@@ -82,9 +82,7 @@ ROLE_COMMANDS = {
         ("memory", "reject"),
         ("roster", "list"),
         ("roster", "show"),
-        ("roster", "add"),
         ("roster", "update"),
-        ("roster", "remove"),
     },
     "worker.md": {
         ("send",),
