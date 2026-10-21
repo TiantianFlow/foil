@@ -21,6 +21,7 @@ import socketserver
 import stat
 import subprocess
 import threading
+import time
 from collections.abc import Callable
 from contextlib import suppress
 from html import escape
@@ -66,107 +67,179 @@ _USERINFO = re.compile(r"(://)[^/@\s]+@")
 _KEY = re.compile(r"[A-Za-z0-9-]{1,128}")
 PROJECTS = (
     "Every project in this user's Foil store on this machine. A project is one repository. "
-    "Open one to see its fleets, settings, and seats. This viewer does not type into a pane "
-    "and does not decide progress."
+    "Open one to see its fleets, settings, and seats."
 )
 HELP = (
     "One project shares roles, harnesses, and the default mapping. Each fleet has its own "
-    "seats, board, and posts. This viewer does not type into a pane and does not decide "
-    "progress. Progress is status.md."
+    "seats, board, posts, and overrides. Progress is status.md."
 )
+SETTINGS = (
+    "Shared by every fleet in this project. A fleet's overrides.toml can replace a role's "
+    "mapping list in that fleet only."
+)
+FOOTER = "This viewer does not type into a pane and does not decide progress."
 TIPS = {
     "Lessons": "Project lessons. They outlive fleets and are copied into a seat at the next "
     "spawn or resume. States are proposed, accepted, rejected, and superseded. This is not "
     "the fleet override list.",
-    "Roles": "A role is a description, a persona, a worktree flag, and a permission. auto "
-    "asks the harness to skip prompts. ask stops at the first approval. Worktree means that "
-    "seat gets its own branch. The description is the first line of the persona.",
-    "Harnesses": "How one CLI is launched, and the model ids that list names. Spawn does not "
-    "refuse a model that is absent from the list. Installed means this viewer found the "
-    "command on the PATH it was started with, at the path shown. A seat looks the command "
-    "up on the PATH of the foil command that launched it, so a viewer started elsewhere, "
-    "such as a service, can differ. A file harnesses/<id>.toml replaces that one id.",
-    "Default mapping": "The shared default in mapping.toml. The next spawn takes the row at "
-    "that role's seat count, including killed seats. An omitted model starts the harness "
-    "with no model. A fleet's override rows for a role replace that role's rows, only in "
-    "that fleet and only on the next spawn. Resume keeps the harness and model recorded on "
-    "the seat.",
+    "Roles": "A role is a description, a persona, a worktree flag, and a permission. The "
+    "description is the first line of the persona.",
+    "Permission": "auto asks the harness to skip approval prompts. ask stops the seat at its "
+    "first approval prompt.",
+    "Worktree": "yes means each seat of this role gets its own git worktree on a new branch, "
+    "so its edits do not touch your checkout or other seats. Killing the seat keeps the "
+    "branch.",
+    "Harnesses": "How one agent CLI is launched, and the model ids its list names. Spawn does "
+    "not refuse a model that is absent from the list. A file harnesses/<id>.toml replaces "
+    "that one id.",
+    "Installed": "Whether this viewer found the command on the PATH it was started with, and "
+    "where. A seat looks the command up on the PATH of the foil command that launched it, so "
+    "a viewer started elsewhere, such as a service, can differ.",
+    "Launch command": "The argv foil runs to start a seat, with placeholders as written. A "
+    "value that looks like a credential shows as [hidden].",
+    "Default mapping": "The shared default in mapping.toml: for each role, one ordered list of "
+    "harness and model pairs. The rotation is on the pair, never on the harness or the model "
+    "alone. An entry with no model starts the harness with no model. Resume keeps the pair "
+    "recorded on the seat.",
+    "Entries, in order": "Each entry is one harness and model pair. The next spawn of a role "
+    "takes entry number (seats stored for that role, including killed) mod (number of "
+    "entries), counted from 1.",
     "Attach": "The session name stored for this fleet. The viewer does not type into the pane.",
     "Workspace": "The checkout recorded for the project. Every fleet on this repository "
     "shares it. Seat worktrees are separate branches.",
-    "Overrides": "This fleet's overrides.toml. A role's rows, in order, replace its default "
-    "mapping rows in this fleet, and the next spawn takes the row at that role's seat count. "
-    "A row with no harness keeps the harness the default mapping selects. A running seat "
-    "keeps its last launch. Resume does not read this file.",
+    "Overrides": "This fleet's overrides.toml. A role's entries, in order, replace its default "
+    "mapping list in this fleet, and the entry the next spawn takes is marked next. An entry "
+    "with no harness keeps the harness the default mapping selects. A running seat keeps its "
+    "last launch. Resume does not read this file.",
     "Projects": "Each project's recorded checkout. A project whose checkout is gone, or now "
     "belongs to another project folder, has no link until foil init runs in that checkout.",
-    "Agents": "Alive means the window exists and the process is running. Dead means the "
-    "window is gone or the process has exited, and the seat was not killed. A dead window "
-    "can still be peeked. Killed means foil seat kill. A killed seat stays listed and its "
-    "name stays reserved until foil seat archive frees it. An archived seat is not listed.",
+    "Last activity": "When a file on this fleet's board last changed.",
+    "Agents": "Every seat stored for this fleet, grouped by state. A dead window can still be "
+    "peeked. A killed seat stays listed and its name stays reserved until foil seat archive "
+    "frees it. An archived seat is not listed.",
+    "State": "alive: the window exists and the process is running. dead: the window is gone "
+    "or the process has exited, and the seat was not killed. killed: stopped with foil seat "
+    "kill.",
+    "Harness / model": "The pair this seat was launched with: the agent CLI and the model "
+    "passed to it. Resume launches the same pair. A second line shows the pair the next "
+    "spawn of that role takes when this fleet's overrides change it.",
+    "Branch": "The git branch of this seat's worktree. A role without a worktree has no "
+    "branch. Killing the seat keeps the branch.",
+    "status.md": "The lead's report for this fleet, including the checklist, shown as written.",
     "Board": "This fleet's shared folder. Mail is to one seat. Notes are scratch and wake "
-    "nobody. status.md is the lead's report, including the checklist. tasks/ is the brief. "
-    "results/ is the report. The viewer shows the files as written.",
+    "nobody. tasks/ is the brief. results/ is the report. The viewer shows the files as "
+    "written.",
     "Posts": "Threads under this fleet's board/room/. A post wakes every other alive seat in "
     "this fleet. A reply stays in that thread. A decline is a file and types nothing. A "
     "hand-written file there wakes nobody. Status still comes from status.md.",
     "Pane": "Raw tmux capture. The viewer does not decide that the seat is busy, blocked, or "
     "waiting on a dialog.",
 }
+FILTERS = {
+    "": ("Not killed", ("dead", "alive")),
+    "alive": ("Alive", ("alive",)),
+    "dead": ("Dead", ("dead",)),
+    "killed": ("Killed", ("killed",)),
+    "all": ("All", ("dead", "alive", "killed")),
+}
+STATUS_LINES = 15
 _CSS = """
 :root{--bg:#fff;--fg:#1f1f1f;--muted:#737373;--soft:#f5f5f5;--line:#e5e5e5;--ok:#10b981;
---bad:#dc2626;color-scheme:light dark}
+--bad:#dc2626;--warn:#d97706;--warn-soft:#fffbeb;color-scheme:light dark}
 @media (prefers-color-scheme:dark){:root{--bg:#171717;--fg:#fafafa;--muted:#a3a3a3;
---soft:#262626;--line:#333;--bad:#f87171}}
+--soft:#262626;--line:#333;--bad:#f87171;--warn:#fbbf24;--warn-soft:#2a2210}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
 font:14px/1.5 ui-sans-serif,system-ui,sans-serif}a{color:inherit}
+:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
 code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
-header{display:flex;gap:16px;align-items:center;height:44px;padding:0 24px;
-border-bottom:1px solid var(--line)}header a{text-decoration:none}
-header .name{font-weight:600}header .link{color:var(--muted)}
+header{position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line)}
+header ol{max-width:72rem;margin:0 auto;padding:0 24px;height:44px;display:flex;gap:8px;
+align-items:center;list-style:none;overflow-x:auto;white-space:nowrap}
+header li+li:before{content:"/";color:var(--muted);margin-right:8px}
+header a{text-decoration:none;color:var(--muted)}header [aria-current]{color:var(--fg);
+font-weight:600}header a.tab{padding:2px 8px;border-radius:6px}
+header li.tab:before{content:none}header a.tab[aria-current]{background:var(--soft)}
 main{max-width:72rem;margin:0 auto;padding:24px;display:grid;gap:32px;
-grid-template-columns:minmax(0,1fr)}@media (max-width:640px){main{padding:16px}}
-h1{font-size:20px;margin:0}h2{font-size:14px;margin:0 0 8px;display:flex;gap:6px;
-align-items:center}h3{font-size:12px;margin:0;padding:6px 12px;color:var(--muted);
-border-top:1px solid var(--line)}.muted,nav a{color:var(--muted)}nav a{text-decoration:none}
+grid-template-columns:minmax(0,1fr)}footer{max-width:72rem;margin:0 auto;padding:0 24px 24px;
+font-size:12px;color:var(--muted)}@media (max-width:640px){main{padding:16px}
+.facts{grid-template-columns:100px minmax(0,1fr)}
+header ol{padding:0 16px}}
+h1{font-size:20px;margin:0}h1.mono{font-size:17px}
+h2{font-size:14px;margin:0 0 8px;display:flex;gap:6px;
+align-items:center;flex-wrap:wrap}h3{font-size:12px;margin:0;padding:6px 12px;
+color:var(--muted);background:var(--soft);border-top:1px solid var(--line)}
+.box>h3:first-child{border-top:0}.muted{color:var(--muted)}h2 .muted{font-weight:400}
 .box{border:1px solid var(--line);border-radius:6px;overflow-x:auto}
 table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px 12px;
 vertical-align:top;border-top:1px solid var(--line)}th{border-top:0;font-weight:500;
-color:var(--muted);font-size:13px}td small{display:block;color:var(--muted);font-size:12px}
+color:var(--muted);font-size:13px;white-space:nowrap}td small{display:block;
+color:var(--muted);font-size:12px}td .mono,.nowrap{white-space:nowrap}
 pre{margin:0;padding:12px 16px;white-space:pre;overflow-x:auto;background:var(--soft)}
-.facts{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;align-items:center}
-.facts code,li code{overflow-wrap:anywhere;min-width:0}
-.facts>span{font-size:12px;color:var(--muted);display:flex;gap:6px}
+pre.wrap{white-space:pre-wrap;overflow-wrap:anywhere}
+.facts{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;align-items:center;
+margin:0}.facts dd{margin:0}.facts code,li code{overflow-wrap:anywhere;min-width:0}
+.facts>span,.facts dt{font-size:12px;color:var(--muted);display:flex;gap:6px}
 .cmd{display:flex;gap:8px;align-items:center;border:1px solid var(--line);
 border-radius:6px;background:var(--soft);padding:4px 4px 4px 12px}.cmd code{flex:1}
-button{font:inherit;font-size:12px;border:0;background:none;color:var(--muted);cursor:pointer}
+button{font:inherit;font-size:12px;border:0;border-radius:4px;padding:4px 8px;
+background:none;color:var(--muted);cursor:pointer}button:hover{color:var(--fg);
+background:var(--line)}
 .files{display:grid;gap:24px;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr))}
-ul{list-style:none;margin:0;padding:0}li a{display:flex;gap:8px;padding:8px 12px;
-text-decoration:none;border-top:1px solid var(--line)}li:first-child a{border-top:0}
-li a:hover{background:var(--soft)}li a span{margin-left:auto;color:var(--muted);font-size:12px}
-.bar{margin:0;padding:6px 12px;display:flex;gap:12px}
-.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;
-background:var(--muted)}.alive{background:var(--ok)}.killed{background:var(--bad)}
+ul{list-style:none;margin:0;padding:0}.box li a{display:flex;gap:8px;padding:8px 12px;
+text-decoration:none;border-top:1px solid var(--line)}.box li:first-child a{border-top:0}
+.box li a:hover{background:var(--soft)}.box li a span{margin-left:auto;color:var(--muted);
+font-size:12px;white-space:nowrap}.box li a code{min-width:0;overflow-wrap:anywhere}
+.bar{margin:0;padding:6px 12px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}.chip{border:1px solid var(--line);
+border-radius:6px;padding:2px 10px;font-size:12px;text-decoration:none;color:var(--muted)}
+.chip[aria-current]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.pairs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0;padding:0;
+list-style:none}.pairs li{border:1px solid var(--line);border-radius:6px;padding:1px 8px;
+background:var(--soft);white-space:nowrap}.pairs li.next{background:var(--bg);
+border-color:var(--fg)}.pairs li+li{position:relative;margin-left:16px}
+.pairs li+li:before{content:"\\2192";color:var(--muted);position:absolute;left:-16px}
+.pairs b{font-size:11px;font-weight:600;margin-left:6px}
+.pairs i{font-style:normal;color:var(--muted);font-size:11px;margin-right:4px}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;
+background:var(--muted)}.alive{background:var(--ok)}.dead{background:var(--warn)}
+.killed{background:var(--bad)}.agents td:first-child{width:46%}.agents td:nth-child(2){width:11%}
+.agents td:nth-child(3){width:23%}tr.group th{background:var(--soft);border-top:1px solid
+var(--line);font-size:12px}tr.attention th{background:var(--warn-soft);color:var(--fg)}
+tr.attention td{background:var(--warn-soft)}details.killed-seats{border-top:1px solid
+var(--line);background:none}details.killed-seats>summary{cursor:pointer;padding:6px 12px;
+font-size:12px;color:var(--muted);background:var(--soft)}
 .err{color:var(--bad)}.empty{margin:0;padding:20px;text-align:center;color:var(--muted)}
-.tip{position:relative;display:inline-block}.tip summary{list-style:none;cursor:pointer;
-color:var(--muted);font-size:11px;border:1px solid var(--muted);border-radius:50%;
-width:15px;height:15px;line-height:13px;text-align:center}
+.tip{position:relative;display:inline-block;vertical-align:middle;margin-left:4px}
+.tip summary{list-style:none;
+cursor:pointer;color:var(--muted);font-size:11px;font-weight:400;border:1px solid
+var(--muted);border-radius:50%;width:16px;height:16px;line-height:14px;text-align:center;
+position:relative}.tip summary:after{content:"";position:absolute;inset:-5px}
 .tip summary::-webkit-details-marker{display:none}
-.tip p{position:absolute;z-index:1;left:0;top:20px;width:18rem;margin:0;padding:12px;
+.tip p{position:fixed;z-index:3;width:min(18rem,calc(100vw - 16px));margin:0;padding:12px;
 font-size:12px;font-weight:400;line-height:1.5;color:var(--fg);background:var(--bg);
-border:1px solid var(--line);border-radius:6px;box-shadow:0 4px 12px #0002}
+white-space:normal;text-align:left;border:1px solid var(--line);border-radius:6px;
+box-shadow:0 4px 12px #0002}
+@media (max-width:640px){table.agents thead{display:none}table.agents tr{display:grid;
+grid-template-columns:minmax(0,1fr) auto;border-top:1px solid var(--line)}
+table.agents td,table.agents th{border:0;padding:4px 12px;width:auto}
+table.agents tr.group,table.agents tr.group th{display:block}
+table.agents td:nth-child(even){text-align:right}}
 """
 _SCRIPT = """document.querySelectorAll('button[data-copy]').forEach(b=>b.addEventListener(
 'click',async()=>{try{await navigator.clipboard.writeText(b.dataset.copy);
 b.textContent='Copied'}catch(e){b.textContent='Copy failed'}
 setTimeout(()=>{b.textContent='Copy'},1600)}))
 const tips=()=>document.querySelectorAll('details.tip[open]')
+document.querySelectorAll('details.tip').forEach(d=>d.addEventListener('toggle',()=>{
+if(!d.open)return;const r=d.firstChild.getBoundingClientRect(),p=d.lastChild
+p.style.top=r.bottom+6+'px';p.style.left=Math.max(8,Math.min(r.left,innerWidth-p.offsetWidth-8))+'px'}))
 document.addEventListener('click',e=>tips().forEach(d=>{if(!d.contains(e.target))d.open=false}))
-document.addEventListener('keydown',e=>{if(e.key==='Escape')tips().forEach(d=>{d.open=false})})"""
+document.addEventListener('keydown',e=>{if(e.key==='Escape')tips().forEach(d=>{d.open=false})})
+addEventListener('scroll',()=>tips().forEach(d=>{d.open=false}))"""
 
 
 class _Missing(Exception):
-    """A fleet or seat this project does not have."""
+    """A fleet, seat, or file this project does not have."""
 
 
 class _Raw(NamedTuple):
@@ -174,6 +247,14 @@ class _Raw(NamedTuple):
 
     handle: int
     size: int
+
+
+class _Page(NamedTuple):
+    """A page body, the breadcrumbs after the project, and whether Settings is open."""
+
+    body: str
+    trail: list[tuple[str, str | None]]
+    settings: bool = False
 
 
 def _error(exc: BaseException) -> str:
@@ -200,20 +281,32 @@ def _tip(title: str) -> str:
     )
 
 
-def _section(title: str, inner: str, *, meta: str = "", note: str = "") -> str:
-    tip = _tip(title) if title in TIPS else ""
-    extra = f' <span class="muted">{escape(meta)}</span>' if meta else ""
+def _label(title: str) -> str:
+    return escape(title) + (_tip(title) if title in TIPS else "")
+
+
+def _section(
+    title: str, inner: str, *, meta: str = "", note: str = "", anchor: str = ""
+) -> str:
+    extra = f' <span class="muted">{meta}</span>' if meta else ""
     footer = f'<p class="muted">{escape(note)}</p>' if note else ""
-    heading = f"<h2>{escape(title)}{tip}{extra}</h2>"
-    return f'<section>{heading}<div class="box">{inner}</div>{footer}</section>'
+    ident = f' id="{anchor}"' if anchor else ""
+    heading = f"<h2>{_label(title)}{extra}</h2>"
+    return f'<section{ident}>{heading}<div class="box">{inner}</div>{footer}</section>'
+
+
+def _head(headers: list[str]) -> str:
+    return "<thead><tr>" + "".join(f"<th>{_label(item)}</th>" for item in headers) + "</tr></thead>"
+
+
+def _rows(rows: list[list[str]]) -> str:
+    return "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows)
 
 
 def _table(headers: list[str], rows: list[list[str]], empty: str = "None.") -> str:
     if not rows:
         return f'<p class="empty">{escape(empty)}</p>'
-    head = "".join(f"<th>{escape(item)}</th>" for item in headers)
-    body = "".join("<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>" for row in rows)
-    return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+    return f"<table>{_head(headers)}<tbody>{_rows(rows)}</tbody></table>"
 
 
 def _mono(text: str) -> str:
@@ -229,7 +322,20 @@ def _branch(row: dict) -> str:
 
 
 def _state(state: str) -> str:
-    return f'<span class="dot {escape(state)}"></span>{escape(state)}'
+    return f'<span class="nowrap"><span class="dot {escape(state)}"></span>{escape(state)}</span>'
+
+
+def _ago(mtime: float) -> str:
+    """A relative time, with the local timestamp on hover."""
+
+    seconds = max(0, int(time.time() - mtime))
+    shown = "just now"
+    for size, unit in ((86400, "d"), (3600, "h"), (60, "min")):
+        if seconds >= size:
+            shown = f"{seconds // size} {unit} ago"
+            break
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime))
+    return f'<span class="nowrap" title="{stamp}">{shown}</span>'
 
 
 def _command(command: str | None) -> str:
@@ -243,16 +349,6 @@ def _command(command: str | None) -> str:
     return f"<span>Attach{_tip('Attach')}</span>{value}"
 
 
-def _crumbs(items: list[tuple[str, str | None]]) -> str:
-    parts = [
-        f'<a href="{escape(href)}">{escape(label)}</a>'
-        if href
-        else f"<strong>{escape(label)}</strong>"
-        for label, href in items
-    ]
-    return f'<nav class="mono">{" / ".join(parts)}</nav>'
-
-
 def _size(count: int) -> str:
     if count < 1024:
         return f"{count} bytes"
@@ -261,19 +357,42 @@ def _size(count: int) -> str:
     return f"{count / (1024 * 1024):.1f} MiB"
 
 
-def _model(text: str, upcoming: str) -> str:
-    """A recorded model, and under it the override the next spawn takes, if any."""
+def _pair(text: str) -> str:
+    """A recorded harness/model label as `harness / model`."""
 
-    shown = _mono(text) if text else _faded("no model")
-    return shown + (f"<small>next spawn {_mono(upcoming)}</small>" if upcoming else "")
+    harness, _sep, model = text.partition("/")
+    return _mono(f"{harness} / {model}" if model else f"{harness} / no model")
+
+
+def _model(row: dict, upcoming: str) -> str:
+    """The recorded pair, and under it the pair the next spawn takes, if an override changes it."""
+
+    shown = _pair(f"{row['harness']}/{row['model']}" if row["model"] else row["harness"])
+    return shown + (f"<small>next spawn {_pair(upcoming)}</small>" if upcoming else "")
+
+
+def _pairs(entries: list[dict[str, str]], upcoming: int | None = None) -> str:
+    """One role's list as numbered pair chips, the entry the next spawn takes marked."""
+
+    chips = []
+    for index, entry in enumerate(entries):
+        harness = entry["id"] or "default harness"
+        label = escape(f"{harness} / {entry['model'] or 'no model'}")
+        mark = "<b>next</b>" if index == upcoming else ""
+        cls = ' class="next"' if index == upcoming else ""
+        chips.append(f'<li{cls}><i>{index + 1}</i><span class="mono">{label}</span>{mark}</li>')
+    return f'<ol class="pairs">{"".join(chips)}</ol>'
+
+
+def _by_role(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for row in rows:
+        grouped.setdefault(row["role"], []).append(row)
+    return grouped
 
 
 def _checkout(root: Path) -> str:
     return project_record(foil_root(root)).get("path") or str(root)
-
-
-def _project_name(root: Path) -> str:
-    return Path(_checkout(root)).name
 
 
 def _fleet_ids(root: Path) -> list[str]:
@@ -325,19 +444,21 @@ def _argv(command: list[str]) -> str:
     return " ".join(shown)
 
 
-def _fleets_page(root: Path, base: str) -> str:
+def _fleets_page(root: Path, base: str) -> _Page:
     def fleets() -> str:
         rows = []
         for fleet in _fleet_ids(root):
             link = f'<a class="mono" href="{base}/fleets/{quote(fleet)}">{escape(fleet)}</a>'
             try:
                 states = [row["state"] for row in seat_rows(root, load_registry(root, fleet))]
+                files = _board_files(root, fleet)
             except Exception as exc:
-                rows.append([link, f'<span class="err">{escape(_error(exc))}</span>', "", ""])
+                rows.append([link, f'<span class="err">{escape(_error(exc))}</span>', "", "", ""])
                 continue
             counts = [str(states.count(state)) for state in ("alive", "dead", "killed")]
-            rows.append([link, *counts])
-        return _table(["Fleet", "Alive", "Dead", "Killed"], rows, "No fleets.")
+            latest = _ago(max(item[2] for item in files)) if files else _faded("no files")
+            rows.append([link, *counts, latest])
+        return _table(["Fleet", "Alive", "Dead", "Killed", "Last activity"], rows, "No fleets.")
 
     def lessons() -> str:
         rows = [
@@ -347,15 +468,15 @@ def _fleets_page(root: Path, base: str) -> str:
         ]
         return _table(["Id", "State", "Text"], rows, "No lessons.")
 
-    return (
-        _crumbs([("Projects", "/"), (_project_name(root), None)])
-        + f'<div><h1>Fleets</h1><p class="muted">{escape(HELP)}</p></div>'
+    body = (
+        f'<div><h1>Fleets</h1><p class="muted">{escape(HELP)}</p></div>'
         + _section("Fleets", _guard(fleets))
         + _section("Lessons", _guard(lessons))
     )
+    return _Page(body, [])
 
 
-def _settings_page(root: Path, base: str) -> str:
+def _settings_page(root: Path, base: str) -> _Page:
     def roles() -> str:
         loaded, personas = roster_rows(root)
         rows = [
@@ -387,28 +508,30 @@ def _settings_page(root: Path, base: str) -> str:
             names = f"<small>env: {escape(', '.join(env))}</small>" if env else ""
             found = shutil.which(preset["command"][0])
             installed = f"yes<small>{escape(found)}</small>" if found else _faded("no")
-            models = _mono(", ".join(preset["models"])) if preset["models"] else _faded("none")
+            models = escape(", ".join(preset["models"])) if preset["models"] else _faded("none")
             launch = f"<code>{escape(_argv(preset['command']))}</code>{names}"
-            rows.append([_mono(harness_id), installed, models, launch])
+            rows.append([_mono(harness_id), installed, f'<code>{models}</code>', launch])
         return _table(["Id", "Installed", "Model ids", "Launch command"], rows)
 
     def mapping() -> str:
         rows = [
-            [_mono(item["role"]), _mono(item["id"]),
-             _mono(item["model"]) if item["model"] else _faded("no model")]
-            for item in read_maps(root)
+            [_mono(role), _pairs(entries)] for role, entries in _by_role(read_maps(root)).items()
         ]
-        return _table(["Role", "Harness", "Model"], rows, "No rows.")
+        return _table(["Role", "Entries, in order"], rows, "No rows.")
 
     harness_box = _guard(harnesses)
     note = "; ".join(f"{path} skipped: {reason}" for path, reason in skipped)
-    return (
-        _crumbs([("Projects", "/"), (_project_name(root), base), ("Settings", None)])
-        + "<h1>Settings</h1>"
+    body = (
+        f'<div><h1>Project settings</h1><p class="muted">{escape(SETTINGS)}</p></div>'
         + _section("Roles", _guard(roles))
         + _section("Harnesses", harness_box, note=note)
         + _section("Default mapping", _guard(mapping))
     )
+    return _Page(body, [], settings=True)
+
+
+def _stored(registry: dict, role: str) -> int:
+    return sum(seat["template"] == role for seat in registry["seats"].values())
 
 
 def _next_entries(root: Path, fleet: str, registry: dict) -> dict[str, str]:
@@ -424,7 +547,7 @@ def _next_entries(root: Path, fleet: str, registry: dict) -> dict[str, str]:
         entries = [row for row in maps if row["role"] == role]
         if not entries:
             continue
-        stored = sum(seat["template"] == role for seat in registry["seats"].values())
+        stored = _stored(registry, role)
         upcoming = spawn_entry(root, role, entries, stored, fleet)
         if entry_label(upcoming) != entry_label(select_harness(entries, stored)):
             found[role] = entry_label(upcoming)
@@ -451,7 +574,9 @@ def _utf8(path: Path) -> bool:
     return True
 
 
-def _board_files(root: Path, fleet: str) -> list[tuple[str, int]]:
+def _board_files(root: Path, fleet: str) -> list[tuple[str, int, float]]:
+    """Each listed board file as (path, size, modified time), status.md first."""
+
     board = foil_root(root) / "fleets" / fleet / "board"
     if board.is_symlink() or not board.is_dir():
         return []
@@ -467,7 +592,7 @@ def _board_files(root: Path, fleet: str) -> list[tuple[str, int]]:
                 continue
             if name.startswith(".") or not stat.S_ISREG(info.st_mode) or not _utf8(path):
                 continue
-            found.append((path.relative_to(board).as_posix(), info.st_size))
+            found.append((path.relative_to(board).as_posix(), info.st_size, info.st_mtime))
     return sorted(found, key=lambda item: (item[0] != "status.md", item[0]))
 
 
@@ -492,7 +617,9 @@ def _open_listed(root: Path, fleet: str, rel: str) -> int:
     return handle
 
 
-def _preview(root: Path, fleet: str, rel: str, here: str) -> str:
+def _read_listed(root: Path, fleet: str, rel: str) -> tuple[str, int]:
+    """The first 1 MiB of a listed file as text, and the file's size."""
+
     handle = _open_listed(root, fleet, rel)
     try:
         size = os.fstat(handle).st_size
@@ -504,27 +631,89 @@ def _preview(root: Path, fleet: str, rel: str, here: str) -> str:
             data += chunk
     finally:
         os.close(handle)
-    text = data.decode("utf-8", errors="replace")
-    cut = _faded(f"Showing the first 1 MiB of {_size(size)}.") if size > PREVIEW else ""
-    raw = f'<a href="{escape(f"{here}/raw?open={quote(rel)}")}">Raw</a>'
-    if size > RAW_CAP:
-        raw = _faded(f"No raw view over {_size(RAW_CAP)}.")
-    return (
-        f'<p class="bar"><a href="{escape(here)}">&larr; Back</a>{_mono(rel)}'
-        f"{raw}{cut}</p><pre>{escape(text)}</pre>"
-    )
+    return data.decode("utf-8", errors="replace"), size
 
 
-def _file_rows(files: list[tuple[str, int]], here: str) -> str:
+def _folder(rel: str) -> str:
+    """The group a board file is listed under: its thread, mail box, or top folder."""
+
+    parts = rel.split("/")
+    if parts[0] in ("room", "mail") and len(parts) > 2:
+        return "/".join(parts[:2])
+    return parts[0] if len(parts) > 1 else "board"
+
+
+def _file_page(root: Path, fleet: str, rel: str, here: str) -> _Page:
+    files = _board_files(root, fleet)
+    listed = [item for item in files if item[0] == rel]
+    if not listed:
+        raise _Missing("No such file on this board.")
+    siblings = [item[0] for item in files if _folder(item[0]) == _folder(rel)]
+    back = f"{here}#{'posts' if rel.startswith('room/') else 'board'}"
+    links = [f'<a href="{escape(back)}">&larr; Back to fleet</a>']
+    at = siblings.index(rel)
+    for step, name in ((-1, "Previous"), (1, "Next")):
+        if 0 <= at + step < len(siblings):
+            target = f"{here}?open={quote(siblings[at + step])}"
+            links.append(f'<a href="{escape(target)}" title="{escape(siblings[at + step])}">'
+                         f"{name}</a>")
+    try:
+        text, size = _read_listed(root, fleet, rel)
+    except Exception as exc:
+        inner = _failed(exc)
+    else:
+        cut = _faded(f"Showing the first 1 MiB of {_size(size)}.") if size > PREVIEW else ""
+        raw = f'<a href="{escape(f"{here}/raw?open={quote(rel)}")}">Raw</a>'
+        if size > RAW_CAP:
+            raw = _faded(f"No raw view over {_size(RAW_CAP)}.")
+        meta = f"modified {_ago(listed[0][2])} · {_size(size)}"
+        links.append(raw)
+        inner = (
+            f'<p class="bar">{" ".join(links)}<span class="muted">{meta}</span>{cut}</p>'
+            f'<pre class="wrap">{escape(text)}</pre>'
+        )
+    body = f'<div><h1 class="mono">{escape(rel)}</h1></div><div class="box">{inner}</div>'
+    return _Page(body, [(fleet, here), *[(part, None) for part in rel.split("/")]])
+
+
+def _file_rows(files: list[tuple[str, int, float]], here: str, folder: str) -> str:
+    """Rows under one group heading, each named by its path below that group."""
+
+    cut = 0 if folder == "board" else len(folder) + 1
     items = [
-        f'<li><a href="{escape(here + "?open=" + quote(rel))}"><code>{escape(rel)}</code>'
-        f"<span>{_size(size)}</span></a></li>"
-        for rel, size in files
+        f'<li><a href="{escape(here + "?open=" + quote(rel))}" title="{escape(rel)}">'
+        f"<code>{escape(rel[cut:])}</code><span>{_ago(mtime)} · {_size(size)}</span></a></li>"
+        for rel, size, mtime in files
     ]
     return f"<ul>{''.join(items)}</ul>"
 
 
-def _board_sections(root: Path, fleet: str, opened: str, here: str) -> str:
+def _grouped(files: list[tuple[str, int, float]], here: str, newest: bool) -> str:
+    groups: dict[str, list[tuple[str, int, float]]] = {}
+    for item in files:
+        groups.setdefault(_folder(item[0]), []).append(item)
+    order = sorted(groups, key=lambda key: -max(f[2] for f in groups[key])) if newest else groups
+    return "".join(f"<h3>{escape(key)}/</h3>{_file_rows(groups[key], here, key)}" for key in order)
+
+
+def _status(root: Path, fleet: str, files: list[tuple[str, int, float]], here: str) -> str:
+    found = [item for item in files if item[0] == "status.md"]
+    if not found:
+        return _section("status.md", '<p class="empty">No status.md yet.</p>', anchor="status")
+    text, _size_bytes = _read_listed(root, fleet, "status.md")
+    lines = text.splitlines()
+    link = f'<a href="{escape(here)}?open=status.md">Open</a>'
+    more = ""
+    if len(lines) > STATUS_LINES:
+        more = f'<p class="bar muted">Showing {STATUS_LINES} of {len(lines)} lines. {link}</p>'
+    shown = escape("\n".join(lines[:STATUS_LINES]))
+    meta = f"modified {_ago(found[0][2])} · {link}"
+    return _section(
+        "status.md", f'<pre class="wrap">{shown}</pre>{more}', meta=meta, anchor="status"
+    )
+
+
+def _board_sections(root: Path, fleet: str, here: str) -> str:
     try:
         files = _board_files(root, fleet)
     except Exception as exc:
@@ -532,105 +721,152 @@ def _board_sections(root: Path, fleet: str, opened: str, here: str) -> str:
     board = [item for item in files if not item[0].startswith("room/")]
     posts = [item for item in files if item[0].startswith("room/")]
 
-    def inner(group: list[tuple[str, int]], empty: str, threads: bool) -> str:
-        if any(rel == opened for rel, _bytes in group):
-            return _guard(lambda: _preview(root, fleet, opened, here))
-        if not group:
-            return f'<p class="empty">{empty}</p>'
-        if not threads:
-            return _file_rows(group, here)
-        by_thread: dict[str, list[tuple[str, int]]] = {}
-        for rel, size in group:
-            parts = rel.split("/")
-            by_thread.setdefault(parts[1] if len(parts) > 2 else "room", []).append((rel, size))
-        return "".join(
-            f"<h3>{escape(thread)}</h3>{_file_rows(items, here)}"
-            for thread, items in sorted(by_thread.items())
-        )
-
     def meta(group: list) -> str:
         return f"{len(group)} {'file' if len(group) == 1 else 'files'}"
 
+    def listing(group: list, empty: str, newest: bool) -> str:
+        return _grouped(group, here, newest) if group else f'<p class="empty">{empty}</p>'
+
     return (
-        '<div class="files">'
-        + _section("Board", _guard(lambda: inner(board, "No files.", False)), meta=meta(board))
-        + _section("Posts", _guard(lambda: inner(posts, "No posts.", True)), meta=meta(posts))
-        + "</div>"
+        _guard(lambda: _status(root, fleet, files, here))
+        + _section("Posts", _guard(lambda: listing(posts, "No posts.", True)),
+                   meta=meta(posts), anchor="posts")
+        + _section("Board", _guard(lambda: listing(board, "No files.", False)),
+                   meta=meta(board), anchor="board")
     )
 
 
-def _fleet_page(root: Path, fleet: str, opened: str, base: str) -> str:
+def _ordered(rows: list[dict]) -> list[dict]:
+    """Dead first, then alive, then killed; in each, the lead, then by role and name."""
+
+    def key(row: dict) -> tuple:
+        number = re.search(r"(\d+)$", row["name"])
+        return (("dead", "alive", "killed").index(row["state"]), row["template"] != "lead",
+                row["template"], int(number.group(1)) if number else 0, row["name"])
+
+    return sorted(rows, key=key)
+
+
+def _agents(rows: list[dict], upcoming: dict[str, str], here: str, state: str) -> str:
+    shown = FILTERS[state][1]
+    chips = ""
+    for value, (label, states) in FILTERS.items():
+        target = f"{here}?state={value}#agents" if value else f"{here}#agents"
+        current = ' aria-current="true"' if value == state else ""
+        count = sum(row["state"] in states for row in rows)
+        chips += f'<a class="chip" href="{escape(target)}"{current}>{label} {count}</a>'
+
+    def line(row: dict) -> str:
+        link = escape(f"{here}/seats/{quote(row['name'])}")
+        description = f"<small>{escape(row['description'])}</small>" if row["description"] else ""
+        cells = [
+            f'<a class="mono" href="{link}">{escape(row["name"])}</a>{description}',
+            _state(row["state"]), _model(row, upcoming.get(row["template"], "")), _branch(row),
+        ]
+        return "<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
+
+    head = _head(["Seat", "State", "Harness / model", "Branch"])
+    groups = [("dead", "Needs attention", ' class="group attention"'),
+              ("alive", "Running", ' class="group"')]
+    body = ""
+    for name, title, cls in groups:
+        members = [row for row in rows if row["state"] == name]
+        if name in shown and members:
+            body += f'<tr{cls}><th colspan="4">{title} · {len(members)}</th></tr>'
+            body += "".join(line(row) for row in members)
+    killed = [row for row in rows if row["state"] == "killed"]
+    table = f'<table class="agents">{head}<tbody>{body}</tbody></table>' if body else ""
+    if killed and "killed" in shown:
+        rows_html = "".join(line(row) for row in killed)
+        summary = f"Killed · {len(killed)}. Names stay reserved until foil seat archive."
+        opened = " open" if state in ("killed", "all") else ""
+        table += (
+            f'<details class="killed-seats"{opened}><summary>{escape(summary)}</summary>'
+            f'<table class="agents"><tbody>{rows_html}</tbody></table></details>'
+        )
+    elif killed:
+        table += (f'<p class="bar muted">{len(killed)} killed not shown. '
+                  f'<a href="{escape(here)}?state=all#agents">Show all</a></p>')
+    if not table:
+        table = '<p class="empty">No seats in this state.</p>' if rows else (
+            '<p class="empty">No seats.</p>')
+    return f'<p class="chips">{chips}</p>' + f'<div class="box">{table}</div>'
+
+
+def _fleet_page(root: Path, fleet: str, query: dict, base: str) -> _Page:
     here = f"{base}/fleets/{quote(fleet)}"
+    opened = query.get("open", [""])[0]
+    if opened:
+        return _file_page(root, fleet, opened, here)
+    state = query.get("state", [""])[0]
+    state = state if state in FILTERS else ""
     try:
         registry = load_registry(root, fleet)
-        rows = seat_rows(root, registry)
+        rows = _ordered(seat_rows(root, registry))
         attach, failure = _command(_attach(registry)), None
     except Exception as exc:
         registry, rows, failure = None, [], exc
         attach = f"<span>Attach{_tip('Attach')}</span>{_failed(exc)}"
 
     def overrides() -> str:
-        rows = fleet_overrides(root, fleet)
-        noted = any(item["note"] for item in rows)
-        cells = [
-            [_mono(item["role"]),
-             _mono(item["id"]) if item["id"] else _faded("default mapping"),
-             _mono(item["model"]) if item["model"] else _faded("no model")]
-            + ([escape(item["note"])] if noted else [])
-            for item in rows
-        ]
+        found = fleet_overrides(root, fleet)
+        lines = []
+        for role, entries in _by_role(found).items():
+            count = _stored(registry, role) if registry is not None else None
+            mark = None if count is None else count % len(entries)
+            notes = "; ".join(item["note"] for item in entries if item["note"])
+            note = f"<small>{escape(notes)}</small>" if notes else ""
+            lines.append([_mono(role), _pairs(entries, mark) + note])
         return _table(
-            ["Role", "Harness", "Model"] + (["Note"] if noted else []),
-            cells,
+            ["Role", "Entries, in order"], lines,
             "No overrides. The next spawn uses the default mapping.",
         )
 
     def agents() -> str:
         if registry is None:
-            return _failed(failure or Exception())
-        upcoming = _next_entries(root, fleet, registry)
-        cells = []
-        for row in rows:
-            model = _model(row["model"], upcoming.get(row["template"], ""))
-            link = escape(f"{here}/seats/{quote(row['name'])}")
-            cells.append(
-                [f'<a class="mono" href="{link}">{escape(row["name"])}</a>',
-                 _mono(row["template"]), escape(row["description"]), _state(row["state"]),
-                 _mono(row["harness"]), model, _branch(row)]
-            )
-        headers = ["Name", "Role", "Description", "State", "Harness", "Model", "Branch"]
-        return _table(headers, cells, "No seats.")
+            return f'<div class="box">{_failed(failure or Exception())}</div>'
+        return _agents(rows, _next_entries(root, fleet, registry), here, state)
 
-    workspace = _guard(lambda: f"<code>{escape(_checkout(root))}</code>")
     noun = "seat" if len(rows) == 1 else "seats"
-    return (
-        _crumbs([("Projects", "/"), (_project_name(root), base), (fleet, None)])
+    workspace = _guard(lambda: f"<code>{escape(_checkout(root))}</code>")
+    body = (
+        f'<section id="agents"><h2>{_label("Agents")} <span class="muted">{len(rows)} '
+        f"{noun}</span></h2>{_guard(agents)}</section>"
+        + _board_sections(root, fleet, here)
+        + _section("Overrides", _guard(overrides))
         + f'<div class="facts">{attach}'
         + f"<span>Workspace{_tip('Workspace')}</span>{workspace}</div>"
-        + _section("Overrides", _guard(overrides))
-        + _section("Agents", _guard(agents), meta=f"{len(rows)} {noun}")
-        + _board_sections(root, fleet, opened, here)
     )
+    return _Page(body, [(fleet, None)])
 
 
 def _lines(value: str) -> int:
     return int(value) if value.isdecimal() and 1 <= int(value) <= MAX_LINES else 40
 
 
-def _seat_page(root: Path, fleet: str, name: str, lines: int, base: str) -> str:
+def _seat_page(root: Path, fleet: str, name: str, lines: int, base: str) -> _Page:
     registry = load_registry(root, fleet)
     if not SAFE_ID.fullmatch(name) or name not in registry["seats"]:
         raise _Missing(f"No seat named {name} in fleet {fleet}.")
     row = seat_rows(root, registry, only=name, owned=True)[0]
     upcoming = _next_entries(root, fleet, registry).get(row["template"], "")
-    launched = f"{row['harness']} / {row['model']}" if row["model"] else row["harness"]
-    facts = [
-        ("Seat", _mono(name)), ("Role", _mono(row["template"])),
-        ("Description", escape(row["description"])), ("State", _state(row["state"])),
-        ("Harness / model", _model(launched, upcoming)), ("Branch", _branch(row)),
-    ]
     fleet_link = f"{base}/fleets/{quote(fleet)}"
     here = f"{fleet_link}/seats/{quote(name)}"
+    order = [item["name"] for item in _ordered(seat_rows(root, registry))]
+    at = order.index(name)
+    steps = [
+        f'<a href="{escape(fleet_link)}/seats/{quote(order[at + step])}">{label} '
+        f"{escape(order[at + step])}</a>"
+        for step, label in ((-1, "&larr;"), (1, "&rarr;"))
+        if 0 <= at + step < len(order)
+    ]
+    facts = [
+        ("Role", _mono(row["template"])), ("Description", escape(row["description"])),
+        ("State", _state(row["state"])), ("Harness / model", _model(row, upcoming)),
+        ("Branch", _branch(row)),
+    ]
+    listed = "".join(f"<dt>{_label(label)}</dt><dd>{value}</dd>" for label, value in facts)
+    loaded = time.strftime("%H:%M:%S")
     try:
         pane = peek_text(root, name, lines=lines, fleet=fleet)
     except Exception as exc:
@@ -640,20 +876,23 @@ def _seat_page(root: Path, fleet: str, name: str, lines: int, base: str) -> str:
             back = f' <a href="{escape(here)}?lines={shorter}">Show {shorter} lines</a>'
         pane_box, meta = f'<p class="empty err">{escape(_error(exc))}{back}</p>', ""
     else:
-        more = ""
+        links = [f'<a href="{escape(here)}?lines={lines}">Refresh</a>',
+                 '<a href="#latest">Jump to latest</a>']
         if lines < MAX_LINES:
-            longer = min(MAX_LINES, lines * 2)
-            more = f'<p class="bar"><a href="{escape(here)}?lines={longer}">More</a></p>'
-        pane_box = f'{more}<pre aria-label="Captured pane text">{escape(pane)}</pre>'
-        meta = f"{len(pane.splitlines())} lines"
-    return (
-        _crumbs(
-            [("Projects", "/"), (_project_name(root), base), (fleet, fleet_link), (name, None)]
+            links.append(f'<a href="{escape(here)}?lines={min(MAX_LINES, lines * 2)}">More</a>')
+        pane_box = (
+            f'<p class="bar"><span class="muted">Loaded at {loaded}</span>{" ".join(links)}</p>'
+            f'<pre aria-label="Captured pane text">{escape(pane)}</pre><span id="latest"></span>'
         )
-        + f'<div class="box">{_table([label for label, _ in facts], [[v for _, v in facts]])}</div>'
+        meta = f"{len(pane.splitlines())} lines"
+    body = (
+        f'<div><h1 class="mono">{escape(name)}</h1>'
+        f'<p class="bar muted" style="padding:0">{" ".join(steps)}</p></div>'
+        + f'<dl class="facts">{listed}</dl>'
         + f'<div class="facts">{_command(_attach(registry, row))}</div>'
         + _section("Pane", pane_box, meta=meta)
     )
+    return _Page(body, [(fleet, fleet_link), (name, None)])
 
 
 class _Project(NamedTuple):
@@ -707,7 +946,8 @@ def _projects_page() -> str:
             else:
                 name = f'<a class="mono" href="/projects/{quote(item.key)}">{escape(item.name)}</a>'
                 fleets = escape(str(len(_fleet_ids(item.root))))
-            checkout = _mono(item.checkout) if item.checkout else _faded("not recorded")
+            checkout = f"<code>{escape(item.checkout)}</code>" if item.checkout else _faded(
+                "not recorded")
             rows.append([name, checkout, fleets])
         return _table(["Project", "Checkout", "Fleets"], rows, "No projects. Run foil init.")
 
@@ -717,17 +957,20 @@ def _projects_page() -> str:
     )
 
 
-def _route(target: str) -> tuple[int, str, tuple[str, str] | None] | _Raw:
-    """A page as (status, body, project name and link), or a listed file to stream whole."""
+_Result = tuple[int, str, tuple[str, str] | None, list, bool]
+
+
+def _route(target: str) -> _Result | _Raw:
+    """A page as (status, body, project name and link, trail, settings), or a file to stream."""
 
     parts = urlsplit(target)
     path = [unquote(item) for item in parts.path.split("/") if item]
     query = parse_qs(parts.query)
-    opened = query.get("open", [""])[0]
     home: tuple[str, str] | None = None
+    trail: list = []
     try:
         if not path:
-            return 200, _projects_page(), None
+            return 200, _projects_page(), None, [], False
         if len(path) < 2 or path[0] != "projects" or not _KEY.fullmatch(path[1]):
             raise _Missing("No such page.")
         directory = _store()
@@ -739,56 +982,77 @@ def _route(target: str) -> tuple[int, str, tuple[str, str] | None] | _Raw:
             raise _Missing(f"The checkout of {project.name} is gone or moved. Run foil init in it.")
         root, base, rest = project.root, f"/projects/{quote(project.key)}", path[2:]
         home = (project.name, base)
+        page: _Page
         if not rest:
-            return 200, _fleets_page(root, base), home
-        if rest == ["settings"]:
-            return 200, _settings_page(root, base), home
-        if len(rest) < 2 or rest[0] != "fleets":
+            page = _fleets_page(root, base)
+        elif rest == ["settings"]:
+            page = _settings_page(root, base)
+        elif len(rest) < 2 or rest[0] != "fleets":
             raise _Missing("No such page.")
-        if rest[1] not in _fleet_ids(root):
+        elif rest[1] not in _fleet_ids(root):
             raise _Missing(f"No fleet named {rest[1]} in this project.")
-        fleet = rest[1]
-        if len(rest) == 2:
-            return 200, _fleet_page(root, fleet, opened, base), home
-        if rest[2:] == ["raw"]:
-            if opened not in {rel for rel, _bytes in _board_files(root, fleet)}:
+        elif len(rest) == 2:
+            trail = [(rest[1], f"{base}/fleets/{quote(rest[1])}")]
+            page = _fleet_page(root, rest[1], query, base)
+        elif rest[2:] == ["raw"]:
+            fleet, opened = rest[1], query.get("open", [""])[0]
+            if opened not in {item[0] for item in _board_files(root, fleet)}:
                 raise _Missing("No such file on this board.")
             handle = _open_listed(root, fleet, opened)
             size = os.fstat(handle).st_size
             if size > RAW_CAP:
                 os.close(handle)
                 cap = f"foil: the raw view stops at {_size(RAW_CAP)}; this file is {_size(size)}"
-                return 413, _failed(FoilError(cap)), home
+                return 413, _failed(FoilError(cap)), home, [(fleet, None)], False
             return _Raw(handle, size)
-        if len(rest) == 4 and rest[2] == "seats":
+        elif len(rest) == 4 and rest[2] == "seats":
+            trail = [(rest[1], f"{base}/fleets/{quote(rest[1])}")]
             lines = _lines(query.get("lines", [""])[0])
-            return 200, _seat_page(root, fleet, rest[3], lines, base), home
-        raise _Missing("No such page.")
+            page = _seat_page(root, rest[1], rest[3], lines, base)
+        else:
+            raise _Missing("No such page.")
+        return 200, page.body, home, page.trail, page.settings
     except _Missing as exc:
         back = f'<a href="{escape(home[1])}">Back to fleets</a>' if home else (
             '<a href="/">Back to projects</a>'
         )
-        return 404, f'<p class="empty">{escape(str(exc))} {back}</p>', home
+        return 404, f'<p class="empty">{escape(str(exc))} {back}</p>', home, trail, False
     except Exception as exc:
-        return 500, _failed(exc), home
+        return 500, _failed(exc), home, trail, False
 
 
-def _document(home: tuple[str, str] | None, body: str, nonce: str) -> bytes:
-    title = f"{home[0]} · Foil" if home else "Projects · Foil"
-    links = (
-        f'<a class="name mono" href="{escape(home[1])}">{escape(home[0])}</a>'
-        f'<a class="link" href="{escape(home[1])}/settings">Settings</a>'
-        if home
-        else ""
-    )
+def _document(result: _Result, nonce: str) -> bytes:
+    _code, body, home, trail, settings = result
+    crumbs = [("Foil", "/")]
+    if home:
+        crumbs.append((home[0], home[1]))
+    crumbs += trail
+    if len(crumbs) == 2 and not settings and home:
+        crumbs[-1] = (home[0], None)
+    items = []
+    for index, (label, href) in enumerate(crumbs):
+        current = index == len(crumbs) - 1 and not settings
+        mark = ' aria-current="page"' if current else ""
+        cls = ' class="mono"' if index else ""
+        if href and not current:
+            items.append(f'<li><a{cls} href="{escape(href)}">{escape(label)}</a></li>')
+        else:
+            items.append(f"<li><span{cls}{mark}>{escape(label)}</span></li>")
+        if index == 1 and home:
+            mark = ' aria-current="page"' if settings else ""
+            items.append(
+                f'<li class="tab"><a class="tab" href="{escape(home[1])}/settings"{mark}>'
+                "Settings</a></li>"
+            )
+    title = " · ".join([label for label, _href in crumbs[1:]][::-1] + ["Foil"])
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<link rel="icon" href="data:,"><title>{escape(title)}</title>'
-        f"<style>{_CSS}</style></head><body><header>"
-        '<a class="name" href="/">Foil</a>'
-        f"{links}</header>"
-        f'<main>{body}</main><script nonce="{nonce}">{_SCRIPT}</script></body></html>'
+        f'<style>{_CSS}</style></head><body><header><nav aria-label="Breadcrumb"><ol>'
+        f"{''.join(items)}</ol></nav></header>"
+        f"<main>{body}</main><footer>{escape(FOOTER)}</footer>"
+        f'<script nonce="{nonce}">{_SCRIPT}</script></body></html>'
     ).encode()
 
 
@@ -903,7 +1167,7 @@ class _Handler(BaseHTTPRequestHandler):
                 result = _route(self.path)
                 if not isinstance(result, _Raw):
                     nonce = secrets.token_urlsafe(16)
-                    page = _document(result[2], result[1], nonce)
+                    page = _document(result, nonce)
         except Exception:
             self._send(500, b"")
             return
