@@ -12,7 +12,7 @@ import pytest
 from foil.cli import main
 from foil.errors import FoilError
 from foil.lifecycle import init_project, list_seats
-from foil.project import foil_root
+from foil.project import foil_root, store_root
 from foil.roster_ops import (
     add_template,
     list_roster,
@@ -1046,3 +1046,188 @@ def test_roster_update_edits_a_list_only_as_a_whole(project: Path) -> None:
     assert load_template(project, "lead")["harness"] == [{"id": "gemini", "model": ""}]
     update_template(project, "lead", "persona", "personas/reviewer.md")
     assert load_template(project, "lead")["persona"] == "personas/reviewer.md"
+
+
+def _cli(argv: list[str]) -> int:
+    """Run one roster command. A missing flag fails this test."""
+    try:
+        return main(argv)
+    except SystemExit as exc:
+        raise AssertionError(f"{' '.join(argv)} is not accepted ({exc})") from exc
+
+
+def _layer_text(root: Path, name: str) -> str:
+    path = root / name
+    if not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _seed_global(role: str, *, harness: str = "claude", model: str = "") -> None:
+    """Put one role on the global layer. Init still writes the project copy."""
+    from foil.presets import render_maps, render_roles
+
+    root = store_root()
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "roles.toml").write_text(
+        render_roles(
+            [
+                {
+                    "id": role,
+                    "description": "",
+                    "persona": f"personas/{role}.md",
+                    "worktree": False,
+                    "permission": "auto",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (root / "mapping.toml").write_text(
+        render_maps([{"role": role, "id": harness, "model": model}]),
+        encoding="utf-8",
+    )
+
+
+def test_unflagged_add_writes_the_global_layer_not_the_project(
+    project: Path,
+) -> None:
+    """A checkout does not switch an unflagged add onto the project folder."""
+    before = _roster_bytes(project)
+    assert _cli(["roster", "add", "researcher"]) == 0
+    assert _roster_bytes(project) == before
+    assert 'id = "researcher"' in _layer_text(store_root(), "roles.toml")
+    assert 'role = "researcher"' in _layer_text(store_root(), "mapping.toml")
+
+
+def test_unflagged_update_writes_the_global_layer_not_the_project(
+    project: Path,
+) -> None:
+    """An unflagged harness update edits the global mapping and leaves the project."""
+    before = _roster_bytes(project)
+    assert _cli(["roster", "update", "lead", "harness=codex"]) == 0
+    assert _roster_bytes(project) == before
+    assert 'role = "lead"' in _layer_text(store_root(), "mapping.toml")
+    assert 'harness = "codex"' in _layer_text(store_root(), "mapping.toml")
+
+
+def test_unflagged_remove_writes_the_global_layer_not_the_project(
+    project: Path,
+) -> None:
+    """An unflagged remove deletes the global role and leaves the project folder."""
+    _seed_global("researcher")
+    before = _roster_bytes(project)
+    assert _cli(["roster", "remove", "researcher"]) == 0
+    assert _roster_bytes(project) == before
+    assert 'id = "researcher"' not in _layer_text(store_root(), "roles.toml")
+    assert 'role = "researcher"' not in _layer_text(store_root(), "mapping.toml")
+
+
+def test_project_flag_writes_the_project_override(project: Path) -> None:
+    """--project writes the project role and mapping, and needs this checkout."""
+    assert _cli(["roster", "add", "researcher", "--project"]) == 0
+    assert 'id = "researcher"' in _layer_text(foil_root(project), "roles.toml")
+    assert 'role = "researcher"' in _layer_text(foil_root(project), "mapping.toml")
+    assert 'id = "researcher"' not in _layer_text(store_root(), "roles.toml")
+
+
+def test_project_flag_needs_a_checkout(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Without a checkout, --project fails in one line and writes nothing."""
+    before = _roster_bytes(project)
+    outside = project.parent / "no-checkout"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+    assert _cli(["roster", "add", "researcher", "--project"]) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert err.strip() == "foil: --project needs a checkout"
+    assert _roster_bytes(project) == before
+    assert _layer_text(store_root(), "roles.toml") == ""
+
+
+def test_project_flag_is_refused_inside_a_fleet(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Inside a fleet, --project is refused and writes nothing."""
+    before = _roster_bytes(project)
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert _cli(["roster", "add", "researcher", "--project"]) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert err.strip() == "foil: --project is outside the fleet only"
+    assert _roster_bytes(project) == before
+    assert _layer_text(store_root(), "roles.toml") == ""
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["roster", "add", "researcher"], "foil: roles are outside the fleet only"),
+        (["roster", "remove", "lead"], "foil: roles are outside the fleet only"),
+        (
+            ["roster", "update", "lead", "persona=personas/reviewer.md"],
+            "foil: roles are outside the fleet only",
+        ),
+        (
+            ["roster", "update", "lead", "worktree=true"],
+            "foil: roles are outside the fleet only",
+        ),
+        (
+            ["roster", "update", "lead", "permission=ask"],
+            "foil: permission is outside the fleet only",
+        ),
+    ],
+)
+def test_in_fleet_role_edits_are_refused(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    message: str,
+) -> None:
+    """Inside a fleet, add, remove, persona, worktree, and permission write nothing."""
+    before = _roster_bytes(project)
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert _cli(argv) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert err.strip() == message
+    assert _roster_bytes(project) == before
+
+
+def test_remove_project_deletes_a_mapping_only_override(project: Path) -> None:
+    """remove --project deletes mapping rows when the project has no role row."""
+    _seed_global("researcher", model="kept")
+    root = foil_root(project)
+    roles_before = (root / "roles.toml").read_bytes()
+    maps = root / "mapping.toml"
+    original = maps.read_text(encoding="utf-8")
+    maps.write_text(
+        original + '\n[[map]]\nrole = "researcher"\nharness = "claude"\nmodel = "opus"\n',
+        encoding="utf-8",
+    )
+    assert _cli(["roster", "remove", "researcher", "--project"]) == 0
+    assert (root / "roles.toml").read_bytes() == roles_before
+    assert 'role = "researcher"' not in maps.read_text(encoding="utf-8")
+    assert 'id = "researcher"' in _layer_text(store_root(), "roles.toml")
+    assert 'model = "kept"' in _layer_text(store_root(), "mapping.toml")
+
+
+def test_remove_project_fails_when_the_project_has_neither(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """remove --project fails in one line when the project has no row and no mapping."""
+    before = _roster_bytes(project)
+    assert _cli(["roster", "remove", "researcher", "--project"]) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert "\n" not in err.strip()
+    assert _roster_bytes(project) == before
+    assert _layer_text(store_root(), "roles.toml") == ""
