@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from foil.errors import FoilError, shown
@@ -251,10 +252,40 @@ def _visible_roles(toplevel: Path) -> list[dict] | None:
     return read_roles(toplevel)
 
 
+def _in_fleet() -> bool:
+    return bool(os.environ.get("FOIL_SEAT_ID", "").strip())
+
+
+def _fleet_rows(toplevel: Path, role: str) -> list[dict[str, str]]:
+    """This fleet's rows for the role. Empty when the caller is outside or has none."""
+    if not _in_fleet() or not _checked_out(toplevel):
+        return []
+    from foil.presets import fleet_overrides
+
+    return [
+        {"id": item["id"], "model": item["model"]}
+        for item in fleet_overrides(toplevel)
+        if item["role"] == role
+    ]
+
+
 def _visible_maps(toplevel: Path) -> list[dict[str, str]]:
     if not _checked_out(toplevel):
         return _maps_at(store_root())
-    return read_maps(toplevel)
+    maps = read_maps(toplevel)
+    if not _in_fleet():
+        return maps
+    from foil.presets import fleet_overrides
+
+    rows = fleet_overrides(toplevel)
+    replaced = {item["role"] for item in rows}
+    if not replaced:
+        return maps
+    kept = [item for item in maps if item["role"] not in replaced]
+    kept.extend(
+        {"role": item["role"], "id": item["id"], "model": item["model"]} for item in rows
+    )
+    return kept
 
 
 def _role_layer(toplevel: Path, role: str) -> str:
@@ -268,7 +299,9 @@ def _role_layer(toplevel: Path, role: str) -> str:
 
 
 def _mapping_layer(toplevel: Path, role: str) -> str:
-    """Layer of the entries list and show print. A fleet row is not that list."""
+    """Layer of the entries list and show print."""
+    if _fleet_rows(toplevel, role):
+        return "fleet"
     if _checked_out(toplevel):
         project = _maps_at(foil_root(toplevel))
         if any(item["role"] == role for item in project):
