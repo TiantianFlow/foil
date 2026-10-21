@@ -179,13 +179,16 @@ def _build_parser() -> argparse.ArgumentParser:
     roster_add = roster_sub.add_parser("add", help="Add a new template")
     roster_add.add_argument("ROLE", metavar="ROLE")
     roster_add.add_argument("--from", dest="from_file", metavar="FILE")
+    roster_add.add_argument("--project", action="store_true")
 
     roster_update = roster_sub.add_parser("update", help="Update a template field")
     roster_update.add_argument("ROLE", metavar="ROLE")
     roster_update.add_argument("FIELD_VALUE", metavar="FIELD=VALUE")
+    roster_update.add_argument("--project", action="store_true")
 
     roster_remove = roster_sub.add_parser("remove", help="Remove a template")
     roster_remove.add_argument("ROLE", metavar="ROLE")
+    roster_remove.add_argument("--project", action="store_true")
 
     view = sub.add_parser("view", help="Serve a read-only page for every project on this host")
     view.add_argument("--port", metavar="N")
@@ -219,6 +222,11 @@ def _run(args: argparse.Namespace) -> int:
         from foil.view import serve
 
         return serve(args.port)
+    if args.command == "roster" and getattr(args, "project", False) and _caller() == OUTSIDE:
+        try:
+            discover_project()
+        except FoilError:
+            raise FoilError("foil: --project needs a checkout") from None
     root = _require_project()
     if args.command == "seat":
         action = args.seat_command
@@ -306,30 +314,47 @@ def _run(args: argparse.Namespace) -> int:
         show_template(root, args.ROLE, as_json=args.json)
     elif action == "add":
         authorize("roster-add")
+        _refuse_project(getattr(args, "project", False))
+        if _caller() != OUTSIDE and not args.from_file:
+            raise FoilError("foil: roles are outside the fleet only")
         add_template(
             root,
             args.ROLE,
             from_file=args.from_file,
             in_fleet=_caller() != OUTSIDE,
+            project=getattr(args, "project", False),
         )
     elif action == "update":
         authorize("roster-update")
         if "=" not in args.FIELD_VALUE:
             raise FoilError("foil: FIELD=VALUE format required")
         field, value = args.FIELD_VALUE.split("=", 1)
+        _refuse_project(getattr(args, "project", False))
         if field == "permission" and _caller() != OUTSIDE:
             raise FoilError("foil: permission is outside the fleet only")
+        if _caller() != OUTSIDE and field in {"persona", "worktree"}:
+            raise FoilError("foil: roles are outside the fleet only")
         update_template(
             root,
             args.ROLE,
             field,
             value,
             in_fleet=_caller() != OUTSIDE,
+            project=getattr(args, "project", False),
         )
     else:
         authorize("roster-remove")
-        remove_template(root, args.ROLE)
+        _refuse_project(getattr(args, "project", False))
+        if _caller() != OUTSIDE:
+            raise FoilError("foil: roles are outside the fleet only")
+        remove_template(root, args.ROLE, project=getattr(args, "project", False))
     return 0
+
+
+def _refuse_project(project: bool) -> None:
+    """``--project`` is refused inside a fleet. The checkout check is earlier."""
+    if project and _caller() != OUTSIDE:
+        raise FoilError("foil: --project is outside the fleet only")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
