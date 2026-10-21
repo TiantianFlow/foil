@@ -226,7 +226,9 @@ def _run(args: argparse.Namespace) -> int:
         try:
             root = _require_project()
         except FoilError as exc:
-            if "not a git repository" not in str(exc):
+            # A checkout where init has not run is still the global layer.
+            message = str(exc)
+            if "not a git repository" not in message and "not initialized" not in message:
                 raise
             root = Path.cwd()
     else:
@@ -236,9 +238,11 @@ def _run(args: argparse.Namespace) -> int:
             and _caller() == OUTSIDE
         ):
             try:
-                discover_project()
+                found = discover_project()
             except FoilError:
                 raise FoilError("foil: --project needs a checkout") from None
+            if not is_initialized(found):
+                raise FoilError("foil: --project needs a checkout")
         root = _require_project()
     if args.command == "seat":
         action = args.seat_command

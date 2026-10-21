@@ -220,10 +220,11 @@ def _print_init_report(
     )
     del updated_skills
     operator = store_root() / "skills" / "operator.md"
+    packaged = Path(str(files("foil").joinpath("defaults", "skills", "operator.md")))
     if operator.is_file() and not operator.is_symlink():
         print(f"Skill: {operator}")
     else:
-        print("Skill: packaged")
+        print(f"Skill: packaged {packaged}")
     print(f"permission: {permissions}.")
     print(
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
@@ -238,11 +239,10 @@ def _print_init_report(
     sys.stdout.flush()
     if _star_saved(_star_due()):
         print(f"For the human: if Foil helps, a GitHub star helps others find it: {STAR_URL}")
-    operator = store_root() / "skills" / "operator.md"
     if operator.is_file() and not operator.is_symlink():
         print(f"Read {operator} and follow it. My goal: <goal>.")
     else:
-        print("Read the packaged operator skill and follow it. My goal: <goal>.")
+        print(f"Read {packaged} and follow it. My goal: <goal>.")
 
 
 def _unlink_project_settings(root: Path) -> list[Path]:
