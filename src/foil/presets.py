@@ -253,7 +253,7 @@ def _entry(harness_id: Any, model: Any) -> dict[str, str]:
 def _harness_entries(raw: dict[str, Any]) -> list[dict[str, str]]:
     harness = raw.get("harness")
     # Legacy string form (`harness = "id"`, optional top-level `model`).
-    # Remove this read when the project version reaches 0.5.0 or higher.
+    # Kept so `roster add --from` still loads an older template file.
     if isinstance(harness, str):
         return [_entry(harness, raw.get("model", ""))]
     if "model" in raw or not isinstance(harness, list) or not harness:
