@@ -77,9 +77,9 @@ def test_roster_full_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     listing = out.getvalue()
 
     # Verify default templates are present
-    assert "\tbuiltin\tYou are the lead seat of this fleet." in listing
-    assert "\tbuiltin\tYou make the change the task asks for," in listing
-    assert "\tbuiltin\tYou check the change the lead names" in listing
+    assert "\tpackaged\tYou are the lead seat of this fleet." in listing
+    assert "\tpackaged\tYou make the change the task asks for," in listing
+    assert "\tpackaged\tYou check the change the lead names" in listing
 
     # Verify available personas are shown
     assert "+ " in listing  # At least one persona without template
