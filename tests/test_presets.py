@@ -652,6 +652,74 @@ def test_init_refuses_a_skill_symlink(
     assert outside.read_text(encoding="utf-8") == "keep\n"
 
 
+def test_init_unlinks_a_skills_directory_symlink_without_following(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """F20: a symlink is unlinked and not followed. A skills directory link stays unread."""
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    target = tmp_path / "real-skills"
+    target.mkdir()
+    (target / "operator.md").write_text("keep the target\n", encoding="utf-8")
+    mode = target.stat().st_mode
+    root = foil_root(repo)
+    skills = root / "skills"
+    if skills.is_symlink():
+        skills.unlink()
+    elif skills.exists():
+        import shutil
+
+        shutil.rmtree(skills)
+    skills.symlink_to(target)
+    assert main(["init"]) == 0
+    assert capsys.readouterr().err == ""
+    assert not skills.exists() and not skills.is_symlink()
+    assert (target / "operator.md").read_text(encoding="utf-8") == "keep the target\n"
+    assert target.is_dir() and not target.is_symlink()
+    assert target.stat().st_mode == mode
+
+
+def test_a_higher_persona_file_replaces_an_inline_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F22: a persona file at a higher layer replaces an inline body from a lower row.
+
+    A line that is not a path stays inline when no higher file exists. A global
+    file does not replace an inline body on a project row.
+    """
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    assert main(["init"]) == 0
+    root = foil_root(repo)
+    roles = store_root() / "roles.toml"
+    text = roles.read_text(encoding="utf-8")
+    roles.write_text(
+        text.replace('persona = "personas/lead.md"', 'persona = "inline lead body"', 1),
+        encoding="utf-8",
+    )
+    assert persona_text(load_template(repo, "lead")) == "inline lead body"
+    project_file = root / "personas" / "lead.md"
+    project_file.parent.mkdir(parents=True)
+    project_file.write_text("project file wins\n", encoding="utf-8")
+    assert persona_text(load_template(repo, "lead")) == "project file wins\n"
+    (root / "roles.toml").write_text(
+        '[[role]]\nid = "lead"\npersona = "inline on the project"\n'
+        "worktree = false\npermission = \"auto\"\n",
+        encoding="utf-8",
+    )
+    global_file = store_root() / "personas" / "lead.md"
+    global_file.parent.mkdir(parents=True, exist_ok=True)
+    global_file.write_text("global file stays below\n", encoding="utf-8")
+    assert persona_text(load_template(repo, "lead")) == "inline on the project"
+    assert project_file.read_text(encoding="utf-8") == "project file wins\n"
+
+
 def test_init_reports_an_overridden_builtin_and_leaves_the_preset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

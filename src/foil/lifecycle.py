@@ -260,7 +260,19 @@ def _unlink_project_settings(root: Path) -> list[Path]:
         "skills/worker.md",
     ):
         path = root / relative
-        if path.is_symlink() or path.is_file():
+        # A parent that is a symlink is the link. Unlink it and do not follow.
+        parent = root
+        linked = False
+        for part in Path(relative).parts:
+            parent = parent / part
+            if parent.is_symlink():
+                parent.unlink()
+                removed.append(parent)
+                linked = True
+                break
+        if linked:
+            continue
+        if path.is_file():
             path.unlink()
             removed.append(path)
         elif path.is_dir():
@@ -289,6 +301,9 @@ def init_project(directory: str | None) -> None:
         root, previous, rewritten = prepare_project(toplevel)
         for relative in SKELETON:
             path = root / relative
+            # A symlink is unlinked later and not followed, so it is not chmod'd.
+            if path.is_symlink():
+                continue
             path.mkdir(parents=True, exist_ok=True, mode=0o700)
             path.chmod(0o700)
         lift_root_runtime(root)

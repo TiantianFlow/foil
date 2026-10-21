@@ -638,9 +638,42 @@ def load_template(toplevel: Path, name: str) -> dict[str, Any]:
     return listed
 
 
+def _inline_persona(persona: str) -> bool:
+    return not persona or "\n" in persona or "\r" in persona or not persona.endswith(".md")
+
+
+def _higher_persona(template: dict[str, Any]) -> Path | None:
+    """A persona file strictly above the row that stores this inline body.
+
+    A project file replaces a global row. Nothing is above a project row.
+    """
+
+    role = str(template.get("name") or Path(str(template["path"])).stem)
+    if not SAFE_ID.fullmatch(role):
+        return None
+    project_root = Path(template["path"]).parent.parent
+    project_file = project_root / "personas" / f"{role}.md"
+    project_roles = _optional_text(project_root / "roles.toml")
+    if project_roles is not None:
+        try:
+            if any(item["id"] == role for item in _parse_roles(project_roles)):
+                return None
+        except FoilError:
+            return None
+    if project_file.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    if project_file.is_file():
+        return project_file
+    return None
+
+
 def persona_text(template: dict[str, Any]) -> str:
     persona = template["persona"]
-    if not persona or "\n" in persona or "\r" in persona or not persona.endswith(".md"):
+    if _inline_persona(persona):
+        role = str(template.get("name") or "")
+        higher = _higher_persona(template) if SAFE_ID.fullmatch(role) else None
+        if higher is not None:
+            return higher.read_text(encoding="utf-8")
         return persona
     relative = Path(persona)
     if relative.is_absolute() or ".." in relative.parts:

@@ -25,7 +25,7 @@ from foil.presets import (
     template_permission,
 )
 from foil.project import foil_root, store_root
-from foil.store import SAFE_ID, load_registry, write_bytes
+from foil.store import SAFE_ID, write_bytes
 
 _PROTECTED_ROLES = {"lead", "implementer", "reviewer"}
 _TEMPLATE_FIELDS = {"harness", "model", "persona", "worktree", "permission"}
@@ -192,25 +192,47 @@ def _persona_template(toplevel: Path, role: str, persona: str) -> dict:
     return {"name": role, "path": root / "templates" / f"{role}.toml", "persona": persona}
 
 
-def _in_use(toplevel: Path, role: str) -> None:
-    """Fail when any fleet in this project still has a seat of this role."""
+def _seat_uses(path: Path, role: str) -> bool:
+    """True when this registry file has a live seat of the role. A link is skipped."""
+    if path.is_symlink() or not path.is_file():
+        return False
     try:
-        directory = foil_root(toplevel) / "fleets"
-    except FoilError:
-        directory = Path()
-    names = []
-    if directory.is_dir() and not directory.is_symlink():
-        names = [
-            item.name
-            for item in directory.iterdir()
-            if SAFE_ID.fullmatch(item.name) and item.is_dir() and not item.is_symlink()
-        ]
-    if not names:
-        names = [""]
-    for fleet in names:
-        registry = load_registry(toplevel, fleet or None)
-        for seat in registry["seats"].values():
-            if seat["template"] == role and seat["state"] != "killed":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    seats = payload.get("seats") if isinstance(payload, dict) else None
+    if not isinstance(seats, dict):
+        return False
+    for seat in seats.values():
+        if (
+            isinstance(seat, dict)
+            and seat.get("template") == role
+            and seat.get("state") != "killed"
+        ):
+            return True
+    return False
+
+
+def _in_use(toplevel: Path, role: str) -> None:
+    """Fail when any fleet registry in the store has a live seat of this role."""
+    del toplevel
+    projects = store_root() / "projects"
+    if projects.is_symlink() or not projects.is_dir():
+        return
+    for project in projects.iterdir():
+        if project.is_symlink() or not project.is_dir():
+            continue
+        fleets = project / "fleets"
+        if fleets.is_symlink() or not fleets.is_dir():
+            continue
+        for fleet in fleets.iterdir():
+            if (
+                fleet.is_symlink()
+                or not fleet.is_dir()
+                or SAFE_ID.fullmatch(fleet.name) is None
+            ):
+                continue
+            if _seat_uses(fleet / "run" / "registry.json", role):
                 raise FoilError(f"foil: template '{role}' is still in use")
 
 

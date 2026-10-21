@@ -1521,3 +1521,49 @@ def test_remove_sees_a_seat_in_another_fleet(project: Path) -> None:
     other.joinpath("registry.json").write_text(json.dumps(seat), encoding="utf-8")
     assert _cli(["roster", "remove", "researcher"]) == 0
     assert 'id = "researcher"' not in _layer_text(store_root(), "roles.toml")
+
+
+def test_remove_sees_a_seat_in_another_project(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F21: a live seat in any project of the store blocks remove, including outside a repo."""
+    import subprocess
+
+    _drop_planted_personas(project)
+    _seed_global("researcher")
+    other = tmp_path / "other"
+    other.mkdir()
+    subprocess.run(["git", "-C", str(other), "init", "--quiet"], check=True, capture_output=True)
+    init_project(str(other))
+    registry = foil_root(other) / "fleets" / "main" / "run" / "registry.json"
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    payload["seats"]["researcher-1"] = {
+        "name": "researcher-1",
+        "template": "researcher",
+        "harness": "fake",
+        "model": "",
+        "window_id": "",
+        "state": "alive",
+        "worktree": "",
+        "branch": "",
+        "session_id": "",
+    }
+    registry.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(FoilError, match="still in use"):
+        remove_template(project, "researcher")
+    assert 'id = "researcher"' in _layer_text(store_root(), "roles.toml")
+    outside = tmp_path / "not-a-repo"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+    assert _cli(["roster", "remove", "researcher"]) == 1
+    err = capsys.readouterr().err
+    assert "still in use" in err
+    assert "not a git repository" not in err
+    assert 'id = "researcher"' in _layer_text(store_root(), "roles.toml")
+    payload["seats"]["researcher-1"]["state"] = "killed"
+    registry.write_text(json.dumps(payload), encoding="utf-8")
+    assert _cli(["roster", "remove", "researcher"]) == 0
+    assert 'id = "researcher"' not in _layer_text(store_root(), "roles.toml")
