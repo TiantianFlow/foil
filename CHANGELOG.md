@@ -2,6 +2,12 @@
 
 Notable changes to Foil, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- Requirements now say global settings are the settings. A project override and a fleet pair list are optional. `foil init` writes missing global default roles and deletes old project setting copies without reading them. (#66)
+
 ## [0.5.4] - 2026-10-21
 
 `foil --version` prints 0.5.4.
