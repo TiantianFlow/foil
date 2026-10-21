@@ -300,6 +300,22 @@ def test_operator_spawns_the_lead_once_then_sends_the_goal() -> None:
     assert "Do not spawn the lead again." in text
 
 
+def test_operator_does_not_rerun_init_for_a_project_harness_file() -> None:
+    """A project harness file is written after init, and init is not run again for it."""
+
+    sentence = (
+        "The human adds a user preset at `<root>/harnesses/<id>.toml`. "
+        "A project override at `<project>/harnesses/<id>.toml` is written only "
+        "after init has created that project folder, in the format of section 7.3. "
+        "The operator does not re-run `init` for that file."
+    )
+    packaged = ROOT / "src" / "foil" / "defaults" / "skills" / "operator.md"
+    for path in (packaged, SKILLS / "operator.md"):
+        text = path.read_text(encoding="utf-8")
+        assert "you re-run `init`" not in text
+        assert sentence in text
+
+
 def test_onboarding_sentence_names_the_install_source() -> None:
     sentence = (
         "Install Foil from https://github.com/TiantianFlow/foil, "
