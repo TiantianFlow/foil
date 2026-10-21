@@ -1,1 +1,1 @@
-../src/foil/defaults/skills/operator.md
+./../src/foil/defaults/skills/operator.md
