@@ -139,13 +139,20 @@ SECTION_6 = CommandSpec(
                     positionals=(PositionalSpec("ROLE"),),
                 ),
                 "add": CommandSpec(
-                    flags=(FlagSpec("--from", metavar="FILE"),),
+                    flags=(
+                        FlagSpec("--from", metavar="FILE"),
+                        FlagSpec("--project"),
+                    ),
                     positionals=(PositionalSpec("ROLE"),),
                 ),
                 "update": CommandSpec(
-                    positionals=(PositionalSpec("ROLE"), PositionalSpec("FIELD=VALUE"))
+                    flags=(FlagSpec("--project"),),
+                    positionals=(PositionalSpec("ROLE"), PositionalSpec("FIELD=VALUE")),
                 ),
-                "remove": CommandSpec(positionals=(PositionalSpec("ROLE"),)),
+                "remove": CommandSpec(
+                    flags=(FlagSpec("--project"),),
+                    positionals=(PositionalSpec("ROLE"),),
+                ),
             }
         ),
         "view": CommandSpec(flags=(FlagSpec("--port", metavar="N"),)),
