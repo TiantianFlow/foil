@@ -25,6 +25,7 @@ PUBLIC_URL_HOSTS = frozenset(
         "geminicli.com",
         "models.dev",
         "opencode.ai",
+        "pypi.org",
     }
 )
 USER_HOME = re.compile(
