@@ -118,6 +118,18 @@ and what you did not verify.
    example one that ran an older installed version, is "not run", not a
    result.
 
+## Before you tag
+
+Re-check each preset's model ids in `src/foil/defaults/harnesses.toml` against that CLI's current docs, and change the packaged list when the docs have changed. Do not guess an id. The docs are:
+
+- `claude`: <https://code.claude.com/docs/en/model-config>
+- `codex`: <https://developers.openai.com/codex/models>
+- `gemini`: <https://geminicli.com/docs/cli/model/>
+- `grok`: <https://docs.x.ai/developers/models> and <https://docs.x.ai/build/cli/reference>
+- `opencode`: <https://opencode.ai/docs/cli/>
+
+`fake` has no vendor model list.
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the
