@@ -1,1 +1,1 @@
-../src/foil/defaults/skills/worker.md
+./../src/foil/defaults/skills/worker.md
