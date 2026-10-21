@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
-from foil.project import foil_root
+from foil.project import foil_root, store_root
 from foil.store import load_registry
 
 pytestmark = pytest.mark.e2e
@@ -38,7 +38,7 @@ def test_task_mail_does_not_type_into_a_startup_dialog(
     _git(repo, "init", "--quiet")
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
-    mapping = foil_root(repo) / "mapping.toml"
+    mapping = store_root() / "mapping.toml"
     text = re.sub(
         r'(?m)^harness = ".*"$',
         'harness = "fake"',

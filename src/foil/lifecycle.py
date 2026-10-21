@@ -276,6 +276,10 @@ def init_project(directory: str | None) -> None:
         raise FoilError("foil: not a git repository")
     toplevel = git_toplevel(start)
     root = foil_root(toplevel)
+    # Writing the global lists chmods the store root. The star record must not
+    # change a mode the user already set, so remember it and put it back.
+    store = store_root()
+    prior_mode = store.stat().st_mode & 0o777 if store.is_dir() and not store.is_symlink() else None
     # Project settings are unread until the unlink. A symlink must not be followed.
     token = _init_check.set(True)
     try:
@@ -307,6 +311,8 @@ def init_project(directory: str | None) -> None:
     # After every step that can still exit non-zero. A failure above deletes nothing.
     removed = _unlink_project_settings(root)
     _print_init_report(toplevel, had_templates, had_personas, [], removed)
+    if prior_mode is not None and store.is_dir() and not store.is_symlink():
+        store.chmod(prior_mode)
 
 
 def _seat_name(registry: dict, template_name: str, requested: str | None) -> str:

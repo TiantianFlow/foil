@@ -6,12 +6,13 @@ import contextlib
 import io
 import os
 import subprocess
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
 
 from foil.cli import main
-from foil.project import foil_root
+from foil.project import foil_root, store_root
 from foil.store import load_registry
 
 pytestmark = pytest.mark.e2e
@@ -49,6 +50,18 @@ def _prepare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     # Initialize foil
     assert main(["init"]) == 0
+    # Roster still resolves a persona path under the project templates.
+    personas = foil_root(repo) / "templates" / "personas"
+    personas.mkdir(parents=True)
+    packaged = files("foil").joinpath("defaults", "personas")
+    for name in ("lead.md", "implementer.md", "reviewer.md", "researcher.md"):
+        (personas / name).write_text(
+            packaged.joinpath(name).read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+    spare = store_root() / "personas"
+    spare.mkdir()
+    (spare / "spare.md").write_text("A spare persona with no role.\n", encoding="utf-8")
 
     return repo
 
@@ -79,7 +92,7 @@ def test_roster_full_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert "created template 'researcher'" in add_output
 
     # Verify template file exists
-    roles = (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
+    roles = (store_root() / "roles.toml").read_text(encoding="utf-8")
     assert 'id = "researcher"' in roles
     assert 'persona = "personas/researcher.md"' in roles
 
@@ -99,7 +112,7 @@ def test_roster_full_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert "updated template 'researcher'" in update_output
 
     # Verify update
-    content = (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
+    content = (store_root() / "mapping.toml").read_text(encoding="utf-8")
     assert 'model = "claude-opus-5.5"' in content
 
     # List roster again to see researcher
@@ -121,7 +134,7 @@ def test_roster_update_existing_template(tmp_path: Path, monkeypatch: pytest.Mon
     assert "updated template 'lead'" in out.getvalue()
 
     # Verify update
-    content = (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
+    content = (store_root() / "mapping.toml").read_text(encoding="utf-8")
     assert 'role = "lead"' in content
     assert 'harness = "codex"' in content
 
@@ -132,7 +145,7 @@ def test_roster_update_existing_template(tmp_path: Path, monkeypatch: pytest.Mon
     assert "updated template 'implementer'" in out.getvalue()
 
     # Verify update
-    content = (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
+    content = (store_root() / "mapping.toml").read_text(encoding="utf-8")
     assert 'model = "claude-sonnet-5.5"' in content
 
 
@@ -142,7 +155,7 @@ def test_roster_remove_non_protected(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     # Add researcher
     assert main(["roster", "add", "researcher"]) == 0
-    roles = (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
+    roles = (store_root() / "roles.toml").read_text(encoding="utf-8")
     assert 'id = "researcher"' in roles
 
     # Remove researcher
@@ -152,7 +165,7 @@ def test_roster_remove_non_protected(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert "removed template 'researcher'" in out.getvalue()
 
     # Verify template is gone
-    assert 'id = "researcher"' not in (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
+    assert 'id = "researcher"' not in (store_root() / "roles.toml").read_text(encoding="utf-8")
 
 
 def test_roster_cannot_remove_protected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -222,12 +235,12 @@ def test_added_role_can_be_spawned(
         assert main(["roster", "remove", "researcher"]) == 1
         err = capsys.readouterr().err
         assert err.count("\n") == 1
-        assert "still in use" in err
-        assert 'id = "researcher"' in (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
+        assert err == "foil: roles are outside the fleet only\n"
+        assert 'id = "researcher"' in (store_root() / "roles.toml").read_text(encoding="utf-8")
         assert main(["roster", "update", "researcher", "harness=codex"]) == 0
         overrides = foil_root(repo) / "fleets" / "main" / "overrides.toml"
         assert 'harness = "codex"' in overrides.read_text(encoding="utf-8")
-        assert 'harness = "codex"' not in (foil_root(repo) / "mapping.toml").read_text(
+        assert 'harness = "codex"' not in (store_root() / "mapping.toml").read_text(
             encoding="utf-8"
         )
         assert main(["seat", "list"]) == 0

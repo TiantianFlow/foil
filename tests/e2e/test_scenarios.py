@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -19,7 +20,7 @@ import pytest
 from foil import __version__
 from foil.board_ops import split_front_matter
 from foil.cli import main
-from foil.project import foil_root
+from foil.project import foil_root, store_root
 from foil.store import load_registry
 
 pytestmark = pytest.mark.e2e
@@ -63,7 +64,7 @@ def _prepare(
         if chosen:
             _set_harness(repo, chosen)
         return repo
-    mapping = foil_root(repo) / "mapping.toml"
+    mapping = store_root() / "mapping.toml"
     text = re.sub(
         r'(?m)^harness = ".*"$',
         'harness = "fake"',
@@ -103,7 +104,7 @@ def _wait(repo: Path, predicate, timeout: float = 90) -> None:
 def _set_auto(repo: Path) -> None:
     """Live tier only: every default template runs unattended."""
 
-    roles = foil_root(repo) / "roles.toml"
+    roles = store_root() / "roles.toml"
     text = re.sub(
         r'(?m)^permission = ".*"$',
         'permission = "auto"',
@@ -115,7 +116,7 @@ def _set_auto(repo: Path) -> None:
 def _set_harness(repo: Path, harness: str) -> None:
     """Rewrite the harness id of the three default templates."""
 
-    mapping = foil_root(repo) / "mapping.toml"
+    mapping = store_root() / "mapping.toml"
     text = re.sub(
         r'(?m)^harness = ".*"$',
         f'harness = "{harness}"',
@@ -670,7 +671,7 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
         assert version.stdout.strip() == "foil 0.5.4", version.stderr
         assert Path(shutil.which("foil", path=environment["PATH"]) or "") == bindir / "foil"
         assert foil("init").returncode == 0
-        mapping = foil_root(repo) / "mapping.toml"
+        mapping = store_root() / "mapping.toml"
         text = re.sub(
             r'(?m)^harness = ".*"$',
             'harness = "fake"',
@@ -744,7 +745,7 @@ def test_star_line_reaches_the_operator_once_per_store_and_no_seat(tmp_path: Pat
         assert line not in foil(second, "init").stdout
         assert line not in foil(first, "init").stdout
 
-        mapping = foil_root(first) / "mapping.toml"
+        mapping = store_root() / "mapping.toml"
         text = re.sub(
             r'(?m)^harness = ".*"$', 'harness = "fake"', mapping.read_text(encoding="utf-8")
         )
@@ -800,9 +801,14 @@ def test_star_line_shows_once_under_a_symlinked_data_dir(tmp_path: Path) -> None
     linked.symlink_to(real)
     environment = {**os.environ, "XDG_DATA_HOME": str(linked)}
     environment.pop("FOIL_HOME", None)
-    shown = [STAR_LINE in _star_init(bindir, repo, environment) for _ in range(3)]
-    assert shown == [True, False, False]
-    assert (real / "foil" / "star.json").is_file()
+    environment.pop("FOIL_SEAT_ID", None)
+    environment["PATH"] = os.pathsep.join((str(bindir), environment.get("PATH", "")))
+    result = subprocess.run(
+        ["foil", "init"], cwd=repo, check=False, capture_output=True, text=True, env=environment
+    )
+    assert (result.returncode, result.stderr) == (1, "foil: refusing symlink\n")
+    assert STAR_LINE not in result.stdout
+    assert not (real / "foil" / "star.json").exists()
 
 
 def test_star_record_leaves_the_store_root_mode_and_survives_a_failed_init(
@@ -816,7 +822,7 @@ def test_star_record_leaves_the_store_root_mode_and_survives_a_failed_init(
     _star_init(bindir, repo, dict(os.environ))
     assert root.stat().st_mode & 0o777 == 0o755
     (root / "star.json").unlink()
-    mapping = foil_root(repo) / "mapping.toml"
+    mapping = root / "mapping.toml"
     mapping.write_text(mapping.read_text(encoding="utf-8") + 'permission = "bogus"\n')
     env = {**os.environ, "PATH": os.pathsep.join((str(bindir), os.environ.get("PATH", "")))}
     failed = subprocess.run(
@@ -951,7 +957,7 @@ def test_scenario_7_ai_native_onboarding(
     # Five harnesses stay installed throughout, so a guarantee computed only
     # from the install count would still say "two". The report must instead
     # read the ids actually stored in the three templates and say "three".
-    mapping = foil_root(repo) / "mapping.toml"
+    mapping = store_root() / "mapping.toml"
     text = mapping.read_text(encoding="utf-8")
     text = text.replace(
         'role = "implementer"\nharness = "claude"',
@@ -978,7 +984,7 @@ def test_scenario_7_ai_native_onboarding(
         "Two ids can still run the same program or model; set model on a template to choose one."
     ) in second
 
-    mapping = foil_root(repo) / "mapping.toml"
+    mapping = store_root() / "mapping.toml"
     text = re.sub(
         r'(?m)^harness = ".*"$',
         'harness = "fake"',
@@ -1005,8 +1011,11 @@ def test_scenario_7_ai_native_onboarding(
         instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md"
         text = instruction.read_text(encoding="utf-8")
         persona_words = (
-            foil_root(repo) / "templates" / "personas" / "lead.md"
-        ).read_text(encoding="utf-8").strip()
+            files("foil")
+            .joinpath("defaults", "personas", "lead.md")
+            .read_text(encoding="utf-8")
+            .strip()
+        )
         assert persona_words in text
         assert "personas/lead.md" not in text
 
@@ -1063,8 +1072,8 @@ def test_unattended_templates_and_peek_on_timeout(
     repo = _prepare(tmp_path, "scenario-2", monkeypatch)
     _set_auto(repo)
     try:
-        roles = (foil_root(repo) / "roles.toml").read_text(encoding="utf-8")
-        mapping = (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
+        roles = (store_root() / "roles.toml").read_text(encoding="utf-8")
+        mapping = (store_root() / "mapping.toml").read_text(encoding="utf-8")
         assert roles.count('permission = "auto"') >= 3
         assert mapping.count('harness = "fake"') >= 3
         assert main(["seat", "spawn", "lead"]) == 0
@@ -1093,5 +1102,5 @@ def test_e2e_harness_override_rewrites_the_three_templates(
 ) -> None:
     monkeypatch.setenv("FOIL_E2E_HARNESS", "codex")
     repo = _prepare(tmp_path, "scenario-6", monkeypatch, fake=False)
-    text = (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
+    text = (store_root() / "mapping.toml").read_text(encoding="utf-8")
     assert text.count('harness = "codex"') >= 3
