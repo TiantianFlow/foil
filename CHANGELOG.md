@@ -8,6 +8,7 @@ Notable changes to Foil, newest first.
 
 - Requirements now say global settings are the settings. A project override and a fleet pair list are optional. `foil init` writes missing global default roles and deletes old project setting copies without reading them. (#66)
 - Requirements propose live packaged model ids, pair cards, a spawn refusal for a model-only row, `/settings`, and skill text that matches the same layering. (#66)
+- The settings page records the closed Rotation line, the per-role Fleet overrides link, the empty-state line, and which rows `/settings` shows. (#66)
 
 ## [0.5.4] - 2026-10-21
 
