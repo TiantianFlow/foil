@@ -128,10 +128,12 @@ A persistent install of the operator skill is optional. Copy it where that harne
 The same steps, typed yourself. Install Foil, then in the repository:
 
 ```sh
-uv tool install "git+https://github.com/TiantianFlow/foil.git"
+uv tool install --upgrade foil-ai
 cd your-repo
 foil init
 ```
+
+If the install says `Executable already exists: foil`, an install from before the package was renamed to `foil-ai` is in the way. Run `uv tool uninstall foil-orchestrator`, then the install line again.
 
 Read the report and set the three templates with `foil roster`. If `board/status.md` is already in the project folder, note its `updated` value. Then spawn the lead once:
 

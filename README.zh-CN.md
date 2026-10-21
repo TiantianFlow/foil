@@ -128,10 +128,12 @@ Read <root>/skills/operator.md and follow it. My goal: <goal>.
 同样的步骤，自己来敲。先安装运筹，再在仓库里：
 
 ```sh
-uv tool install "git+https://github.com/TiantianFlow/foil.git"
+uv tool install --upgrade foil-ai
 cd your-repo
 foil init
 ```
+
+如果安装时提示 `Executable already exists: foil`，说明挡路的是包改名为 `foil-ai` 之前的旧安装。先运行 `uv tool uninstall foil-orchestrator`，再运行一次安装命令。
 
 读报告，用 `foil roster` 设置那三个模板。如果项目目录里已经有 `board/status.md`，先记下它的 `updated`。然后只启动一次主座：
 

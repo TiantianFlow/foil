@@ -21,7 +21,7 @@ Python 3.11+、Git、tmux 3.2+，以及至少一个已经在本机登录的 Agen
 ## 1. 安装并初始化
 
 ```sh
-uv tool install "git+https://github.com/TiantianFlow/foil.git"
+uv tool install --upgrade foil-ai
 cd your-repo
 foil init
 ```
