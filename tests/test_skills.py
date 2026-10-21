@@ -300,6 +300,17 @@ def test_operator_spawns_the_lead_once_then_sends_the_goal() -> None:
     assert "Do not spawn the lead again." in text
 
 
+def test_operator_report_names_the_packaged_skill_path() -> None:
+    """The init report line names Skill: packaged <package path>."""
+
+    phrase = "`Skill: packaged <package path>`"
+    packaged = ROOT / "src" / "foil" / "defaults" / "skills" / "operator.md"
+    for path in (packaged, SKILLS / "operator.md"):
+        text = path.read_text(encoding="utf-8")
+        assert "`Skill: packaged`" not in text
+        assert phrase in text
+
+
 def test_operator_does_not_rerun_init_for_a_project_harness_file() -> None:
     """A project harness file is written after init, and init is not run again for it."""
 
