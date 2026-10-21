@@ -26,6 +26,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from html import escape
 from http.server import BaseHTTPRequestHandler
+from importlib.resources import files
 from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.parse import parse_qs, quote, unquote, urlsplit
@@ -38,6 +39,7 @@ from foil.presets import (
     _packaged_catalog,
     _parse_maps,
     _parse_preset,
+    description_of,
     entry_label,
     fleet_overrides,
     load_preset,
@@ -582,9 +584,34 @@ def _fleets_page(root: Path, base: str) -> _Page:
     return _Page(body, [])
 
 
+def _packaged_personas(names: set[str]) -> list[dict[str, str]]:
+    """Packaged personas with no role, used when no persona directory was written."""
+
+    packaged = files("foil").joinpath("defaults", "personas")
+    found = []
+    for path in packaged.iterdir():
+        if path.name.endswith(".md") and path.name[:-3] not in names:
+            found.append(
+                {"name": path.name[:-3],
+                 "description": description_of(path.read_text(encoding="utf-8"))}
+            )
+    return sorted(found, key=lambda item: item["name"])
+
+
+def _personas(root: Path, loaded: list, written: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Personas with no role: a written layer when one exists, else the package."""
+
+    if written or (store_root() / "personas").is_dir():
+        return written
+    if (foil_root(root) / "templates" / "personas").is_dir():
+        return written
+    return _packaged_personas({name for name, _row in loaded})
+
+
 def _settings_page(root: Path, base: str) -> _Page:
     def roles() -> str:
-        loaded, personas = roster_rows(root)
+        loaded, written = roster_rows(root)
+        personas = _personas(root, loaded, written)
         rows = [
             [_mono(name), escape(row["description"]), escape(row["permission"]),
              "yes" if row["worktree"] else _faded("no")]
@@ -668,6 +695,18 @@ def _global_settings_page() -> _Page:
         + _section("Default mapping", _guard(mapping))
     )
     return _Page(body, [], settings=True)
+
+
+def _project_mapped(root: Path) -> set[str]:
+    """Roles the project mapping names. A project file replaces those roles whole."""
+
+    text = _text_file(foil_root(root) / "mapping.toml")
+    if text is None:
+        return set()
+    try:
+        return {row["role"] for row in _parse_maps(text)}
+    except FoilError:
+        return set()
 
 
 def _stored(registry: dict, role: str) -> int:
@@ -956,7 +995,7 @@ def _fleet_page(root: Path, fleet: str, query: dict, base: str) -> _Page:
         found = fleet_overrides(root, fleet)
         if not found:
             return _table(["Role", "Entries, in order"], [], _FLEET_NONE)
-        mapped = {row["role"] for row in read_maps(root)}
+        mapped = _project_mapped(root)
         lines = []
         for role, entries in _by_role(found).items():
             count = _stored(registry, role) if registry is not None else None
@@ -1362,8 +1401,21 @@ class _Server(socketserver.ThreadingTCPServer):
         self.connections = threading.BoundedSemaphore(CONNECTIONS)
         super().__init__(("127.0.0.1", port), _Handler)
 
+    @staticmethod
+    def _discard(request: Any) -> None:
+        """Read what the client already sent, so closing is not a reset."""
+
+        try:
+            request.setblocking(False)
+            while request.recv(CHUNK):
+                pass
+        except OSError:
+            pass
+
     def process_request(self, request: Any, client_address: Any) -> None:
         if not self.connections.acquire(blocking=False):
+            # Unread request bytes make a plain close a reset. Discard them first.
+            self._discard(request)
             self.shutdown_request(request)
             return
         try:

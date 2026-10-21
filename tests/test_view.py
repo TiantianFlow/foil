@@ -387,19 +387,20 @@ def test_past_the_connection_cap_a_connection_is_closed(
 
 def test_settings_show_the_three_lists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _repo(tmp_path, monkeypatch)
-    folder = foil_root(repo)
-    (folder / "mapping.toml").write_text(
-        (folder / "mapping.toml").read_text(encoding="utf-8")
-        + '\n[[map]]\nrole = "implementer"\nharness = "codex"\nmodel = "gpt-5.5"\n',
+    home = Path(os.environ["FOIL_HOME"])
+    text = (home / "mapping.toml").read_text(encoding="utf-8")
+    (home / "mapping.toml").write_text(
+        text + '\n[[map]]\nrole = "implementer"\nharness = "codex"\nmodel = "gpt-5.5"\n',
         encoding="utf-8",
     )
-    (folder / "harnesses" / "secretive.toml").write_text(
+    (home / "harnesses").mkdir()
+    (home / "harnesses" / "secretive.toml").write_text(
         'id = "secretive"\ncommand = ["no-such-cli", "--api-key", "AKIAEXAMPLE", '
         '"--auth-token=abc", "sk-live", "two words", "{prompt}"]\nsession_id = "none"\n'
         'env = ["SECRETIVE_HOME"]\nmodels = []\n',
         encoding="utf-8",
     )
-    (folder / "harnesses" / "broken.toml").write_text("id = [", encoding="utf-8")
+    (home / "harnesses" / "broken.toml").write_text("id = [", encoding="utf-8")
     with _serving(repo) as port:
         page = _page(port, "/settings")
     assert "You make the change the task asks for" in page
@@ -432,7 +433,9 @@ def test_installed_shows_where_the_viewer_found_the_command(
     probe.write_text("#!/bin/sh\n", encoding="utf-8")
     probe.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
-    (foil_root(repo) / "harnesses" / "probe.toml").write_text(
+    home = Path(os.environ["FOIL_HOME"])
+    (home / "harnesses").mkdir()
+    (home / "harnesses" / "probe.toml").write_text(
         'id = "probe"\ncommand = ["probe-cli", "{prompt}"]\nsession_id = "none"\n'
         "env = []\nmodels = []\n",
         encoding="utf-8",
@@ -631,12 +634,12 @@ def test_no_next_spawn_line_when_the_override_matches_the_mapping(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
-    folder = foil_root(repo)
-    text = (folder / "mapping.toml").read_text(encoding="utf-8")
+    home = Path(os.environ["FOIL_HOME"])
+    text = (home / "mapping.toml").read_text(encoding="utf-8")
     text = re.sub(r'(role = "reviewer"\nharness = "[^"]+")', r'\1\nmodel = "big"', text)
     assert 'model = "big"' in text
-    (folder / "mapping.toml").write_text(text, encoding="utf-8")
-    (folder / "fleets" / "main" / "overrides.toml").write_text(
+    (home / "mapping.toml").write_text(text, encoding="utf-8")
+    (foil_root(repo) / "fleets" / "main" / "overrides.toml").write_text(
         '[[override]]\nrole = "reviewer"\nmodel = "big"\n', encoding="utf-8"
     )
     _registry(repo, _seat("reviewer-1", model="big"))
@@ -650,8 +653,9 @@ def test_the_fleet_overrides_link_is_per_role(
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     folder = foil_root(repo)
+    # A project file replaces each role it names. implementer is named here;
+    # reviewer is not, so the reviewer link stays on the global settings.
     (folder / "mapping.toml").write_text(
-        '[[map]]\nrole = "lead"\nharness = "claude"\n\n'
         '[[map]]\nrole = "implementer"\nharness = "codex"\nmodel = "gpt-5.5"\n',
         encoding="utf-8",
     )
@@ -668,6 +672,9 @@ def test_the_fleet_overrides_link_is_per_role(
         heading = page.find("<h2>Overrides")
     assert heading >= 0
     section = page[heading:].split("</section>", 1)[0]
+    # The project mapping names implementer and lead, and init wrote the rest
+    # globally, so every role with rows has a project list. F38 sends that link
+    # to the project settings. reviewer has no project rows, so it stays global.
     assert _link_path(_role_href(section, "implementer")) == project_settings
     assert _link_path(_role_href(section, "reviewer")) == "/settings"
     assert section.startswith("<h2>Fleet overrides")
