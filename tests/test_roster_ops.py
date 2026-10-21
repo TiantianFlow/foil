@@ -1394,6 +1394,43 @@ def test_first_project_update_writes_one_layer(project: Path) -> None:
     assert lead["permission"] in {"ask", "auto"}
 
 
+def test_unflagged_roster_works_before_init(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F21: a git checkout where init has not run is not an initialized project.
+
+    Unflagged roster reads the global layer and does not print not initialized.
+    --project still needs an initialized project.
+    """
+    import subprocess
+
+    other = tmp_path / "other"
+    other.mkdir()
+    subprocess.run(["git", "-C", str(other), "init", "--quiet"], check=True, capture_output=True)
+    init_project(str(other))
+    capsys.readouterr()
+    repo = tmp_path / "fresh"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "--quiet"], check=True, capture_output=True)
+    monkeypatch.chdir(repo)
+    assert _cli(["roster", "list"]) == 0
+    listed = capsys.readouterr()
+    assert listed.err == ""
+    assert "not initialized" not in listed.out
+    assert "lead" in listed.out
+    assert _cli(["roster", "show", "lead"]) == 0
+    shown = capsys.readouterr()
+    assert shown.err == ""
+    assert "not initialized" not in shown.out
+    assert "role: lead" in shown.out
+    assert _cli(["roster", "update", "lead", "harness=grok", "--project"]) == 1
+    err = capsys.readouterr().err
+    assert err.strip() == "foil: --project needs a checkout"
+    assert "not initialized" not in err
+
+
 def test_roster_outside_a_checkout_uses_the_global_layer(
     project: Path,
     monkeypatch: pytest.MonkeyPatch,
