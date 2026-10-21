@@ -644,3 +644,212 @@ def test_lead_instruction_names_global_lists_and_existing_overrides(
     for name in ("roles.toml", "harnesses.toml", "personas"):
         assert f"`{project / name}`" not in text
     assert "defaults/harnesses.toml" not in text
+
+
+def _lead_row() -> str:
+    text = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
+    section_8 = text.split("## 8. Skills", 1)[1].split("## 9.", 1)[0]
+    return next(line for line in section_8.splitlines() if line.startswith("| `lead`"))
+
+
+_WITHDRAWN = (
+    "0.5.3",
+    "0.5.2",
+    "0.5.1",
+    "0.5.0",
+    "0.4.4",
+    "0.4.3",
+    "0.4.2",
+    "0.3.2",
+    "0.3.1",
+    "0.2.1",
+)
+
+
+def test_a_withdrawn_release_does_not_name_a_withdrawn_destination() -> None:
+    """A withdrawn changelog line ships into a kept release, never another withdrawn one."""
+
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    lines = [line for line in text.splitlines() if line.startswith("This release was withdrawn.")]
+    assert len(lines) == len(_WITHDRAWN)
+    for line in lines:
+        destination = line.removeprefix(
+            "This release was withdrawn. Its changes ship in "
+        ).rstrip(".")
+        assert destination not in _WITHDRAWN, line
+
+
+def test_lead_skill_does_not_run_a_refused_roster_command() -> None:
+    """F21: inside a fleet the lead sets harness and model, and runs nothing else."""
+
+    text = (ROOT / "src" / "foil" / "defaults" / "skills" / "lead.md").read_text(encoding="utf-8")
+    absent = (
+        "foil roster add",
+        "foil roster remove",
+        "persona=",
+        "worktree=",
+        "permission=",
+        "A role you add arrives as `auto`",
+        "A role that commits needs `worktree = true`",
+    )
+    # Named once, as a command the lead does not run. Not offered as a step.
+    assert text.count("--project") == 1
+    assert "and `--project` are for a caller outside the fleet" in text
+    for phrase in absent:
+        assert phrase not in text, phrase
+    assert "foil roster update ROLE harness=ID/MODEL,ID/MODEL" in text
+    assert "foil roster update ROLE model=VALUE" in text
+    assert "harness` and `model` only" in text or "set `harness` and `model` only" in text
+
+
+def test_lead_row_agrees_with_in_fleet_roster_limits() -> None:
+    """Section 8's lead row matches F21: add, remove, and role fields stay outside."""
+
+    lead = _lead_row()
+    for phrase in (
+        "foil roster remove",
+        "To add a role whose persona file exists, use `foil roster add`",
+        "A role that commits needs `worktree = true`",
+        "A role the lead adds arrives as `auto`",
+        "`foil roster add ROLE` creates a template",
+    ):
+        assert phrase not in lead, phrase
+    assert "set `harness` and `model` only" in lead
+    assert "a caller outside the fleet" in lead
+    assert "The lead does not run `foil roster add`" in lead
+
+
+def test_lead_instruction_names_no_refused_roster_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F24: the generated lead instruction lists no roster command the CLI refuses."""
+
+    from foil.lifecycle import _instruction, init_project
+
+    repo = tmp_path.resolve()
+    subprocess.run(
+        ["git", "-C", str(repo), "init", "--quiet"],
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.chdir(repo)
+    init_project(str(repo))
+    text = _instruction(
+        repo,
+        "lead",
+        {"name": "lead", "worktree": False, "persona": "none"},
+        restarted=False,
+    )
+    for phrase in (
+        "foil roster add",
+        "foil roster remove",
+        "persona=",
+        "worktree=",
+        "permission=",
+    ):
+        assert phrase not in text, phrase
+    commands = text.split("Commands you may run:", 1)[1].split("Mail:", 1)[0]
+    assert "--project" not in commands
+    assert "foil roster list [--json]" in text
+    assert "foil roster show ROLE [--json]" in text
+    assert "foil roster update ROLE FIELD=VALUE" in text
+
+
+_EXAMPLE_MODEL = re.compile(
+    r"""(?:\bmodel\s*=\s*["']([^"'\s,]+)["']|\bmodel=([A-Za-z0-9][^,\s`]*))"""
+)
+# The whole harness= list, including every ID/MODEL pair after a comma.
+_EXAMPLE_HARNESS = re.compile(
+    r"\bharness=([A-Za-z0-9][^,\s`]*(?:,[A-Za-z0-9][^,\s`]*)*)"
+)
+_TOML_HARNESS = re.compile(r"""\bharness\s*=\s*["']([A-Za-z0-9][^"'\s]*)["']""")
+_PLACEHOLDER_MODEL = {"", "MODEL", "VALUE", "model", "<model>"}
+
+
+def _packaged_models() -> dict[str, set[str]]:
+    import tomllib
+
+    catalog = tomllib.loads(
+        (ROOT / "src" / "foil" / "defaults" / "harnesses.toml").read_text(encoding="utf-8")
+    )
+    return {row["id"]: set(row["models"]) for row in catalog["harness"]}
+
+
+def _example_model_problems(label: str, text: str, models: dict[str, set[str]]) -> list[str]:
+    problems: list[str] = []
+    for match in _EXAMPLE_MODEL.finditer(text):
+        quoted, bare = match.group(1), match.group(2)
+        model = quoted or bare
+        if model in _PLACEHOLDER_MODEL or model.startswith("<"):
+            continue
+        # A quoted model belongs to the harness the example just named.
+        # A bare model= on a roster line names no harness, so any list may hold it.
+        if quoted:
+            window = text[max(0, match.start() - 500) : match.start()]
+            named = _TOML_HARNESS.findall(window)
+            if named:
+                harness = named[-1]
+                listed = models.get(harness)
+                if listed is None or model not in listed:
+                    problems.append(
+                        f"{label}: {harness}/{model} is not in the packaged lists"
+                    )
+                continue
+        owners = [harness for harness, listed in models.items() if model in listed]
+        if not owners:
+            problems.append(f"{label}: model {model} is not in the packaged lists")
+    for match in _EXAMPLE_HARNESS.finditer(text):
+        for pair in match.group(1).split(","):
+            if "/" not in pair:
+                continue
+            harness, model = pair.split("/", 1)
+            if model in _PLACEHOLDER_MODEL or harness == "ID":
+                continue
+            listed = models.get(harness)
+            if listed is None or model not in listed:
+                problems.append(f"{label}: {harness}/{model} is not in the packaged lists")
+    return problems
+
+
+def test_example_model_ids_are_in_the_packaged_lists() -> None:
+    """An example model id is one the packaged harnesses.toml lists for that harness."""
+
+    models = _packaged_models()
+    problems: list[str] = []
+    skills = ROOT / "src" / "foil" / "defaults" / "skills"
+    for path in sorted(skills.glob("*.md")):
+        problems.extend(
+            _example_model_problems(path.name, path.read_text(encoding="utf-8"), models)
+        )
+    requirements = ROOT / "docs" / "requirements.md"
+    problems.extend(
+        _example_model_problems(
+            "docs/requirements.md",
+            requirements.read_text(encoding="utf-8"),
+            models,
+        )
+    )
+    assert problems == [], "\n".join(problems)
+
+
+def test_a_harness_list_example_checks_every_pair() -> None:
+    """A later pair in harness=ID/MODEL,ID/MODEL is checked, not only the first."""
+
+    problems = _example_model_problems(
+        "sample",
+        "harness=codex/gpt-6.1-sol,claude/claude-opus-4-1",
+        _packaged_models(),
+    )
+    assert any("claude/claude-opus-4-1" in item for item in problems), problems
+    assert not any("gpt-6.1-sol" in item for item in problems), problems
+
+
+def test_a_toml_model_is_checked_against_the_harness_it_names() -> None:
+    """model = "..." is checked against the harness = "id" that precedes it."""
+
+    problems = _example_model_problems(
+        "sample",
+        'harness = "claude"\nmodel = "gpt-6.1-sol"\n',
+        _packaged_models(),
+    )
+    assert any("claude/gpt-6.1-sol" in item for item in problems), problems

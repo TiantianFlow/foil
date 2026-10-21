@@ -112,9 +112,9 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert "foil memory accept ID" in text
     assert "foil roster list [--json]" in text
     assert "foil roster show ROLE [--json]" in text
-    assert "foil roster add ROLE [--from FILE]" in text
+    assert "foil roster add ROLE [--from FILE]" not in text
     assert "foil roster update ROLE FIELD=VALUE" in text
-    assert "foil roster remove ROLE" in text
+    assert "foil roster remove ROLE" not in text
     assert "There is no roster command." not in text
     assert "There is no ack command." in text
     assert "from path" in text
