@@ -418,7 +418,8 @@ def test_settings_show_the_three_lists(tmp_path: Path, monkeypatch: pytest.Monke
     # A role's rows are one list of pairs, in file order: the extra row is entry 2.
     implementer = rows.split("implementer</span>")[1].split("</tr>")[0]
     assert "Rotation" in implementer
-    assert implementer.index("harness default") < implementer.index("codex / gpt-5.5")
+    assert implementer.index("harness default") < implementer.index("codex")
+    assert implementer.index("codex") < implementer.index("gpt-5.5")
     assert "next" not in implementer and 'class="next"' not in rows
     assert not re.search(r"<i>\d+</i>", rows)
 
@@ -609,14 +610,16 @@ def test_overrides_show_every_row_and_the_pair_the_next_spawn_takes(
         page = _page(port, "/fleets/main")
     overrides = page.split("<h2>Fleet overrides")[1].split("</section>")[0]
     assert "small" in overrides and "big" in overrides and "harder review" in overrides
-    assert "default harness / small" in overrides and "gemini / no model" in overrides
+    assert "default harness" in overrides and "small" in overrides
+    assert "gemini" in overrides and "harness default" in overrides
+    assert "no model" not in overrides
     agents = page.split("<h2>Agents")[1].split("</section>")[0]
     # reviewer-1 is stored, so the next reviewer takes the second row.
     reviewer = agents.split("reviewer-1</a>")[1].split("</tr>")[0]
     assert "fast" in reviewer
     assert re.search(r'next spawn <span class="mono">[a-z]+ / big</span>', reviewer)
     lead = agents.split("lead</a>")[1].split("</tr>")[0]
-    assert 'next spawn <span class="mono">gemini / no model</span>' in lead
+    assert 'next spawn <span class="mono">gemini / harness default</span>' in lead
     # One reviewer is stored, so the second of the two reviewer entries is marked next.
     reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
     assert re.search(r'<li class="next"><i>2</i><span class="mono">[^<]*/ big</span>', reviewers)
@@ -678,6 +681,48 @@ def test_the_fleet_overrides_link_is_per_role(
     assert _link_path(_role_href(section, "implementer")) == project_settings
     assert _link_path(_role_href(section, "reviewer")) == "/settings"
     assert section.startswith("<h2>Fleet overrides")
+
+
+def test_settings_names_layers_and_keeps_settings_out_of_the_breadcrumb(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F38: a layer strip, source badges, pair cards, and Settings outside the crumb."""
+    repo = _repo(tmp_path, monkeypatch)
+    home = Path(os.environ["FOIL_HOME"])
+    (home / "roles.toml").write_text(
+        '[[role]]\nid = "lead"\ndescription = "You are the lead seat."\n'
+        'persona = "personas/lead.md"\nworktree = false\npermission = "auto"\n',
+        encoding="utf-8",
+    )
+    (home / "mapping.toml").write_text(
+        '[[map]]\nrole = "lead"\nharness = "claude"\n', encoding="utf-8"
+    )
+    with _serving(repo) as port:
+        status, _fields, body = _get(port, "/", top=True)
+        global_page = _get(port, "/settings", top=True)[2].decode()
+        project = _page(port, "/settings")
+        fleet = _page(port, "/fleets/main")
+    assert status == 200
+    home_page = body.decode()
+    for page in (home_page, global_page, project, fleet):
+        crumb = page.split("<ol>", 1)[1].split("</ol>", 1)[0]
+        assert "Settings" not in crumb
+        assert 'href="/settings"' in page or "Settings</a>" in page
+    assert "Packaged" in global_page and "Global" in global_page
+    assert "Project" in global_page and "Fleet" in global_page
+    assert global_page.index("Packaged") < global_page.index("Global")
+    assert global_page.index("Global") < global_page.index("Project")
+    assert global_page.index("Project") < global_page.index("Fleet")
+    assert "No rows." not in global_page.split("Roles", 1)[1].split("</section>", 1)[0]
+    assert "You are the lead seat." in global_page
+    assert "Shared by every fleet in this project" not in global_page
+    assert "keeps the harness the default mapping selects" not in fleet
+    roles = global_page.split("Roles", 1)[1].split("</section>", 1)[0]
+    assert _badges(roles)
+    mapping = global_page.split("Default mapping", 1)[1].split("</section>", 1)[0]
+    assert 'class="badge"' in mapping
+    assert "harness default" in mapping
+    assert 'class="card"' in mapping or "<small>" in mapping.split("Rotation", 1)[1]
 
 
 def test_an_empty_fleet_overrides_section_is_one_per_role_line(
@@ -1366,7 +1411,8 @@ def _requirement_tips() -> dict[str, str]:
 def test_the_info_text_the_page_serves_is_the_text_f38_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert _requirement_tips() == view.TIPS
+    required = _requirement_tips()
+    assert required == view.TIPS
     f38 = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8").split("| F38 |")[1]
     assert f"`{view.HELP}`" in f38.split("\n")[0]
     assert f"`{view.PROJECTS}`" in f38.split("\n")[0]

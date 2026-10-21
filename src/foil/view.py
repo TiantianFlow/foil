@@ -39,6 +39,7 @@ from foil.presets import (
     _packaged_catalog,
     _parse_maps,
     _parse_preset,
+    _parse_roles,
     description_of,
     entry_label,
     fleet_overrides,
@@ -83,6 +84,10 @@ SETTINGS = (
     "Shared by every fleet in this project. A fleet's overrides.toml can replace a role's "
     "mapping list in that fleet only."
 )
+GLOBAL_SETTINGS = (
+    "The global layer, shared by every project on this machine. A project file replaces "
+    "what it names. A fleet's overrides.toml replaces one role's list in that fleet only."
+)
 _FLEET_NONE = (
     "None. Spawn uses each role's project pair list when that role has one, "
     "otherwise the global list."
@@ -108,19 +113,20 @@ TIPS = {
     "Launch command": "The argv foil runs to start a seat, with placeholders as written. A "
     "value that looks like a credential shows as [hidden].",
     "Default mapping": "The shared default in mapping.toml: for each role, one ordered list of "
-    "harness and model pairs. The rotation is on the pair, never on the harness or the model "
-    "alone. An entry with no model starts the harness with no model. Resume keeps the pair "
-    "recorded on the seat.",
-    "Entries, in order": "Each entry is one harness and model pair. The next spawn of a role "
-    "takes entry ((seats stored for that role, including killed) mod (number of "
-    "entries)) + 1.",
+    "harness and model pairs, shown as pair cards. The rotation is on the pair, never on the "
+    "harness or the model alone. An empty model shows harness default: no --model is passed, "
+    "so the CLI uses its own default. Resume keeps the pair recorded on the seat.",
+    "Entries, in order": "Each entry is one card, harness on top and model below. The next "
+    "spawn of a role takes entry ((seats stored for that role, including killed) mod "
+    "(number of entries)) + 1.",
     "Attach": "The session name stored for this fleet. The viewer does not type into the pane.",
     "Workspace": "The checkout recorded for the project. Every fleet on this repository "
     "shares it. Seat worktrees are separate branches.",
-    "Overrides": "This fleet's overrides.toml. A role's entries, in order, replace its default "
-    "mapping list in this fleet, and the entry the next spawn takes is marked next. An entry "
-    "with no harness keeps the harness the default mapping selects. A running seat keeps its "
-    "last launch. Resume does not read this file.",
+    "Overrides": "This fleet's overrides.toml. A role's entries, in order, replace the pair "
+    "list below this fleet. The Rotation line marks the next seat from this fleet's stored "
+    "count. An empty model is harness default. A model-only row on a multi-entry role is "
+    "refused at spawn (F3). A running seat keeps its last launch. Resume does not read "
+    "this file.",
     "Projects": "Each project's recorded checkout. A project whose checkout is gone, or now "
     "belongs to another project folder, has no link until foil init runs in that checkout.",
     "Last activity": "When a file on this fleet's board last changed.",
@@ -162,8 +168,12 @@ _CSS = """
 font:14px/1.5 ui-sans-serif,system-ui,sans-serif}a{color:inherit}
 :focus-visible{outline:2px solid var(--fg);outline-offset:2px}
 code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
-header{position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line)}
-header ol{max-width:72rem;margin:0 auto;padding:0 24px;height:44px;display:flex;gap:8px;
+header{position:sticky;top:0;z-index:2;background:var(--bg);border-bottom:1px solid var(--line);
+display:flex;align-items:center;max-width:72rem;margin:0 auto;padding:0 24px;height:44px}
+header nav{flex:1;min-width:0}header>a.tab{margin-left:auto;text-decoration:none;
+color:var(--muted);padding:2px 8px;border-radius:6px;white-space:nowrap}
+header>a.tab[aria-current]{background:var(--soft);color:var(--fg);font-weight:600}
+header ol{margin:0;padding:0;height:44px;display:flex;gap:8px;
 align-items:center;list-style:none;overflow-x:auto;white-space:nowrap}
 header li+li:before{content:"/";color:var(--muted);margin-right:8px}
 header a{text-decoration:none;color:var(--muted)}header [aria-current]{color:var(--fg);
@@ -209,6 +219,12 @@ background:var(--soft);white-space:nowrap}.pairs li.next{background:var(--bg);
 border-color:var(--fg)}.pairs li+li{position:relative;margin-left:16px}
 .pairs li+li:before{content:"\\2192";color:var(--muted);position:absolute;left:-16px}
 .pairs b{font-size:11px;font-weight:600;margin-left:6px}
+.cards{display:flex;gap:8px;flex-wrap:wrap;align-items:stretch}
+.card{display:inline-flex;flex-direction:column;border:1px solid var(--line);
+border-radius:6px;padding:4px 8px;background:var(--soft);min-width:5rem}
+.card b{font-weight:600}.card small{color:var(--muted)}
+.layers{display:flex;gap:8px;align-items:center;margin:0;color:var(--muted);font-size:12px}
+.layers span+span:before{content:"\\2192";margin-right:8px}
 .pairs i{font-style:normal;color:var(--muted);font-size:11px;margin-right:4px}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;
 background:var(--muted)}.alive{background:var(--ok)}.dead{background:var(--warn)}
@@ -373,7 +389,8 @@ def _pair(text: str) -> str:
     """A recorded harness/model label as `harness / model`."""
 
     harness, _sep, model = text.partition("/")
-    return _mono(f"{harness} / {model}" if model else f"{harness} / no model")
+    shown = model if model else "harness default"
+    return _mono(f"{harness} / {shown}")
 
 
 def _model(row: dict, upcoming: str) -> str:
@@ -387,15 +404,20 @@ def _badge(layer: str) -> str:
     return f'<span class="badge">{escape(layer)}</span>'
 
 
-def _rotation(entries: list[dict[str, str]]) -> str:
-    """Pairs in order. Settings do not number seats or mark a next seat."""
+def _card(entry: dict[str, str]) -> str:
+    """One pair: harness on top, model below. An empty model is harness default."""
 
-    parts = []
-    for entry in entries:
-        harness = entry["id"] or "default harness"
-        model = entry["model"] or "harness default"
-        parts.append(f'<span class="mono">{escape(harness)} / {escape(model)}</span>')
-    return "Rotation " + " ".join(parts)
+    harness = entry["id"] or "default harness"
+    model = entry["model"] or "harness default"
+    return (
+        f'<span class="card"><b>{escape(harness)}</b><small>{escape(model)}</small></span>'
+    )
+
+
+def _rotation(entries: list[dict[str, str]]) -> str:
+    """Pair cards in order. Settings do not number seats or mark a next seat."""
+
+    return 'Rotation <span class="cards">' + "".join(_card(entry) for entry in entries) + "</span>"
 
 
 def _text_file(path: Path) -> str | None:
@@ -485,7 +507,7 @@ def _pairs(entries: list[dict[str, str]], upcoming: int | None = None) -> str:
     chips = []
     for index, entry in enumerate(entries):
         harness = entry["id"] or "default harness"
-        label = escape(f"{harness} / {entry['model'] or 'no model'}")
+        label = escape(f"{harness} / {entry['model'] or 'harness default'}")
         mark = "<b>next</b>" if index == upcoming else ""
         cls = ' class="next"' if index == upcoming else ""
         chips.append(f'<li{cls}><i>{index + 1}</i><span class="mono">{label}</span>{mark}</li>')
@@ -603,9 +625,40 @@ def _personas(root: Path, loaded: list, written: list[dict[str, str]]) -> list[d
 
     if written or (store_root() / "personas").is_dir():
         return written
-    if (foil_root(root) / "templates" / "personas").is_dir():
+    if (foil_root(root) / "personas").is_dir():
         return written
     return _packaged_personas({name for name, _row in loaded})
+
+
+def _layers() -> str:
+    names = "".join(f"<span>{name}</span>" for name in ("Packaged", "Global", "Project", "Fleet"))
+    return f'<p class="layers">{names}</p>'
+
+
+def _role_badge(root: Path | None, role: str) -> str:
+    """The layer that won this role: a project file, else the global file."""
+
+    if root is not None:
+        text = _text_file(foil_root(root) / "roles.toml")
+        if text is not None:
+            try:
+                if any(item["id"] == role for item in _parse_roles(text)):
+                    return "project"
+            except FoilError:
+                return "project"
+    return "global" if _text_file(store_root() / "roles.toml") is not None else "packaged"
+
+
+def _map_badge(root: Path | None, role: str) -> str:
+    if root is not None:
+        text = _text_file(foil_root(root) / "mapping.toml")
+        if text is not None:
+            try:
+                if any(item["role"] == role for item in _parse_maps(text)):
+                    return "project"
+            except FoilError:
+                return "project"
+    return "global"
 
 
 def _settings_page(root: Path, base: str) -> _Page:
@@ -613,10 +666,11 @@ def _settings_page(root: Path, base: str) -> _Page:
         loaded, written = roster_rows(root)
         personas = _personas(root, loaded, written)
         rows = [
-            [_mono(name), escape(row["description"]), escape(row["permission"]),
-             "yes" if row["worktree"] else _faded("no")]
+            [_mono(name) + _badge(_role_badge(root, name)), escape(row["description"]),
+             escape(row["permission"]), "yes" if row["worktree"] else _faded("no")]
             if row is not None
-            else [_mono(name), '<span class="err">invalid template</span>', "", ""]
+            else [_mono(name) + _badge("invalid"), '<span class="err">invalid template</span>',
+                  "", ""]
             for name, row in loaded
         ]
         rows += [
@@ -648,14 +702,16 @@ def _settings_page(root: Path, base: str) -> _Page:
 
     def mapping() -> str:
         rows = [
-            [_mono(role), _rotation(entries)] for role, entries in _by_role(read_maps(root)).items()
+            [_mono(role) + _badge(_map_badge(root, role)), _rotation(entries)]
+            for role, entries in _by_role(read_maps(root)).items()
         ]
         return _table(["Role", "Entries, in order"], rows, "No rows.")
 
     harness_box = _guard(harnesses)
     note = "; ".join(f"{path} skipped: {reason}" for path, reason in skipped)
     body = (
-        f'<div><h1>Project settings</h1><p class="muted">{escape(SETTINGS)}</p></div>'
+        f'<div><h1>Project settings</h1>{_layers()}'
+        f'<p class="muted">{escape(SETTINGS)}</p></div>'
         + _section("Roles", _guard(roles))
         + _section("Harnesses", harness_box, note=note)
         + _section("Default mapping", _guard(mapping))
@@ -669,7 +725,16 @@ def _global_settings_page() -> _Page:
     skipped: list[tuple[str, str]] = []
 
     def roles() -> str:
-        return _table(["Role", "Description", "Permission", "Worktree"], [], "No rows.")
+        text = _text_file(store_root() / "roles.toml")
+        found = _parse_roles(text) if text is not None else []
+        rows = [
+            [_mono(item["id"]) + _badge("global" if text is not None else "packaged"),
+             escape(str(item.get("description") or "")),
+             escape(str(item.get("permission") or "auto")),
+             "yes" if item.get("worktree") else _faded("no")]
+            for item in found
+        ]
+        return _table(["Role", "Description", "Permission", "Worktree"], rows, "No rows.")
 
     def harnesses() -> str:
         found, notes = _global_harnesses()
@@ -683,13 +748,17 @@ def _global_settings_page() -> _Page:
     def mapping() -> str:
         text = _text_file(store_root() / "mapping.toml")
         maps = _parse_maps(text) if text is not None else []
-        rows = [[_mono(role), _rotation(entries)] for role, entries in _by_role(maps).items()]
+        rows = [
+            [_mono(role) + _badge("global"), _rotation(entries)]
+            for role, entries in _by_role(maps).items()
+        ]
         return _table(["Role", "Entries, in order"], rows, "No rows.")
 
     harness_box = _guard(harnesses)
     note = "; ".join(f"{path} skipped: {reason}" for path, reason in skipped)
     body = (
-        f'<div><h1>Settings</h1><p class="muted">{escape(SETTINGS)}</p></div>'
+        f'<div><h1>Settings</h1>{_layers()}'
+        f'<p class="muted">{escape(GLOBAL_SETTINGS)}</p></div>'
         + _section("Roles", _guard(roles))
         + _section("Harnesses", harness_box, note=note)
         + _section("Default mapping", _guard(mapping))
@@ -1226,19 +1295,18 @@ def _document(result: _Result, nonce: str) -> bytes:
             items.append(f'<li><a{cls} href="{escape(href)}">{escape(label)}</a></li>')
         else:
             items.append(f"<li><span{cls}{mark}>{escape(label)}</span></li>")
-        if index == 1 and home:
-            mark = ' aria-current="page"' if settings else ""
-            items.append(
-                f'<li class="tab"><a class="tab" href="{escape(home[1])}/settings"{mark}>'
-                "Settings</a></li>"
-            )
     title = " · ".join([label for label, _href in crumbs[1:]][::-1] + ["Foil"])
+    settings_href = f"{home[1]}/settings" if home else "/settings"
+    current = ' aria-current="page"' if settings else ""
+    link = (
+        f'<a class="tab" href="{escape(settings_href)}"{current}>Settings</a>'
+    )
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<link rel="icon" href="data:,"><title>{escape(title)}</title>'
         f'<style>{_CSS}</style></head><body><header><nav aria-label="Breadcrumb"><ol>'
-        f"{''.join(items)}</ol></nav></header>"
+        f"{''.join(items)}</ol></nav>{link}</header>"
         f"<main>{body}</main><footer>{escape(FOOTER)}</footer>"
         f'<script nonce="{nonce}">{_SCRIPT}</script></body></html>'
     ).encode()

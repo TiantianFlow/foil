@@ -174,23 +174,37 @@ def _merged_catalog(toplevel: Path) -> tuple[dict[str, dict[str, Any]], list[tup
     return merged, skipped
 
 
+def _preset_on(base: Path, harness_id: str) -> dict[str, Any] | None:
+    """The file at one layer, else that layer's list entry. A symlink is refused."""
+
+    user = base / "harnesses" / f"{harness_id}.toml"
+    if user.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    if user.is_file():
+        return _parse_preset(user.read_text(encoding="utf-8"), harness_id)
+    text = _optional_text(base / "harnesses.toml")
+    if text is None:
+        return None
+    try:
+        return _catalog(text).get(harness_id)
+    except FoilError:
+        return None
+
+
 def load_preset(toplevel: Path, harness_id: str) -> dict[str, Any]:
     if not SAFE_ID.fullmatch(harness_id):
         raise FoilError(f"foil: unknown harness '{shown(harness_id)}'")
-    # File beats list inside one layer. A higher layer replaces the whole harness.
+    # File beats list inside one layer. A higher list beats a lower file.
+    # The init check reads the global layer and the package, not a project file.
     layers = (store_root(),) if _init_check.get() else _layer_dirs(toplevel)
     for base in reversed(layers):
-        user = base / "harnesses" / f"{harness_id}.toml"
-        if user.is_symlink():
-            raise FoilError("foil: refusing symlink")
-        if user.is_file():
-            return _parse_preset(user.read_text(encoding="utf-8"), harness_id)
-    merged, skipped = _merged_catalog(toplevel)
-    if skipped and harness_id not in merged:
-        raise FoilError(f"foil: invalid {skipped[0][1]}")
-    if harness_id not in merged:
+        found = _preset_on(base, harness_id)
+        if found is not None:
+            return found
+    packaged = _packaged_catalog().get(harness_id)
+    if packaged is None:
         raise FoilError(f"foil: unknown harness '{harness_id}'")
-    return merged[harness_id]
+    return packaged
 
 
 def _is_flag(token: str) -> bool:
@@ -687,17 +701,35 @@ def _same_preset(left: dict[str, Any], right: dict[str, Any]) -> bool:
 
 
 def preset_source(toplevel: Path, harness_id: str) -> str:
+    """Where the winning preset came from: packaged, global, project, or invalid."""
+
     try:
         loaded = load_preset(toplevel, harness_id)
     except (FoilError, OSError, UnicodeDecodeError):
         return "invalid"
-    user = store_root() / "harnesses" / f"{harness_id}.toml"
-    if user.is_file():
-        return "user"
+    checking = _init_check.get()
+    if not checking:
+        try:
+            project = foil_root(toplevel)
+        except FoilError:
+            project = None
+        if project is not None:
+            try:
+                found = _preset_on(project, harness_id)
+            except FoilError:
+                return "invalid"
+            if found is not None and _same_preset(found, loaded):
+                return "project"
+    try:
+        found = _preset_on(store_root(), harness_id)
+    except FoilError:
+        return "invalid"
+    if found is not None and _same_preset(found, loaded):
+        return "global"
     packaged = _packaged_catalog().get(harness_id)
-    if packaged is None or not _same_preset(loaded, packaged):
-        return "user"
-    return "builtin"
+    if packaged is not None and _same_preset(loaded, packaged):
+        return "packaged"
+    return "invalid"
 
 
 def persona_stems(directory: Path) -> list[str]:

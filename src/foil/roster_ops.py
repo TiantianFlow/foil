@@ -16,6 +16,7 @@ from foil.presets import (
     parse_template_text,
     path_description,
     persona_stems,
+    persona_text,
     preset_source,
     read_description,
     read_maps,
@@ -93,10 +94,12 @@ def _persona_inside(persona: str) -> None:
     if "\n" in persona or "\r" in persona or not persona.endswith(".md"):
         return
     relative = Path(persona)
-    if relative.is_absolute() or ".." in relative.parts:
-        raise FoilError(
-            f"foil: persona path must stay inside the project templates: {persona}"
-        )
+    if (
+        relative.is_absolute()
+        or ".." in relative.parts
+        or relative.parts != ("personas", relative.name)
+    ):
+        raise FoilError(f"foil: persona path must stay inside personas: {persona}")
 
 
 def _layer(toplevel: Path, *, project: bool) -> Path:
@@ -154,51 +157,110 @@ def _save_maps_at(root: Path, maps: list[dict[str, str]]) -> None:
     write_bytes(path, render_maps(maps).encode())
 
 
-def _accept(toplevel: Path, role: str, root: Path) -> None:
-    """Check the role this write just stored. The loader still reads the project."""
+def _accept(toplevel: Path, role: str, root: Path, *, mapping_only: bool) -> None:
+    """Check the layer this write just stored.
+
+    A project harness or model write is a mapping list and no role row.
+    A project persona, worktree, or permission write is a role row, and the
+    mapping can stay on the global layer.
+    """
     roles = _roles_at(root) or []
     match = next((item for item in roles if item["id"] == role), None)
-    if match is None:
-        raise FoilError(f"foil: unknown template '{role}'")
     entries = [item for item in _maps_at(root) if item["role"] == role]
-    if not entries:
-        raise FoilError("foil: invalid template")
-    _persona_inside(str(match.get("persona") or ""))
-    persona = str(match.get("persona") or "")
-    if persona.endswith(".md") and "\n" not in persona and "\r" not in persona:
-        relative = Path(persona)
-        if not relative.is_absolute() and ".." not in relative.parts:
-            base = foil_root(toplevel) / "templates"
-            path = base / relative
-            if path.is_symlink() or not path.is_file():
-                raise FoilError(f"foil: persona file not found: {persona}")
+    if mapping_only:
+        if not entries:
+            raise FoilError("foil: invalid template")
+    else:
+        if match is None:
+            raise FoilError(f"foil: unknown template '{role}'")
+        persona = str(match.get("persona") or "")
+        _persona_inside(persona)
+        if root == store_root() and not entries:
+            raise FoilError("foil: invalid template")
+        if persona.endswith(".md") and "\n" not in persona and "\r" not in persona:
+            persona_text(_persona_template(toplevel, role, persona))
     for entry in entries:
         load_preset(toplevel, str(entry["id"]))
 
 
+def _persona_template(toplevel: Path, role: str, persona: str) -> dict:
+    """A template dict whose path makes the persona lookup use this project."""
+    try:
+        root = foil_root(toplevel)
+    except FoilError:
+        root = store_root()
+    return {"name": role, "path": root / "templates" / f"{role}.toml", "persona": persona}
+
+
 def _in_use(toplevel: Path, role: str) -> None:
-    registry = load_registry(toplevel)
-    for seat in registry["seats"].values():
-        if seat["template"] == role and seat["state"] != "killed":
-            raise FoilError(f"foil: template '{role}' is still in use")
+    """Fail when any fleet in this project still has a seat of this role."""
+    try:
+        directory = foil_root(toplevel) / "fleets"
+    except FoilError:
+        directory = Path()
+    names = []
+    if directory.is_dir() and not directory.is_symlink():
+        names = [
+            item.name
+            for item in directory.iterdir()
+            if SAFE_ID.fullmatch(item.name) and item.is_dir() and not item.is_symlink()
+        ]
+    if not names:
+        names = [""]
+    for fleet in names:
+        registry = load_registry(toplevel, fleet or None)
+        for seat in registry["seats"].values():
+            if seat["template"] == role and seat["state"] != "killed":
+                raise FoilError(f"foil: template '{role}' is still in use")
+
+
+def _checked_out(toplevel: Path) -> bool:
+    try:
+        foil_root(toplevel)
+    except FoilError:
+        return False
+    return True
 
 
 def _visible_roles(toplevel: Path) -> list[dict] | None:
-    """Project roles when that file exists, otherwise the global roles.
-
-    The loader still reads only the project. List and show fall through so a
-    checkout with no override still shows the settings.
-    """
-    listed = read_roles(toplevel)
-    if listed is not None:
-        return listed
-    return _roles_at(store_root())
+    """Effective roles. Outside a checkout this is the global layer only."""
+    if not _checked_out(toplevel):
+        return _roles_at(store_root())
+    return read_roles(toplevel)
 
 
 def _visible_maps(toplevel: Path) -> list[dict[str, str]]:
-    if (foil_root(toplevel) / "mapping.toml").is_file():
-        return read_maps(toplevel)
-    return _maps_at(store_root())
+    if not _checked_out(toplevel):
+        return _maps_at(store_root())
+    return read_maps(toplevel)
+
+
+def _role_layer(toplevel: Path, role: str) -> str:
+    if _checked_out(toplevel):
+        text = _text_at(foil_root(toplevel) / "roles.toml")
+        if text is not None and any(item["id"] == role for item in _parse_role_text(text)):
+            return "project"
+    if any(item["id"] == role for item in (_roles_at(store_root()) or [])):
+        return "global"
+    return "global"
+
+
+def _mapping_layer(toplevel: Path, role: str) -> str:
+    if _checked_out(toplevel):
+        from foil.presets import fleet_overrides
+
+        if any(item["role"] == role for item in fleet_overrides(toplevel)):
+            return "fleet"
+        project = _maps_at(foil_root(toplevel))
+        if any(item["role"] == role for item in project):
+            return "project"
+    return "global"
+
+
+def _parse_role_text(text: str) -> list[dict]:
+    from foil.presets import _parse_roles
+
+    return _parse_roles(text)
 
 
 def _template_names(toplevel: Path) -> list[str]:
@@ -238,22 +300,41 @@ def _listed(toplevel: Path, name: str) -> dict | None:
         "worktree": template.get("worktree", False),
         "permission": template.get("permission", "auto"),
         "preset": [preset_source(toplevel, str(entry["id"])) for entry in entries],
+        "layer": _role_layer(toplevel, name),
+        "mapping": _mapping_layer(toplevel, name),
         "description": description,
     }
 
 
+def _persona_dirs(toplevel: Path) -> list[Path]:
+    """Project, then global, then the package. A higher file hides a lower one."""
+    from importlib.resources import files
+
+    found = []
+    if _checked_out(toplevel):
+        found.append(foil_root(toplevel) / "personas")
+    found.append(store_root() / "personas")
+    packaged = files("foil").joinpath("defaults", "personas")
+    if packaged.is_dir():
+        found.append(Path(str(packaged)))
+    return found
+
+
 def roster_rows(toplevel: Path) -> tuple[list[tuple[str, dict | None]], list[dict[str, str]]]:
     """Each role with its listed row (None when invalid), then personas with no role."""
-    names = _template_names(toplevel)
-    persona_dir = store_root() / "personas"
-    if not persona_dir.is_dir():
-        persona_dir = foil_root(toplevel) / "templates" / "personas"
-    available = [
-        {"name": item, "description": path_description(persona_dir / f"{item}.md")}
-        for item in persona_stems(persona_dir)
-        if item not in names
-    ]
-    return [(name, _listed(toplevel, name)) for name in names], available
+    names = set(_template_names(toplevel))
+    seen: set[str] = set()
+    available = []
+    for directory in _persona_dirs(toplevel):
+        for item in persona_stems(directory):
+            if item in names or item in seen:
+                continue
+            seen.add(item)
+            available.append(
+                {"name": item, "description": path_description(directory / f"{item}.md")}
+            )
+    available.sort(key=lambda item: item["name"])
+    return [(name, _listed(toplevel, name)) for name in sorted(names)], available
 
 
 def list_roster(toplevel: Path, *, as_json: bool = False) -> None:
@@ -273,6 +354,8 @@ def list_roster(toplevel: Path, *, as_json: bool = False) -> None:
         harness = ",".join(entry_label(entry) for entry in row["harness"])
         preset = ",".join(row["preset"])
         print(f"{name}\t{harness}\t{preset}\t{row['description']}")
+        print(f"\tlayer\t{row['layer']}")
+        print(f"\tmapping\t{row['mapping']}")
     for person in available:
         print(f"+ {person['name']}\t{person['description']}")
 
@@ -313,6 +396,8 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
             "worktree": template.get("worktree", False),
             "permission": template.get("permission", "auto"),
             "preset": preset,
+            "layer": _role_layer(toplevel, role),
+            "mapping": _mapping_layer(toplevel, role),
             "description": description,
         }
         print(json.dumps(output, indent=2))
@@ -324,6 +409,8 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
         print(f"worktree: {template.get('worktree', False)}")
         print(f"permission: {template.get('permission', 'auto')}")
         print(f"preset: {','.join(preset)}")
+        print(f"layer: {_role_layer(toplevel, role)}")
+        print(f"mapping: {_mapping_layer(toplevel, role)}")
         print(f"description: {description}")
 
 
@@ -336,18 +423,16 @@ def _restore(path: Path, payload: bytes | None) -> None:
 
 
 def _persona_body(toplevel: Path, persona: str) -> str:
-    """The persona body the current lookup can read, so the description stays one line."""
+    """The persona body the lookup can read, so the description stays one line."""
     if not persona or "\n" in persona or "\r" in persona or not persona.endswith(".md"):
         return persona
-    relative = Path(persona)
-    if relative.is_absolute() or ".." in relative.parts:
-        raise FoilError(f"foil: persona path must stay inside personas: {persona}")
-    path = foil_root(toplevel) / "templates" / relative
-    if path.is_symlink():
-        raise FoilError("foil: refusing symlink")
-    if path.is_file():
-        return path.read_text(encoding="utf-8")
-    return ""
+    _persona_inside(persona)
+    try:
+        return persona_text(_persona_template(toplevel, "", persona))
+    except FoilError as exc:
+        if "persona file not found" in str(exc):
+            return ""
+        raise
 
 
 def _add_listed(
@@ -407,7 +492,7 @@ def _add_listed(
     _save_roles_at(root, roles)
     _save_maps_at(root, maps)
     try:
-        _accept(toplevel, role, root)
+        _accept(toplevel, role, root, mapping_only=False)
     except FoilError:
         _restore(roles_path, original_roles)
         _restore(maps_path, original_maps)
@@ -516,11 +601,13 @@ def _update_listed(
         if in_fleet and value != previous:
             raise FoilError("foil: permission is outside the fleet only")
     # A first project harness or model write is a mapping list and no role row.
-    if field not in {"harness", "model"} or row is not None or not project:
+    mapping_only = project and field in {"harness", "model"} and row is None
+    if not mapping_only:
         _save_roles_at(root, roles)
-    _save_maps_at(root, maps)
+    if field in {"harness", "model"} or maps_path.is_file():
+        _save_maps_at(root, maps)
     try:
-        _accept(toplevel, role, root)
+        _accept(toplevel, role, root, mapping_only=mapping_only)
     except FoilError:
         _restore(roles_path, original_roles)
         _restore(maps_path, original_maps)
@@ -531,21 +618,7 @@ def _update_listed(
 def _remember(toplevel: Path, role: str, field: str, value: str) -> None:
     """An in-fleet harness or model edit: this fleet's overrides, not the mapping."""
 
-    project_roles = foil_root(toplevel) / "roles.toml"
-    template = load_template(toplevel, role) if project_roles.is_file() else None
-    if template is None:
-        match = next(
-            (item for item in (_roles_at(store_root()) or []) if item["id"] == role),
-            None,
-        )
-        entries = [
-            {"id": item["id"], "model": item["model"]}
-            for item in _maps_at(store_root())
-            if item["role"] == role
-        ]
-        if match is None or not entries:
-            raise FoilError(f"foil: unknown template '{role}'")
-        template = {"harness": entries, "permission": match.get("permission", "auto")}
+    template = load_template(toplevel, role)
     current = fleet_list(toplevel, role) or template["harness"]
     _formatted_value(field, value)
     entries = _new_entries(role, field, value, current)

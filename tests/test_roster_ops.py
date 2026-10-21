@@ -69,9 +69,11 @@ def test_roster_list_shows_default_templates(
     """list_roster shows the three default templates."""
     list_roster(project, as_json=False)
     out = capsys.readouterr().out
-    assert "\tbuiltin\tYou are the lead seat of this fleet." in out
-    assert "\tbuiltin\tYou make the change the task asks for," in out
-    assert "\tbuiltin\tYou check the change the lead names" in out
+    assert "\tpackaged\tYou are the lead seat of this fleet." in out
+    assert "\tpackaged\tYou make the change the task asks for," in out
+    assert "\tpackaged\tYou check the change the lead names" in out
+    assert "\tlayer\tglobal\n" in out
+    assert "\tmapping\tglobal\n" in out
 
 
 def test_roster_list_shows_available_personas(
@@ -96,7 +98,9 @@ def test_roster_list_json_format(project: Path, capsys: pytest.CaptureFixture[st
     assert isinstance(data["personas"], list)
     assert data["personas"]
     assert {"name", "description"} <= set(data["personas"][0])
-    assert data["templates"][0]["preset"][0] in {"builtin", "user", "invalid"}
+    assert data["templates"][0]["preset"][0] in {"packaged", "global", "project", "invalid"}
+    assert data["templates"][0]["layer"] in {"global", "project", "fleet"}
+    assert data["templates"][0]["mapping"] in {"global", "project", "fleet"}
     assert isinstance(data["templates"][0]["harness"], list)
     assert "description" in data["templates"][0]
 
@@ -108,7 +112,9 @@ def test_roster_show_displays_template(project: Path, capsys: pytest.CaptureFixt
     assert "role: lead" in out
     assert "harness:" in out
     assert "permission:" in out
-    assert "preset: builtin" in out
+    assert "preset: packaged" in out
+    assert "layer: global" in out
+    assert "mapping: global" in out
     assert "description: You are the lead seat of this fleet." in out
 
 
@@ -121,7 +127,9 @@ def test_roster_show_json_format(project: Path, capsys: pytest.CaptureFixture[st
     assert "harness" in data
     assert "worktree" in data
     assert data["worktree"] is True  # implementer has worktree
-    assert data["preset"] == ["builtin"]
+    assert data["preset"] == ["packaged"]
+    assert data["layer"] == "global"
+    assert data["mapping"] == "global"
     assert isinstance(data["harness"], list)
     assert "model" not in data
     assert data["description"].startswith("You make the change the task asks for,")
@@ -392,7 +400,7 @@ def test_roster_cli_list(project: Path, capsys: pytest.CaptureFixture[str]) -> N
     code = main(["roster", "list"])
     assert code == 0
     out = capsys.readouterr().out
-    assert "\tbuiltin\tYou are the lead seat of this fleet." in out
+    assert "\tpackaged\tYou are the lead seat of this fleet." in out
 
 
 def test_roster_cli_show(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -687,11 +695,12 @@ def test_lead_cannot_add_from_with_ask_permission(
 ) -> None:
     source = _permission_source(project / "ask.toml", "ask")
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    before = (store_root() / "roles.toml").read_bytes()
     assert main(["roster", "add", "custom", "--from", str(source)]) == 1
     err = capsys.readouterr().err
     assert err.count("\n") == 1
-    assert err.strip() == "foil: permission is outside the fleet only"
-    assert not (foil_root(project) / "templates" / "custom.toml").exists()
+    assert err.strip() == "foil: roles are outside the fleet only"
+    assert (store_root() / "roles.toml").read_bytes() == before
 
 
 def test_lead_can_add_from_when_permission_is_auto(
@@ -701,11 +710,12 @@ def test_lead_can_add_from_when_permission_is_auto(
 ) -> None:
     source = _permission_source(project / "plain.toml", None)
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
-    assert main(["roster", "add", "custom", "--from", str(source)]) == 0
-    text = (store_root() / "roles.toml").read_text(encoding="utf-8")
-    assert 'id = "custom"' in text
-    assert 'permission = "auto"' in text
-    assert "created template 'custom'" in capsys.readouterr().out
+    before = (store_root() / "roles.toml").read_bytes()
+    assert main(["roster", "add", "custom", "--from", str(source)]) == 1
+    err = capsys.readouterr().err
+    assert err.count("\n") == 1
+    assert err.strip() == "foil: roles are outside the fleet only"
+    assert (store_root() / "roles.toml").read_bytes() == before
 
 
 def test_outside_caller_can_add_from_with_auto_permission(
@@ -765,9 +775,10 @@ def test_lead_cannot_inject_permission_through_another_field(
     the model value closes its string and adds permission = "ask".
     """
     source = _permission_source(project / "plain.toml", None)
-    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
     assert main(["roster", "add", "custom", "--from", str(source)]) == 0
     capsys.readouterr()
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     before = _roster_bytes(project)
     injected = 'm"\npermission = "ask'
     assert main(["roster", "update", "custom", f"model={injected}"]) == 1
@@ -820,14 +831,19 @@ def test_roster_authority_lead_can_list(
     code = main(["roster", "list"])
     assert code == 0
     out = capsys.readouterr().out
-    assert "\tbuiltin\tYou are the lead seat of this fleet." in out
+    assert "\tpackaged\tYou are the lead seat of this fleet." in out
 
 
 def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
     project: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    templates = foil_root(project) / "templates"
-    (templates / "personas").mkdir(parents=True, exist_ok=True)
+    planted = foil_root(project) / "templates" / "personas"
+    if planted.is_dir():
+        for path in planted.iterdir():
+            path.unlink()
+        planted.rmdir()
+    personas = store_root() / "personas"
+    personas.mkdir(parents=True, exist_ok=True)
     _install(
         project,
         "quiet",
@@ -859,7 +875,7 @@ def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
         'harness = "badbytes"\npersona = "personas/researcher.md"\nworktree = false\n'
         'permission = "ask"\n',
     )
-    locked = templates / "personas" / "locked.md"
+    locked = personas / "locked.md"
     locked.write_text("# Locked\n\nYou cannot read this.\n", encoding="utf-8")
     _seal(locked, monkeypatch)
     _install(
@@ -870,18 +886,18 @@ def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
     try:
         assert main(["roster", "list"]) == 0
         out = capsys.readouterr().out
-        assert "quiet\tfake\tbuiltin\t\n" in out
+        assert "quiet\tfake\tpackaged\t\n" in out
         assert "stranger\tno-such\tinvalid\tYou answer a bounded question with evidence" in out
-        assert "local\tlocal\tuser\tYou answer a bounded question with evidence" in out
+        assert "local\tlocal\tglobal\tYou answer a bounded question with evidence" in out
         assert "r2\tbadbytes\tinvalid\tYou answer a bounded question with evidence" in out
-        assert "sealed\tfake\tbuiltin\t\n" in out
+        assert "sealed\tfake\tpackaged\t\n" in out
         assert main(["roster", "list", "--json"]) == 0
         data = json.loads(capsys.readouterr().out)
         by_role = {item["role"]: item for item in data["templates"]}
         assert by_role["quiet"]["description"] == ""
-        assert by_role["quiet"]["preset"] == ["builtin"]
+        assert by_role["quiet"]["preset"] == ["packaged"]
         assert by_role["stranger"]["preset"] == ["invalid"]
-        assert by_role["local"]["preset"] == ["user"]
+        assert by_role["local"]["preset"] == ["global"]
         assert by_role["r2"]["preset"] == ["invalid"]
         assert by_role["sealed"]["description"] == ""
         assert main(["roster", "show", "r2"]) == 0
@@ -911,10 +927,15 @@ def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
 def test_unreadable_utf8_persona_lists_with_an_empty_description(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    templates = foil_root(project) / "templates"
-    (templates / "personas").mkdir(parents=True, exist_ok=True)
-    (templates / "personas" / "bad.md").write_bytes(b"# Bad\n\xff\xfe")
-    (templates / "personas" / "garbled.md").write_bytes(b"\xff")
+    planted = foil_root(project) / "templates" / "personas"
+    if planted.is_dir():
+        for path in planted.iterdir():
+            path.unlink()
+        planted.rmdir()
+    personas = store_root() / "personas"
+    personas.mkdir(parents=True, exist_ok=True)
+    (personas / "bad.md").write_bytes(b"# Bad\n\xff\xfe")
+    (personas / "garbled.md").write_bytes(b"\xff")
     _install(
         project,
         "bad",
@@ -922,7 +943,7 @@ def test_unreadable_utf8_persona_lists_with_an_empty_description(
     )
     list_roster(project, as_json=False)
     out = capsys.readouterr().out
-    assert "bad\tfake\tbuiltin\t\n" in out
+    assert "bad\tfake\tpackaged\t\n" in out
     assert "+ garbled\t\n" in out
     registry = load_registry(project)
     registry["seats"]["bad-1"] = {
@@ -986,10 +1007,15 @@ def test_seat_list_keeps_an_unreadable_template(
 def test_a_credential_shaped_persona_line_is_never_printed(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    templates = foil_root(project) / "templates"
-    (templates / "personas").mkdir(parents=True, exist_ok=True)
-    (templates / "personas" / "leaky.md").write_text("# Leaky\n\nghp_canary\n", encoding="utf-8")
-    (templates / "personas" / "loose.md").write_text("# Loose\n\nghp_canary\n", encoding="utf-8")
+    planted = foil_root(project) / "templates" / "personas"
+    if planted.is_dir():
+        for path in planted.iterdir():
+            path.unlink()
+        planted.rmdir()
+    personas = store_root() / "personas"
+    personas.mkdir(parents=True, exist_ok=True)
+    (personas / "leaky.md").write_text("# Leaky\n\nghp_canary\n", encoding="utf-8")
+    (personas / "loose.md").write_text("# Loose\n\nghp_canary\n", encoding="utf-8")
     _install(
         project,
         "leaky",
@@ -1024,7 +1050,7 @@ def test_a_credential_shaped_persona_line_is_never_printed(
     leaky = next(item for item in listed["templates"] if item["role"] == "leaky")
     assert leaky["description"] == ""
     assert {"name": "loose", "description": ""} in listed["personas"]
-    assert "leaky\tfake\tbuiltin\t\n" in outputs[0]
+    assert "leaky\tfake\tpackaged\t\n" in outputs[0]
     assert "+ loose\t\n" in outputs[0]
     assert json.loads(outputs[3])["description"] == ""
     seat = next(row for row in json.loads(outputs[5]) if row["name"] == "leaky-1")
@@ -1055,7 +1081,7 @@ def test_a_persona_through_a_symlinked_directory_is_refused(
         )
     assert main(["roster", "list"]) == 0
     listed = capsys.readouterr().out
-    assert "ext\tfake\tbuiltin\t\n" in listed
+    assert "ext\tfake\tpackaged\t\n" in listed
     assert main(["roster", "show", "ext", "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)
     assert shown["description"] == ""
@@ -1314,3 +1340,184 @@ def test_remove_project_fails_when_the_project_has_neither(
     assert "\n" not in err.strip()
     assert _roster_bytes(project) == before
     assert _layer_text(store_root(), "roles.toml") == ""
+
+
+def _drop_planted_personas(project: Path) -> None:
+    """The fixture copies packaged personas into a directory init deletes.
+
+    A test that leaves that copy does not show the packaged lookup.
+    """
+    planted = foil_root(project) / "templates" / "personas"
+    if planted.is_dir():
+        for path in planted.iterdir():
+            path.unlink()
+        planted.rmdir()
+        parent = planted.parent
+        if parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+
+
+def test_packaged_persona_is_enough_after_init(project: Path) -> None:
+    """F21: personas/ROLE.md resolves through the lookup. A packaged file is enough."""
+    _drop_planted_personas(project)
+    assert not (foil_root(project) / "templates" / "personas").exists()
+    assert _cli(["roster", "update", "lead", "worktree=true"]) == 0
+    assert _global_role("lead")["worktree"] is True
+    assert _cli(["roster", "add", "researcher"]) == 0
+    text = _layer_text(store_root(), "roles.toml")
+    assert 'id = "researcher"' in text
+    assert 'persona = "personas/researcher.md"' in text
+
+
+def test_first_project_update_writes_one_layer(project: Path) -> None:
+    """F21: the first --project harness write is a mapping list and no role row.
+
+    The first persona, worktree, or permission write is a full role row.
+    """
+    _drop_planted_personas(project)
+    root = foil_root(project)
+    for name in ("roles.toml", "mapping.toml"):
+        path = root / name
+        if path.is_file():
+            path.unlink()
+    assert _cli(["roster", "update", "lead", "harness=grok", "--project"]) == 0
+    assert not (root / "roles.toml").exists()
+    assert 'role = "lead"' in _layer_text(root, "mapping.toml")
+    assert 'harness = "grok"' in _layer_text(root, "mapping.toml")
+    (root / "mapping.toml").unlink()
+    assert _cli(["roster", "update", "lead", "worktree=true", "--project"]) == 0
+    assert not (root / "mapping.toml").exists()
+    role = _roles_of(root)
+    lead = next(item for item in role if item["id"] == "lead")
+    assert lead["worktree"] is True
+    assert lead["persona"]
+    assert lead["permission"] in {"ask", "auto"}
+
+
+def test_roster_outside_a_checkout_uses_the_global_layer(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F21: unflagged roster commands do not need a checkout. Only --project does."""
+    _drop_planted_personas(project)
+    outside = project.parent / "not-a-repo"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+    assert _cli(["roster", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "not a git repository" not in out
+    assert "lead" in out
+    assert "+ researcher" in out
+    assert _cli(["roster", "remove", "missing-role"]) == 1
+    err = capsys.readouterr().err
+    assert "not a git repository" not in err
+    assert "unknown template" in err
+
+
+def test_list_names_the_layer_of_the_role_and_the_mapping(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F21: preset source is packaged, global, project, or invalid, and layers are named."""
+    _drop_planted_personas(project)
+    assert _cli(["roster", "list"]) == 0
+    listed = capsys.readouterr().out
+    assert "\tpackaged\t" in listed
+    assert "\tbuiltin\t" not in listed
+    assert "\tlayer\tglobal\n" in listed
+    assert "\tmapping\tglobal\n" in listed
+    assert _cli(["roster", "show", "lead"]) == 0
+    shown = capsys.readouterr().out
+    assert "preset: packaged" in shown
+    assert "layer: global" in shown
+    assert "mapping: global" in shown
+    root = foil_root(project)
+    (root / "mapping.toml").write_text(
+        '[[map]]\nrole = "lead"\nharness = "claude"\n', encoding="utf-8"
+    )
+    assert _cli(["roster", "show", "lead"]) == 0
+    assert "mapping: project" in capsys.readouterr().out
+
+
+def test_in_fleet_model_uses_a_project_mapping_only_override(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F21 and F3: the effective list counts. One project mapping entry allows model=."""
+    from foil.presets import render_maps
+
+    _drop_planted_personas(project)
+    root = store_root()
+    maps = [item for item in _maps_of(root) if item["role"] != "implementer"]
+    maps.append({"role": "implementer", "id": "claude", "model": "a"})
+    maps.append({"role": "implementer", "id": "codex", "model": "b"})
+    (root / "mapping.toml").write_text(render_maps(maps), encoding="utf-8")
+    (foil_root(project) / "mapping.toml").write_text(
+        '[[map]]\nrole = "implementer"\nharness = "claude"\nmodel = "one"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert _cli(["roster", "update", "implementer", "model=z"]) == 0
+    err = capsys.readouterr().err
+    assert "more than one" not in err
+    text = (
+        foil_root(project) / "fleets" / "main" / "overrides.toml"
+    ).read_text(encoding="utf-8")
+    assert 'role = "implementer"' in text
+    assert 'model = "z"' in text
+
+
+def test_list_shows_a_packaged_persona_with_no_template(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """F21: list shows every persona that has no template, including the package."""
+    _drop_planted_personas(project)
+    assert not (store_root() / "personas").exists()
+    assert _cli(["roster", "list"]) == 0
+    assert "+ researcher" in capsys.readouterr().out
+
+
+def test_remove_sees_a_seat_in_another_fleet(project: Path) -> None:
+    """F21: remove fails while any fleet in the store has a live seat of that role."""
+    import json
+
+    from foil.store import SCHEMA_VERSION
+
+    _drop_planted_personas(project)
+    _seed_global("researcher")
+    other = foil_root(project) / "fleets" / "other" / "run"
+    other.mkdir(parents=True)
+    other.joinpath("registry.json").write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "fleet_id": "other",
+                "tmux_session": "",
+                "lead": "",
+                "seats": {
+                    "researcher-1": {
+                        "name": "researcher-1",
+                        "template": "researcher",
+                        "harness": "fake",
+                        "model": "",
+                        "window_id": "",
+                        "state": "dead",
+                        "worktree": "",
+                        "branch": "",
+                        "session_id": "",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(FoilError, match="still in use"):
+        remove_template(project, "researcher")
+    assert 'id = "researcher"' in _layer_text(store_root(), "roles.toml")
+    seat = json.loads(other.joinpath("registry.json").read_text(encoding="utf-8"))
+    seat["seats"]["researcher-1"]["state"] = "killed"
+    other.joinpath("registry.json").write_text(json.dumps(seat), encoding="utf-8")
+    assert _cli(["roster", "remove", "researcher"]) == 0
+    assert 'id = "researcher"' not in _layer_text(store_root(), "roles.toml")
