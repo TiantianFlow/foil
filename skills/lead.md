@@ -1,1 +1,1 @@
-../src/foil/defaults/skills/lead.md
+./../src/foil/defaults/skills/lead.md
