@@ -720,6 +720,12 @@ def test_a_higher_persona_file_replaces_an_inline_body(
     assert project_file.read_text(encoding="utf-8") == "project file wins\n"
 
 
+def test_persona_text_resolves_a_template_that_has_no_path() -> None:
+    """A template with no path still returns its inline body. No project is implied."""
+    template = {"name": "implementer", "worktree": True, "persona": "none"}
+    assert persona_text(template) == "none"
+
+
 def test_init_reports_an_overridden_builtin_and_leaves_the_preset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
