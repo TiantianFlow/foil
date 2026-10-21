@@ -21,8 +21,8 @@ wheels = [
 ]
 
 [[package]]
-name = "foil-orchestrator"
-version = "0.6.0"
+name = "foil-ai"
+version = "0.6.1"
 source = { editable = "." }
 
 [package.optional-dependencies]

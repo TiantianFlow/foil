@@ -4,9 +4,17 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-21
+
+`foil --version` prints 0.6.1. This is the first release on PyPI: install with `uv tool install --upgrade foil-ai`.
+
 ### Added
 
-- A release workflow publishes each `vX.Y.Z` tag to PyPI as `foil-orchestrator`, using trusted publishing. CONTRIBUTING.md has the release steps. (#70)
+- A release workflow publishes each `vX.Y.Z` tag to PyPI as `foil-ai`, using trusted publishing. CONTRIBUTING.md has the release steps. (#70)
+
+### Changed
+
+- The package is now named `foil-ai`; it was `foil-orchestrator`. The command is still `foil`. An existing `uv tool` install keeps the old name, so run `uv tool uninstall foil-orchestrator` before installing this version (with pipx, `pipx uninstall foil-orchestrator`). (#70)
 
 ## [0.6.0] - 2026-10-21
 

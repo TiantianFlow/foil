@@ -203,8 +203,8 @@ def test_wheel_metadata_has_public_release_identity(built: Built) -> None:
     metadata_name = next(name for name in wheel if name.endswith(".dist-info/METADATA"))
     metadata = BytesParser().parsebytes(wheel[metadata_name])
 
-    assert metadata["Name"] == "foil-orchestrator"
-    assert metadata["Version"] == "0.6.0"
+    assert metadata["Name"] == "foil-ai"
+    assert metadata["Version"] == "0.6.1"
     assert metadata["Requires-Python"] == ">=3.11"
     assert metadata["Author-email"] == (
         "TiantianFlow <177855728+TiantianFlow@users.noreply.github.com>"

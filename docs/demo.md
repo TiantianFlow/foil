@@ -23,7 +23,7 @@ that login.
 ## 1. Install and initialize
 
 ```sh
-uv tool install "git+https://github.com/TiantianFlow/foil.git"
+uv tool install --upgrade foil-ai
 cd your-repo
 foil init
 ```

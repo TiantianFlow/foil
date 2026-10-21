@@ -3,8 +3,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "foil-orchestrator"
-version = "0.6.0"
+name = "foil-ai"
+version = "0.6.1"
 description = "Your agents' loyal opposition: Claude Code, Codex, Gemini, OpenCode, and Grok as a small team that plans, implements, reviews, and merges in tmux, with a read-only local viewer"
 readme = "README.md"
 requires-python = ">=3.11"

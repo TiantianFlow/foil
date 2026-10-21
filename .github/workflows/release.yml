@@ -1,14 +1,14 @@
 name: Release
 
-# Publishes foil-orchestrator to PyPI when a vX.Y.Z tag is pushed. Run it by
-# hand with a tag to publish a release that was tagged before this file existed.
+# Publishes foil-ai to PyPI when a vX.Y.Z tag is pushed. Run it by hand
+# with a tag to retry a publish that failed.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to publish, for example v0.6.0"
+        description: "Existing tag to publish, for example v0.6.1"
         required: true
 
 permissions:
@@ -40,7 +40,7 @@ jobs:
         run: |
           wheel_env="$RUNNER_TEMP/foil-wheel-smoke"
           uv venv --no-config "$wheel_env"
-          uv pip install --no-config --python "$wheel_env/bin/python" dist/foil_orchestrator-*.whl
+          uv pip install --no-config --python "$wheel_env/bin/python" dist/foil_ai-*.whl
           test "$("$wheel_env/bin/foil" --version)" = "foil ${TAG#v}"
       - uses: actions/upload-artifact@v4
         with:
@@ -55,7 +55,7 @@ jobs:
     # is stored in the repository.
     environment:
       name: pypi
-      url: https://pypi.org/project/foil-orchestrator/
+      url: https://pypi.org/project/foil-ai/
     permissions:
       id-token: write
     steps:

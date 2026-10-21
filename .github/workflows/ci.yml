@@ -50,7 +50,7 @@ jobs:
         run: |
           wheel_env="$RUNNER_TEMP/foil-wheel-smoke"
           uv venv --no-config "$wheel_env"
-          uv pip install --no-config --python "$wheel_env/bin/python" dist/foil_orchestrator-*.whl
+          uv pip install --no-config --python "$wheel_env/bin/python" dist/foil_ai-*.whl
           version="$(uv run --no-config --frozen --isolated python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
           test "$("$wheel_env/bin/foil" --version)" = "foil $version"
 
