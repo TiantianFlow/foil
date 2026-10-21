@@ -667,7 +667,7 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
 
     try:
         version = foil("--version")
-        assert version.stdout.strip() == "foil 0.5.3", version.stderr
+        assert version.stdout.strip() == "foil 0.5.4", version.stderr
         assert Path(shutil.which("foil", path=environment["PATH"]) or "") == bindir / "foil"
         assert foil("init").returncode == 0
         mapping = foil_root(repo) / "mapping.toml"
