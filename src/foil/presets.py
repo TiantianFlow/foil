@@ -648,10 +648,13 @@ def _higher_persona(template: dict[str, Any]) -> Path | None:
     A project file replaces a global row. Nothing is above a project row.
     """
 
-    role = str(template.get("name") or Path(str(template["path"])).stem)
-    if not SAFE_ID.fullmatch(role):
+    role = str(template.get("name") or "")
+    stored = template.get("path")
+    if not role and stored:
+        role = Path(str(stored)).stem
+    if not SAFE_ID.fullmatch(role) or not stored:
         return None
-    project_root = Path(template["path"]).parent.parent
+    project_root = Path(stored).parent.parent
     project_file = project_root / "personas" / f"{role}.md"
     project_roles = _optional_text(project_root / "roles.toml")
     if project_roles is not None:
