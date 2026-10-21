@@ -424,9 +424,7 @@ foil memory accept ID
 foil memory reject ID
 foil roster list [--json]
 foil roster show ROLE [--json]
-foil roster add ROLE [--from FILE]
-foil roster update ROLE FIELD=VALUE
-foil roster remove ROLE"""
+foil roster update ROLE FIELD=VALUE"""
 
 _WORKER_COMMANDS = """foil seat list [--json]
 foil seat peek NAME [--lines N]
@@ -583,7 +581,7 @@ def _instruction(
                 "Templates:",
                 *roster,
                 'Staff with `foil seat spawn implementer --task "..."`. '
-                "Use `foil roster` to change a template.",
+                "Change a template only with the harness and model updates named above.",
                 "Keep `board/status.md` current.",
             ]
         )

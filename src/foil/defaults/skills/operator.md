@@ -77,7 +77,7 @@ View and modify templates with the roster commands:
 ```text
 foil roster list
 foil roster show implementer
-foil roster update implementer model=claude-sonnet-4-5
+foil roster update implementer model=sonnet
 foil roster update implementer --project harness=ID/MODEL
 foil roster add researcher
 ```
@@ -209,11 +209,11 @@ One foil install serves every project on this machine. Updating it changes the c
 
 1. `foil seat kill --all` once the lead reports `state: done`. A project that still has an in-repo `.foil/` from 0.3.x is killed with that older command before you upgrade. A stale seat whose tmux window is already gone also counts. When that older command is no longer on `PATH`, install 0.3.4 beside the current one, which does not replace it: `UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then run `DIR/bin/foil seat kill --all`. With pipx: `PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then run `DIR/bin/foil seat kill --all`. Do not run `foil init` while those seats remain, and do not move that directory aside.
 2. Run the install line, and check `foil --version`.
-3. Run `foil init` and read the report. It says which skills it updated. A refused init creates nothing in the store. The refusal names the blocking seats and this same order.
+3. Run `foil init` and read the report. It names the skill to read and any project paths it removed. A refused init creates nothing in the store. The refusal names the blocking seats and this same order.
 4. Re-copy any user-level copy of this skill, and restart a `foil view` service if the human has one.
 5. Note `updated` in `board/status.md`, then spawn the lead as in the first-run check. The previous goal's file already says `state: done`, so wait until `updated` changes.
 
-From 0.4 to 0.5, use that order between goals. Do not resume a seat started on 0.4. `foil init` moves a project-root `board/` and `run/` under `fleets/main/` when that fleet's copies are absent or empty. `foil init` deletes a project `templates/` without reading it, including `templates/<role>.toml`, and does not leave those files to copy into `roles.toml` and `mapping.toml`. It writes each missing global default role and deletes the old project setting paths without reading them. A new list uses `permission = "auto"` and omits `model`. Set `permission` from outside the fleet. Lessons in `memory/` and seat worktrees stay. `FOIL_FLEET` defaults to `main`.
+From 0.4 to 0.5.4, use that order between goals. Do not resume a seat started on 0.4. `foil init` moves a project-root `board/` and `run/` under `fleets/main/` when that fleet's copies are absent or empty. `foil init` deletes a project `templates/` without reading it, including `templates/<role>.toml`, and does not leave those files to copy into `roles.toml` and `mapping.toml`. It writes each missing global default role and deletes the old project setting paths without reading them. A new list uses `permission = "auto"` and omits `model`. Set `permission` from outside the fleet. Lessons in `memory/` and seat worktrees stay. `FOIL_FLEET` defaults to `main`.
 
 After `foil seat kill --all`, either case can occur, so check. Run `tmux ls`. If it lists any session, a server is running: a variable a harness preset names in `env` comes from that server. Set it with `tmux set-environment -g NAME VALUE` before you spawn. If it says no server is running, the next spawn starts a server from your shell.
 

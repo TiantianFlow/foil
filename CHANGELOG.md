@@ -4,9 +4,16 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Breaking
+
+- Inside a fleet, the lead can set `harness` and `model` only. Those write that fleet's `overrides.toml` and leave the global and project mapping in place. `roster add`, `add --from`, `remove`, `persona=`, and `worktree=` are refused with `foil: roles are outside the fleet only`. `permission=` is refused with `foil: permission is outside the fleet only`. `--project` is refused with `foil: --project is outside the fleet only`. A caller outside the fleet still runs them. (#66)
+- The packaged harness model lists changed, and they are read live from the package. A project copy no longer freezes them, and `foil init` does not write one. Claude is now `sonnet`, `opus`, `haiku`, and `fable` (no longer `claude-sonnet-4-5` or `claude-opus-4-5`). Codex is now `gpt-6.1-sol`, `gpt-6-luna`, and `gpt-6-astra` (no longer `gpt-5.5`). Gemini adds `gemini-3-pro-preview` and `gemini-3-flash-preview` beside `gemini-2.5-pro` and `gemini-2.5-flash`. Grok is now `grok-4.7` (no longer `grok-4` or `grok-3`). OpenCode's list is unchanged. Spawn still does not reject a model that is absent from a list.
+- `foil init` no longer copies personas or the operator skill into the project folder. The report drops `Updated skills:` and `Skills: current`. It says `Wrote personas: none`, prints a `Removed:` line for each project path it deleted, and says `Skill: <root>/skills/operator.md` when that file exists, otherwise `Skill: packaged <package path>`. The pointer line 0.5.4 told you to paste, `Read <project folder>/skills/operator.md and follow it. My goal: <goal>.`, names a file this `init` deletes. Paste `Read <root>/skills/operator.md and follow it. My goal: <goal>.` when that file exists, or the packaged path the report prints.
+- On every `foil init` that completes, including a same-checkout re-run, these project paths are deleted without being read and with no backup: `roles.toml`, `mapping.toml`, `harnesses.toml`, `harnesses/`, `templates/`, `skills/operator.md`, `skills/lead.md`, and `skills/worker.md`. A symlink is unlinked and not followed. An init that exits non-zero deletes nothing. Re-create a customized roster with an unflagged `foil roster` before `init`; that write is the one that survives. Re-apply any `--project` override after every `init`. Move an edited persona out of `templates/personas/` to `<root>/personas/<role>.md`, or to `<project folder>/personas/<role>.md` for one project, before `init`. `foil roster` does not re-create a persona.
+
 ### Changed
 
-- Global settings are the settings. A project file is an optional override and a fleet file is an optional pair list. Lookup is packaged, then global, then project, then fleet. `foil init` writes missing global default roles and deletes old project setting copies without reading them. Unflagged `foil roster` writes go to the global layer and work before init. `foil view` serves `/settings` for that layer. (#66)
+- Global settings are the settings. A project file is an optional override and a fleet file is an optional pair list. Lookup is packaged, then global, then project, then fleet. `foil init` writes missing global default roles. Unflagged `foil roster` writes go to the global layer and work before init. `foil view` serves `/settings` for that layer. `seat spawn` refuses a model-only override row when the pair list it replaces has more than one entry. (#66)
 
 ## [0.5.4] - 2026-10-21
 
@@ -16,7 +23,9 @@ Notable changes to Foil, newest first.
 
 - `foil view` was reworked from a UX audit (#63). A board or post file opens on its own page, at the top and full width, with a link back and links to the files before and after it, instead of below the lists in half the width. A path not in the listing is now a 404. The fleet page lists seats first, grouped as Needs attention (dead), Running (alive), and Killed (folded), with links to filter by state, then `status.md` inline, then posts by thread and board files by folder, each with its modified time, then overrides and the attach command. The default mapping and a fleet's overrides show each role as one numbered list of harness and model pairs, with the entry the next spawn takes marked on the fleet page. Settings is titled Project settings. Column headers have info explanations, the header is one line of breadcrumbs, a seat page links to the seats before and after it, and the seat list fits a phone screen. Dead seats have their own colour.
 
-## [0.5.3] - 2026-10-20
+## 0.5.3 - 2026-10-20
+
+This release was withdrawn. Its changes ship in 0.5.4.
 
 `foil --version` prints 0.5.3.
 
@@ -45,7 +54,9 @@ Notable changes to Foil, newest first.
 - The Agents info text says that `foil seat archive` frees a killed seat's name and that an archived seat is not listed. docs/requirements.md now lists every info text, and a test checks that the page serves exactly those. (#48)
 - The test suite runs in parallel by default with pytest-xdist, one worker per CPU. On a 4-CPU machine the full run drops from about 4.5 minutes to about 1.2 minutes. `-n 0` runs it in one process. (#52)
 
-## [0.5.2] - 2026-10-19
+## 0.5.2 - 2026-10-19
+
+This release was withdrawn. Its changes ship in 0.5.4.
 
 `foil --version` prints 0.5.2.
 
@@ -59,7 +70,9 @@ Notable changes to Foil, newest first.
 - `foil seat peek` reports `foil: could not peek seat` when tmux fails during the window check, instead of `foil: unexpected error`.
 - The operator skill tells the human `tmux attach -t '=<session>'`, so a gone `main` session does not attach to another fleet whose name begins with it.
 
-## [0.5.1] - 2026-10-19
+## 0.5.1 - 2026-10-19
+
+This release was withdrawn. Its changes ship in 0.5.4.
 
 `foil --version` prints 0.5.1.
 
@@ -71,7 +84,9 @@ Notable changes to Foil, newest first.
 
 - The operator skill relays that line once, after the goal reaches `state: done`, and sets `"stop": true` when the human declines. The README invites a star in one line. Package metadata names the supported agent CLIs.
 
-## [0.5.0] - 2026-10-18
+## 0.5.0 - 2026-10-18
+
+This release was withdrawn. Its changes ship in 0.5.4.
 
 `foil --version` prints 0.5.0.
 
@@ -85,7 +100,7 @@ Notable changes to Foil, newest first.
 Do this between goals. Do not resume a seat that was started on 0.4.
 
 1. With 0.4 still on `PATH`, run `foil seat kill --all` in the project. A stale seat whose tmux window is already gone also counts.
-2. Upgrade Foil. `foil --version` prints `foil 0.5.0`.
+2. Upgrade Foil. `foil --version` prints `foil 0.5.4`.
 3. Run `foil init` in the project. It moves a project-root `board/` and `run/` under `fleets/main/` when that fleet's copies are absent or empty, and it rewrites those absolute prefixes inside that fleet's `run/`. It writes the three lists when they are missing. It does not read `templates/<role>.toml`.
 4. Copy each role's harness, model, worktree, and permission from the old template file into `roles.toml` and `mapping.toml`. A list `init` just wrote uses `permission = "auto"` and omits `model`. Set `permission` from outside the fleet.
 5. Lessons in `memory/` and seat worktrees stay. Spawn the lead again. `FOIL_FLEET` defaults to `main`, which is the lifted fleet.
@@ -107,7 +122,9 @@ Do this between goals. Do not resume a seat that was started on 0.4.
 
 - The command surface is eight top-level commands and twenty-two actions.
 
-## [0.4.4] - 2026-10-18
+## 0.4.4 - 2026-10-18
+
+This release was withdrawn. Its changes ship in 0.4.5.
 
 `foil --version` prints 0.4.4.
 
@@ -122,7 +139,9 @@ Do this between goals. Do not resume a seat that was started on 0.4.
 - The operator, lead, and worker skills say when to `foil send` and when to `foil post`. The task file is the brief. The result file is the report. A note wakes nobody. `foil post --re ""` is one stderr line, writes nothing, and types nothing.
 - Onboarding names the dialog the operator may answer. An approval dialog is a folder-trust prompt, a login prompt, or a prompt that blocks the seat until someone approves it. An update dialog, a first-run dialog, and an opt-in are reported to the human and not answered. A previous `board/status.md` that already says `state: done` passes the first-run check only when `updated` changes. The first `foil init` with no eligible harness prints `foil: no harness installed` and writes nothing; a preset can be added only after the project folder exists. A dead first-run lead is cleared with `foil seat kill lead` before the check is spawned again. The sample `foil init` banner in the demos is labeled as an illustration from an older run. (#24)
 
-## [0.4.3] - 2026-10-17
+## 0.4.3 - 2026-10-17
+
+This release was withdrawn. Its changes ship in 0.4.5.
 
 `foil --version` prints 0.4.3.
 
@@ -136,7 +155,9 @@ Do this between goals. Do not resume a seat that was started on 0.4.
 - `roster update` of `harness` or `model` edits a one-entry list and writes `[[harness]]`. On a longer list those two updates are refused and the file is left unchanged. Editing the list while a seat is alive is allowed. `roster remove` still fails while a seat of that role is not killed. Seat records stay, including killed ones.
 - `roster list` and `roster show` report the harness list. JSON `harness` is the entries and JSON `preset` is one source per entry.
 
-## [0.4.2] - 2026-10-16
+## 0.4.2 - 2026-10-16
+
+This release was withdrawn. Its changes ship in 0.4.5.
 
 `foil --version` prints 0.4.2.
 
@@ -184,7 +205,9 @@ Do this between goals. Do not resume a seat that was started on 0.4.
 - `foil seat kill` on a dead seat whose stored window id now names another window no longer raises, and no longer stops `foil seat kill --all`. The seat is marked killed and the other window is left alone.
 - A harness that exits at launch leaves a peekable pane. The seat window stays after the process exits, `#{pane_dead}` makes that seat dead, and `foil seat peek` prints the pane when it still carries this seat's markers. `foil seat kill` and `foil seat resume` remove that leftover window first.
 
-## [0.3.2] - 2026-10-02
+## 0.3.2 - 2026-10-02
+
+This release was withdrawn. Its changes ship in 0.3.3.
 
 `foil --version` prints 0.3.2.
 This release is documentation only. It publishes the survey of which
@@ -192,14 +215,16 @@ project files could move global
 ([docs/issue-18-project-vs-global.md](docs/issue-18-project-vs-global.md),
 issue #18) and the architecture note on worktree layout and where project
 state lives ([docs/architecture.md](docs/architecture.md), issue #19).
-The two were developed on separate lines and ship together as 0.3.2.
+The two were developed on separate lines.
 No product-code behavior changes.
 
 ### Added
 
 - Documents the worktree layout (flat, one level, under `.foil/worktrees`; the lead uses the project checkout), where Foil's project state and the board live, and how harness session storage is global and keyed by working directory. (#19)
 
-## [0.3.1] - 2026-10-01
+## 0.3.1 - 2026-10-01
+
+This release was withdrawn. Its changes ship in 0.3.3.
 
 `foil --version` prints 0.3.1.
 [docs/requirements.md](docs/requirements.md) is the specification, and
@@ -208,7 +233,7 @@ This release shows the roster and the live fleet in the lists the operator
 already runs and stops spawn typing into a new pane (issue #15), refreshes
 the packaged skills on `foil init` and documents upgrading between goals
 (issue #14), and gives each packaged persona its own judgment (issue #17).
-The three were developed on separate lines and ship together as 0.3.1.
+The three were developed on separate lines.
 
 ### Added
 
@@ -289,7 +314,9 @@ contract version was added.
 
 `foil init` does not replace an existing project's `.foil/skills/`. A project upgraded from 0.2.1 to 0.2.2 keeps the old lead and operator skills, so it does not get the checklist. Move `.foil/skills/lead.md` and `.foil/skills/operator.md` aside, or delete them if they were never edited. Run `foil init` again, and re-copy any user-level copy of the operator skill. New and resumed seats then get the new text.
 
-## [0.2.1] - 2026-09-29
+## 0.2.1 - 2026-09-29
+
+This release was withdrawn. Its changes ship in 0.2.2.
 
 `foil --version` prints 0.2.1.
 [docs/requirements.md](docs/requirements.md) is the specification, and
@@ -401,23 +428,13 @@ with mail and status kept in files on disk.
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
 [0.5.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.4
-[0.5.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.3
-[0.5.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.2
-[0.5.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.1
-[0.5.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.0
 [0.4.5]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.5
-[0.4.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.4
-[0.4.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.3
-[0.4.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.2
 [0.4.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.1
 [0.4.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.0
 [0.3.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.4
 [0.3.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.3
-[0.3.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.2
-[0.3.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.1
 [0.3.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.3.0
 [0.2.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.2
-[0.2.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.1
 [0.2.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.2.0
 [0.1.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.1.1
 [0.1.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.1.0

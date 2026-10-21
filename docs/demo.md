@@ -45,22 +45,29 @@ own agent later. The path is the one the report printed.
 
 ## 2. Choose a harness and a permission for each role
 
-Each role is a template in the project folder's `templates/`. Init picks
-one installed CLI for all three. You can give each role a different one,
-for example a strong planner for the lead and a model from another vendor
-for the reviewer:
+Each role is a row in the global lists `<root>/roles.toml` and
+`<root>/mapping.toml`. Init picks one installed CLI for all three. You can
+give each role a different one, for example a strong planner for the lead
+and a model from another vendor for the reviewer. `foil roster update`
+writes the same rows. A `--project` override is those same files under the
+project folder, written after `foil init`, because init deletes a project
+copy it finds.
 
 ```toml
-# <project folder>/templates/implementer.toml
+# <root>/roles.toml
+[[role]]
+id = "implementer"
 persona = "personas/implementer.md"
 worktree = true
 permission = "auto"
 
-[[harness]]
-id = "codex"
+# <root>/mapping.toml
+[[map]]
+role = "implementer"
+harness = "codex"
 ```
 
-Add another `[[harness]]` entry, with an optional `model`, when a later seat of that role should take the next entry. One entry stays on that entry.
+Add another `[[map]]` row, with an optional `model`, when a later seat of that role should take the next entry. One entry stays on that entry.
 
 `worktree = true` gives each implementer its own Git worktree and branch.
 Omitting `permission` means `auto`, and the seat runs unattended.
@@ -74,7 +81,7 @@ In your own agent (Claude Code, Codex, or any other), in the repository,
 paste the line from `foil init` with your goal:
 
 ```text
-Read <project folder>/skills/operator.md and follow it. My goal: make the tests pass.
+Read <root>/skills/operator.md and follow it. My goal: make the tests pass.
 ```
 
 That agent becomes the operator. It checks that a lead can start, then
