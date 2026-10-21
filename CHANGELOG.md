@@ -18,7 +18,7 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
-- `foil view` titles the global page Settings, where the project page stays Project settings. A role's rotation is a row of unnumbered pair cards. A fleet override links each role to the settings page of the layer that role comes from, and the header Settings tab opens the global settings page.
+- `foil view` titles the global page Settings, where the project page stays Project settings. A role's rotation is a row of unnumbered pair cards. A fleet override links each role to the settings page of the layer that role comes from, and the header Settings tab opens the project settings page inside a project and the global settings page outside one.
 - Global settings are the settings. A project file is an optional override and a fleet file is an optional pair list. Lookup is packaged, then global, then project, then fleet. `foil init` writes missing global default roles. `foil view` serves `/settings` for that layer. `seat spawn` refuses a model-only override row when the pair list it replaces has more than one entry. (#66)
 
 ## [0.5.4] - 2026-10-21
