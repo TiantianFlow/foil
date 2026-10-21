@@ -1482,7 +1482,10 @@ def test_mapping_layer_is_the_layer_of_the_printed_entries(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """F21: list and show name the layer of the entries they print, not a fleet row."""
+    """F21: inside a fleet, list and show print that role's fleet rows.
+
+    A role with no fleet rows still prints the project list, or the global list.
+    """
     from foil.presets import render_fleet
     from foil.store import fleet_dir
 
@@ -1505,16 +1508,29 @@ def test_mapping_layer_is_the_layer_of_the_printed_entries(
         encoding="utf-8",
     )
     assert _cli(["roster", "list"]) == 0
-    listed = capsys.readouterr().out
-    assert "implementer\tcodex/x\t" in listed
-    assert "\tmapping\tproject\n" in listed
-    assert "\tmapping\tfleet\n" not in listed
+    outside = capsys.readouterr().out
+    assert "implementer\tcodex/x\t" in outside
+    assert "\tmapping\tproject\n" in outside
+    assert "\tmapping\tfleet\n" not in outside
+    assert "lead\t" in outside and "sonnet" not in outside.split("lead\t", 1)[1].split("\n", 1)[0]
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert _cli(["roster", "list"]) == 0
+    listed = capsys.readouterr().out
+    assert "implementer\tclaude/sonnet\t" in listed
+    assert "lead\tclaude/sonnet\t" in listed
+    assert "\tmapping\tfleet\n" in listed
+    reviewer = listed.split("reviewer\t", 1)[1]
+    assert "sonnet" not in reviewer.split("\n", 1)[0]
+    assert "\tmapping\tglobal\n" in reviewer
     assert _cli(["roster", "show", "lead"]) == 0
     shown = capsys.readouterr().out
-    assert "mapping: fleet" not in shown
-    assert "mapping: global" in shown
-    assert harness == next(line for line in shown.splitlines() if line.startswith("harness:"))
+    assert "mapping: fleet" in shown
+    assert "harness: claude/sonnet" in shown
+    assert harness != next(line for line in shown.splitlines() if line.startswith("harness:"))
+    assert _cli(["roster", "show", "reviewer"]) == 0
+    reviewer_shown = capsys.readouterr().out
+    assert "mapping: global" in reviewer_shown
+    assert "mapping: fleet" not in reviewer_shown
 
 
 def test_in_fleet_model_uses_a_project_mapping_only_override(
