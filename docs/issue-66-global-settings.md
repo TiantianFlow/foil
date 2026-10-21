@@ -299,6 +299,67 @@ Reason: a skill that still names a project copy, or a command the
 requirements do not list, sends the operator and the lead at different
 layers. The existing tests are where that check belongs.
 
+## Three decisions
+
+These three were left open. Each one is decided here. None of them
+reopens a decision `e0829b4` recorded.
+
+### The operator sentence
+
+The sentence that told the human to add a project override at
+`<project>/harnesses/<id>.toml` and re-run `init` is replaced.
+
+The human adds a user preset at `<root>/harnesses/<id>.toml`. A project
+override at `<project>/harnesses/<id>.toml` is written only after init
+has created that project folder, in the format of section 7.3. The
+operator does not re-run `init` for that file. Lookup stays packaged,
+then global, then project, then fleet. The CLI, the viewer, and the
+operator, lead, and worker skills say that order.
+
+Reason: F20 deletes the project `harnesses/` on every init that
+completes, without reading it. A file written there and then followed
+by `init` is gone, so the sentence was telling the human to lose the
+preset. A global file is not on that delete list, so it is the path
+that survives a re-run. A project override still exists, and it is
+written after the folder exists, by hand or with `--project`, and not
+by re-running `init`. The same sentence is in the operator row of
+`docs/requirements.md`. The packaged operator skill still has the old
+sentence; this commit does not edit `src/` or `skills/`, and the next
+commit makes that skill say this.
+
+### B4'
+
+An unflagged roster command works before init. A git checkout where
+`foil init` has not run is not an initialized project. Outside a fleet,
+unflagged `list`, `show`, `add`, `update`, and `remove` read or write
+the global layer there and do not print `foil: not initialized`.
+`--project` still needs an initialized project and still fails with
+`foil: --project needs a checkout` when there is none.
+
+Reason: the settings are global, and F21 already says an unflagged
+write does not need a checkout. Treating the checkout as the project
+made a global command fail in the one directory the operator is
+standing in before the first init. A fleet does not exist until init,
+so the in-fleet refusals are unchanged. `foil: not initialized` stays
+the message for a command that needs the project, not for the global
+roster.
+
+### N4
+
+The pointer line names a path. When `<root>/skills/operator.md` exists,
+the `Skill:` line is `Skill: <root>/skills/operator.md` and the pointer
+is `Read <root>/skills/operator.md and follow it. My goal: <goal>.`
+Otherwise the `Skill:` line is `Skill: packaged <package path>` and the
+pointer is `Read <package path> and follow it. My goal: <goal>.`
+`<package path>` is the absolute path of the operator skill in the
+installed package, the same path on both lines.
+
+Reason: onboarding says the agent reads the skill at the path the
+pointer names. `Skill: packaged` with no path made that sentence
+untrue, and "names the packaged skill" was the other reading of the
+same paragraph. One path on both lines leaves one reading. The word
+`packaged` stays so the line still says which layer won.
+
 ## What follows
 
 The close stands. Tests and code follow this commit. The default test
