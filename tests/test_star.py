@@ -172,7 +172,7 @@ def test_an_init_that_fails_after_the_check_writes_no_record(
 ) -> None:
     _init(capsys)
     (store_root() / "star.json").unlink()
-    mapping = foil_root(repo) / "mapping.toml"
+    mapping = store_root() / "mapping.toml"
     mapping.write_text(mapping.read_text(encoding="utf-8") + 'permission = "bogus"\n')
     assert main(["init"]) == 1
     assert LINE not in capsys.readouterr().out

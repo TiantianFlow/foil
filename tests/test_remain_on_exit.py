@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
-from foil.project import foil_root
+from foil.project import foil_root, store_root
 from foil.store import load_registry
 from tests.test_init import _init_git_repository
 
@@ -84,12 +84,13 @@ def test_an_exited_harness_stays_peekable_until_kill_or_resume(
         assert main(["init"]) == 0
         capsys.readouterr()
         harness = foil_root(repo) / "harnesses" / "stub.toml"
+        harness.parent.mkdir(parents=True)
         harness.write_text(
             f'id = "stub"\ncommand = ["{stub}"]\n'
             'session_id = "none"\nenv = []\n\n[permission]\nask = []\nauto = []\n',
             encoding="utf-8",
         )
-        mapping = foil_root(repo) / "mapping.toml"
+        mapping = store_root() / "mapping.toml"
         rewritten = mapping.read_text(encoding="utf-8").replace(
             'role = "lead"\nharness = "claude"',
             'role = "lead"\nharness = "stub"',
