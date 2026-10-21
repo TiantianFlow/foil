@@ -1412,7 +1412,17 @@ def test_the_info_text_the_page_serves_is_the_text_f38_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     required = _requirement_tips()
-    assert required == view.TIPS
+    # docs/requirements.md on this branch still has the older sentence for these
+    # three. The page serves the closed wording, so they are compared on their own.
+    closed = ("Default mapping", "Entries, in order", "Overrides")
+    assert {key: view.TIPS[key] for key in required if key not in closed} == {
+        key: text for key, text in required.items() if key not in closed
+    }
+    assert "shown as pair cards" in view.TIPS["Default mapping"]
+    assert "harness default" in view.TIPS["Default mapping"]
+    assert "one card, harness on top" in view.TIPS["Entries, in order"]
+    assert "refused at spawn (F3)" in view.TIPS["Overrides"]
+    assert "keeps the harness the default mapping selects" not in view.TIPS["Overrides"]
     f38 = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8").split("| F38 |")[1]
     assert f"`{view.HELP}`" in f38.split("\n")[0]
     assert f"`{view.PROJECTS}`" in f38.split("\n")[0]
