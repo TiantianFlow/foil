@@ -316,3 +316,15 @@ def test_command_surface_matches_requirements_section_6() -> None:
     assert isinstance(parser, argparse.ArgumentParser)
     problems = _diff_parser(SECTION_6, parser, "foil")
     assert problems == [], "CLI surface != requirements section 6.1:\n" + "\n".join(problems)
+
+
+def test_skill_text_matches_section_6_and_the_settings_lookup(tmp_path: Path) -> None:
+    """Fail when skill text leaves section 6 or states another settings lookup."""
+
+    from tests.test_skills import settings_surface_problems
+
+    problems = settings_surface_problems(tmp_path)
+    assert problems == [], (
+        "skill text names a command or flag section 6 does not list, "
+        "or describes a different layering:\n" + "\n".join(problems)
+    )

@@ -31,9 +31,10 @@ FLAGS = {
     ("memory", "list"): {"--all", "--json"},
     ("roster", "list"): {"--json"},
     ("roster", "show"): {"--json"},
-    ("roster", "add"): {"--from"},
-    ("roster", "update"): set(),
-    ("roster", "remove"): set(),
+    # Section 6 lists `--project` on roster add, update, and remove.
+    ("roster", "add"): {"--from", "--project"},
+    ("roster", "update"): {"--project"},
+    ("roster", "remove"): {"--project"},
     ("view",): {"--port"},
 }
 
@@ -131,6 +132,140 @@ def _flags(tokens: list[str], command: tuple[str, ...]) -> list[str]:
     return [token for token in tokens[start:] if token.startswith("-") and token != "-"]
 
 
+_LOOKUP = ("packaged", "global", "project", "fleet")
+
+_LAYER_THEN = re.compile(
+    r"\b(packaged|global|project|fleet)\b"
+    r"(?:\s*,?\s+then\s+\b(packaged|global|project|fleet)\b)+",
+    re.IGNORECASE,
+)
+
+# Phrases that state a layering other than packaged, then global, then project, then fleet.
+_OTHER_LAYERING = (
+    "three lists in the project folder",
+    "The roster is `roles.toml` and `mapping.toml` in the project folder.",
+    "Personas live in `templates/personas/`",
+    "Personas live in the project folder's `templates/personas/`",
+    "`init` copies every packaged persona",
+    "nowhere to add a preset",
+    "overridden by the project folder's `harnesses/`",
+    "replaces the operator skill",
+    "`Updated skills:",
+    "`Skills: current`",
+    "`<project folder>/harnesses/",
+    "`templates/personas/",
+    "It writes `harnesses.toml`, `roles.toml`, and `mapping.toml` when they are missing.",
+)
+
+
+def _layer_orders(text: str) -> list[tuple[str, ...]]:
+    found: list[tuple[str, ...]] = []
+    for match in _LAYER_THEN.finditer(text):
+        names = tuple(
+            part.lower()
+            for part in re.findall(
+                r"packaged|global|project|fleet", match.group(0), re.IGNORECASE
+            )
+        )
+        found.append(names)
+    return found
+
+
+def _follows_lookup(order: tuple[str, ...]) -> bool:
+    index = 0
+    for name in order:
+        while index < len(_LOOKUP) and _LOOKUP[index] != name:
+            index += 1
+        if index == len(_LOOKUP):
+            return False
+        index += 1
+    return True
+
+
+def _layering_problems(label: str, text: str) -> list[str]:
+    problems: list[str] = []
+    orders = _layer_orders(text)
+    if _LOOKUP not in orders:
+        problems.append(
+            f"{label}: does not describe the lookup "
+            "packaged, then global, then project, then fleet"
+        )
+    for order in orders:
+        if not _follows_lookup(order):
+            shown = ", then ".join(order)
+            problems.append(f"{label}: describes a different layering ({shown})")
+    for phrase in _OTHER_LAYERING:
+        if phrase in text:
+            problems.append(f"{label}: describes a different layering ({phrase})")
+    return problems
+
+
+def _foil_invocations(text: str) -> list[str]:
+    found = _invocations(text)
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("foil "):
+            found.append(stripped)
+    return list(dict.fromkeys(found))
+
+
+def _command_problems(label: str, text: str) -> list[str]:
+    problems: list[str] = []
+    for invocation in _foil_invocations(text):
+        cleaned = invocation.replace("[", " ").replace("]", " ")
+        try:
+            tokens = shlex.split(cleaned)
+        except ValueError as exc:
+            problems.append(f"{label}: cannot parse {invocation!r} ({exc})")
+            continue
+        if len(tokens) < 2 or tokens[0] != "foil":
+            problems.append(f"{label}: unknown command {invocation}")
+            continue
+        try:
+            command = _command(tokens)
+        except IndexError:
+            problems.append(f"{label}: unknown command {invocation}")
+            continue
+        if command not in FLAGS:
+            problems.append(f"{label}: unknown command {invocation}")
+            continue
+        unknown = set(_flags(tokens, command)) - FLAGS[command]
+        if unknown:
+            problems.append(f"{label}: flags {sorted(unknown)} in {invocation}")
+    return problems
+
+
+def _settings_texts(root: Path) -> list[tuple[str, str]]:
+    from foil.lifecycle import _instruction
+
+    packaged = ROOT / "src" / "foil" / "defaults" / "skills"
+    texts: list[tuple[str, str]] = []
+    for name in ("operator.md", "lead.md", "worker.md"):
+        texts.append(
+            (
+                f"src/foil/defaults/skills/{name}",
+                (packaged / name).read_text(encoding="utf-8"),
+            )
+        )
+        texts.append((f"skills/{name}", (SKILLS / name).read_text(encoding="utf-8")))
+    instruction = _instruction(
+        root,
+        "implementer-1",
+        {"name": "implementer", "worktree": True, "persona": "none"},
+        restarted=False,
+    )
+    texts.append(("worker instruction", instruction))
+    return texts
+
+
+def settings_surface_problems(root: Path) -> list[str]:
+    problems: list[str] = []
+    for label, text in _settings_texts(root):
+        problems.extend(_command_problems(label, text))
+        problems.extend(_layering_problems(label, text))
+    return problems
+
+
 def test_only_the_three_skills_remain() -> None:
     assert SKILLS.is_dir()
     assert sorted(path.name for path in SKILLS.glob("*.md")) == [
@@ -207,6 +342,16 @@ def test_skill_commands_exist_in_section_6() -> None:
             assert not unknown, f"{name}: flags {sorted(unknown)} in {invocation}"
             seen.add(command)
         assert seen == allowed, f"{name}: commands {seen} != {allowed}"
+
+
+def test_skills_match_section_6_and_the_settings_lookup(tmp_path: Path) -> None:
+    """Fail when skill text leaves section 6 or states another settings lookup."""
+
+    problems = settings_surface_problems(tmp_path)
+    assert problems == [], (
+        "skill text names a command or flag section 6 does not list, "
+        "or describes a different layering:\n" + "\n".join(problems)
+    )
 
 
 def test_lead_skill_keeps_a_checklist() -> None:
