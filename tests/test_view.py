@@ -412,9 +412,13 @@ def test_settings_show_the_three_lists(tmp_path: Path, monkeypatch: pytest.Monke
     assert "broken</span>" in page and "invalid" in page.split("broken</span>")[1].split("</tr>")[0]
     assert "fake" not in page.split("<h2>Harnesses")[1].split("</section>")[0]
     rows = page.split("<h2>Default mapping")[1]
-    order = [rows.index(text) for text in ("lead", "implementer", "reviewer", "gpt-5.5")]
+    order = [rows.index(text) for text in ("lead", "implementer", "reviewer")]
     assert order == sorted(order)
-    assert "no model" in rows
+    # A role's rows are one list of pairs, in file order: the extra row is entry 2.
+    implementer = rows.split("implementer</span>")[1].split("</tr>")[0]
+    assert implementer.count("<li") == 2
+    assert '<i>2</i><span class="mono">codex / gpt-5.5</span>' in implementer
+    assert "no model" in rows and 'class="next"' not in rows
 
 
 def test_installed_shows_where_the_viewer_found_the_command(
@@ -482,14 +486,25 @@ def test_overrides_show_every_row_and_the_pair_the_next_spawn_takes(
         page = _page(port, "/fleets/main")
     overrides = page.split("<h2>Overrides")[1].split("</section>")[0]
     assert "small" in overrides and "big" in overrides and "harder review" in overrides
-    assert "default mapping" in overrides and "gemini" in overrides
+    assert "default harness / small" in overrides and "gemini / no model" in overrides
     agents = page.split("<h2>Agents")[1].split("</section>")[0]
     # reviewer-1 is stored, so the next reviewer takes the second row.
     reviewer = agents.split("reviewer-1</a>")[1].split("</tr>")[0]
     assert "fast" in reviewer
-    assert re.search(r'next spawn <span class="mono">[a-z]+/big</span>', reviewer)
+    assert re.search(r'next spawn <span class="mono">[a-z]+ / big</span>', reviewer)
     lead = agents.split("lead</a>")[1].split("</tr>")[0]
-    assert 'next spawn <span class="mono">gemini</span>' in lead
+    assert 'next spawn <span class="mono">gemini / no model</span>' in lead
+    # One reviewer is stored, so the second of the two reviewer entries is marked next.
+    reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
+    assert re.search(r'<li class="next"><i>2</i><span class="mono">[^<]*/ big</span>', reviewers)
+    assert reviewers.count("<li") == 2
+    # Two reviewers stored and two entries: the rotation wraps back to the first.
+    _registry(repo, _seat("lead"), _seat("reviewer-1", model="fast"), _seat("reviewer-2"))
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main")
+    overrides = page.split("<h2>Overrides")[1].split("</section>")[0]
+    reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
+    assert re.search(r'<li class="next"><i>1</i><span class="mono">[^<]*/ small</span>', reviewers)
 
 
 def test_no_next_spawn_line_when_the_override_matches_the_mapping(
@@ -552,14 +567,29 @@ def test_every_seat_is_listed_with_state_and_branch(
     )
     _windows(monkeypatch, {"@1": "lead"})
     with _serving(repo) as port:
-        page = _page(port, "/fleets/main")
+        page = _page(port, "/fleets/main?state=all")
+        default = _page(port, "/fleets/main")
         fleets = _page(port, "/")
     agents = page.split("<h2>Agents")[1].split("</section>")[0]
+    # Dead first, then alive, then killed.
+    order = [agents.index(f">{name}<") for name in ("implementer-1", "lead", "implementer-2")]
+    assert order == sorted(order)
+    shown = default.split("<h2>Agents")[1].split("</section>")[0]
+    assert ">implementer-2<" not in shown and "1 killed not shown" in shown
     for name, state in (("lead", "alive"), ("implementer-1", "dead"), ("implementer-2", "killed")):
         row = agents.split(f">{name}</a>")[1].split("</tr>")[0]
         assert f'<span class="dot {state}"></span>{state}' in row, name
     assert "foil/implementer-1" in agents and "gpt-5.5" in agents and "no branch" in agents
     assert "<td>1</td><td>1</td><td>1</td>" in fleets
+    for state, names in (("alive", ["lead"]), ("dead", ["implementer-1"]),
+                         ("killed", ["implementer-2"])):
+        with _serving(repo) as port:
+            filtered = _page(port, f"/fleets/main?state={state}")
+        rows = filtered.split("<h2>Agents")[1].split("</section>")[0]
+        assert re.findall(r'seats/([a-z0-9-]+)"', rows) == names, state
+    with _serving(repo) as port:
+        unknown = _page(port, "/fleets/main?state=bogus")
+    assert unknown.split("<h2>Agents")[1].split("</section>")[0] == shown
 
 
 def test_a_tmux_failure_during_peek_is_one_line(
@@ -655,22 +685,59 @@ def test_board_and_posts_list_files_and_skip_links_and_dotfiles(
         (board / "room" / thread).mkdir()
         for name in names:
             (board / "room" / thread / name).write_text(f"{thread} {name}", encoding="utf-8")
+    os.utime(board / "room" / "t1" / "t1.md", (1, 1))
+    os.utime(board / "room" / "t1" / "z-reply.md", (2, 2))
+    (board / "notes" / "a.md").write_text("a", encoding="utf-8")
     with _serving(repo) as port:
         page = _page(port, "/fleets/main")
         opened = _page(port, "/fleets/main?open=" + "notes/%3Cb%3Eodd%26x.md")
         status = _page(port, "/fleets/main?open=status.md")
         for target in ("notes/link.md", "../../project.json", "/etc/passwd", "linked/secret.txt"):
-            assert "do not show" not in _page(port, f"/fleets/main?open={target}")
+            missing = _get(port, f"/fleets/main?open={target}")
+            assert missing[0] == 404 and b"do not show" not in missing[2]
             assert _get(port, f"/fleets/main/raw?open={target}")[0] == 404
     listed = page.split("<h2>Board")[1].split("</section>")[0]
-    assert listed.index("status.md") < listed.index("tasks/t1.md")
+    assert listed.index("status.md") < listed.index("<h3>tasks/</h3>") < listed.index("t1.md")
     assert ".tmp" not in page and "link.md" not in page and "linked" not in page
     assert "&lt;b&gt;odd&amp;x.md" in listed and "<b>odd" not in page
     posts = page.split("<h2>Posts")[1].split("</section>")[0]
-    assert "<h3>t1</h3>" in posts and posts.index("<h3>t1</h3>") < posts.index("<h3>t2</h3>")
-    assert "room/t1/z-reply.md" in posts and "3 files" in posts
-    assert "<pre>odd</pre>" in opened
+    # Threads: the one with the newest post first. Posts in a thread: in name order.
+    assert posts.index("<h3>room/t2/</h3>") < posts.index("<h3>room/t1/</h3>")
+    assert posts.index(">t1.md<") < posts.index(">z-reply.md<")
+    assert "?open=room/t1/z-reply.md" in posts and "3 files" in posts
+    # status.md is shown inline, escaped, above the lists.
+    inline = page.split('id="status"')[1].split("</section>")[0]
+    assert "&lt;script&gt;x&lt;/script&gt;" in inline and page.index('id="status"') < page.index(
+        'id="posts"') < page.index('id="board"')
+    # An opened file is its own page: the text first, a way back, and its neighbours.
+    assert '<pre class="wrap">odd</pre>' in opened and "<h2>Agents" not in opened
+    assert 'href="/projects/' in opened and '/fleets/main#board">' in opened
+    assert "?open=notes/a.md" in opened and ">Next<" in opened and ">Previous<" not in opened
     assert "&lt;script&gt;x&lt;/script&gt;" in status and "<script>x" not in status
+    assert '/fleets/main#status">' in status
+
+
+def test_a_listed_file_that_cannot_be_read_keeps_its_section_and_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    board = _board(repo)
+    (board / "status.md").write_text("progress", encoding="utf-8")
+    (board / "notes" / "a.md").write_text("a", encoding="utf-8")
+    (board / "notes" / "b.md").write_text("b", encoding="utf-8")
+
+    def broken(root: Path, fleet: str, rel: str) -> int:
+        raise FoilError(f"foil: cannot read: {rel}")
+
+    monkeypatch.setattr(view, "_open_listed", broken)
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main")
+        opened = _page(port, "/fleets/main?open=notes/a.md")
+    inline = page.split('id="status"')[1].split("</section>")[0]
+    assert "<h2>status.md" in inline and "cannot read: status.md" in inline
+    assert "<h2>Board" in page
+    assert "cannot read: notes/a.md" in opened and "Back to fleet" in opened
+    assert "?open=notes/b.md" in opened and ">Next<" in opened
 
 
 def test_a_swap_after_the_listing_opens_nothing(
@@ -782,7 +849,8 @@ def test_crawling_every_page_writes_nothing(
         for path in pages:
             _get(port, path)
         _get(port, "/", top=True)
-        listed = re.findall(r'href="[^"]*/fleets/main\?open=([^"]+)"', _page(port, "/fleets/main"))
+        page = _page(port, "/fleets/main")
+        listed = set(re.findall(r'href="[^"]*/fleets/main\?open=([^"]+)"', page))
         assert len(listed) == 2
         for opened in listed:
             assert _get(port, f"/fleets/main?open={opened}")[0] == 200
