@@ -454,6 +454,122 @@ def test_an_invalid_roles_file_leaves_the_rest_of_settings(
     assert "claude --model" in page
 
 
+def _role_block(page: str, role: str, following: str = "") -> str:
+    """The last region named ``role``, cut at ``following`` or the end of the section."""
+
+    needle = f">{role}<"
+    assert needle in page, role
+    rest = page.split(needle)[-1]
+    end = rest.find("</section>")
+    if following:
+        found = rest.find(f">{following}<")
+        if 0 <= found < end or end < 0:
+            end = found
+    return rest if end < 0 else rest[:end]
+
+
+def _lists_in_order(text: str, parts: list[str]) -> None:
+    cursor = 0
+    for part in parts:
+        found = text.find(part, cursor)
+        assert found >= 0, (part, text[:500])
+        cursor = found + len(part)
+
+
+def _harness_row(page: str, harness_id: str) -> str:
+    harnesses = page.split("<h2>Harnesses", 1)[1].split("</section>", 1)[0]
+    return harnesses.split(f"{harness_id}</span>", 1)[1].split("</tr>", 1)[0]
+
+
+def _badges(row: str) -> list[str]:
+    return re.findall(r">\s*(packaged|global|project|fleet)\s*<", row)
+
+
+def _link_path(href: str) -> str:
+    return href.split("#", 1)[0].split("?", 1)[0]
+
+
+def _role_href(section: str, role: str) -> str:
+    needle = f">{role}<"
+    assert needle in section, role
+    at = section.index(needle)
+    row_start = section.rfind("<tr", 0, at)
+    row_end = section.find("</tr>", at)
+    if row_start < 0:
+        row_start = max(0, at - 200)
+    if row_end < 0:
+        row_end = at + 400
+    window = section[row_start:row_end]
+    hrefs = re.findall(r'href="([^"]*)"', window)
+    assert len(hrefs) == 1, (role, hrefs, window)
+    return hrefs[0]
+
+
+def test_settings_needs_no_project_and_a_row_with_no_global_file_is_packaged(
+    tmp_path: Path,
+) -> None:
+    home = Path(os.environ["FOIL_HOME"])
+    projects = home / "projects"
+    assert not projects.exists() or not any(projects.iterdir())
+    (home / "harnesses").mkdir()
+    (home / "harnesses" / "grok.toml").write_text(
+        'id = "grok"\ncommand = ["grok", "{prompt}"]\nsession_id = "none"\n'
+        "env = []\nmodels = []\n",
+        encoding="utf-8",
+    )
+    assert not (home / "harnesses.toml").exists()
+    assert not (home / "harnesses" / "claude.toml").exists()
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    with _serving(bare) as port:
+        status, _fields, body = _get(port, "/settings", top=True)
+    page = body.decode()
+    assert status == 200, page[:400]
+    assert _badges(_harness_row(page, "claude")) == ["packaged"]
+    assert _badges(_harness_row(page, "grok")) == ["global"]
+
+
+def test_rotation_lists_the_pairs_and_does_not_mark_a_next_seat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    (foil_root(repo) / "mapping.toml").write_text(
+        '[[map]]\nrole = "lead"\nharness = "claude"\n\n'
+        '[[map]]\nrole = "implementer"\nharness = "claude"\nmodel = "sonnet"\n\n'
+        '[[map]]\nrole = "implementer"\nharness = "codex"\nmodel = "gpt-5.5"\n\n'
+        '[[map]]\nrole = "reviewer"\nharness = "codex"\n',
+        encoding="utf-8",
+    )
+    home = Path(os.environ["FOIL_HOME"])
+    (home / "mapping.toml").write_text(
+        '[[map]]\nrole = "implementer"\nharness = "grok"\nmodel = "high"\n\n'
+        '[[map]]\nrole = "implementer"\nharness = "gemini"\nmodel = "flash"\n',
+        encoding="utf-8",
+    )
+    with _serving(repo) as port:
+        project = _page(port, "/settings")
+        status, _fields, body = _get(port, "/settings", top=True)
+    implementer = _role_block(project, "implementer", "reviewer")
+    assert "Rotation" in implementer, implementer[:800]
+    line = implementer[implementer.index("Rotation"):]
+    _lists_in_order(line, ["claude", "sonnet", "codex", "gpt-5.5"])
+    assert "next" not in line
+    assert not re.search(r"<i>\d+</i>", implementer)
+    lead = _role_block(project, "lead", "implementer")
+    assert "Rotation" in lead, lead[:800]
+    assert "harness default" in lead[lead.index("Rotation"):]
+    assert "next" not in lead[lead.index("Rotation"):]
+    assert not re.search(r"<i>\d+</i>", lead)
+    assert status == 200, body[:400]
+    global_page = body.decode()
+    global_line = _role_block(global_page, "implementer")
+    assert "Rotation" in global_line, global_line[:800]
+    listed = global_line[global_line.index("Rotation"):]
+    _lists_in_order(listed, ["grok", "high", "gemini", "flash"])
+    assert "next" not in listed
+    assert not re.search(r"<i>\d+</i>", global_line)
+
+
 # Fleet page
 
 
@@ -523,6 +639,52 @@ def test_no_next_spawn_line_when_the_override_matches_the_mapping(
     _windows(monkeypatch, {})
     with _serving(repo) as port:
         assert "<small>next spawn" not in _page(port, "/fleets/main")
+
+
+def test_the_fleet_overrides_link_is_per_role(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    folder = foil_root(repo)
+    (folder / "mapping.toml").write_text(
+        '[[map]]\nrole = "lead"\nharness = "claude"\n\n'
+        '[[map]]\nrole = "implementer"\nharness = "codex"\nmodel = "gpt-5.5"\n',
+        encoding="utf-8",
+    )
+    (folder / "fleets" / "main" / "overrides.toml").write_text(
+        '[[override]]\nrole = "implementer"\nharness = "codex"\nmodel = "gpt-5.5"\n\n'
+        '[[override]]\nrole = "reviewer"\nharness = "gemini"\nmodel = "flash"\n',
+        encoding="utf-8",
+    )
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main")
+        project_settings = f"{_PREFIX[0]}/settings"
+    heading = page.find("<h2>Fleet overrides")
+    if heading < 0:
+        heading = page.find("<h2>Overrides")
+    assert heading >= 0
+    section = page[heading:].split("</section>", 1)[0]
+    assert _link_path(_role_href(section, "implementer")) == project_settings
+    assert _link_path(_role_href(section, "reviewer")) == "/settings"
+    assert section.startswith("<h2>Fleet overrides")
+
+
+def test_an_empty_fleet_overrides_section_is_one_per_role_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    line = (
+        "None. Spawn uses each role's project pair list when that role has one, "
+        "otherwise the global list."
+    )
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main")
+    shown = html.unescape(page)
+    old = shown.find("No overrides")
+    assert line in shown, shown[old: old + 180] if old >= 0 else shown[:240]
+    section = shown.split("Fleet overrides", 1)[1].split("</section>", 1)[0]
+    assert line in section
+    assert "<table" not in section and "<li" not in section
 
 
 def test_attach_uses_the_exact_session_and_a_verified_window(
