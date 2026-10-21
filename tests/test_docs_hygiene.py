@@ -23,6 +23,7 @@ PUBLIC_URL_HOSTS = frozenset(
         "developers.openai.com",
         "docs.x.ai",
         "geminicli.com",
+        "models.dev",
         "opencode.ai",
     }
 )
@@ -153,6 +154,7 @@ def test_tracked_docs_urls_use_public_host_allowlist() -> None:
         "developers.openai.com",
         "docs.x.ai",
         "geminicli.com",
+        "models.dev",
         "opencode.ai",
     }
     assert vendor_docs <= PUBLIC_URL_HOSTS

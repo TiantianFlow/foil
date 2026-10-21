@@ -126,7 +126,7 @@ Re-check each preset's model ids in `src/foil/defaults/harnesses.toml` against t
 - `codex`: <https://developers.openai.com/codex/models>
 - `gemini`: <https://geminicli.com/docs/cli/model/>
 - `grok`: <https://docs.x.ai/developers/models> and <https://docs.x.ai/build/cli/reference>
-- `opencode`: <https://opencode.ai/docs/cli/>
+- `opencode`: <https://opencode.ai/docs/cli/> and <https://opencode.ai/docs/models/>. Its model id is `provider_id/model_id`, and its docs say the built-in provider and model names come from <https://models.dev/>. The packaged list, `anthropic/claude-sonnet-4-5` and `openai/gpt-5.5`, was checked there on 2026-10-21 and both ids were current.
 
 `fake` has no vendor model list.
 

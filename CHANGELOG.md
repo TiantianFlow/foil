@@ -4,16 +4,21 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-21
+
+`foil --version` prints 0.6.0.
+
 ### Breaking
 
+- **`foil init` deletes your old project settings files without reading them.** On every `foil init` that completes, including a same-checkout re-run, these project paths are deleted without being read and with no backup: `roles.toml`, `mapping.toml`, `harnesses.toml`, `harnesses/`, `templates/`, `skills/operator.md`, `skills/lead.md`, and `skills/worker.md`. A symlink is unlinked and not followed. An init that exits non-zero deletes nothing. Re-create a customized roster with an unflagged `foil roster` before `init`; that write is the one that survives. Re-apply any `--project` override after every `init`. Move an edited persona out of `templates/personas/` to `<root>/personas/<role>.md`, or to `<project folder>/personas/<role>.md` for one project, before `init`. `foil roster` does not re-create a persona.
 - Inside a fleet, the lead can set `harness` and `model` only. Those write that fleet's `overrides.toml` and leave the global and project mapping in place. `roster add`, `add --from`, `remove`, `persona=`, and `worktree=` are refused with `foil: roles are outside the fleet only`. `permission=` is refused with `foil: permission is outside the fleet only`. `--project` is refused with `foil: --project is outside the fleet only`. A caller outside the fleet still runs them. (#66)
-- The packaged harness model lists changed, and they are read live from the package. A project copy no longer freezes them, and `foil init` does not write one. Claude is now `sonnet`, `opus`, `haiku`, and `fable` (no longer `claude-sonnet-4-5` or `claude-opus-4-5`). Codex is now `gpt-6.1-sol`, `gpt-6-luna`, and `gpt-6-astra` (no longer `gpt-5.5`). Gemini adds `gemini-3-pro-preview` and `gemini-3-flash-preview` beside `gemini-2.5-pro` and `gemini-2.5-flash`. Grok is now `grok-4.7` (no longer `grok-4` or `grok-3`). OpenCode's list is unchanged. Spawn still does not reject a model that is absent from a list.
+- The packaged harness model lists changed, and they are read live from the package. A project copy no longer freezes them, and `foil init` does not write one. Claude is now `sonnet`, `opus`, `haiku`, and `fable` (no longer `claude-sonnet-4-5` or `claude-opus-4-5`). Codex is now `gpt-6.1-sol`, `gpt-6-luna`, and `gpt-6-astra` (no longer `gpt-5.5`). Gemini adds `gemini-3-pro-preview` and `gemini-3-flash-preview` beside `gemini-2.5-pro` and `gemini-2.5-flash`. Grok is now `grok-4.7` (no longer `grok-4` or `grok-3`). OpenCode stays `anthropic/claude-sonnet-4-5` and `openai/gpt-5.5`: both are current `provider_id/model_id` entries on models.dev, which is where OpenCode's docs say its built-in names come from. Spawn still does not reject a model that is absent from a list.
 - `foil init` no longer copies personas or the operator skill into the project folder. The report drops `Updated skills:` and `Skills: current`. It says `Wrote personas: none`. `Left personas:` listed only personas already in the project; it now lists every packaged persona. It prints a `Removed:` line for each project path it deleted, and says `Skill: <root>/skills/operator.md` when that file exists, otherwise `Skill: packaged <package path>`. The pointer line 0.5.4 told you to paste, `Read <project folder>/skills/operator.md and follow it. My goal: <goal>.`, names a file this `init` deletes. Paste `Read <root>/skills/operator.md and follow it. My goal: <goal>.` when that file exists, or the packaged path the report prints.
 - Unflagged `foil roster add`, `update`, and `remove` now write the global layer instead of the project file, and they work before `init`. The project layer needs `--project`, which is new.
-- On every `foil init` that completes, including a same-checkout re-run, these project paths are deleted without being read and with no backup: `roles.toml`, `mapping.toml`, `harnesses.toml`, `harnesses/`, `templates/`, `skills/operator.md`, `skills/lead.md`, and `skills/worker.md`. A symlink is unlinked and not followed. An init that exits non-zero deletes nothing. Re-create a customized roster with an unflagged `foil roster` before `init`; that write is the one that survives. Re-apply any `--project` override after every `init`. Move an edited persona out of `templates/personas/` to `<root>/personas/<role>.md`, or to `<project folder>/personas/<role>.md` for one project, before `init`. `foil roster` does not re-create a persona.
 
 ### Changed
 
+- `foil view` titles the global page Settings, where the project page stays Project settings. A role's rotation is a row of unnumbered pair cards. A fleet override links each role to the settings page of the layer that role comes from, and the header Settings tab opens the global settings page.
 - Global settings are the settings. A project file is an optional override and a fleet file is an optional pair list. Lookup is packaged, then global, then project, then fleet. `foil init` writes missing global default roles. `foil view` serves `/settings` for that layer. `seat spawn` refuses a model-only override row when the pair list it replaces has more than one entry. (#66)
 
 ## [0.5.4] - 2026-10-21
@@ -27,8 +32,6 @@ Notable changes to Foil, newest first.
 ## 0.5.3 - 2026-10-20
 
 This release was withdrawn. Its changes ship in 0.5.4.
-
-`foil --version` prints 0.5.3.
 
 ### Added
 
@@ -59,8 +62,6 @@ This release was withdrawn. Its changes ship in 0.5.4.
 
 This release was withdrawn. Its changes ship in 0.5.4.
 
-`foil --version` prints 0.5.2.
-
 ### Added
 
 - `foil view [--port N]` serves a read-only page for the project on `127.0.0.1`: the fleets and lessons, the three shared lists, and for each fleet its attach command, overrides, seats, board, and posts, with each seat's raw pane. It writes nothing and types nothing. Without `--port` it takes the first free port from 7460 to 7509. It refuses a non-loopback `Host`, a foreign `Origin`, and any method but GET and HEAD. A board file shows a 1 MiB preview and a raw view of the whole file, and no file is opened through a symlink. It has no login, so while it runs any local account can read it. The README shows how to keep it running under launchd or `systemd --user`. (#42)
@@ -75,8 +76,6 @@ This release was withdrawn. Its changes ship in 0.5.4.
 
 This release was withdrawn. Its changes ship in 0.5.4.
 
-`foil --version` prints 0.5.1.
-
 ### Added
 
 - The `foil init` report can end, just before the pointer line, with one line for the human that invites a GitHub star. It shows on the first `init` in a store, then at least 3 days later, then at least 14 days after that, and afterwards at most once per newer minor version, 30 days or more after the last one. `<root>/star.json` records those days per store, not per project, and the line does not name it; `"stop": true` silences it for good. The record is written after the rest of the report has been flushed, just before the line, and the line prints only when that write succeeded, so a store Foil cannot write never repeats it and an `init` that fails writes no record; a failed write does not fail `init`, and it leaves the store root's mode unchanged. Foil never stars, opens a browser, or reads a GitHub login. The package was already over the 2,500-line target; this adds about 70 lines to `init`, the one report every operator session reads. (#46)
@@ -88,8 +87,6 @@ This release was withdrawn. Its changes ship in 0.5.4.
 ## 0.5.0 - 2026-10-18
 
 This release was withdrawn. Its changes ship in 0.5.4.
-
-`foil --version` prints 0.5.0.
 
 ### Breaking
 
@@ -127,8 +124,6 @@ Do this between goals. Do not resume a seat that was started on 0.4.
 
 This release was withdrawn. Its changes ship in 0.4.5.
 
-`foil --version` prints 0.4.4.
-
 ### Added
 
 - `foil post` writes one `room/v1` file under `board/room/<id>/` and types one nudge into every other alive seat. A seat whose stored state is empty still receives that nudge when the window check passes. An outside caller reaches every alive seat. `--re` writes a child in that thread and wakes the same set. `--decline` writes a child whose body is `decline`, stores an empty `nudged`, and types nothing. The package was already over the 2,500-line target; this is a thin wrapper beside mail. (#33)
@@ -144,8 +139,6 @@ This release was withdrawn. Its changes ship in 0.4.5.
 
 This release was withdrawn. Its changes ship in 0.4.5.
 
-`foil --version` prints 0.4.3.
-
 ### Added
 
 - A role template's harness is one ordered list of entries (`[[harness]]`, with `id` and an optional `model`). Spawn takes `entries[n % len(entries)]`, where `n` is the number of seat records already stored for that role, including killed seats, counted before the new seat is inserted. A failed launch writes no seat record, so a retry selects the same entry. One entry stays on that entry. The lead reuses one registry record named `lead`, so that count is 0 before the record exists and 1 before every later launch.
@@ -159,8 +152,6 @@ This release was withdrawn. Its changes ship in 0.4.5.
 ## 0.4.2 - 2026-10-16
 
 This release was withdrawn. Its changes ship in 0.4.5.
-
-`foil --version` prints 0.4.2.
 
 ### Fixed
 
@@ -210,7 +201,6 @@ This release was withdrawn. Its changes ship in 0.4.5.
 
 This release was withdrawn. Its changes ship in 0.3.3.
 
-`foil --version` prints 0.3.2.
 This release is documentation only. It publishes the survey of which
 project files could move global
 ([docs/issue-18-project-vs-global.md](docs/issue-18-project-vs-global.md),
@@ -227,7 +217,6 @@ No product-code behavior changes.
 
 This release was withdrawn. Its changes ship in 0.3.3.
 
-`foil --version` prints 0.3.1.
 [docs/requirements.md](docs/requirements.md) is the specification, and
 [docs/plan-v0.3.1.md](docs/plan-v0.3.1.md) is the plan for this release.
 This release shows the roster and the live fleet in the lists the operator
@@ -319,7 +308,6 @@ contract version was added.
 
 This release was withdrawn. Its changes ship in 0.2.2.
 
-`foil --version` prints 0.2.1.
 [docs/requirements.md](docs/requirements.md) is the specification, and
 [docs/plan-v0.2.1.md](docs/plan-v0.2.1.md) is the plan for this release.
 Onboarding is a sentence the human gives a coding agent. The agent
@@ -428,6 +416,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.6.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.6.0
 [0.5.4]: https://github.com/TiantianFlow/foil/releases/tag/v0.5.4
 [0.4.5]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.5
 [0.4.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.4.1
