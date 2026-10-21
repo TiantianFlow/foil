@@ -664,6 +664,53 @@ _WITHDRAWN = (
 )
 
 
+def test_normative_docs_do_not_name_a_withdrawn_release() -> None:
+    """A requirement, the operator skill, and the READMEs name no withdrawn release."""
+
+    normative = (
+        ROOT / "docs" / "requirements.md",
+        ROOT / "src" / "foil" / "defaults" / "skills" / "operator.md",
+        ROOT / "README.md",
+        ROOT / "README.zh-CN.md",
+    )
+    for path in normative:
+        text = path.read_text(encoding="utf-8")
+        for version in _WITHDRAWN:
+            assert version not in text, f"{path.relative_to(ROOT)} names {version}"
+
+
+def test_breaking_leads_with_the_init_deletion() -> None:
+    """The first Breaking bullet of the newest release is the unread init deletion."""
+
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    current = text.split("## [0.6.0]", 1)[1].split("\n## ", 1)[0]
+    breaking = current.split("### Breaking", 1)[1].split("### ", 1)[0]
+    bullets = [line for line in breaking.splitlines() if line.startswith("- ")]
+    assert bullets, "the 0.6.0 Breaking list is empty"
+    assert bullets[0].startswith(
+        "- **`foil init` deletes your old project settings files without reading them.**"
+    ), bullets[0]
+    assert (
+        "`roles.toml`, `mapping.toml`, `harnesses.toml`, `harnesses/`, `templates/`, "
+        "`skills/operator.md`, `skills/lead.md`, and `skills/worker.md`"
+    ) in bullets[0]
+    assert (
+        "Re-create a customized roster with an unflagged `foil roster` before `init`"
+        in bullets[0]
+    )
+
+
+def test_a_withdrawn_heading_drops_the_version_print_line() -> None:
+    """A withdrawn heading keeps its ship-in note and drops the version print line."""
+
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    for version in _WITHDRAWN:
+        heading = f"## {version} - "
+        section = text.split(heading, 1)[1].split("\n## ", 1)[0]
+        assert "This release was withdrawn." in section
+        assert f"`foil --version` prints {version}." not in section
+
+
 def test_a_withdrawn_release_does_not_name_a_withdrawn_destination() -> None:
     """A withdrawn changelog line ships into a kept release, never another withdrawn one."""
 
