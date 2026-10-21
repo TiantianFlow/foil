@@ -268,11 +268,8 @@ def _role_layer(toplevel: Path, role: str) -> str:
 
 
 def _mapping_layer(toplevel: Path, role: str) -> str:
+    """Layer of the entries list and show print. A fleet row is not that list."""
     if _checked_out(toplevel):
-        from foil.presets import fleet_overrides
-
-        if any(item["role"] == role for item in fleet_overrides(toplevel)):
-            return "fleet"
         project = _maps_at(foil_root(toplevel))
         if any(item["role"] == role for item in project):
             return "project"

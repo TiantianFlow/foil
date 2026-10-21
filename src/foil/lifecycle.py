@@ -518,14 +518,29 @@ def _instruction(
             if overrides
             else "none"
         )
+        global_root = store_root()
+        project = foil_root(root)
         lines.extend(
             [
                 f"Workspace: `{workspace}`. The repository is shared by every fleet.",
                 f"Posts: `{posts}`.",
-                "Harnesses and model ids: "
-                f"`{files('foil').joinpath('defaults', 'harnesses.toml')}`.",
-                f"Profiles: `{store_root() / 'roles.toml'}`.",
-                f"Default mapping: `{store_root() / 'mapping.toml'}`.",
+                f"Harnesses and model ids: `{global_root / 'harnesses.toml'}`.",
+                f"Profiles: `{global_root / 'roles.toml'}`.",
+                f"Default mapping: `{global_root / 'mapping.toml'}`.",
+            ]
+        )
+        for relative in (
+            "roles.toml",
+            "mapping.toml",
+            "harnesses.toml",
+            "harnesses",
+            "personas",
+        ):
+            path = project / relative
+            if path.exists() or path.is_symlink():
+                lines.append(f"Project override: `{path}`.")
+        lines.extend(
+            [
                 f"Fleet memory: `{override_path}`. Re-read that file before you spawn.",
                 "A role's rows in that file replace its default list for this fleet.",
                 "You do not pass a harness or a model flag.",

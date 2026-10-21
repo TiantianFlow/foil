@@ -1477,6 +1477,46 @@ def test_list_names_the_layer_of_the_role_and_the_mapping(
     assert "mapping: project" in capsys.readouterr().out
 
 
+def test_mapping_layer_is_the_layer_of_the_printed_entries(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """F21: list and show name the layer of the entries they print, not a fleet row."""
+    from foil.presets import render_fleet
+    from foil.store import fleet_dir
+
+    _drop_planted_personas(project)
+    assert _cli(["roster", "show", "lead"]) == 0
+    before = capsys.readouterr().out
+    assert "mapping: global" in before
+    harness = next(line for line in before.splitlines() if line.startswith("harness:"))
+    (foil_root(project) / "mapping.toml").write_text(
+        '[[map]]\nrole = "implementer"\nharness = "codex"\nmodel = "x"\n',
+        encoding="utf-8",
+    )
+    (fleet_dir(project) / "overrides.toml").write_text(
+        render_fleet(
+            [
+                {"role": "implementer", "id": "claude", "model": "sonnet", "note": ""},
+                {"role": "lead", "id": "claude", "model": "sonnet", "note": ""},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    assert _cli(["roster", "list"]) == 0
+    listed = capsys.readouterr().out
+    assert "implementer\tcodex/x\t" in listed
+    assert "\tmapping\tproject\n" in listed
+    assert "\tmapping\tfleet\n" not in listed
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert _cli(["roster", "show", "lead"]) == 0
+    shown = capsys.readouterr().out
+    assert "mapping: fleet" not in shown
+    assert "mapping: global" in shown
+    assert harness == next(line for line in shown.splitlines() if line.startswith("harness:"))
+
+
 def test_in_fleet_model_uses_a_project_mapping_only_override(
     project: Path,
     monkeypatch: pytest.MonkeyPatch,
