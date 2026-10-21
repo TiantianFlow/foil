@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import subprocess
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / "skills"
@@ -59,6 +62,8 @@ ROLE_COMMANDS = {
         ("view",),
     },
     "lead.md": {
+        # The roster-before-init sentence names `foil init`.
+        ("init",),
         ("seat", "spawn"),
         ("seat", "kill"),
         ("seat", "archive"),
@@ -105,7 +110,8 @@ FORBIDDEN = (
     "foil seats",
 )
 
-_INVOCATION = re.compile(r"`(foil\b[^`]*)`")
+# A backtick name is a command when it is `foil <words>`. `foil:` is an error string.
+_INVOCATION = re.compile(r"`(foil [^`]*)`")
 _FENCE = re.compile(r"```text\n(.*?)```", re.DOTALL)
 
 
@@ -586,3 +592,55 @@ def test_scenario_1_status_checklist_matches_the_demos() -> None:
     body = written[written.index("## Checklist") :]
     for relative in ("docs/demo.md", "docs/demo.zh-CN.md"):
         assert body in (ROOT / relative).read_text(encoding="utf-8")
+
+
+_ROSTER_BEFORE_INIT = (
+    "An unflagged roster command, outside a fleet, reads or writes the global layer "
+    "and works in a git checkout before `foil init`. "
+    "It does not print `foil: not initialized`."
+)
+
+
+def test_operator_and_lead_skills_state_roster_before_init() -> None:
+    """Section 8: operator and lead say an unflagged roster command works before init."""
+    packaged = ROOT / "src" / "foil" / "defaults" / "skills"
+    for name in ("operator.md", "lead.md"):
+        assert _ROSTER_BEFORE_INIT in (packaged / name).read_text(encoding="utf-8")
+    assert _ROSTER_BEFORE_INIT not in (packaged / "worker.md").read_text(encoding="utf-8")
+
+
+def test_lead_instruction_names_global_lists_and_existing_overrides(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F24: the lead instruction names the global lists and only project paths that exist."""
+    from foil.lifecycle import _instruction, init_project
+    from foil.project import foil_root, store_root
+
+    repo = tmp_path.resolve()
+    subprocess.run(
+        ["git", "-C", str(repo), "init", "--quiet"],
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.chdir(repo)
+    init_project(str(repo))
+    project = foil_root(repo)
+    (project / "mapping.toml").write_text(
+        '[[map]]\nrole = "lead"\nharness = "codex"\n',
+        encoding="utf-8",
+    )
+    (project / "harnesses").mkdir()
+    text = _instruction(
+        repo,
+        "lead",
+        {"name": "lead", "worktree": False, "persona": "none"},
+        restarted=False,
+    )
+    root = store_root()
+    for name in ("harnesses.toml", "roles.toml", "mapping.toml"):
+        assert f"`{root / name}`" in text
+    assert f"`{project / 'mapping.toml'}`" in text
+    assert f"`{project / 'harnesses'}`" in text
+    for name in ("roles.toml", "harnesses.toml", "personas"):
+        assert f"`{project / name}`" not in text
+    assert "defaults/harnesses.toml" not in text
