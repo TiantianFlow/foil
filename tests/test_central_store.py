@@ -1493,6 +1493,7 @@ def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
     assert (store / "fleets" / "main" / "run" / "owned.txt").read_text(
         encoding="utf-8"
     ) == "store\n"
+    assert not (store / "templates").exists()
     listed = _git(repo, "worktree", "list", "--porcelain")
     assert str(seat) in listed.stdout
     assert "prunable" not in listed.stdout
@@ -1500,6 +1501,20 @@ def test_a_colliding_legacy_move_leaves_the_old_directory_in_place(
 
     capsys.readouterr()
     assert main(["init"]) == 0
-    assert "the store already has '" in capsys.readouterr().out
-    assert (legacy / "board" / "notes" / "keep.txt").is_file()
-    assert (seat / ".git").is_file()
+    again = capsys.readouterr().out
+    assert f"Moved {legacy} into {store}" in again
+    assert "the store already has '" not in again
+    assert "kill them" not in again
+    assert not legacy.exists()
+    assert (
+        store / "fleets" / "main" / "board" / "notes" / "keep.txt"
+    ).read_text(encoding="utf-8") == "kept\n"
+    moved = store / "worktrees" / "implementer-1"
+    assert (moved / ".git").is_file()
+    assert (store / "fleets" / "main" / "run" / "owned.txt").read_text(
+        encoding="utf-8"
+    ) == "store\n"
+    listed = _git(repo, "worktree", "list", "--porcelain")
+    assert str(moved) in listed.stdout
+    assert "prunable" not in listed.stdout
+    assert _git(moved, "status", "--porcelain").stdout == ""

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
-from foil.project import foil_root
+from foil.project import foil_root, store_root
 from foil.store import load_registry
 from foil.tmux import TmuxController
 from tests.test_spawn import _commit, _launch, _plan, _repo
@@ -20,11 +20,13 @@ def test_init_writes_shared_lists_and_defaults_permission_to_auto(
     repo = _repo(tmp_path, monkeypatch)
     root = foil_root(repo)
     assert not (root / "templates" / "lead.toml").exists()
-    roles = (root / "roles.toml").read_text(encoding="utf-8")
+    assert not (root / "roles.toml").exists()
+    assert not (root / "mapping.toml").exists()
+    roles = (store_root() / "roles.toml").read_text(encoding="utf-8")
     assert 'id = "implementer"' in roles
     assert 'permission = "auto"' in roles
     assert 'worktree = true' in roles
-    mapping = (root / "mapping.toml").read_text(encoding="utf-8")
+    mapping = (store_root() / "mapping.toml").read_text(encoding="utf-8")
     assert 'role = "implementer"' in mapping
     assert "opus" not in mapping
     assert (root / "fleets" / "main" / "board" / "room").is_dir()
@@ -42,7 +44,7 @@ def test_fleet_memory_is_what_spawn_puts_on_the_model_flag(
     assert main(["roster", "update", "implementer", "model=opus"]) == 0
     assert "fleet memory: implementer model = opus" in capsys.readouterr().out
     monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
-    assert "opus" not in (root / "mapping.toml").read_text(encoding="utf-8")
+    assert "opus" not in (store_root() / "mapping.toml").read_text(encoding="utf-8")
     overrides = root / "fleets" / "main" / "overrides.toml"
     assert 'role = "implementer"' in overrides.read_text(encoding="utf-8")
     assert 'model = "opus"' in overrides.read_text(encoding="utf-8")
@@ -81,7 +83,7 @@ def test_two_fleets_share_the_mapping_and_keep_separate_overrides(
     monkeypatch.delenv("FOIL_FLEET", raising=False)
     main_worker = load_registry(repo)["seats"]["implementer-1"]
     assert main_worker["model"] == ""
-    assert "opus" not in (foil_root(repo) / "mapping.toml").read_text(encoding="utf-8")
+    assert "opus" not in (store_root() / "mapping.toml").read_text(encoding="utf-8")
     main_board = foil_root(repo) / "fleets" / "main" / "board" / "mail"
     side_board = foil_root(repo) / "fleets" / "side" / "board" / "mail"
     assert main_board.is_dir() and side_board.is_dir()

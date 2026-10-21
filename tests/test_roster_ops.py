@@ -839,7 +839,8 @@ def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
         'harness = "no-such"\npersona = "personas/researcher.md"\nworktree = false\n'
         'permission = "ask"\n',
     )
-    harnesses = foil_root(project) / "harnesses"
+    harnesses = store_root() / "harnesses"
+    harnesses.mkdir()
     (harnesses / "local.toml").write_text(
         'id = "local"\ncommand = ["true"]\nsession_id = "none"\n\n'
         "[permission]\nask = []\nauto = []\n",
