@@ -5,14 +5,14 @@ from __future__ import annotations
 import shutil
 import tomllib
 import uuid
-from contextlib import suppress
+from contextvars import ContextVar
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
 from foil.errors import FoilError, assert_no_secret, shown
-from foil.project import foil_root
-from foil.store import SAFE_ID, create_exclusive, fleet_dir, scan, write_bytes
+from foil.project import foil_root, store_root
+from foil.store import SAFE_ID, fleet_dir, scan, write_bytes
 
 _PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}")
 _PRESET_KEYS = {
@@ -33,6 +33,8 @@ _FLEET_KEYS = {"role", "harness", "model", "note"}
 _PRESET_SAME = ("command", "permission", "resume", "session_id", "env", "unverified", "models")
 _ROLES = ("lead", "implementer", "reviewer")
 BUILTIN_IDS = ("claude", "codex", "gemini", "opencode", "grok", "fake")
+# Set while init checks that a harness is installed, before the project folder is ready.
+_init_check: ContextVar[bool] = ContextVar("foil_init_check", default=False)
 
 
 def _fail(label: str) -> None:
@@ -144,29 +146,45 @@ def _optional_text(path: Path) -> str | None:
     return path.read_text(encoding="utf-8")
 
 
+def _layer_dirs(toplevel: Path) -> tuple[Path, Path]:
+    """Global store root, then the project folder. Packaged files stay in the package."""
+
+    return store_root(), foil_root(toplevel)
+
+
 def _merged_catalog(toplevel: Path) -> tuple[dict[str, dict[str, Any]], list[tuple[str, str]]]:
-    """Packaged list, then the project list. A broken project file is skipped."""
+    """Packaged list, then each layer's list. A broken list file is skipped.
+
+    The init harness check reads the packaged catalog and the global layer
+    only, and does not open a project harness file.
+    """
 
     skipped: list[tuple[str, str]] = []
     merged = _packaged_catalog()
-    text = _optional_text(foil_root(toplevel) / "harnesses.toml")
-    if text is None:
-        return merged, skipped
-    try:
-        merged.update(_catalog(text))
-    except FoilError as exc:
-        skipped.append(("harnesses.toml", str(exc).removeprefix("foil: ")))
+    checking = _init_check.get()
+    layers = (store_root(),) if checking else _layer_dirs(toplevel)
+    for base in layers:
+        text = _optional_text(base / "harnesses.toml")
+        if text is None:
+            continue
+        try:
+            merged.update(_catalog(text))
+        except FoilError as exc:
+            skipped.append(("harnesses.toml", str(exc).removeprefix("foil: ")))
     return merged, skipped
 
 
 def load_preset(toplevel: Path, harness_id: str) -> dict[str, Any]:
     if not SAFE_ID.fullmatch(harness_id):
         raise FoilError(f"foil: unknown harness '{shown(harness_id)}'")
-    user = foil_root(toplevel) / "harnesses" / f"{harness_id}.toml"
-    if user.is_symlink():
-        raise FoilError("foil: refusing symlink")
-    if user.is_file():
-        return _parse_preset(user.read_text(encoding="utf-8"), harness_id)
+    # File beats list inside one layer. A higher layer replaces the whole harness.
+    layers = (store_root(),) if _init_check.get() else _layer_dirs(toplevel)
+    for base in reversed(layers):
+        user = base / "harnesses" / f"{harness_id}.toml"
+        if user.is_symlink():
+            raise FoilError("foil: refusing symlink")
+        if user.is_file():
+            return _parse_preset(user.read_text(encoding="utf-8"), harness_id)
     merged, skipped = _merged_catalog(toplevel)
     if skipped and harness_id not in merged:
         raise FoilError(f"foil: invalid {skipped[0][1]}")
@@ -332,31 +350,75 @@ def _parse_maps(text: str) -> list[dict[str, str]]:
     return maps
 
 
-def read_roles(toplevel: Path) -> list[dict[str, Any]] | None:
-    """Profiles from ``roles.toml``, or None when that file is absent."""
+def _settings_base(toplevel: Path) -> Path:
+    """The global layer. Init writes nothing under the project folder."""
 
-    text = _optional_text(foil_root(toplevel) / "roles.toml")
-    if text is None:
-        return None
-    return _parse_roles(text)
+    del toplevel
+    return store_root()
+
+
+def _effective_roles(toplevel: Path) -> list[dict[str, Any]] | None:
+    """Global roles, replaced whole by a project file when one exists.
+
+    The init harness check does not open a project settings file. Init deletes
+    those paths without reading them, including a symlink.
+    """
+
+    text = _optional_text(store_root() / "roles.toml")
+    roles = None if text is None else _parse_roles(text)
+    if _init_check.get():
+        return roles
+    project = _optional_text(foil_root(toplevel) / "roles.toml")
+    if project is None:
+        return roles
+    override = {item["id"]: item for item in _parse_roles(project)}
+    if roles is None:
+        return list(override.values())
+    seen = {item["id"] for item in roles}
+    merged = [override.get(item["id"], item) for item in roles]
+    merged.extend(item for item in override.values() if item["id"] not in seen)
+    return merged
+
+
+def _effective_maps(toplevel: Path) -> list[dict[str, str]]:
+    """Global mapping, with a project file replacing one role's whole list."""
+
+    text = _optional_text(store_root() / "mapping.toml")
+    maps = [] if text is None else _parse_maps(text)
+    if _init_check.get():
+        return maps
+    project = _optional_text(foil_root(toplevel) / "mapping.toml")
+    if project is None:
+        return maps
+    override = _parse_maps(project)
+    replaced = {item["role"] for item in override}
+    return [item for item in maps if item["role"] not in replaced] + override
+
+
+def read_roles(toplevel: Path) -> list[dict[str, Any]] | None:
+    """Profiles from ``roles.toml``, or None when that file is absent.
+
+    A project file replaces the roles it names. Writes stay on the global layer.
+    """
+
+    return _effective_roles(toplevel)
 
 
 def read_maps(toplevel: Path) -> list[dict[str, str]]:
-    text = _optional_text(foil_root(toplevel) / "mapping.toml")
-    if text is None:
-        return []
-    return _parse_maps(text)
+    """The mapping list. A project file replaces each role it names, whole."""
+
+    return _effective_maps(toplevel)
 
 
 def save_roles(toplevel: Path, roles: list[dict[str, Any]]) -> None:
-    path = foil_root(toplevel) / "roles.toml"
+    path = _settings_base(toplevel) / "roles.toml"
     if path.is_symlink():
         raise FoilError("foil: refusing symlink")
     write_bytes(path, render_roles(roles).encode())
 
 
 def save_maps(toplevel: Path, maps: list[dict[str, str]]) -> None:
-    path = foil_root(toplevel) / "mapping.toml"
+    path = _settings_base(toplevel) / "mapping.toml"
     if path.is_symlink():
         raise FoilError("foil: refusing symlink")
     write_bytes(path, render_maps(maps).encode())
@@ -426,7 +488,8 @@ def spawn_entry(
     """The harness and model the next spawn of ``role`` takes (F3).
 
     The fleet's rows for the role, when it has any, replace the mapping list.
-    A row with no harness keeps the id the mapping selects.
+    A row with no harness keeps the id the mapping selects when that list has
+    one entry. On a longer list the older model-only row is refused.
     """
 
     chosen = select_harness(entries, count)
@@ -434,6 +497,11 @@ def spawn_entry(
     if not rows:
         return chosen
     row = select_harness(rows, count)
+    if not row["id"] and len(entries) > 1:
+        raise FoilError(
+            f"foil: template '{role}' has more than one harness entry; "
+            f"set the whole list with foil roster update {role} harness=ID/MODEL,ID/MODEL"
+        )
     return {"id": row["id"] or chosen["id"], "model": row["model"]}
 
 
@@ -562,19 +630,23 @@ def persona_text(template: dict[str, Any]) -> str:
         return persona
     relative = Path(persona)
     if relative.is_absolute() or ".." in relative.parts:
-        raise FoilError(
-            f"foil: persona path must stay inside the project templates: {persona}"
-        )
-    base = template["path"].parent
-    path = base / relative
-    if path.is_symlink():
-        raise FoilError("foil: refusing symlink")
-    if not path.resolve().is_relative_to(base.resolve()):
-        raise FoilError(
-            f"foil: persona path must stay inside the project templates: {persona}"
-        )
-    if path.is_file():
-        return path.read_text(encoding="utf-8")
+        raise FoilError(f"foil: persona path must stay inside personas: {persona}")
+    name = relative.name
+    if relative.parts != ("personas", name):
+        raise FoilError(f"foil: persona path must stay inside personas: {persona}")
+    packaged = files("foil").joinpath("defaults", "personas", name)
+    project_root = template["path"].parent.parent
+    bases = (store_root() / "personas" / name, project_root / "personas" / name)
+    for path in bases:
+        if path.is_symlink():
+            raise FoilError("foil: refusing symlink")
+    project, global_file = bases[1], bases[0]
+    if project.is_file():
+        return project.read_text(encoding="utf-8")
+    if global_file.is_file():
+        return global_file.read_text(encoding="utf-8")
+    if packaged.is_file():
+        return packaged.read_text(encoding="utf-8")
     raise FoilError(f"foil: persona file not found: {persona}")
 
 
@@ -619,7 +691,7 @@ def preset_source(toplevel: Path, harness_id: str) -> str:
         loaded = load_preset(toplevel, harness_id)
     except (FoilError, OSError, UnicodeDecodeError):
         return "invalid"
-    user = foil_root(toplevel) / "harnesses" / f"{harness_id}.toml"
+    user = store_root() / "harnesses" / f"{harness_id}.toml"
     if user.is_file():
         return "user"
     packaged = _packaged_catalog().get(harness_id)
@@ -650,18 +722,16 @@ def launch_command(
     )
 
 
-def _packaged_persona_names() -> list[str]:
-    directory = files("foil").joinpath("defaults", "personas")
-    return sorted(item.name for item in directory.iterdir() if item.name.endswith(".md"))
-
-
 def preset_ids(toplevel: Path) -> tuple[list[str], list[tuple[str, str]]]:
     """Every eligible id, sorted by code point, and the list files skipped."""
 
     merged, skipped = _merged_catalog(toplevel)
     ids = {name for name in merged if name != "fake"}
-    directory = foil_root(toplevel) / "harnesses"
-    if directory.is_dir() and not directory.is_symlink():
+    layers = (store_root(),) if _init_check.get() else _layer_dirs(toplevel)
+    for base in layers:
+        directory = base / "harnesses"
+        if not directory.is_dir() or directory.is_symlink():
+            continue
         for path in directory.glob("*.toml"):
             harness_id = path.stem
             if (
@@ -704,42 +774,33 @@ def installed_presets(
 
 
 def installed_harness(toplevel: Path | None = None) -> str:
-    found, _skipped = installed_presets(Path.cwd() if toplevel is None else toplevel)
+    token = _init_check.set(True)
+    try:
+        found, _skipped = installed_presets(Path.cwd() if toplevel is None else toplevel)
+    finally:
+        _init_check.reset(token)
     if not found:
         raise FoilError("foil: no harness installed")
     return found[0]["id"]
 
 
 def write_default_templates(toplevel: Path) -> list[str]:
-    """Replace the operator skill when its bytes differ. Return the names written."""
+    """Write each missing global default role. Return the names written.
+
+    This does not open a project settings path, copy a persona, copy the
+    harness catalog, or write a skill.
+    """
 
     updated: list[str] = []
-    target = foil_root(toplevel) / "skills" / "operator.md"
-    if target.is_symlink():
-        raise FoilError("foil: refusing symlink")
-    payload = _builtin("skills", "operator.md").encode()
-    if not (target.is_file() and target.read_bytes() == payload):
-        write_bytes(target, payload)
-        updated.append("operator")
-    directory = foil_root(toplevel) / "templates"
-    personas = directory / "personas"
-    for name in _packaged_persona_names():
-        target = personas / name
-        if not target.exists() and not target.is_symlink():
-            with suppress(FileExistsError):
-                create_exclusive(target, _builtin("personas", name).encode())
-    catalog = foil_root(toplevel) / "harnesses.toml"
-    if catalog.is_symlink():
-        raise FoilError("foil: refusing symlink")
-    if not catalog.exists():
-        packaged = files("foil").joinpath("defaults", "harnesses.toml").read_bytes()
-        with suppress(FileExistsError):
-            create_exclusive(catalog, packaged)
     present = {item["id"] for item in (read_roles(toplevel) or [])}
     missing = [role for role in _ROLES if role not in present]
     if not missing:
         return updated
-    found, _skipped = installed_presets(toplevel)
+    token = _init_check.set(True)
+    try:
+        found, _skipped = installed_presets(toplevel)
+    finally:
+        _init_check.reset(token)
     if not found:
         raise FoilError("foil: no harness installed")
     first = found[0]["id"]

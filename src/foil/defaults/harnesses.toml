@@ -1,5 +1,5 @@
 # One list of harness launch config and the model ids each harness accepts.
-# A project copy of this file overrides an id. harnesses/<id>.toml overrides both.
+# Read live from this package. A global or project file is an optional override.
 # Spawn does not reject a model that is absent from models.
 
 [[harness]]
@@ -8,7 +8,7 @@ command = ["claude", "--model", "{model}", "--session-id", "{session_id}", "{pro
 resume = ["claude", "--resume", "{session_id}"]
 session_id = "generated"
 env = []
-models = ["sonnet", "opus", "haiku", "claude-sonnet-4-5", "claude-opus-4-5"]
+models = ["sonnet", "opus", "haiku", "fable"]
 
 [harness.permission]
 ask = []
@@ -21,7 +21,7 @@ command = ["codex", "--model", "{model}", "{prompt}"]
 resume = ["codex", "resume", "--last", "{prompt}"]
 session_id = "none"
 env = []
-models = ["gpt-5.5"]
+models = ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]
 
 [harness.permission]
 ask = ["--ask-for-approval", "on-request"]
@@ -34,7 +34,7 @@ command = ["gemini", "--model", "{model}", "{prompt}"]
 resume = ["gemini", "--resume"]
 session_id = "none"
 env = []
-models = ["gemini-2.5-pro", "gemini-2.5-flash"]
+models = ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash"]
 
 [harness.permission]
 ask = []
@@ -58,7 +58,7 @@ command = ["grok", "--model", "{model}", "--session-id", "{session_id}", "{promp
 resume = ["grok", "--model", "{model}", "--resume", "{session_id}"]
 session_id = "generated"
 env = []
-models = ["grok-4", "grok-3"]
+models = ["grok-4.7"]
 
 [harness.permission]
 ask = []

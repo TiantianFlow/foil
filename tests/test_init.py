@@ -12,7 +12,7 @@ import pytest
 
 from foil import __version__
 from foil.cli import main
-from foil.project import SKELETON, foil_root
+from foil.project import SKELETON, foil_root, store_root
 
 
 @pytest.fixture(autouse=True)
@@ -92,12 +92,12 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     repo.mkdir()
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
-    pointer = f"Read {foil_root(repo) / 'skills' / 'operator.md'} and follow it. My goal: <goal>."
+    pointer = "Read the packaged operator skill and follow it. My goal: <goal>."
     ask = "permission: lead auto, implementer auto, reviewer auto."
     rule = (
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
         "approval prompts, though some harnesses still ask for some commands. "
-        "Set permission in roles.toml in the project folder. "
+        "Set permission in roles.toml. "
         "An omitted permission is auto. "
         "auto on the lead alone does not "
         "let the workers run unattended."
@@ -108,7 +108,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     first = capsys.readouterr()
     assert first.err == ""
     assert first.out.startswith(f"foil {__version__}\n")
-    assert "Updated skills: operator" in first.out
+    assert "Skill: packaged" in first.out
     assert f"Project folder: {foil_root(repo)}" in first.out
     assert pointer in first.out
     assert ask in first.out
@@ -125,7 +125,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     ) in first.out
     assert "Wrote templates: lead, implementer, reviewer" in first.out
     assert "documentation-writer" in first.out
-    lead = foil_root(repo) / "roles.toml"
+    lead = store_root() / "roles.toml"
     original = lead.read_text(encoding="utf-8")
     assert 'permission = "auto"\n' in original
 
@@ -134,7 +134,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     assert "Left templates: lead, implementer, reviewer" in second.out
     assert "Wrote templates: none" in second.out
     assert second.out.startswith(f"foil {__version__}\n")
-    assert "Skills: current" in second.out
+    assert "Skill: packaged" in second.out
     assert ask in second.out
     assert lead.read_text(encoding="utf-8") == original
 
@@ -166,7 +166,7 @@ def test_init_rerun_reports_the_harness_stored_after_an_edit(
     monkeypatch.setattr(shutil, "which", which)
     assert main(["init"]) == 0
     capsys.readouterr()
-    reviewer = foil_root(repo) / "mapping.toml"
+    reviewer = store_root() / "mapping.toml"
     original = reviewer.read_text(encoding="utf-8")
     assert 'harness = "codex"' in original
     edited = original.replace('harness = "codex"', 'harness = "claude"', 1)
@@ -190,7 +190,7 @@ def test_init_report_uses_three_for_three_stored_ids(
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
     capsys.readouterr()
-    mapping = foil_root(repo) / "mapping.toml"
+    mapping = store_root() / "mapping.toml"
     text = mapping.read_text(encoding="utf-8")
     text = text.replace(
         'role = "implementer"\nharness = "claude"',
@@ -220,7 +220,8 @@ def test_init_skips_one_invalid_user_preset(
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
     capsys.readouterr()
-    harnesses = foil_root(repo) / "harnesses"
+    harnesses = store_root() / "harnesses"
+    harnesses.mkdir(parents=True, exist_ok=True)
     (harnesses / "zz.toml").write_text('id = "zz"\n', encoding="utf-8")
 
     assert main(["init"]) == 0
@@ -323,36 +324,36 @@ def test_init_rerun_deletes_named_project_paths_and_a_refusal_deletes_nothing(
         root / "skills" / "worker.md",
     )
     marker = root / "harnesses" / "kept.toml"
+    marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text('id = "kept"\n', encoding="utf-8")
+    (root / "skills").mkdir(parents=True, exist_ok=True)
+    (root / "skills" / "operator.md").write_text("old operator\n", encoding="utf-8")
     (root / "skills" / "lead.md").write_text("old lead\n", encoding="utf-8")
     (root / "skills" / "worker.md").write_text("old worker\n", encoding="utf-8")
-    kept = {path: path.read_bytes() if path.is_file() else None for path in named}
+    (root / "roles.toml").write_text("roles\n", encoding="utf-8")
+    (root / "mapping.toml").write_text("maps\n", encoding="utf-8")
+    (root / "harnesses.toml").write_text("catalog\n", encoding="utf-8")
+    (root / "templates").mkdir(parents=True, exist_ok=True)
     assert all(path.exists() for path in named)
 
+    monkeypatch.setenv("FOIL_SEAT_ID", "implementer")
+    assert main(["init"]) == 1
+    refused = capsys.readouterr()
+    assert refused.err == "foil: not allowed\n"
+    assert all(path.exists() or path.is_symlink() for path in named)
+    assert marker.read_text(encoding="utf-8") == 'id = "kept"\n'
+    monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
+
+    outside = tmp_path / "outside.toml"
+    outside.write_text("untouched\n", encoding="utf-8")
+    (root / "roles.toml").unlink()
+    (root / "roles.toml").symlink_to(outside)
     assert main(["init"]) == 0
     assert not any(path.exists() or path.is_symlink() for path in named)
     assert (root / "project.json").is_file()
     assert (root / "fleets").is_dir()
     assert (root / "memory").is_dir()
     assert (root / "skills").is_dir()
-
-    for path, payload in kept.items():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if payload is None:
-            path.mkdir(exist_ok=True)
-        else:
-            path.write_bytes(payload)
-    outside = tmp_path / "outside.toml"
-    outside.write_text("untouched\n", encoding="utf-8")
-    (root / "roles.toml").unlink()
-    (root / "roles.toml").symlink_to(outside)
-
-    monkeypatch.setenv("FOIL_SEAT_ID", "implementer")
-    assert main(["init"]) == 1
-    assert capsys.readouterr().err == "foil: not allowed\n"
-    assert all(path.exists() or path.is_symlink() for path in named)
-    assert marker.read_text(encoding="utf-8") == 'id = "kept"\n'
-    assert (root / "roles.toml").is_symlink()
     assert outside.read_text(encoding="utf-8") == "untouched\n"
 
 
