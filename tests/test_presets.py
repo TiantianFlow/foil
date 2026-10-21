@@ -725,6 +725,67 @@ def test_reviewer_persona_does_not_edit_files() -> None:
     assert "do not edit files" in text.lower()
 
 
+def test_harness_check_uses_a_global_preset_and_not_a_project_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The check passes on a global user preset alone, and fails if init opens a project file."""
+
+    repo = _fresh_repo(tmp_path, monkeypatch)
+    _hide_agent_clis(monkeypatch)
+    home = Path(os.environ["FOIL_HOME"])
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    _stub_program(bindir, "only-global")
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
+    (home / "harnesses").mkdir()
+    _write_preset(home / "harnesses", "only-global", "only-global")
+    assert not (foil_root(repo)).exists()
+
+    assert main(["init"]) == 0
+    assert "only-global" in capsys.readouterr().out
+    assert not (foil_root(repo) / "harnesses.toml").exists()
+    assert not (foil_root(repo) / "harnesses").exists()
+
+    for path in (
+        home / "roles.toml",
+        home / "mapping.toml",
+        foil_root(repo) / "roles.toml",
+        foil_root(repo) / "mapping.toml",
+    ):
+        path.unlink(missing_ok=True)
+    project_file = foil_root(repo) / "harnesses.toml"
+
+    def refuse_project_open(self: Path, *args: object, **kwargs: object) -> object:
+        if self == project_file:
+            raise AssertionError("init opened a project harness file")
+        return Path.read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", refuse_project_open)
+    assert main(["init"]) == 0
+    assert "only-global" in capsys.readouterr().out
+
+
+def test_packaged_model_list_is_the_installed_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The model list is the installed package, not a copy written beside the project."""
+
+    repo = _fresh_repo(tmp_path, monkeypatch)
+    assert main(["init"]) == 0
+    root = foil_root(repo)
+    assert not (root / "harnesses.toml").exists()
+    packaged = files("foil").joinpath("defaults", "harnesses.toml")
+    loaded = load_preset(repo, "claude")
+    packaged_models = next(
+        item["models"]
+        for item in tomllib.loads(packaged.read_text(encoding="utf-8"))["harness"]
+        if item["id"] == "claude"
+    )
+    assert loaded["models"] == packaged_models
+    assert "sonnet" in loaded["models"]
+    assert load_preset(repo, "fake")["models"] == []
+
+
 def test_init_writes_three_lists_and_a_fleet_workspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

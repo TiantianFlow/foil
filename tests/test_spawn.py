@@ -827,6 +827,37 @@ def test_an_in_fleet_model_edits_the_fleet_list_and_names_its_harness(
     assert overrides.read_bytes() == before
 
 
+def test_spawn_refuses_a_model_only_row_on_a_longer_pair_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A model-only row on a pair list of more than one entry is refused and writes no seat."""
+
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    _set_entries(repo, "implementer", [("claude", "opus"), ("codex", "gpt-5.5")])
+    (foil_root(repo) / "fleets" / "main").mkdir(parents=True, exist_ok=True)
+    overrides = foil_root(repo) / "fleets" / "main" / "overrides.toml"
+    overrides.write_text(
+        '[[override]]\nrole = "implementer"\nmodel = "big"\n', encoding="utf-8"
+    )
+    before = overrides.read_bytes()
+    assert main(["seat", "spawn", "lead"]) == 0
+    capsys.readouterr()
+    assert main(["seat", "spawn", "implementer"]) == 1
+    captured = capsys.readouterr()
+    assert captured.err.count("\n") == 1
+    assert "foil roster update implementer harness=ID/MODEL,ID/MODEL" in captured.err
+    assert "implementer-1" not in load_registry(repo)["seats"]
+    assert overrides.read_bytes() == before
+
+    # A model-only row on a one-entry pair list stays valid.
+    _set_entries(repo, "implementer", [("claude", "opus")])
+    assert main(["seat", "spawn", "implementer"]) == 0
+    seat = load_registry(repo)["seats"]["implementer-1"]
+    assert (seat["harness"], seat["model"]) == ("claude", "big")
+
+
 def test_an_older_model_only_row_keeps_the_mapping_harness(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
