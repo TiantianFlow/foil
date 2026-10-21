@@ -165,6 +165,51 @@ def test_generated_session_id_is_filled_when_omitted(tmp_path: Path) -> None:
     assert argv[3:] == ["--prompt", prompt]
 
 
+def test_project_list_beats_a_global_harness_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F23: project file, project list, global file, global list, then the package.
+
+    A global harness file does not beat a project list entry.
+    """
+    from foil.project import store_root
+
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    home = store_root()
+    (home / "harnesses").mkdir(parents=True)
+    (home / "harnesses" / "grok.toml").write_text(
+        'id = "grok"\ncommand = ["global-file", "{prompt}"]\nsession_id = "none"\n',
+        encoding="utf-8",
+    )
+    def catalog(command: str) -> str:
+        return (
+            '[[harness]]\nid = "grok"\n'
+            f'command = ["{command}", "{{prompt}}"]\n'
+            'session_id = "none"\nenv = []\nmodels = []\n\n'
+            "[harness.permission]\nask = []\nauto = []\n"
+        )
+
+    (home / "harnesses.toml").write_text(catalog("global-list"), encoding="utf-8")
+    root = foil_root(repo)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "harnesses.toml").write_text(catalog("project-list"), encoding="utf-8")
+    assert load_preset(repo, "grok")["command"][0] == "project-list"
+    (root / "harnesses").mkdir()
+    (root / "harnesses" / "grok.toml").write_text(
+        'id = "grok"\ncommand = ["project-file", "{prompt}"]\nsession_id = "none"\n',
+        encoding="utf-8",
+    )
+    assert load_preset(repo, "grok")["command"][0] == "project-file"
+    (root / "harnesses" / "grok.toml").unlink()
+    (root / "harnesses.toml").unlink()
+    assert load_preset(repo, "grok")["command"][0] == "global-file"
+    (home / "harnesses" / "grok.toml").unlink()
+    assert load_preset(repo, "grok")["command"][0] == "global-list"
+
+
 def test_user_harness_overrides_builtin(tmp_path: Path) -> None:
     path = tmp_path / ".foil" / "harnesses" / "grok.toml"
     path.parent.mkdir(parents=True)

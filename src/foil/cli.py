@@ -222,12 +222,24 @@ def _run(args: argparse.Namespace) -> int:
         from foil.view import serve
 
         return serve(args.port)
-    if args.command == "roster" and getattr(args, "project", False) and _caller() == OUTSIDE:
+    if args.command == "roster" and not getattr(args, "project", False):
         try:
-            discover_project()
-        except FoilError:
-            raise FoilError("foil: --project needs a checkout") from None
-    root = _require_project()
+            root = _require_project()
+        except FoilError as exc:
+            if "not a git repository" not in str(exc):
+                raise
+            root = Path.cwd()
+    else:
+        if (
+            args.command == "roster"
+            and getattr(args, "project", False)
+            and _caller() == OUTSIDE
+        ):
+            try:
+                discover_project()
+            except FoilError:
+                raise FoilError("foil: --project needs a checkout") from None
+        root = _require_project()
     if args.command == "seat":
         action = args.seat_command
         if action == "spawn":
@@ -315,7 +327,7 @@ def _run(args: argparse.Namespace) -> int:
     elif action == "add":
         authorize("roster-add")
         _refuse_project(getattr(args, "project", False))
-        if _caller() != OUTSIDE and not args.from_file:
+        if _caller() != OUTSIDE:
             raise FoilError("foil: roles are outside the fleet only")
         add_template(
             root,
