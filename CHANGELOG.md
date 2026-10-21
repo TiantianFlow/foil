@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- A release workflow publishes each `vX.Y.Z` tag to PyPI as `foil-orchestrator`, using trusted publishing. CONTRIBUTING.md has the release steps. (#70)
+
 ## [0.6.0] - 2026-10-21
 
 `foil --version` prints 0.6.0.
