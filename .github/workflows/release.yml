@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           persist-credentials: false
       - uses: astral-sh/setup-uv@v5
         with:
@@ -35,11 +35,13 @@ jobs:
       - name: Build
         run: uv build --no-config
       - name: Smoke-test installed wheel
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           wheel_env="$RUNNER_TEMP/foil-wheel-smoke"
           uv venv --no-config "$wheel_env"
           uv pip install --no-config --python "$wheel_env/bin/python" dist/foil_orchestrator-*.whl
-          "$wheel_env/bin/foil" --version
+          test "$("$wheel_env/bin/foil" --version)" = "foil ${TAG#v}"
       - uses: actions/upload-artifact@v4
         with:
           name: dist
