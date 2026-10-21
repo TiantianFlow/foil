@@ -19,6 +19,11 @@ PUBLIC_URL_HOSTS = frozenset(
         "www.apache.org",
         "apache.org",
         "foil.local",
+        "code.claude.com",
+        "developers.openai.com",
+        "docs.x.ai",
+        "geminicli.com",
+        "opencode.ai",
     }
 )
 USER_HOME = re.compile(
@@ -141,6 +146,16 @@ def _should_scan_urls(relative: str, path: Path) -> bool:
 
 
 def test_tracked_docs_urls_use_public_host_allowlist() -> None:
+    """F23: CONTRIBUTING names each harness doc, so those hosts are public."""
+
+    vendor_docs = {
+        "code.claude.com",
+        "developers.openai.com",
+        "docs.x.ai",
+        "geminicli.com",
+        "opencode.ai",
+    }
+    assert vendor_docs <= PUBLIC_URL_HOSTS
     offenders: list[str] = []
 
     for relative, path, text in _tracked_text():

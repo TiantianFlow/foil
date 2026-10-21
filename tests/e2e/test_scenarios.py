@@ -1101,6 +1101,6 @@ def test_e2e_harness_override_rewrites_the_three_templates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FOIL_E2E_HARNESS", "codex")
-    repo = _prepare(tmp_path, "scenario-6", monkeypatch, fake=False)
+    _prepare(tmp_path, "scenario-6", monkeypatch, fake=False)
     text = (store_root() / "mapping.toml").read_text(encoding="utf-8")
     assert text.count('harness = "codex"') >= 3
