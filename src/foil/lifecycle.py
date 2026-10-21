@@ -6,11 +6,13 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import uuid
 from datetime import UTC, date, datetime
+from importlib.resources import files
 from pathlib import Path
 
 from foil import __version__
@@ -19,6 +21,7 @@ from foil.errors import FoilError, shown
 from foil.presets import (
     BUILTIN_IDS,
     _builtin,
+    _init_check,
     entry_label,
     expand_argv,
     fleet_overrides,
@@ -26,7 +29,6 @@ from foil.presets import (
     installed_presets,
     load_preset,
     load_template,
-    persona_stems,
     persona_text,
     read_description,
     read_roles,
@@ -137,7 +139,8 @@ def _names(items: list[str]) -> str:
 
 
 def _overridden_builtins(toplevel: Path) -> list[str]:
-    directory = foil_root(toplevel) / "harnesses"
+    del toplevel
+    directory = store_root() / "harnesses"
     names: list[str] = []
     for harness_id in BUILTIN_IDS:
         if harness_id == "fake":
@@ -152,8 +155,9 @@ def _overridden_builtins(toplevel: Path) -> list[str]:
 def _print_init_report(
     toplevel: Path,
     had_templates: set[str],
-    had_personas: set[str],
+    _had_personas: set[str],
     updated_skills: list[str],
+    removed: list[Path] | None = None,
 ) -> None:
     print(f"foil {__version__}")
     presets, skipped = installed_presets(toplevel)
@@ -194,29 +198,37 @@ def _print_init_report(
             "Two ids can still run the same program or model; "
             "set model on a template to choose one."
         )
-    template_dir = foil_root(toplevel) / "templates"
-    personas = persona_stems(template_dir / "personas")
+    personas = [
+        path.stem
+        for path in files("foil").joinpath("defaults", "personas").iterdir()
+        if path.name.endswith(".md")
+    ]
+    personas.sort()
     template_names = {item["id"] for item in (read_roles(toplevel) or [])}
     available_personas = [name for name in personas if name not in template_names]
 
     print("Wrote templates: " + _names([role for role in roles if role not in had_templates]))
     print("Left templates: " + _names([role for role in roles if role in had_templates]))
-    print("Wrote personas: " + _names([name for name in personas if name not in had_personas]))
-    print("Left personas: " + _names([name for name in personas if name in had_personas]))
+    print("Wrote personas: none")
+    print("Left personas: " + _names(personas))
     if available_personas:
         print(f"Available personas (use 'foil roster add'): {_names(available_personas)}")
+    for path in removed or []:
+        print(f"Removed: {path}")
     permissions = ", ".join(
         f"{role} {load_template(toplevel, role)['permission']}" for role in roles
     )
-    if updated_skills:
-        print("Updated skills: " + _names(updated_skills))
+    del updated_skills
+    operator = store_root() / "skills" / "operator.md"
+    if operator.is_file() and not operator.is_symlink():
+        print(f"Skill: {operator}")
     else:
-        print("Skills: current")
+        print("Skill: packaged")
     print(f"permission: {permissions}.")
     print(
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
         "approval prompts, though some harnesses still ask for some commands. "
-        "Set permission in roles.toml in the project folder. "
+        "Set permission in roles.toml. "
         "An omitted permission is auto. "
         "auto on the lead alone does not "
         "let the workers run unattended."
@@ -226,7 +238,35 @@ def _print_init_report(
     sys.stdout.flush()
     if _star_saved(_star_due()):
         print(f"For the human: if Foil helps, a GitHub star helps others find it: {STAR_URL}")
-    print(f"Read {foil_root(toplevel) / 'skills' / 'operator.md'} and follow it. My goal: <goal>.")
+    operator = store_root() / "skills" / "operator.md"
+    if operator.is_file() and not operator.is_symlink():
+        print(f"Read {operator} and follow it. My goal: <goal>.")
+    else:
+        print("Read the packaged operator skill and follow it. My goal: <goal>.")
+
+
+def _unlink_project_settings(root: Path) -> list[Path]:
+    """Drop the named project paths. A symlink is removed and not followed."""
+
+    removed: list[Path] = []
+    for relative in (
+        "roles.toml",
+        "mapping.toml",
+        "harnesses.toml",
+        "harnesses",
+        "templates",
+        "skills/operator.md",
+        "skills/lead.md",
+        "skills/worker.md",
+    ):
+        path = root / relative
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+            removed.append(path)
+        elif path.is_dir():
+            shutil.rmtree(path)
+            removed.append(path)
+    return removed
 
 
 def init_project(directory: str | None) -> None:
@@ -236,30 +276,37 @@ def init_project(directory: str | None) -> None:
         raise FoilError("foil: not a git repository")
     toplevel = git_toplevel(start)
     root = foil_root(toplevel)
-    present = {item["id"] for item in (read_roles(toplevel) or [])}
-    if any(role not in present for role in ("lead", "implementer", "reviewer")):
-        installed_harness(toplevel)
-    root, previous, rewritten = prepare_project(toplevel)
-    for relative in SKELETON:
-        path = root / relative
-        path.mkdir(parents=True, exist_ok=True, mode=0o700)
-        path.chmod(0o700)
-    lift_root_runtime(root)
-    # Only after a move, an adopt, or a retry. A healthy re-init leaves run/
-    # alone, including a plan whose seat worktree the user has deleted.
-    if rewritten:
-        rewrite_stored_paths(root, toplevel, previous=previous)
-    ensure_board(toplevel)
-    ensure_registry(toplevel)
-    template_dir = root / "templates"
-    persona_dir = template_dir / "personas"
-    roles = ("lead", "implementer", "reviewer")
-    had_templates = {
-        role for role in roles if any(item["id"] == role for item in (read_roles(toplevel) or []))
-    }
-    had_personas = set(persona_stems(persona_dir))
-    updated_skills = write_default_templates(toplevel)
-    _print_init_report(toplevel, had_templates, had_personas, updated_skills)
+    # Project settings are unread until the unlink. A symlink must not be followed.
+    token = _init_check.set(True)
+    try:
+        present = {item["id"] for item in (read_roles(toplevel) or [])}
+        if any(role not in present for role in ("lead", "implementer", "reviewer")):
+            installed_harness(toplevel)
+        root, previous, rewritten = prepare_project(toplevel)
+        for relative in SKELETON:
+            path = root / relative
+            path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            path.chmod(0o700)
+        lift_root_runtime(root)
+        # Only after a move, an adopt, or a retry. A healthy re-init leaves run/
+        # alone, including a plan whose seat worktree the user has deleted.
+        if rewritten:
+            rewrite_stored_paths(root, toplevel, previous=previous)
+        ensure_board(toplevel)
+        ensure_registry(toplevel)
+        roles = ("lead", "implementer", "reviewer")
+        had_templates = {
+            role
+            for role in roles
+            if any(item["id"] == role for item in (read_roles(toplevel) or []))
+        }
+        had_personas: set[str] = set()
+        write_default_templates(toplevel)
+    finally:
+        _init_check.reset(token)
+    # After every step that can still exit non-zero. A failure above deletes nothing.
+    removed = _unlink_project_settings(root)
+    _print_init_report(toplevel, had_templates, had_personas, [], removed)
 
 
 def _seat_name(registry: dict, template_name: str, requested: str | None) -> str:
@@ -454,9 +501,10 @@ def _instruction(
             [
                 f"Workspace: `{workspace}`. The repository is shared by every fleet.",
                 f"Posts: `{posts}`.",
-                f"Harnesses and model ids: `{foil_root(root) / 'harnesses.toml'}`.",
-                f"Profiles: `{foil_root(root) / 'roles.toml'}`.",
-                f"Default mapping: `{foil_root(root) / 'mapping.toml'}`.",
+                "Harnesses and model ids: "
+                f"`{files('foil').joinpath('defaults', 'harnesses.toml')}`.",
+                f"Profiles: `{store_root() / 'roles.toml'}`.",
+                f"Default mapping: `{store_root() / 'mapping.toml'}`.",
                 f"Fleet memory: `{override_path}`. Re-read that file before you spawn.",
                 "A role's rows in that file replace its default list for this fleet.",
                 "You do not pass a harness or a model flag.",

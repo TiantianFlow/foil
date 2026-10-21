@@ -19,8 +19,6 @@ from foil.errors import FoilError
 
 FOIL_DIRNAME = ".foil"
 SKELETON = (
-    "templates/personas",
-    "harnesses",
     "memory",
     "skills",
     "fleets/main/board/mail",

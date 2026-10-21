@@ -23,7 +23,7 @@ from foil.presets import (
     persona_text,
     select_harness,
 )
-from foil.project import foil_root
+from foil.project import foil_root, store_root
 from tests.test_init import _init_git_repository
 
 _AGENT_CLIS = {"grok", "claude", "codex", "opencode", "gemini", "fake"}
@@ -248,12 +248,13 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
         argv = launch_command(repo, role, prompt=prompt, session_id="abc")
         assert argv[0] == template["harness"][0]["id"]
         assert argv[-1] == prompt
-        roles = tomllib.loads((root / "roles.toml").read_text(encoding="utf-8"))
+        roles = tomllib.loads((store_root() / "roles.toml").read_text(encoding="utf-8"))
         stored = next(item for item in roles["role"] if item["id"] == role)
         assert stored["persona"] == f"personas/{role}.md"
 
-    roles_path = root / "roles.toml"
-    persona = root / "templates" / "personas" / "lead.md"
+    roles_path = store_root() / "roles.toml"
+    persona = store_root() / "personas" / "lead.md"
+    persona.parent.mkdir(parents=True, exist_ok=True)
     original_roles = roles_path.read_text(encoding="utf-8")
     roles_path.write_text(
         original_roles.replace(
@@ -274,6 +275,7 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
         persona_text({"path": root / "templates" / "lead.toml", "persona": "/keep me"})
         == "/keep me"
     )
+    assert not (root / "templates").exists()
     assert load_template(repo, "reviewer")["harness"][0]["id"] == "codex"
 
 
@@ -292,12 +294,12 @@ def test_persona_text_rejects_a_leading_slash_without_reading(
     with pytest.raises(FoilError) as caught:
         persona_text({"path": template_path, "persona": "/missing/verifier.md"})
     assert str(caught.value) == (
-        "foil: persona path must stay inside the project templates: /missing/verifier.md"
+        "foil: persona path must stay inside personas: /missing/verifier.md"
     )
     with pytest.raises(FoilError) as climbed:
         persona_text({"path": template_path, "persona": "../verifier.md"})
     assert str(climbed.value) == (
-        "foil: persona path must stay inside the project templates: ../verifier.md"
+        "foil: persona path must stay inside personas: ../verifier.md"
     )
     assert persona_text({"path": template_path, "persona": "/keep me"}) == "/keep me"
 
@@ -438,7 +440,7 @@ def test_user_id_sorts_between_builtins_and_fake_is_ignored(
         _stub_program(bindir, name)
     monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ.get('PATH', '')}")
     _limit_harnesses(monkeypatch, {"claude", "opencode", "delta", "foil-fake"})
-    harnesses = foil_root(repo) / "harnesses"
+    harnesses = store_root() / "harnesses"
     harnesses.mkdir(parents=True)
     _write_preset(harnesses, "delta", "delta")
     _write_preset(harnesses, "fake", "foil-fake")
@@ -455,7 +457,7 @@ def test_same_program_counts_as_two_ids_and_one_id_fills_every_template(
 ) -> None:
     repo = _fresh_repo(tmp_path, monkeypatch)
     _limit_harnesses(monkeypatch, {"claude"})
-    harnesses = foil_root(repo) / "harnesses"
+    harnesses = store_root() / "harnesses"
     harnesses.mkdir(parents=True)
     _write_preset(harnesses, "extra", "claude")
     assert main(["init"]) == 0
@@ -463,8 +465,8 @@ def test_same_program_counts_as_two_ids_and_one_id_fills_every_template(
     assert load_template(repo, "reviewer")["harness"][0]["id"] == "extra"
     assert [preset["command"][0] for preset in installed_presets(repo)[0]] == ["claude", "claude"]
 
-    (foil_root(repo) / "roles.toml").unlink()
-    (foil_root(repo) / "mapping.toml").unlink()
+    (store_root() / "roles.toml").unlink()
+    (store_root() / "mapping.toml").unlink()
     (harnesses / "extra.toml").unlink()
     assert main(["init"]) == 0
     for role in ("lead", "implementer", "reviewer"):
@@ -476,8 +478,8 @@ def test_init_copies_every_persona_and_keeps_an_edit(
 ) -> None:
     repo = _fresh_repo(tmp_path, monkeypatch)
     assert main(["init"]) == 0
-    personas = foil_root(repo) / "templates" / "personas"
-    names = sorted(path.name for path in personas.glob("*.md"))
+    packaged = files("foil").joinpath("defaults", "personas")
+    names = sorted(path.name for path in packaged.iterdir() if path.name.endswith(".md"))
     assert names == [
         "documentation-writer.md",
         "domain-designer.md",
@@ -488,30 +490,31 @@ def test_init_copies_every_persona_and_keeps_an_edit(
         "reviewer.md",
         "verifier.md",
     ]
-    templates = sorted(path.name for path in (foil_root(repo) / "templates").glob("*.toml"))
-    assert templates == []
+    assert not (foil_root(repo) / "templates").exists()
     role_ids = [
         item["id"]
-        for item in tomllib.loads((foil_root(repo) / "roles.toml").read_text(encoding="utf-8"))[
+        for item in tomllib.loads((store_root() / "roles.toml").read_text(encoding="utf-8"))[
             "role"
         ]
     ]
     assert role_ids == ["lead", "implementer", "reviewer"]
-    edited = personas / "researcher.md"
+    for role in role_ids:
+        template = load_template(repo, role)
+        assert persona_text(template) == packaged.joinpath(f"{role}.md").read_text(encoding="utf-8")
+    edited = store_root() / "personas" / "researcher.md"
+    edited.parent.mkdir(parents=True, exist_ok=True)
     edited.write_text("custom researcher\n", encoding="utf-8")
-    before = {
-        path: path.read_bytes()
-        for path in (foil_root(repo) / "templates").rglob("*")
-        if path.is_file()
-    }
     assert main(["init"]) == 0
-    after = {
-        path: path.read_bytes()
-        for path in (foil_root(repo) / "templates").rglob("*")
-        if path.is_file()
-    }
-    assert after == before
     assert edited.read_text(encoding="utf-8") == "custom researcher\n"
+    assert (
+        persona_text(
+            {
+                "path": foil_root(repo) / "templates" / "researcher.toml",
+                "persona": "personas/researcher.md",
+            }
+        )
+        == "custom researcher\n"
+    )
 
 
 def test_init_without_a_harness_writes_nothing(
@@ -535,19 +538,12 @@ def test_init_rerun_with_no_harness_keeps_templates(
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
-    before = {
-        path: path.read_bytes()
-        for path in (foil_root(repo) / "templates").rglob("*")
-        if path.is_file()
-    }
+    roles = store_root() / "roles.toml"
+    maps = store_root() / "mapping.toml"
+    before = (roles.read_bytes(), maps.read_bytes())
     _hide_agent_clis(monkeypatch)
     assert main(["init"]) == 0
-    after = {
-        path: path.read_bytes()
-        for path in (foil_root(repo) / "templates").rglob("*")
-        if path.is_file()
-    }
-    assert after == before
+    assert (roles.read_bytes(), maps.read_bytes()) == before
 
 
 def test_init_refreshes_skills_and_leaves_templates_and_personas(
@@ -558,35 +554,37 @@ def test_init_refreshes_skills_and_leaves_templates_and_personas(
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
-    capsys.readouterr()
-    root = foil_root(repo) / "skills"
+    first = capsys.readouterr().out
     packaged = files("foil").joinpath("defaults", "skills", "operator.md").read_bytes()
-    written = (root / "operator.md").read_bytes()
-    assert written == packaged
-    for copy in (packaged.decode(), written.decode()):
-        header = copy.split("---", 2)[1]
-        assert "name:" in header
-        assert "description:" in header
-    assert not (root / "lead.md").exists()
-    assert not (root / "worker.md").exists()
-    edited = root / "operator.md"
-    edited.write_text("edited operator\n", encoding="utf-8")
-    stale = root / "lead.md"
+    header = packaged.decode().split("---", 2)[1]
+    assert "name:" in header
+    assert "description:" in header
+    assert "Skill: packaged" in first
+    root = foil_root(repo)
+    assert not (root / "skills" / "operator.md").exists()
+    assert not (root / "skills" / "lead.md").exists()
+    assert not (root / "skills" / "worker.md").exists()
+    global_skill = store_root() / "skills" / "operator.md"
+    global_skill.parent.mkdir(parents=True, exist_ok=True)
+    global_skill.write_text("edited operator\n", encoding="utf-8")
+    stale = root / "skills" / "lead.md"
+    stale.parent.mkdir(parents=True, exist_ok=True)
     stale.write_text("old lead\n", encoding="utf-8")
-    persona = foil_root(repo) / "templates" / "personas" / "lead.md"
+    persona = store_root() / "personas" / "lead.md"
+    persona.parent.mkdir(parents=True, exist_ok=True)
     persona.write_text("edited persona\n", encoding="utf-8")
-    template = foil_root(repo) / "roles.toml"
+    template = store_root() / "roles.toml"
     template_bytes = template.read_bytes()
     assert main(["init"]) == 0
     report = capsys.readouterr().out
-    assert "Updated skills: operator" in report
-    assert edited.read_bytes() == packaged
-    assert stale.read_text(encoding="utf-8") == "old lead\n"
-    assert not (root / "worker.md").exists()
+    assert f"Skill: {global_skill}" in report
+    assert global_skill.read_text(encoding="utf-8") == "edited operator\n"
+    assert not stale.exists()
+    assert not (root / "skills" / "worker.md").exists()
     assert persona.read_text(encoding="utf-8") == "edited persona\n"
     assert template.read_bytes() == template_bytes
     assert main(["init"]) == 0
-    assert "Skills: current" in capsys.readouterr().out
+    assert f"Skill: {global_skill}" in capsys.readouterr().out
 
 
 def test_init_refuses_a_skill_symlink(
@@ -601,11 +599,11 @@ def test_init_refuses_a_skill_symlink(
     outside = tmp_path / "outside.md"
     outside.write_text("keep\n", encoding="utf-8")
     skill = foil_root(repo) / "skills" / "operator.md"
-    skill.unlink()
+    skill.parent.mkdir(parents=True, exist_ok=True)
     skill.symlink_to(outside)
-    assert main(["init"]) == 1
-    assert capsys.readouterr().err == "foil: refusing symlink\n"
-    assert skill.is_symlink()
+    assert main(["init"]) == 0
+    assert capsys.readouterr().err == ""
+    assert not skill.exists() and not skill.is_symlink()
     assert outside.read_text(encoding="utf-8") == "keep\n"
 
 
@@ -618,7 +616,8 @@ def test_init_reports_an_overridden_builtin_and_leaves_the_preset(
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
     capsys.readouterr()
-    harnesses = foil_root(repo) / "harnesses"
+    harnesses = store_root() / "harnesses"
+    harnesses.mkdir(parents=True)
     preset = (
         'id = "claude"\n'
         'command = ["claude", "{prompt}"]\n'
@@ -741,9 +740,20 @@ def test_harness_check_uses_a_global_preset_and_not_a_project_file(
     _write_preset(home / "harnesses", "only-global", "only-global")
     assert not (foil_root(repo)).exists()
 
+    opened: list[Path] = []
+    real_read_text = Path.read_text
+
+    def record_open(self: Path, *args: object, **kwargs: object) -> object:
+        opened.append(self)
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", record_open)
+    project_file = foil_root(repo) / "harnesses.toml"
     assert main(["init"]) == 0
-    assert "only-global" in capsys.readouterr().out
-    assert not (foil_root(repo) / "harnesses.toml").exists()
+    report = capsys.readouterr().out
+    assert "only-global" in report
+    assert project_file not in opened
+    assert not project_file.exists()
     assert not (foil_root(repo) / "harnesses").exists()
 
     for path in (
@@ -753,16 +763,12 @@ def test_harness_check_uses_a_global_preset_and_not_a_project_file(
         foil_root(repo) / "mapping.toml",
     ):
         path.unlink(missing_ok=True)
-    project_file = foil_root(repo) / "harnesses.toml"
-
-    def refuse_project_open(self: Path, *args: object, **kwargs: object) -> object:
-        if self == project_file:
-            raise AssertionError("init opened a project harness file")
-        return Path.read_text(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_text", refuse_project_open)
+    (foil_root(repo) / "harnesses").mkdir()
+    project_file.write_text('id = "only-global"\n', encoding="utf-8")
+    opened.clear()
     assert main(["init"]) == 0
     assert "only-global" in capsys.readouterr().out
+    assert project_file not in opened
 
 
 def test_packaged_model_list_is_the_installed_package(
@@ -792,15 +798,18 @@ def test_init_writes_three_lists_and_a_fleet_workspace(
     repo = _fresh_repo(tmp_path, monkeypatch)
     assert main(["init"]) == 0
     root = foil_root(repo)
-    catalog = tomllib.loads((root / "harnesses.toml").read_text(encoding="utf-8"))
+    catalog = tomllib.loads(
+        files("foil").joinpath("defaults", "harnesses.toml").read_text(encoding="utf-8")
+    )
     claude = next(item for item in catalog["harness"] if item["id"] == "claude")
     assert "sonnet" in claude["models"]
     assert "opus" in claude["models"]
-    roles = tomllib.loads((root / "roles.toml").read_text(encoding="utf-8"))
+    assert not (root / "harnesses.toml").exists()
+    roles = tomllib.loads((store_root() / "roles.toml").read_text(encoding="utf-8"))
     by_id = {item["id"]: item for item in roles["role"]}
     assert by_id["lead"]["description"].startswith("You are the lead seat")
     assert by_id["implementer"]["worktree"] is True
-    maps = tomllib.loads((root / "mapping.toml").read_text(encoding="utf-8"))
+    maps = tomllib.loads((store_root() / "mapping.toml").read_text(encoding="utf-8"))
     assigned = {item["role"]: item["harness"] for item in maps["map"]}
     assert assigned["lead"] == "claude"
     assert assigned["reviewer"] == "codex"
