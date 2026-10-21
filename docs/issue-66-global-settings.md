@@ -166,18 +166,20 @@ is the same inside every layer.
       board/  run/
 ```
 
-## Proposed, not closed
+## The close stands
 
-The sentences below are a proposal. The room has not accepted them. They
-do not reopen the closed decisions above. Issue #66's triage is not
-followed where it keeps old project copies, makes global optional, adds a
-`--global` flag, or migrates a project harness by fingerprint. That
-migration stays closed: init still deletes a project harness file without
-reading it.
+The room closed the t6 proposal. Critic, requirements-owner, architect,
+and implementer declined the close. The proposal stands, with the four
+F38 corrections below. It does not reopen the closed decisions above.
+Issue #66's triage is not followed where it keeps old project copies,
+makes global optional, adds a `--global` flag, or migrates a project
+harness by fingerprint. That migration stays closed: init still deletes
+a project harness file without reading it. The audit quote stays
+undecided.
 
 ### Packaged model ids
 
-Proposed in F23 and in CONTRIBUTING under "Before you tag".
+Closed in F23 and in CONTRIBUTING under "Before you tag".
 
 The packaged model ids are read live from the installed package. Init
 already does not copy that list, so an upgrade of the package refreshes
@@ -212,13 +214,18 @@ Docs read for this proposal, which the checklist re-checks before tagging:
 
 ### Pair cards, the Rotation line, and the spawn refusal
 
-Proposed in F3 and F38.
+Closed in F3 and F38.
 
 Each pair is one card, harness on top and model below, not two columns.
 An empty model shows `harness default`, with the tip that no `--model`
-is passed, so the CLI uses its own default. Under each role, a Rotation
-line lists the seats in order and marks the next one. On the fleet page
-that line starts from that fleet's stored seat count.
+is passed, so the CLI uses its own default. On `/settings` and on
+project settings the Rotation line lists the pairs in order. It does not
+number seats and does not mark a next seat. The next mark stays on the
+fleet page, from that fleet's stored count.
+
+Reason for that split: F3's count is the seat records stored for that
+role in one fleet. `/settings` has no fleet, and a project has more than
+one. A next mark on those pages would name a seat spawn will not take.
 
 `seat spawn` refuses a model-only row when the pair list that row
 replaces has more than one entry. The refusal is one line and names
@@ -234,19 +241,31 @@ and which seat is next.
 
 ### Viewer
 
-Proposed in F37 and F38. F39 is unchanged.
+Closed in F37 and F38. F39 is unchanged.
 
-`/settings` is the global layer and needs no project. A layer strip at
-the top of `/settings` and of a project's settings page reads Packaged,
-then Global, then Project, then Fleet. Each settings row has a source
-badge of `packaged`, `global`, `project`, or `fleet`.
+`/settings` is the global layer and needs no project. It shows the same
+rows project settings show, for the global layer. A row with no global
+file carries the `packaged` badge. A layer strip at the top of
+`/settings` and of a project's settings page reads Packaged, then
+Global, then Project, then Fleet. Each settings row has a source badge
+of `packaged`, `global`, `project`, or `fleet`.
 
-Audit item 12: the fleet page section is titled Fleet overrides and links
-to the pair list it replaces, the project mapping when that project has
-one, otherwise the global mapping on `/settings`. An empty section is one
-line: `None. Spawn uses the pair list this fleet replaces.` The audit's
-line "None. Every role uses the project mapping." assumed project files
-were the settings. That assumption is closed the other way.
+Reason: F38 had called `/settings` the global layer and then attached
+the row list only to project settings. The page would otherwise be a
+strip and badges over rows the requirement never named. A harness or a
+persona with no global file is the packaged one.
+
+The fleet page section is titled Fleet overrides. The link is per role.
+It targets the project mapping when that role has project mapping rows,
+and `/settings` otherwise. When the fleet has no override rows, that
+section is one line: `None. Spawn uses each role's project pair list
+when that role has one, otherwise the global list.`
+
+Reason: a project mapping file replaces only the roles that have rows
+in it. One link for the whole section would send a role with no project
+rows to the project mapping while spawn still reads the global list.
+With no override rows the fleet replaces nothing, so the line names that
+rule instead of one list. The audit quote is not decided.
 
 Audit item 18: Settings is a link at the right end of the header and is
 not a breadcrumb. The trail stays Foil, the project, the fleet, the seat,
@@ -261,12 +280,14 @@ differs, the requirements win.
 
 Reason: the closed lookup has to be the same page the CLI writes.
 Settings beside the project made the fleet look like a child of Settings.
-The empty-state line has to name the list spawn actually uses.
 
 ### Skill text
 
-Proposed in F25 and section 8. This proposal does not edit `skills/` or
-the packaged skill files. It says what they must say.
+Closed in F25 and section 8. This close does not edit `skills/` or
+the packaged skill files. It says what they must say. The check stays
+in the two existing tests. `/settings` stays a route in `view.py`. The
+spawn refusal stays in `spawn_entry`, and a one-entry mapping stays
+valid.
 
 The packaged operator, lead, and worker skills, the files under `skills/`,
 and the instructions given to a worker seat describe the same lookup and
@@ -280,7 +301,6 @@ layers. The existing tests are where that check belongs.
 
 ## What follows
 
-These proposed sentences are what the room attacks. Tests and code follow
-a close, not this commit. The default test run is the one that counts.
-The live tier stays opt-in. This document does not change behavior by
-itself.
+The close stands. Tests and code follow this commit. The default test
+run is the one that counts. The live tier stays opt-in. This document
+does not change behavior by itself.
