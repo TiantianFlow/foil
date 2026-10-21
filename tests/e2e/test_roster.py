@@ -68,7 +68,7 @@ def _prepare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_roster_full_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Full workflow: init → roster list → add researcher → verify."""
-    repo = _prepare(tmp_path, monkeypatch)
+    _prepare(tmp_path, monkeypatch)
 
     # List roster
     out = io.StringIO()
@@ -125,7 +125,7 @@ def test_roster_full_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 def test_roster_update_existing_template(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Update an existing default template's fields."""
-    repo = _prepare(tmp_path, monkeypatch)
+    _prepare(tmp_path, monkeypatch)
 
     # Update lead harness
     out = io.StringIO()
@@ -151,7 +151,7 @@ def test_roster_update_existing_template(tmp_path: Path, monkeypatch: pytest.Mon
 
 def test_roster_remove_non_protected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Remove a non-protected template."""
-    repo = _prepare(tmp_path, monkeypatch)
+    _prepare(tmp_path, monkeypatch)
 
     # Add researcher
     assert main(["roster", "add", "researcher"]) == 0

@@ -12,7 +12,7 @@ import pytest
 
 from foil import __version__, lifecycle
 from foil.cli import main
-from foil.project import foil_root, store_root
+from foil.project import store_root
 
 MINOR = ".".join(__version__.split(".")[:2])
 LINE = "For the human: if Foil helps, a GitHub star helps others find it:"
