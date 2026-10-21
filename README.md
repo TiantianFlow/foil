@@ -153,7 +153,7 @@ Run `foil seat peek lead`, and do the same for a seat that was just spawned or r
 
 ## See it in a browser
 
-`foil view`, run from any directory, serves one read-only page for every Foil project on this machine and prints its address. The page lists the projects. Each project lists its fleets and lessons, and its Settings shows the three shared lists. Each fleet shows its attach command, overrides, seats, board, and posts, and each seat shows its raw pane. It types nothing into a pane and decides nothing about progress; that is still `board/status.md`. Stopping it leaves every seat as it was.
+`foil view`, run from any directory, serves one read-only page for every Foil project on this machine and prints its address. The page lists the projects. Each project lists its fleets and lessons, and its Settings shows the three shared lists. Each fleet shows its seats grouped by state (dead first, killed folded away), its `status.md`, its posts and board files with their modified times, its overrides, and its attach command. A board file opens on its own page, and each seat shows its raw pane. It types nothing into a pane and decides nothing about progress; that is still `board/status.md`. Stopping it leaves every seat as it was.
 
 ```sh
 foil view

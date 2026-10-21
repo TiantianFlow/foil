@@ -2,6 +2,12 @@
 
 Notable changes to Foil, newest first.
 
+## Unreleased
+
+### Changed
+
+- `foil view` was reworked from a UX audit (#63). A board or post file opens on its own page, at the top and full width, with a link back and links to the files before and after it, instead of below the lists in half the width. A path not in the listing is now a 404. The fleet page lists seats first, grouped as Needs attention (dead), Running (alive), and Killed (folded), with links to filter by state, then `status.md` inline, then posts by thread and board files by folder, each with its modified time, then overrides and the attach command. The default mapping and a fleet's overrides show each role as one numbered list of harness and model pairs, with the entry the next spawn takes marked on the fleet page. Settings is titled Project settings. Column headers have info explanations, the header is one line of breadcrumbs, a seat page links to the seats before and after it, and the seat list fits a phone screen. Dead seats have their own colour.
+
 ## [0.5.3] - 2026-10-20
 
 `foil --version` prints 0.5.3.

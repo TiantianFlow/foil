@@ -6,6 +6,7 @@ It needs Chromium for Playwright:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -83,4 +84,74 @@ def test_copy_puts_the_attach_command_on_the_clipboard(
         copied = page.evaluate("navigator.clipboard.readText()")
         page.context.close()
     assert copied == "tmux attach -t '=foil-demo-1'"
+    assert errors == []
+
+
+def test_an_info_popup_in_a_table_stays_inside_a_phone_screen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    with _serving(repo) as port:
+        page, errors = _open(browser, port, repo, "/settings")
+        page.set_viewport_size({"width": 390, "height": 844})
+        tip = page.locator("th details.tip").filter(
+            has=page.locator('summary[aria-label="About Worktree"]')
+        )
+        tip.locator("summary").click()
+        # The page places the popup on the toggle event, which runs after the click.
+        expect(tip.locator("p")).to_have_attribute("style", re.compile("left"))
+        icon = tip.locator("summary").bounding_box()
+        box = tip.locator("p").bounding_box()
+        page.context.close()
+    assert icon is not None and box is not None
+    assert box["x"] >= 0 and box["x"] + box["width"] <= 390
+    assert box["y"] >= icon["y"] + icon["height"]
+    assert errors == []
+
+
+def test_on_a_phone_every_seat_shows_its_state_without_sideways_scrolling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    seats = [_seat("lead", window="@1")] + [
+        _seat(f"implementer-{n}", window=f"@{n + 1}", branch=f"foil/implementer-{n}")
+        for n in range(1, 5)
+    ]
+    _registry(repo, *seats)
+    _windows(monkeypatch, {"@1": "lead", "@3": "implementer-2"})
+    with _serving(repo) as port:
+        page, errors = _open(browser, port, repo, "/fleets/main")
+        page.set_viewport_size({"width": 390, "height": 844})
+        width = page.evaluate("document.documentElement.scrollWidth")
+        states = [cell.bounding_box() for cell in page.locator(".agents .dot").all()]
+        page.context.close()
+    assert width <= 390
+    assert len(states) == 5
+    assert all(box is not None and box["x"] + box["width"] <= 390 for box in states)
+    assert errors == []
+
+
+def test_opening_a_board_file_shows_it_at_the_top(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    (board / "status.md").write_text("status\n" * 60, encoding="utf-8")
+    for n in range(12):
+        (board / "tasks" / f"t{n:02}.md").write_text(f"brief {n}\n", encoding="utf-8")
+    with _serving(repo) as port:
+        page, errors = _open(browser, port, repo, "/fleets/main")
+        link = page.locator('#board a[href$="?open=tasks/t11.md"]')
+        link.scroll_into_view_if_needed()
+        link.click()
+        page.wait_for_load_state()
+        text = page.locator("pre").first
+        expect(text).to_have_text("brief 11\n")
+        top = text.bounding_box()
+        page.locator("text=Back to fleet").click()
+        page.wait_for_load_state()
+        back = page.evaluate("location.hash")
+        page.context.close()
+    assert top is not None and top["y"] < 300
+    assert back == "#board"
     assert errors == []

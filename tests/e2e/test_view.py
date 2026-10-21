@@ -59,7 +59,7 @@ def _page(port: int, path: str) -> str:
 
 
 def _states(port: int) -> dict[str, str]:
-    agents = _page(port, "/fleets/main").split("<h2>Agents")[1].split("</section>")[0]
+    agents = _page(port, "/fleets/main?state=all").split("<h2>Agents")[1].split("</section>")[0]
     found = {}
     for name in SEATS:
         if f">{name}</a>" in agents:
