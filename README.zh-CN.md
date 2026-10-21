@@ -1,7 +1,7 @@
 # 运筹 · Foil
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.0-informational)](https://github.com/TiantianFlow/foil)
+[![Version](https://img.shields.io/badge/version-0.6.1-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
@@ -133,7 +133,7 @@ cd your-repo
 foil init
 ```
 
-如果安装时提示 `Executable already exists: foil`，说明挡路的是包改名为 `foil-ai` 之前的旧安装。先运行 `uv tool uninstall foil-orchestrator`，再运行一次安装命令。
+如果安装时提示 `Executable already exists: foil`，说明包改名为 `foil-ai` 之前的旧安装还在。先运行 `uv tool uninstall foil-orchestrator`，再运行一次安装命令。
 
 读报告，用 `foil roster` 设置那三个模板。如果项目目录里已经有 `board/status.md`，先记下它的 `updated`。然后只启动一次主座：
 

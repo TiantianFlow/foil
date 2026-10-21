@@ -1,13 +1,13 @@
 # Foil · 运筹
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.0-informational)](https://github.com/TiantianFlow/foil)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/TiantianFlow/foil/blob/main/LICENSE)
+[![Version](https://img.shields.io/badge/version-0.6.1-informational)](https://github.com/TiantianFlow/foil)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
-[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
-[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-none-brightgreen)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://github.com/TiantianFlow/foil/blob/main/pyproject.toml)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](https://github.com/TiantianFlow/foil/blob/main/pyproject.toml)
+[![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-none-brightgreen)](https://github.com/TiantianFlow/foil/blob/main/pyproject.toml)
 
-[中文](README.zh-CN.md)
+[中文](https://github.com/TiantianFlow/foil/blob/main/README.zh-CN.md)
 
 **Your agents' loyal opposition.**
 
@@ -86,7 +86,7 @@ flowchart TB
 
 ## Demo
 
-[docs/demo.md](docs/demo.md) walks through a real run: a failing test, a lead, an implementer, and a reviewer, from `foil init` to the merged fix.
+[docs/demo.md](https://github.com/TiantianFlow/foil/blob/main/docs/demo.md) walks through a real run: a failing test, a lead, an implementer, and a reviewer, from `foil init` to the merged fix.
 
 If Foil saves you time, a [star on GitHub](https://github.com/TiantianFlow/foil) helps others find it. That is all it asks for. Your agent may mention it after a finished goal a few times, then rarely, and stops when you say no.
 
@@ -244,8 +244,8 @@ A nudge is typed even when the window is not at a prompt. `foil send` writes the
 
 ## Learn more
 
-- [docs/demo.md](docs/demo.md) — a real run, from `foil init` to the merged fix
-- [docs/architecture.md](docs/architecture.md) — components, data flow, and module boundaries
-- [skills/operator.md](skills/operator.md), [skills/lead.md](skills/lead.md), and [skills/worker.md](skills/worker.md) — what each role runs
-- [CONTRIBUTING.md](CONTRIBUTING.md) — setup and checks
-- [CHANGELOG.md](CHANGELOG.md) — release history
+- [docs/demo.md](https://github.com/TiantianFlow/foil/blob/main/docs/demo.md) — a real run, from `foil init` to the merged fix
+- [docs/architecture.md](https://github.com/TiantianFlow/foil/blob/main/docs/architecture.md) — components, data flow, and module boundaries
+- [skills/operator.md](https://github.com/TiantianFlow/foil/blob/main/skills/operator.md), [skills/lead.md](https://github.com/TiantianFlow/foil/blob/main/skills/lead.md), and [skills/worker.md](https://github.com/TiantianFlow/foil/blob/main/skills/worker.md) — what each role runs
+- [CONTRIBUTING.md](https://github.com/TiantianFlow/foil/blob/main/CONTRIBUTING.md) — setup and checks
+- [CHANGELOG.md](https://github.com/TiantianFlow/foil/blob/main/CHANGELOG.md) — release history
