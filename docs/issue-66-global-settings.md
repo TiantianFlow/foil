@@ -360,6 +360,20 @@ untrue, and "names the packaged skill" was the other reading of the
 same paragraph. One path on both lines leaves one reading. The word
 `packaged` stays so the line still says which layer won.
 
+### The mapping layer `list` and `show` print
+
+Inside a fleet that has rows for the role, `list` and `show` print
+those rows and label the mapping `fleet`. Outside a fleet, and inside
+a fleet that has no rows for that role, they print the project mapping
+list when one exists and the global list otherwise, labeled `project`
+or `global`.
+
+Reason: spawn reads the fleet rows when that role has them (F3). The
+lead writes those rows and is inside the fleet, so a `list` or `show`
+that prints the global list leaves the lead unable to see the pair
+spawn will take. The label names the entries that were printed. No
+other requirement changes.
+
 ## What follows
 
 The close stands. Tests and code follow this commit. The default test
