@@ -1,5 +1,12 @@
 # Issue #18: project-level vs global files
 
+**Rejected.** The recommendation below, against a machine-wide settings
+layer, is wrong. It kept roles and harness choices in the project and
+treated a global layer as a new product. Foil's goals did not change.
+The settings shape did. The current decision is
+[issue #66](issue-66-global-settings.md): global settings are the
+settings, and a project or fleet file is an optional override.
+
 Issue #18, quoted in full:
 
 > The role templates, board and skills are in the project repo.
