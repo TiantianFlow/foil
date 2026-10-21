@@ -102,8 +102,8 @@ TIPS = {
     "alone. An entry with no model starts the harness with no model. Resume keeps the pair "
     "recorded on the seat.",
     "Entries, in order": "Each entry is one harness and model pair. The next spawn of a role "
-    "takes entry number (seats stored for that role, including killed) mod (number of "
-    "entries), counted from 1.",
+    "takes entry ((seats stored for that role, including killed) mod (number of "
+    "entries)) + 1.",
     "Attach": "The session name stored for this fleet. The viewer does not type into the pane.",
     "Workspace": "The checkout recorded for the project. Every fleet on this repository "
     "shares it. Seat worktrees are separate branches.",
@@ -649,7 +649,8 @@ def _file_page(root: Path, fleet: str, rel: str, here: str) -> _Page:
     if not listed:
         raise _Missing("No such file on this board.")
     siblings = [item[0] for item in files if _folder(item[0]) == _folder(rel)]
-    back = f"{here}#{'posts' if rel.startswith('room/') else 'board'}"
+    anchor = "status" if rel == "status.md" else "posts" if rel.startswith("room/") else "board"
+    back = f"{here}#{anchor}"
     links = [f'<a href="{escape(back)}">&larr; Back to fleet</a>']
     at = siblings.index(rel)
     for step, name in ((-1, "Previous"), (1, "Next")):
@@ -660,7 +661,7 @@ def _file_page(root: Path, fleet: str, rel: str, here: str) -> _Page:
     try:
         text, size = _read_listed(root, fleet, rel)
     except Exception as exc:
-        inner = _failed(exc)
+        inner = f'<p class="bar">{" ".join(links)}</p>{_failed(exc)}'
     else:
         cut = _faded(f"Showing the first 1 MiB of {_size(size)}.") if size > PREVIEW else ""
         raw = f'<a href="{escape(f"{here}/raw?open={quote(rel)}")}">Raw</a>'
@@ -700,7 +701,10 @@ def _status(root: Path, fleet: str, files: list[tuple[str, int, float]], here: s
     found = [item for item in files if item[0] == "status.md"]
     if not found:
         return _section("status.md", '<p class="empty">No status.md yet.</p>', anchor="status")
-    text, _size_bytes = _read_listed(root, fleet, "status.md")
+    try:
+        text, _size_bytes = _read_listed(root, fleet, "status.md")
+    except Exception as exc:
+        return _section("status.md", _failed(exc), anchor="status")
     lines = text.splitlines()
     link = f'<a href="{escape(here)}?open=status.md">Open</a>'
     more = ""

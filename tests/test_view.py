@@ -498,6 +498,13 @@ def test_overrides_show_every_row_and_the_pair_the_next_spawn_takes(
     reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
     assert re.search(r'<li class="next"><i>2</i><span class="mono">[^<]*/ big</span>', reviewers)
     assert reviewers.count("<li") == 2
+    # Two reviewers stored and two entries: the rotation wraps back to the first.
+    _registry(repo, _seat("lead"), _seat("reviewer-1", model="fast"), _seat("reviewer-2"))
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main")
+    overrides = page.split("<h2>Overrides")[1].split("</section>")[0]
+    reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
+    assert re.search(r'<li class="next"><i>1</i><span class="mono">[^<]*/ small</span>', reviewers)
 
 
 def test_no_next_spawn_line_when_the_override_matches_the_mapping(
@@ -580,6 +587,9 @@ def test_every_seat_is_listed_with_state_and_branch(
             filtered = _page(port, f"/fleets/main?state={state}")
         rows = filtered.split("<h2>Agents")[1].split("</section>")[0]
         assert re.findall(r'seats/([a-z0-9-]+)"', rows) == names, state
+    with _serving(repo) as port:
+        unknown = _page(port, "/fleets/main?state=bogus")
+    assert unknown.split("<h2>Agents")[1].split("</section>")[0] == shown
 
 
 def test_a_tmux_failure_during_peek_is_one_line(
@@ -704,6 +714,30 @@ def test_board_and_posts_list_files_and_skip_links_and_dotfiles(
     assert 'href="/projects/' in opened and '/fleets/main#board">' in opened
     assert "?open=notes/a.md" in opened and ">Next<" in opened and ">Previous<" not in opened
     assert "&lt;script&gt;x&lt;/script&gt;" in status and "<script>x" not in status
+    assert '/fleets/main#status">' in status
+
+
+def test_a_listed_file_that_cannot_be_read_keeps_its_section_and_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    board = _board(repo)
+    (board / "status.md").write_text("progress", encoding="utf-8")
+    (board / "notes" / "a.md").write_text("a", encoding="utf-8")
+    (board / "notes" / "b.md").write_text("b", encoding="utf-8")
+
+    def broken(root: Path, fleet: str, rel: str) -> int:
+        raise FoilError(f"foil: cannot read: {rel}")
+
+    monkeypatch.setattr(view, "_open_listed", broken)
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main")
+        opened = _page(port, "/fleets/main?open=notes/a.md")
+    inline = page.split('id="status"')[1].split("</section>")[0]
+    assert "<h2>status.md" in inline and "cannot read: status.md" in inline
+    assert "<h2>Board" in page
+    assert "cannot read: notes/a.md" in opened and "Back to fleet" in opened
+    assert "?open=notes/b.md" in opened and ">Next<" in opened
 
 
 def test_a_swap_after_the_listing_opens_nothing(
