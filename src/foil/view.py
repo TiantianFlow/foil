@@ -34,6 +34,10 @@ from foil.errors import FoilError, assert_no_secret
 from foil.lifecycle import peek_text, seat_rows
 from foil.memory import read_lessons
 from foil.presets import (
+    _catalog,
+    _packaged_catalog,
+    _parse_maps,
+    _parse_preset,
     entry_label,
     fleet_overrides,
     load_preset,
@@ -76,6 +80,10 @@ HELP = (
 SETTINGS = (
     "Shared by every fleet in this project. A fleet's overrides.toml can replace a role's "
     "mapping list in that fleet only."
+)
+_FLEET_NONE = (
+    "None. Spawn uses each role's project pair list when that role has one, "
+    "otherwise the global list."
 )
 FOOTER = "This viewer does not type into a pane and does not decide progress."
 TIPS = {
@@ -286,12 +294,14 @@ def _label(title: str) -> str:
 
 
 def _section(
-    title: str, inner: str, *, meta: str = "", note: str = "", anchor: str = ""
+    title: str, inner: str, *, meta: str = "", note: str = "", anchor: str = "", tip: str = ""
 ) -> str:
     extra = f' <span class="muted">{meta}</span>' if meta else ""
     footer = f'<p class="muted">{escape(note)}</p>' if note else ""
     ident = f' id="{anchor}"' if anchor else ""
-    heading = f"<h2>{_label(title)}{extra}</h2>"
+    key = tip or title
+    label = escape(title) + (_tip(key) if key in TIPS else "")
+    heading = f"<h2>{label}{extra}</h2>"
     return f'<section{ident}>{heading}<div class="box">{inner}</div>{footer}</section>'
 
 
@@ -369,6 +379,102 @@ def _model(row: dict, upcoming: str) -> str:
 
     shown = _pair(f"{row['harness']}/{row['model']}" if row["model"] else row["harness"])
     return shown + (f"<small>next spawn {_pair(upcoming)}</small>" if upcoming else "")
+
+
+def _badge(layer: str) -> str:
+    return f'<span class="badge">{escape(layer)}</span>'
+
+
+def _rotation(entries: list[dict[str, str]]) -> str:
+    """Pairs in order. Settings do not number seats or mark a next seat."""
+
+    parts = []
+    for entry in entries:
+        harness = entry["id"] or "default harness"
+        model = entry["model"] or "harness default"
+        parts.append(f'<span class="mono">{escape(harness)} / {escape(model)}</span>')
+    return "Rotation " + " ".join(parts)
+
+
+def _text_file(path: Path) -> str | None:
+    if path.is_symlink() or not path.is_file():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def _id_set(path: Path) -> set[str]:
+    text = _text_file(path)
+    if text is None:
+        return set()
+    try:
+        return {key for key in _catalog(text) if key != "fake"}
+    except FoilError:
+        return set()
+
+
+def _harness_layer(
+    root: Path, harness_id: str, project_list: set[str], store_list: set[str]
+) -> str:
+    folder = foil_root(root) / "harnesses" / f"{harness_id}.toml"
+    if folder.is_file() and not folder.is_symlink():
+        return "project"
+    if harness_id in project_list:
+        return "project"
+    store = store_root() / "harnesses" / f"{harness_id}.toml"
+    if store.is_file() and not store.is_symlink():
+        return "global"
+    if harness_id in store_list:
+        return "global"
+    return "packaged"
+
+
+def _preset_cells(preset: dict) -> tuple[str, str, str]:
+    env = preset["env"]
+    names = f"<small>env: {escape(', '.join(env))}</small>" if env else ""
+    found = shutil.which(preset["command"][0])
+    installed = f"yes<small>{escape(found)}</small>" if found else _faded("no")
+    models = escape(", ".join(preset["models"])) if preset["models"] else _faded("none")
+    launch = f"<code>{escape(_argv(preset['command']))}</code>{names}"
+    return installed, f"<code>{models}</code>", launch
+
+
+def _global_harnesses() -> tuple[list[tuple[str, dict, str]], list[tuple[str, str]]]:
+    """Eligible harnesses for the global page, as (id, preset, badge)."""
+
+    chosen = {key: value for key, value in _packaged_catalog().items() if key != "fake"}
+    layer = {key: "packaged" for key in chosen}
+    skipped: list[tuple[str, str]] = []
+    root = store_root()
+    listed: dict = {}
+    text = _text_file(root / "harnesses.toml")
+    if text is not None:
+        try:
+            listed = _catalog(text)
+        except FoilError as exc:
+            skipped.append(("harnesses.toml", str(exc).removeprefix("foil: ")))
+    for key, value in listed.items():
+        if key == "fake":
+            continue
+        chosen[key] = value
+        layer[key] = "global"
+    directory = root / "harnesses"
+    if directory.is_dir() and not directory.is_symlink():
+        for path in sorted(directory.glob("*.toml")):
+            harness_id = path.stem
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or harness_id == "fake"
+                or SAFE_ID.fullmatch(harness_id) is None
+            ):
+                continue
+            try:
+                chosen[harness_id] = _parse_preset(path.read_text(encoding="utf-8"), harness_id)
+            except FoilError as exc:
+                skipped.append((f"harnesses/{harness_id}.toml", str(exc).removeprefix("foil: ")))
+                continue
+            layer[harness_id] = "global"
+    return [(key, chosen[key], layer[key]) for key in sorted(chosen)], skipped
 
 
 def _pairs(entries: list[dict[str, str]], upcoming: int | None = None) -> str:
@@ -497,25 +603,25 @@ def _settings_page(root: Path, base: str) -> _Page:
     def harnesses() -> str:
         ids, found = preset_ids(root)
         skipped.extend(found)
+        project_list = _id_set(foil_root(root) / "harnesses.toml")
+        store_list = _id_set(store_root() / "harnesses.toml")
         rows = []
         for harness_id in ids:
+            name = _mono(harness_id) + _badge(
+                _harness_layer(root, harness_id, project_list, store_list)
+            )
             try:
                 preset = load_preset(root, harness_id)
             except Exception as exc:
-                rows.append([_mono(harness_id), _faded("invalid"), "", escape(_error(exc))])
+                rows.append([name, _faded("invalid"), "", escape(_error(exc))])
                 continue
-            env = preset["env"]
-            names = f"<small>env: {escape(', '.join(env))}</small>" if env else ""
-            found = shutil.which(preset["command"][0])
-            installed = f"yes<small>{escape(found)}</small>" if found else _faded("no")
-            models = escape(", ".join(preset["models"])) if preset["models"] else _faded("none")
-            launch = f"<code>{escape(_argv(preset['command']))}</code>{names}"
-            rows.append([_mono(harness_id), installed, f'<code>{models}</code>', launch])
+            installed, models, launch = _preset_cells(preset)
+            rows.append([name, installed, models, launch])
         return _table(["Id", "Installed", "Model ids", "Launch command"], rows)
 
     def mapping() -> str:
         rows = [
-            [_mono(role), _pairs(entries)] for role, entries in _by_role(read_maps(root)).items()
+            [_mono(role), _rotation(entries)] for role, entries in _by_role(read_maps(root)).items()
         ]
         return _table(["Role", "Entries, in order"], rows, "No rows.")
 
@@ -523,6 +629,40 @@ def _settings_page(root: Path, base: str) -> _Page:
     note = "; ".join(f"{path} skipped: {reason}" for path, reason in skipped)
     body = (
         f'<div><h1>Project settings</h1><p class="muted">{escape(SETTINGS)}</p></div>'
+        + _section("Roles", _guard(roles))
+        + _section("Harnesses", harness_box, note=note)
+        + _section("Default mapping", _guard(mapping))
+    )
+    return _Page(body, [], settings=True)
+
+
+def _global_settings_page() -> _Page:
+    """``/settings`` is the global layer and needs no project."""
+
+    skipped: list[tuple[str, str]] = []
+
+    def roles() -> str:
+        return _table(["Role", "Description", "Permission", "Worktree"], [], "No rows.")
+
+    def harnesses() -> str:
+        found, notes = _global_harnesses()
+        skipped.extend(notes)
+        rows = []
+        for harness_id, preset, layer in found:
+            installed, models, launch = _preset_cells(preset)
+            rows.append([_mono(harness_id) + _badge(layer), installed, models, launch])
+        return _table(["Id", "Installed", "Model ids", "Launch command"], rows)
+
+    def mapping() -> str:
+        text = _text_file(store_root() / "mapping.toml")
+        maps = _parse_maps(text) if text is not None else []
+        rows = [[_mono(role), _rotation(entries)] for role, entries in _by_role(maps).items()]
+        return _table(["Role", "Entries, in order"], rows, "No rows.")
+
+    harness_box = _guard(harnesses)
+    note = "; ".join(f"{path} skipped: {reason}" for path, reason in skipped)
+    body = (
+        f'<div><h1>Settings</h1><p class="muted">{escape(SETTINGS)}</p></div>'
         + _section("Roles", _guard(roles))
         + _section("Harnesses", harness_box, note=note)
         + _section("Default mapping", _guard(mapping))
@@ -814,17 +954,19 @@ def _fleet_page(root: Path, fleet: str, query: dict, base: str) -> _Page:
 
     def overrides() -> str:
         found = fleet_overrides(root, fleet)
+        if not found:
+            return _table(["Role", "Entries, in order"], [], _FLEET_NONE)
+        mapped = {row["role"] for row in read_maps(root)}
         lines = []
         for role, entries in _by_role(found).items():
             count = _stored(registry, role) if registry is not None else None
             mark = None if count is None else count % len(entries)
             notes = "; ".join(item["note"] for item in entries if item["note"])
             note = f"<small>{escape(notes)}</small>" if notes else ""
-            lines.append([_mono(role), _pairs(entries, mark) + note])
-        return _table(
-            ["Role", "Entries, in order"], lines,
-            "No overrides. The next spawn uses the default mapping.",
-        )
+            href = f"{base}/settings" if role in mapped else "/settings"
+            name = f'<a href="{escape(href)}">{_mono(role)}</a>'
+            lines.append([name, _pairs(entries, mark) + note])
+        return _table(["Role", "Entries, in order"], lines, _FLEET_NONE)
 
     def agents() -> str:
         if registry is None:
@@ -837,7 +979,7 @@ def _fleet_page(root: Path, fleet: str, query: dict, base: str) -> _Page:
         f'<section id="agents"><h2>{_label("Agents")} <span class="muted">{len(rows)} '
         f"{noun}</span></h2>{_guard(agents)}</section>"
         + _board_sections(root, fleet, here)
-        + _section("Overrides", _guard(overrides))
+        + _section("Fleet overrides", _guard(overrides), tip="Overrides")
         + f'<div class="facts">{attach}'
         + f"<span>Workspace{_tip('Workspace')}</span>{workspace}</div>"
     )
@@ -975,6 +1117,9 @@ def _route(target: str) -> _Result | _Raw:
     try:
         if not path:
             return 200, _projects_page(), None, [], False
+        if path == ["settings"]:
+            page = _global_settings_page()
+            return 200, page.body, None, [], page.settings
         if len(path) < 2 or path[0] != "projects" or not _KEY.fullmatch(path[1]):
             raise _Missing("No such page.")
         directory = _store()

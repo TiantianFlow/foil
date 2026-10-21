@@ -416,9 +416,10 @@ def test_settings_show_the_three_lists(tmp_path: Path, monkeypatch: pytest.Monke
     assert order == sorted(order)
     # A role's rows are one list of pairs, in file order: the extra row is entry 2.
     implementer = rows.split("implementer</span>")[1].split("</tr>")[0]
-    assert implementer.count("<li") == 2
-    assert '<i>2</i><span class="mono">codex / gpt-5.5</span>' in implementer
-    assert "no model" in rows and 'class="next"' not in rows
+    assert "Rotation" in implementer
+    assert implementer.index("harness default") < implementer.index("codex / gpt-5.5")
+    assert "next" not in implementer and 'class="next"' not in rows
+    assert not re.search(r"<i>\d+</i>", rows)
 
 
 def test_installed_shows_where_the_viewer_found_the_command(
@@ -579,7 +580,10 @@ def test_overrides_show_every_row_and_the_pair_the_next_spawn_takes(
     repo = _repo(tmp_path, monkeypatch)
     with _serving(repo) as port:
         page = _page(port, "/fleets/main")
-    assert "No overrides. The next spawn uses the default mapping." in page
+    assert (
+        "None. Spawn uses each role's project pair list when that role has one, "
+        "otherwise the global list."
+    ) in html.unescape(page)
     (foil_root(repo) / "fleets" / "main" / "overrides.toml").write_text(
         '[[override]]\nrole = "reviewer"\nmodel = "small"\n\n'
         '[[override]]\nrole = "reviewer"\nmodel = "big"\nnote = "harder review"\n\n'
@@ -600,7 +604,7 @@ def test_overrides_show_every_row_and_the_pair_the_next_spawn_takes(
     )
     with _serving(repo) as port:
         page = _page(port, "/fleets/main")
-    overrides = page.split("<h2>Overrides")[1].split("</section>")[0]
+    overrides = page.split("<h2>Fleet overrides")[1].split("</section>")[0]
     assert "small" in overrides and "big" in overrides and "harder review" in overrides
     assert "default harness / small" in overrides and "gemini / no model" in overrides
     agents = page.split("<h2>Agents")[1].split("</section>")[0]
@@ -618,7 +622,7 @@ def test_overrides_show_every_row_and_the_pair_the_next_spawn_takes(
     _registry(repo, _seat("lead"), _seat("reviewer-1", model="fast"), _seat("reviewer-2"))
     with _serving(repo) as port:
         page = _page(port, "/fleets/main")
-    overrides = page.split("<h2>Overrides")[1].split("</section>")[0]
+    overrides = page.split("<h2>Fleet overrides")[1].split("</section>")[0]
     reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
     assert re.search(r'<li class="next"><i>1</i><span class="mono">[^<]*/ small</span>', reviewers)
 
@@ -804,7 +808,7 @@ def test_one_broken_fleet_leaves_the_others(
         assert _get(port, "/fleets/nope")[0] == 404
     assert f'<a class="mono" href="{_PREFIX[0]}/fleets/main">main</a></td><td>1</td>' in fleets
     assert "foil: invalid record" in fleets
-    assert "foil: invalid record" in other and "No overrides." in other
+    assert "foil: invalid record" in other and "otherwise the global list." in other
 
 
 def test_an_unexpected_failure_is_an_empty_500(
