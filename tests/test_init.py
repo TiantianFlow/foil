@@ -300,6 +300,62 @@ def test_unexpected_error_is_one_line(
     assert "secret internals" not in captured.err
 
 
+def test_init_rerun_deletes_named_project_paths_and_a_refusal_deletes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A same-checkout re-run still has the named project paths. A refused init deletes nothing."""
+
+    repo = tmp_path / "project"
+    repo.mkdir()
+    _init_git_repository(repo)
+    monkeypatch.chdir(repo)
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    root = foil_root(repo)
+    named = (
+        root / "roles.toml",
+        root / "mapping.toml",
+        root / "harnesses.toml",
+        root / "harnesses",
+        root / "templates",
+        root / "skills" / "operator.md",
+        root / "skills" / "lead.md",
+        root / "skills" / "worker.md",
+    )
+    marker = root / "harnesses" / "kept.toml"
+    marker.write_text('id = "kept"\n', encoding="utf-8")
+    (root / "skills" / "lead.md").write_text("old lead\n", encoding="utf-8")
+    (root / "skills" / "worker.md").write_text("old worker\n", encoding="utf-8")
+    kept = {path: path.read_bytes() if path.is_file() else None for path in named}
+    assert all(path.exists() for path in named)
+
+    assert main(["init"]) == 0
+    assert not any(path.exists() or path.is_symlink() for path in named)
+    assert (root / "project.json").is_file()
+    assert (root / "fleets").is_dir()
+    assert (root / "memory").is_dir()
+    assert (root / "skills").is_dir()
+
+    for path, payload in kept.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if payload is None:
+            path.mkdir(exist_ok=True)
+        else:
+            path.write_bytes(payload)
+    outside = tmp_path / "outside.toml"
+    outside.write_text("untouched\n", encoding="utf-8")
+    (root / "roles.toml").unlink()
+    (root / "roles.toml").symlink_to(outside)
+
+    monkeypatch.setenv("FOIL_SEAT_ID", "implementer")
+    assert main(["init"]) == 1
+    assert capsys.readouterr().err == "foil: not allowed\n"
+    assert all(path.exists() or path.is_symlink() for path in named)
+    assert marker.read_text(encoding="utf-8") == 'id = "kept"\n'
+    assert (root / "roles.toml").is_symlink()
+    assert outside.read_text(encoding="utf-8") == "untouched\n"
+
+
 def test_worker_cannot_init(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
