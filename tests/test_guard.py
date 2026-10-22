@@ -57,6 +57,7 @@ def test_hooks_are_written_in_the_store_and_not_the_repository(
     [
         ("see {home}/project\n", "a home directory path"),
         ("mail alice@mail.test\n", "a personal email address"),
+        ("Contact: Alice <alice@mail.test>\n", "a personal email address"),
         ("token ghp_" + "a" * 36 + "\n", "credential-shaped text"),
     ],
 )
@@ -160,5 +161,6 @@ def test_ordinary_text_is_not_refused(seat: tuple[Path, dict[str, str]], text: s
     repo, env = seat
     _stage(repo, env, "plain text\n")
     assert _seat_git(env, repo, "commit", "-m", f"add notes\n\n{text}").returncode == 0
-    _stage(repo, env, text.replace("Signed-off-by: Alice <alice@mail.test>", "x"))
-    assert _seat_git(env, repo, "commit", "-m", "more").returncode == 0
+    if "Signed-off-by" not in text:
+        _stage(repo, env, text)
+        assert _seat_git(env, repo, "commit", "-m", "more").returncode == 0

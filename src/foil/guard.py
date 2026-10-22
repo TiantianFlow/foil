@@ -8,11 +8,12 @@ import shlex
 import socket
 import subprocess
 import sys
+import tempfile
 from functools import cache
 from pathlib import Path
 
 from foil.project import common_dir, foil_root
-from foil.store import private_dir, write_bytes
+from foil.store import private_dir
 
 CHECKED = ("pre-commit", "pre-push")
 # core.hooksPath replaces the whole directory, so every client hook passes through.
@@ -56,10 +57,12 @@ def _install(path: Path, script: str) -> None:
 
     if path.is_file() and not path.is_symlink() and path.read_text(encoding="utf-8") == script:
         return
-    spare = path.with_name(f".{path.name}.new")
-    write_bytes(spare, script.encode())
-    spare.chmod(0o700)
-    os.replace(spare, path)
+    # A unique spare file, so two spawns at once cannot replace each other's.
+    descriptor, name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(script)
+    os.chmod(name, 0o700)
+    os.replace(name, path)
 
 
 def hook_environment(toplevel: Path, cwd: Path, worktree: str) -> dict[str, str]:
@@ -102,12 +105,15 @@ def _private_words() -> list[tuple[str, str]]:
     return words
 
 
-def _finding(lines: list[str], where: str) -> str | None:
+def _finding(lines: list[str], where: str, *, message: bool = False) -> str | None:
     words = _private_words()
     for line in lines:
         lowered = line.lower()
-        # A Signed-off-by or Co-authored-by trailer names its author on purpose.
-        for kind, word in [] if _TRAILER.match(line.strip()) else words:
+        # A Signed-off-by or Co-authored-by trailer names its author's email on purpose.
+        trailer = message and _TRAILER.match(line.strip())
+        for kind, word in words:
+            if trailer and kind == "a personal email address":
+                continue
             if word.lower() in lowered:
                 return f"{kind} in {where}"
         if _TOKEN.search(line):
@@ -149,10 +155,12 @@ def _pre_push(updates: str) -> str | None:
             continue
         # The remote's old tip, when this repository has it, bounds the scan.
         known = [f"^{parts[3]}"] if _git(["cat-file", "-t", parts[3]]).strip() == "commit" else []
-        for sha in _git(["rev-list", parts[1], *known, "--not", "--remotes"]).split():
+        listed = ["rev-list", "--max-count=200", parts[1], *known, "--not", "--remotes"]
+        for sha in _git(listed).split():
             shown = _git(["show", "-U0", "--no-color", "--no-ext-diff", "--format=%B", sha])
             message, _sep, diff = shown.partition("\ndiff --git ")
-            found = _finding(message.splitlines(), "the commit message") or _diff_finding(diff)
+            found = _finding(message.splitlines(), "the commit message", message=True)
+            found = found or _diff_finding(diff)
             if found:
                 return f"foil: push refused: commit {sha[:12]} adds {found}"
     return None
