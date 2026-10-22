@@ -27,16 +27,18 @@ foil init
 ```
 
 ```text
-foil 0.4.0
+foil 0.6.1
 ...
+Skill: packaged /opt/foil/foil/defaults/skills/operator.md
 Project folder: /var/foil/projects/your-repo-1a2b3c
-Read /var/foil/projects/your-repo-1a2b3c/skills/operator.md and follow it. My goal: <goal>.
+Read /opt/foil/foil/defaults/skills/operator.md and follow it. My goal: <goal>.
 ```
 
 `foil init` 把项目目录写在仓库之外，工作区里什么都不写，所以 `git status` 保持干净。
-输出的第一行是 `foil --version` 打印的版本号。样本里的 `foil 0.4.0` 是一次较早运行的示意，
-不是这份文档所在版本打印的版本号。中间的报告（这里有删节）列出已安装的 harness 和 init
-写了什么；最后一行是你稍后要粘贴给自己的 Agent 的那句话。路径以报告打印的为准。
+输出的第一行是 `foil --version` 打印的版本号。中间的报告（这里有删节）列出已安装的
+harness 和 init 写了什么。第一次 init 还没有 `<root>/skills/operator.md`，所以
+`Skill:` 行和最后一行都指向包里的文件。那个全局文件存在时，两行都改指它。最后一行是你稍后要粘贴给自己的
+Agent 的那句话，把 `<goal>` 换成你的目标。路径以报告打印的为准。
 
 ## 2. 给每个角色选 harness 和权限
 
@@ -67,11 +69,13 @@ harness = "codex"
 ## 3. 交出目标
 
 在你自己的 Agent（Claude Code、Codex 或其他任何一个）里，在这个仓库中，粘贴
-`foil init` 给出的那一行，并写上你的目标：
+`foil init` 的最后一行，并把目标填进去：
 
 ```text
-Read <root>/skills/operator.md and follow it. My goal: make the tests pass.
+Read /opt/foil/foil/defaults/skills/operator.md and follow it. My goal: make the tests pass.
 ```
+
+`<root>/skills/operator.md` 存在时，那一行改指这个文件。
 
 这个 Agent 就成了操作员。它先确认主座能正常启动，再把目标发给主座。手动做同样的事：
 
@@ -108,9 +112,9 @@ foil seat peek lead --lines 8
 
 ```text
 ...
-implementer-1 /var/foil/projects/your-repo-1a2b3c/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+implementer-1 /var/foil/projects/your-repo-1a2b3c/fleets/main/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
 ...
-reviewer-1 /var/foil/projects/your-repo-1a2b3c/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
+reviewer-1 /var/foil/projects/your-repo-1a2b3c/fleets/main/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
 ```
 
 peek 原样打印那个窗口最下面的内容（这里有删节）。在 Agent 自己的输出中间，有两行
@@ -148,7 +152,7 @@ The tests pass.
 ```
 
 在舰队外用 `foil board list` 和 `foil board read`；座位读自己的邮箱时优先用
-`foil mail list` 和 `foil mail read`。每条消息仍是项目目录 `board/` 下的文件。
+`foil mail list` 和 `foil mail read`。每条消息是项目目录里该舰队的 `board/` 下的文件。
 `status.md` 是主座自己写的报告。主座需要你时，会把问题列在里面，你用
 `foil send lead "..."` 回答。
 

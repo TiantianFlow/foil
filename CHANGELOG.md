@@ -13,6 +13,9 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
+- A `vX.Y.Z` tag publishes only after the CI workflow has succeeded for that commit. A run still going, a failed or cancelled run, and a commit with no CI run do not publish.
+- The demos show the current `foil init` pointer and mail under `fleets/main/board/`. `docs/architecture.md` no longer names a version.
+- The notes for issues #18, #42, and #66 are removed. The decisions are in `docs/requirements.md`.
 - A room reply (`foil post --re`) wakes only the seats that wrote a waking post in that thread and the seats its text names as `@name`. A new post still wakes every other alive seat. (#69)
 - Rotation over a role's pair list now counts that role's spawns in the fleet, stored in the registry's new `rotation` record, instead of its stored seat records. Every lead respawn takes the next entry, and an edited list starts again at its first entry. A fleet started before this change starts each role at its first entry. (#69)
 
@@ -222,10 +225,9 @@ This release was withdrawn. Its changes ship in 0.4.5.
 This release was withdrawn. Its changes ship in 0.3.3.
 
 This release is documentation only. It publishes the survey of which
-project files could move global
-([docs/issue-18-project-vs-global.md](docs/issue-18-project-vs-global.md),
-issue #18) and the architecture note on worktree layout and where project
-state lives ([docs/architecture.md](docs/architecture.md), issue #19).
+project files could move global (issue #18) and the architecture note on
+worktree layout and where project state lives
+([docs/architecture.md](docs/architecture.md), issue #19).
 The two were developed on separate lines.
 No product-code behavior changes.
 

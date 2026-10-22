@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from foil import __version__
+
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / "skills"
 
@@ -437,11 +439,6 @@ def test_onboarding_says_who_answers_a_dialog() -> None:
     zh_started = chinese.split("## 开始使用", 1)[1].split("### 手动操作", 1)[0]
     assert "限制" in zh_started
     assert "审批对话框" in zh_started
-    for relative in ("docs/demo.md", "docs/demo.zh-CN.md"):
-        text = (ROOT / relative).read_text(encoding="utf-8")
-        assert "foil 0.3.1" not in text
-        assert "foil 0.4.0" in text
-        assert "illustration" in text or "示意" in text
     requirements = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
     onboarding = requirements.split("### Onboarding", 1)[1].split("## 4.", 1)[0]
     assert "Onboarding adds no command or flag" in onboarding
@@ -577,6 +574,18 @@ def test_requirements_define_the_checklist() -> None:
     }
     assert "checklist" in rows["`operator`"]
     assert "checklist" in rows["`lead`"]
+
+
+def test_demos_show_the_current_init_pointer_and_fleet_board() -> None:
+    """The illustrated run matches this version's init pointer and fleet board."""
+
+    for relative in ("docs/demo.md", "docs/demo.zh-CN.md"):
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        assert f"foil {__version__}" in text
+        assert "foil 0.4.0" not in text
+        assert "foil 0.3.1" not in text
+        assert "fleets/main/board/mail/" in text
+        assert "your-repo-1a2b3c/skills/operator.md" not in text
 
 
 def test_scenario_1_status_checklist_matches_the_demos() -> None:
