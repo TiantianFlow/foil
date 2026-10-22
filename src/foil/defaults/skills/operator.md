@@ -24,7 +24,7 @@ You perform onboarding. The human's part was one sentence. You install Foil, run
 uv tool install --upgrade foil-ai
 ```
 
-If it says `Executable already exists: foil`, an install from before the package was renamed to `foil-ai` is in the way. Run `uv tool uninstall foil-orchestrator`, then the install line again. Then check that `foil --version` prints the version you expect and that `command -v foil` is the path uv printed. Then, in the repository, run:
+Then check that `foil --version` prints the version you expect and that `command -v foil` is the path uv printed. Then, in the repository, run:
 
 ```text
 foil init

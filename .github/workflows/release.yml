@@ -19,13 +19,15 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
+          # A release build starts from no cache, so nothing cached elsewhere reaches it.
+          enable-cache: false
       - name: Check the tag matches the package version
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
@@ -42,7 +44,7 @@ jobs:
           uv venv --no-config "$wheel_env"
           uv pip install --no-config --python "$wheel_env/bin/python" dist/foil_ai-*.whl
           test "$("$wheel_env/bin/foil" --version)" = "foil ${TAG#v}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: dist
           path: dist/
@@ -59,7 +61,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: dist
           path: dist/
