@@ -24,7 +24,7 @@ You perform onboarding. The human's part was one sentence. You install Foil, run
 uv tool install --upgrade foil-ai
 ```
 
-If it says `Executable already exists: foil`, an install from before the package was renamed to `foil-ai` is in the way. Run `uv tool uninstall foil-orchestrator`, then the install line again. Then check that `foil --version` prints the version you expect and that `command -v foil` is the path uv printed. Then, in the repository, run:
+Then check that `foil --version` prints the version you expect and that `command -v foil` is the path uv printed. Then, in the repository, run:
 
 ```text
 foil init
@@ -70,7 +70,7 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 ## Role templates
 
-Lookup, lowest to highest, is packaged, then global, then project, then fleet. The global lists are `<root>/harnesses.toml`, `<root>/roles.toml`, and `<root>/mapping.toml`, shared by every fleet. `roles.toml` is the profile: description, persona, worktree, and permission. `mapping.toml` is the default harness and model, one or more `[[map]]` rows per role. `harnesses.toml` is how each harness launches. The same names under the project folder are an optional override, written with `--project`. An unflagged roster command, outside a fleet, reads or writes the global layer and works in a git checkout before `foil init`. It does not print `foil: not initialized`. `init` writes each missing default role on the global layer and omits `model`. Permission defaults to `auto`. A spawn takes the entry at the count of seats already stored for that role, including killed seats. One entry stays on that entry. Packaged personas are read from the package. A changed persona is `<root>/personas/<role>.md`, or `<project>/personas/<role>.md` for one project. That directory is outside the repository. `init` does not copy personas. It leaves an existing global role or mapping row unchanged and deletes the old project setting paths without reading them. `init` does not write a project copy of this skill. A global operator skill exists only when someone writes a change, and `init` leaves that file in place.
+Lookup, lowest to highest, is packaged, then global, then project, then fleet. The global lists are `<root>/harnesses.toml`, `<root>/roles.toml`, and `<root>/mapping.toml`, shared by every fleet. `roles.toml` is the profile: description, persona, worktree, and permission. `mapping.toml` is the default harness and model, one or more `[[map]]` rows per role. `harnesses.toml` is how each harness launches. The same names under the project folder are an optional override, written with `--project`. An unflagged roster command, outside a fleet, reads or writes the global layer and works in a git checkout before `foil init`. It does not print `foil: not initialized`. `init` writes each missing default role on the global layer and omits `model`. Permission defaults to `auto`. Each spawn of a role takes the next entry of its list, a new lead included, and an edited list starts at its first entry. One entry stays on that entry. Packaged personas are read from the package. A changed persona is `<root>/personas/<role>.md`, or `<project>/personas/<role>.md` for one project. That directory is outside the repository. `init` does not copy personas. It leaves an existing global role or mapping row unchanged and deletes the old project setting paths without reading them. `init` does not write a project copy of this skill. A global operator skill exists only when someone writes a change, and `init` leaves that file in place.
 
 View and modify templates with the roster commands:
 
@@ -90,8 +90,9 @@ Keep the principles few.
 
 - Match the model to the work.
 - Keep the reviewer off the implementer's harness whenever at least two eligible harnesses are installed. `init` does this when it can. A different harness is not a different model. An operator who wants two models sets `model` on an entry.
-- Several entries on one role make a spawn take the entry at the count of seats already stored for that role, including killed seats. That spreads later worker spawns across the entries. It does not watch quotas, and it does not switch a seat that is already running.
+- Several entries on one role make each spawn take the next entry, and an edited list starts at its first entry. That spreads later spawns across the entries. It does not watch quotas, and it does not switch a seat that is already running.
 - Give a large context to roles that read a lot.
+- Use a model id the harness accepts. The same model can have a different id in another harness. Spawn and `roster update` print a warning when a model is not in that harness's `models` in `harnesses.toml`, and still launch it. Fix the pair before the spawn.
 - Pair `auto` with a worktree. A seat that runs unattended and can commit should have its own branch.
 
 The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist. Do not reorder `init`'s harness assignment. Change the list afterwards with `roster update ROLE harness=ID/MODEL,ID/MODEL`.
@@ -112,12 +113,15 @@ foil send lead "the human's goal"
 
 ## Check in
 
-Every few minutes, read `board/status.md`, run `foil seat list`, and read the lead's pane:
+Every few minutes, read `board/status.md`, run `foil seat list`, read the lead's pane, and list your mail:
 
 ```text
 foil seat list
 foil seat peek lead
+foil mail list
 ```
+
+`foil mail list` lists the lead's mail to the human, newest first. Read each new one with `foil mail read PATH` and relay it. That is how the lead acknowledges a task or answers you. It nudges nobody. A question that blocks the goal is still in `status.md`.
 
 `foil seat list` prints each seat's name, template, state, worktree, the harness and model recorded at launch, and the template's current description. `foil seat list --json` prints those same facts. `foil seat peek lead` prints the raw tail of the lead's pane. `foil seat peek lead --lines 40` is the default. A dead seat is peekable while its window remains and still carries that seat's markers: the pane shows what was on screen when the process exited, including an error line from a harness that exited at launch. A killed seat, or a window that now belongs to another seat, is not peekable. Do not decide from the pane whether the lead is busy, idle, or done.
 
@@ -176,6 +180,17 @@ A note wakes nobody. Do not write it up as a board note for the fleet to treat a
 
 You may read only enough to relay the human's goal in your own words. That reading is not research, not a plan, and not a source the fleet may follow. The lead spawns a researcher when the goal needs research. You never do the project work.
 
+## Lead handoff
+
+Foil does not watch a seat's context, and neither do you. When the lead is near a full context, it writes `board/handoffs/lead.md` and mails you that it is ready. Then replace the lead, and tell the human you did:
+
+```text
+foil seat kill lead
+foil seat spawn lead --task "Read board/handoffs/lead.md, then continue the goal."
+```
+
+The new lead takes the next entry of the lead's list. Workers are the lead's to replace this way, not yours.
+
 ## Memory
 
 When the lead asks you to review a lesson:
@@ -229,4 +244,4 @@ How you adapt an outside catalog is in Personas from outside.
 
 ## What you do not do
 
-You do not implement, review code, or merge. You do not spawn workers or resume anyone. Those belong to the lead. You do not kill a single seat once the check has passed. A failed first-run lead is cleared as step 5 says. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, and do not type into a pane except to send keys for an approval dialog, as step 3 says. You do not invent a session name, and you do not add a Foil command or flag for attaching. You set `permission` as step 3 says.
+You do not implement, review code, or merge. You do not spawn workers or resume anyone. Those belong to the lead. You do not kill a single seat once the check has passed, except the lead handoff. A failed first-run lead is cleared as step 5 says. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, and do not type into a pane except to send keys for an approval dialog, as step 3 says. You do not invent a session name, and you do not add a Foil command or flag for attaching. You set `permission` as step 3 says.

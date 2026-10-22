@@ -4,11 +4,20 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- The lead can answer the human with `foil send user`. That mail goes to `board/mail/user/` and nudges nothing; outside the fleet, `foil mail list` lists it. The operator skill reads it at each check-in. (#69)
+- Each seat's git runs Foil's `pre-commit` and `pre-push` hooks, set through `GIT_CONFIG_*` in the seat's environment only, before the repository's own hooks. In the project's repository they refuse a commit outside the seat's worktree, and a commit or a push that adds the seat's home directory path, the hostname, a non-noreply git email outside a trailer, or a token. A repository's `reference-transaction` and `fsmonitor-watchman` hooks no longer run for seats. (#69)
+- Spawn and `roster add`/`update` print a warning when a model is not in that harness's `models`, and still launch or write it. (#69)
+- The skills describe a handoff for a seat near a full context: it writes `board/handoffs/<name>.md`, and the lead (or, for the lead, the operator) kills it and spawns a new seat from that file. (#69)
+
 ### Changed
 
 - A `vX.Y.Z` tag publishes only after the CI workflow has succeeded for that commit. A run still going, a failed or cancelled run, and a commit with no CI run do not publish.
 - The demos show the current `foil init` pointer and mail under `fleets/main/board/`. `docs/architecture.md` no longer names a version.
 - The notes for issues #18, #42, and #66 are removed. The decisions are in `docs/requirements.md`.
+- A room reply (`foil post --re`) wakes only the seats that wrote a waking post in that thread and the seats its text names as `@name`. A new post still wakes every other alive seat. (#69)
+- Rotation over a role's pair list now counts that role's spawns in the fleet, stored in the registry's new `rotation` record, instead of its stored seat records. Every lead respawn takes the next entry, and an edited list starts again at its first entry. A fleet started before this change starts each role at its first entry. (#69)
 
 ## [0.6.1] - 2026-10-21
 
@@ -17,10 +26,6 @@ Notable changes to Foil, newest first.
 ### Added
 
 - A release workflow publishes each `vX.Y.Z` tag to PyPI as `foil-ai`, using trusted publishing. CONTRIBUTING.md has the release steps. (#70)
-
-### Changed
-
-- The package is now named `foil-ai`; it was `foil-orchestrator`. The command is still `foil`. An existing `uv tool` install keeps the old name, so run `uv tool uninstall foil-orchestrator` before installing this version (with pipx, `pipx uninstall foil-orchestrator`). (#70)
 
 ## [0.6.0] - 2026-10-21
 

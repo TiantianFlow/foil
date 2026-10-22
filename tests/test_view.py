@@ -23,6 +23,7 @@ import pytest
 from foil import view
 from foil.cli import main
 from foil.errors import FoilError
+from foil.presets import load_template, rotation_key
 from foil.project import foil_root
 from foil.store import SCHEMA_VERSION
 from foil.tmux import ProbeResult, ProbeState, TmuxController, TmuxError, TmuxTarget
@@ -108,13 +109,20 @@ def _seat(name: str, *, template: str = "", state: str = "", window: str = "@1",
     return record
 
 
-def _registry(repo: Path, *seats: dict, session: str = "foil-demo-1", fleet: str = "main") -> None:
+def _registry(
+    repo: Path,
+    *seats: dict,
+    session: str = "foil-demo-1",
+    fleet: str = "main",
+    rotation: dict | None = None,
+) -> None:
     payload = {
         "schema_version": SCHEMA_VERSION,
         "fleet_id": "fleet",
         "tmux_session": session,
         "lead": "lead",
         "seats": {seat["name"]: seat for seat in seats},
+        "rotation": rotation or {},
     }
     path = foil_root(repo) / "fleets" / fleet / "run" / "registry.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -614,31 +622,34 @@ def test_overrides_show_every_row_and_the_pair_the_next_spawn_takes(
     assert "gemini" in overrides and "harness default" in overrides
     assert "no model" not in overrides
     agents = page.split("<h2>Agents")[1].split("</section>")[0]
-    # reviewer-1 is stored, so the next reviewer takes the second row.
+    # No spawn has taken from this list yet, so the next reviewer takes the first row.
     reviewer = agents.split("reviewer-1</a>")[1].split("</tr>")[0]
     assert "fast" in reviewer
-    assert re.search(r'next spawn <span class="mono">[a-z]+ / big</span>', reviewer)
+    assert re.search(r'next spawn <span class="mono">[a-z]+ / small</span>', reviewer)
     lead = agents.split("lead</a>")[1].split("</tr>")[0]
     assert 'next spawn <span class="mono">gemini / harness default</span>' in lead
-    # One reviewer is stored, so the second of the two reviewer cards is marked next.
     reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
     assert "Rotation" in reviewers
     assert 'class="card"' in reviewers
     assert "<ol" not in reviewers and "<li" not in reviewers
     cards = re.findall(r'<span class="card(?: next)?">.*?</span>', reviewers)
     assert len(cards) == 2
-    assert "next" not in cards[0]
-    assert "big" in cards[1] and "next" in cards[1]
-    # Two reviewers stored and two entries: the rotation wraps back to the first.
-    _registry(repo, _seat("lead"), _seat("reviewer-1", model="fast"), _seat("reviewer-2"))
-    with _serving(repo) as port:
-        page = _page(port, "/fleets/main")
-    overrides = page.split("<h2>Fleet overrides")[1].split("</section>")[0]
-    reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
-    assert "Rotation" in reviewers
-    cards = re.findall(r'<span class="card(?: next)?">.*?</span>', reviewers)
     assert "small" in cards[0] and "next" in cards[0]
     assert "next" not in cards[1]
+    # One spawn took from these lists, so the second card is next; after two it wraps.
+    entries = load_template(repo, "reviewer")["harness"]
+    key = rotation_key(repo, "reviewer", entries)
+    for taken, marked in ((1, 1), (2, 0)):
+        rotation = {"reviewer": {"list": key, "next": taken}}
+        _registry(repo, _seat("lead"), _seat("reviewer-1", model="fast"), rotation=rotation)
+        with _serving(repo) as port:
+            page = _page(port, "/fleets/main")
+        overrides = page.split("<h2>Fleet overrides")[1].split("</section>")[0]
+        reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
+        cards = re.findall(r'<span class="card(?: next)?">.*?</span>', reviewers)
+        assert "next" in cards[marked] and "next" not in cards[1 - marked]
+    reviewer = page.split("reviewer-1</a>")[1].split("</tr>")[0]
+    assert re.search(r'next spawn <span class="mono">[a-z]+ / small</span>', reviewer)
 
 
 def test_no_next_spawn_line_when_the_override_matches_the_mapping(

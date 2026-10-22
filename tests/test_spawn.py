@@ -590,7 +590,7 @@ def _registry_file(repo: Path) -> dict:
     )
 
 
-_REGISTRY_KEYS = {"schema_version", "fleet_id", "tmux_session", "lead", "seats"}
+_REGISTRY_KEYS = {"schema_version", "fleet_id", "tmux_session", "lead", "seats", "rotation"}
 
 
 def _two_entries(role: str) -> str:
@@ -687,7 +687,12 @@ def test_spawns_alternate_and_a_failed_launch_does_not_advance(
 
     monkeypatch.setattr("foil.lifecycle.TmuxController.launch", boom)
     assert main(["seat", "spawn", "implementer"]) == 1
-    assert capsys.readouterr().err == "foil: could not launch seat\n"
+    # gpt-5.5 is not in the packaged codex list, so a warning comes first.
+    assert capsys.readouterr().err.splitlines() == [
+        "foil: warning: model 'gpt-5.5' is not in the models of harness 'codex': "
+        "gpt-6.1-sol, gpt-6-luna, gpt-6-astra",
+        "foil: could not launch seat",
+    ]
     saved = _registry_file(repo)
     assert set(saved) == _REGISTRY_KEYS
     assert "implementer-2" not in saved["seats"]
@@ -724,7 +729,7 @@ def test_a_killed_seat_still_counts(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert load_registry(repo)["seats"]["implementer-1"]["state"] == "killed"
 
 
-def test_replacing_a_killed_lead_follows_the_one_stored_record(
+def test_every_lead_respawn_takes_the_next_entry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
@@ -739,8 +744,54 @@ def test_replacing_a_killed_lead_follows_the_one_stored_record(
     assert load_registry(repo)["seats"]["lead"]["harness"] == "codex"
     assert main(["seat", "kill", "lead"]) == 0
     assert main(["seat", "spawn", "lead"]) == 0
-    assert load_registry(repo)["seats"]["lead"]["harness"] == "codex"
-    assert load_registry(repo)["seats"]["lead"]["model"] == "gpt-5.5"
+    assert load_registry(repo)["seats"]["lead"]["harness"] == "claude"
+    assert load_registry(repo)["seats"]["lead"]["model"] == "opus"
+    assert load_registry(repo)["rotation"]["lead"]["next"] == 3
+
+
+def test_a_seat_runs_git_with_foil_hooks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    env = _plan(calls)["env"]
+    assert env["GIT_CONFIG_COUNT"] == "1"
+    assert env["GIT_CONFIG_KEY_0"] == "core.hooksPath"
+    assert env["GIT_CONFIG_VALUE_0"] == str((foil_root(repo) / "hooks").resolve())
+    assert env["FOIL_GIT_COMMON"] == str((repo / ".git").resolve())
+    assert "FOIL_WORKTREE" not in env
+
+
+def test_an_edited_list_starts_again_at_its_first_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    _set_worktree(repo, "implementer", False)
+    _set_entries(repo, "implementer", [("claude", "opus"), ("codex", "gpt-5.5")])
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    assert load_registry(repo)["seats"]["implementer-1"]["harness"] == "claude"
+    _set_entries(repo, "implementer", [("codex", "gpt-5.5"), ("claude", "opus")])
+    assert main(["seat", "spawn", "implementer"]) == 0
+    assert load_registry(repo)["seats"]["implementer-2"]["harness"] == "codex"
+    assert main(["seat", "spawn", "implementer"]) == 0
+    assert load_registry(repo)["seats"]["implementer-3"]["harness"] == "claude"
+
+
+def test_a_model_the_harness_does_not_list_warns_and_still_launches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    _set_entries(repo, "lead", [("claude", "not-a-claude-model")])
+    capsys.readouterr()
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert "not-a-claude-model" in _plan(calls)["argv"]
+    err = capsys.readouterr().err
+    assert err.startswith(
+        "foil: warning: model 'not-a-claude-model' is not in the models of harness 'claude': "
+    )
+    assert err.count("\n") == 1
 
 
 def test_fleet_memory_overrides_the_model_on_the_next_spawn(

@@ -85,5 +85,7 @@ def test_a_0_2_0_shaped_registry_still_loads(tmp_path: Path) -> None:
         "tmux_session",
         "lead",
         "seats",
+        "rotation",
     }
+    assert loaded["rotation"] == {}
     assert set(seat) == set(SEAT_FIELDS)

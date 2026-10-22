@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import stat
 from datetime import UTC, datetime
 from pathlib import Path
 
+from foil.board_ops import split_front_matter
 from foil.errors import FoilError, shown
 from foil.store import (
     SAFE_ID,
@@ -89,6 +91,12 @@ def write_mail(toplevel: Path, to: str, text: str) -> Path:
 
 
 def send_mail(toplevel: Path, to: str, text: str) -> None:
+    if to == "user":
+        # The human's mailbox. Only the lead writes it, and it has no pane to nudge.
+        if actor() != "lead":
+            raise FoilError("foil: only the lead may send to user")
+        write_mail(toplevel, to, text)
+        return
     seat = find_seat(toplevel, to)
     if seat is None:
         raise FoilError(f"foil: unknown seat '{shown(to)}'")
@@ -122,6 +130,7 @@ def _preamble(path: Path, count: int) -> str:
         "does not contain or to object to a close proposal. "
         f"Otherwise `foil post --re {target} --decline`. "
         "Do not open a new `foil post` to continue this thread. "
+        "A reply wakes the seats that wrote a post here and the seats it names as @name. "
         f"This directory has {count} files, and {count} does not refuse the write.\n"
     )
 
@@ -171,7 +180,28 @@ def _room_parent(toplevel: Path, text: str) -> Path:
     return resolved
 
 
-def _wake_names(toplevel: Path) -> list[str]:
+_MENTION = re.compile(r"(?<![\w.@-])@([A-Za-z0-9][A-Za-z0-9._-]{0,127})")
+
+
+def _thread_seats(directory: Path, text: str) -> set[str]:
+    """Who a reply wakes: the authors of the thread's waking posts and every @name."""
+
+    found = set()
+    for match in _MENTION.finditer(text):
+        found |= {match.group(1), match.group(1).rstrip("._-")}
+    for path in directory.glob("*.md"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            fields, body = split_front_matter(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            continue
+        if fields and fields.get("contract") == "room/v1" and body.strip() != "decline":
+            found.add(str(fields.get("from", "")))
+    return found
+
+
+def _wake_names(toplevel: Path, only: set[str] | None = None) -> list[str]:
     registry = load_registry(toplevel)
     author = _author()
     fleet = str(registry["fleet_id"])
@@ -179,7 +209,7 @@ def _wake_names(toplevel: Path) -> list[str]:
     controller = TmuxController()
     names: list[str] = []
     for name in sorted(registry["seats"]):
-        if author is not None and name == author:
+        if (author is not None and name == author) or (only is not None and name not in only):
             continue
         seat = registry["seats"][name]
         # Spawn leaves state empty. Alive is the window check below, the same
@@ -307,7 +337,7 @@ def post_room(
         raise FoilError("foil: empty text")
     scan(text)
     parent = None if reply is None else _room_parent(toplevel, reply)
-    names = _wake_names(toplevel)
+    names = _wake_names(toplevel, None if parent is None else _thread_seats(parent.parent, text))
     when = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     if parent is None:
         path = _new_thread(toplevel, sender, when, text, names)
