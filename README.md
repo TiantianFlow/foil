@@ -133,6 +133,8 @@ cd your-repo
 foil init
 ```
 
+If the install says `Executable already exists: foil`, an install from before the package was renamed to `foil-ai` is in the way. Run `uv tool uninstall foil-orchestrator`, then the install line again.
+
 Read the report and set the three templates with `foil roster`. If `board/status.md` is already in the project folder, note its `updated` value. Then spawn the lead once:
 
 ```sh

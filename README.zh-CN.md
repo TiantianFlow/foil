@@ -133,6 +133,8 @@ cd your-repo
 foil init
 ```
 
+如果安装时提示 `Executable already exists: foil`，说明包改名为 `foil-ai` 之前的旧安装还在。先运行 `uv tool uninstall foil-orchestrator`，再运行一次安装命令。
+
 读报告，用 `foil roster` 设置那三个模板。如果项目目录里已经有 `board/status.md`，先记下它的 `updated`。然后只启动一次主座：
 
 ```sh
