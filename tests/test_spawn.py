@@ -757,7 +757,7 @@ def test_a_seat_runs_git_with_foil_hooks(tmp_path: Path, monkeypatch: pytest.Mon
     assert env["GIT_CONFIG_COUNT"] == "1"
     assert env["GIT_CONFIG_KEY_0"] == "core.hooksPath"
     assert env["GIT_CONFIG_VALUE_0"] == str((foil_root(repo) / "hooks").resolve())
-    assert env["FOIL_REPO_HOOKS"] == str((repo / ".git" / "hooks").resolve())
+    assert env["FOIL_GIT_COMMON"] == str((repo / ".git").resolve())
     assert "FOIL_WORKTREE" not in env
 
 

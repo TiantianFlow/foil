@@ -7,7 +7,7 @@ Notable changes to Foil, newest first.
 ### Added
 
 - The lead can answer the human with `foil send user`. That mail goes to `board/mail/user/` and nudges nothing; outside the fleet, `foil mail list` lists it. The operator skill reads it at each check-in. (#69)
-- Each seat's git runs Foil's `pre-commit` and `pre-push` hooks, set through `GIT_CONFIG_*` in the seat's environment only, before the repository's own hooks. They refuse a commit outside the seat's worktree, and a commit or a push that adds the seat's home directory path, the hostname, a non-noreply git email, or a token. (#69)
+- Each seat's git runs Foil's `pre-commit` and `pre-push` hooks, set through `GIT_CONFIG_*` in the seat's environment only, before the repository's own hooks. In the project's repository they refuse a commit outside the seat's worktree, and a commit or a push that adds the seat's home directory path, the hostname, a non-noreply git email outside a trailer, or a token. A repository's `reference-transaction` and `fsmonitor-watchman` hooks no longer run for seats. (#69)
 - Spawn and `roster add`/`update` print a warning when a model is not in that harness's `models`, and still launch or write it. (#69)
 - The skills describe a handoff for a seat near a full context: it writes `board/handoffs/<name>.md`, and the lead (or, for the lead, the operator) kills it and spawns a new seat from that file. (#69)
 
