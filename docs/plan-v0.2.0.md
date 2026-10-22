@@ -1,5 +1,7 @@
 # Foil v0.2.0 plan: closing the gaps
 
+This is the record of that release. Current behavior is [requirements.md](requirements.md).
+
 Target: [requirements.md](requirements.md). Baseline: the v0.1.1 tag.
 This plan lists every gap between the two and the action items that
 close them. Requirement IDs (F, N, D) refer to the requirements document.

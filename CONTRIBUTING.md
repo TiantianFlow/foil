@@ -132,7 +132,7 @@ Re-check each preset's model ids in `src/foil/defaults/harnesses.toml` against t
 
 ## Release
 
-Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`. It checks that the tag matches the version in `pyproject.toml`, builds the sdist and wheel, checks that the wheel's `foil --version` prints that version, and publishes both to PyPI as `foil-ai`. If a tag's publish failed, run the workflow by hand from `main` and give it the tag.
+Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`. It waits until the CI workflow has succeeded for that commit, then checks that the tag matches the version in `pyproject.toml`, builds the sdist and wheel, checks that the wheel's `foil --version` prints that version, and publishes both to PyPI as `foil-ai`. It does not publish while that CI run is still going, when the newest run failed or was cancelled, or when the commit has no CI run. CI runs on pushes to `main` and on pull requests, so tag the merge commit on `main`. If a tag's publish failed, fix the cause and run the workflow by hand from `main` and give it the tag. A manual run waits for CI the same way.
 
 1. Set the version in `pyproject.toml` and `uv.lock`, and move the "Unreleased" notes in CHANGELOG.md under that version.
 2. Merge, then tag the merge commit on `main` and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.

@@ -4,6 +4,12 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Changed
+
+- A `vX.Y.Z` tag publishes only after the CI workflow has succeeded for that commit. A run still going, a failed or cancelled run, and a commit with no CI run do not publish.
+- The demos show the current `foil init` pointer and mail under `fleets/main/board/`. `docs/architecture.md` no longer names a version.
+- The notes for issues #18, #42, and #66 are removed. The decisions are in `docs/requirements.md`.
+
 ## [0.6.1] - 2026-10-21
 
 `foil --version` prints 0.6.1. This is the first release on PyPI: install with `uv tool install --upgrade foil-ai`.
@@ -214,10 +220,9 @@ This release was withdrawn. Its changes ship in 0.4.5.
 This release was withdrawn. Its changes ship in 0.3.3.
 
 This release is documentation only. It publishes the survey of which
-project files could move global
-([docs/issue-18-project-vs-global.md](docs/issue-18-project-vs-global.md),
-issue #18) and the architecture note on worktree layout and where project
-state lives ([docs/architecture.md](docs/architecture.md), issue #19).
+project files could move global (issue #18) and the architecture note on
+worktree layout and where project state lives
+([docs/architecture.md](docs/architecture.md), issue #19).
 The two were developed on separate lines.
 No product-code behavior changes.
 
