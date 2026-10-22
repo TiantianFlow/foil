@@ -263,30 +263,39 @@ def test_f33_empty_seat_id_sends_as_user_and_reaches_every_alive_seat(
     assert "from outside" not in line
 
 
-def test_f33_re_writes_a_child_sets_re_and_wakes_the_same_set(
+def test_f33_a_reply_wakes_the_thread_authors_and_the_seats_it_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     root, _calls = _post(repo, monkeypatch, "root view")
+    monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
+    assert main(["post", "--re", str(root.resolve()), "--decline"]) == 0
+    # The root's author is outside the fleet and the only other file is a decline.
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     calls = _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root.resolve()), "a further fact"]) == 0
-    files = _room(repo)
-    assert len(files) == 2
-    child = next(path for path in files if path != root)
+    child = max(_room(repo), key=lambda path: path.stat().st_mtime_ns)
     assert child.parent == root.parent
     assert child.name != f"{child.parent.name}.md"
     fields, body = _open(child)
     assert fields["contract"] == "room/v1"
     assert _TIME.fullmatch(str(fields["time"]))
     assert fields["re"] == str(root.resolve())
-    assert fields["from"] == "user"
-    assert fields["nudged"] == ["implementer-1", "lead", "reviewer-1"]
+    assert fields["from"] == "lead"
+    assert fields["nudged"] == []
     assert "a further fact" in body
-    line = f"user {child.resolve()}"
-    assert _nudge_lines(calls) == [line, line, line]
-    assert _nudge_windows(calls) == ["@2", "@1", "@3"]
-    assert str(root.resolve()) not in line
-    assert "a further fact" not in line
+    assert _nudge_lines(calls) == []
+    # The lead wrote a waking post, and @implementer-1 names a seat.
+    monkeypatch.setenv("FOIL_SEAT_ID", "reviewer-1")
+    calls = _install_tmux(monkeypatch)
+    assert main(["post", "--re", str(child.resolve()), "@implementer-1, an objection"]) == 0
+    reply = max(_room(repo), key=lambda path: path.stat().st_mtime_ns)
+    fields, _body = _open(reply)
+    assert fields["nudged"] == ["implementer-1", "lead"]
+    line = f"reviewer-1 {reply.resolve()}"
+    assert _nudge_lines(calls) == [line, line]
+    assert _nudge_windows(calls) == ["@2", "@1"]
+    assert "an objection" not in line
 
 
 def test_s6_worker_may_post(
@@ -444,29 +453,25 @@ def test_f33_empty_seat_id_reaches_a_seat_named_user(
     assert _nudge_windows(calls) == ["@1", "@9"]
 
 
-def test_f33_parent_front_matter_does_not_decide_the_wake(
+def test_f33_a_decline_or_a_hand_written_file_does_not_join_the_thread(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     root, _calls = _post(repo, monkeypatch, "original")
-    root.write_text(
-        "---\ncontract: room/v1\nfrom: user\ngeneration: 99\nnudged: [nobody]\n---\n\ndecline\n",
-        encoding="utf-8",
+    (root.parent / "notes.md").write_text(
+        "---\ncontract: mail/v1\nfrom: reviewer-1\n---\n\na view\n", encoding="utf-8"
     )
+    monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
+    assert main(["post", "--re", str(root), "--decline"]) == 0
+    monkeypatch.setenv("FOIL_SEAT_ID", "")
     calls = _install_tmux(monkeypatch)
-    assert main(["post", "--re", str(root), "a new fact"]) == 0
-    child = next(path for path in _room(repo) if path != root)
+    assert main(["post", "--re", str(root), "a new fact @nobody"]) == 0
+    child = max(_room(repo), key=lambda path: path.stat().st_mtime_ns)
     fields, body = _open(child)
-    assert fields["contract"] == "room/v1"
     assert fields["re"] == str(root.resolve())
-    assert "generation" not in fields
-    assert fields["nudged"] == ["implementer-1", "lead", "reviewer-1"]
-    assert body.endswith("does not refuse the write.\n\na new fact\n")
-    assert "generation: 99" not in body
-    assert "nobody" not in body
-    line = f"user {child.resolve()}"
-    assert _nudge_lines(calls) == [line, line, line]
-    assert _nudge_windows(calls) == ["@2", "@1", "@3"]
+    assert fields["nudged"] == []
+    assert body.endswith("does not refuse the write.\n\na new fact @nobody\n")
+    assert _nudge_lines(calls) == []
 
 
 # --- Decline ---

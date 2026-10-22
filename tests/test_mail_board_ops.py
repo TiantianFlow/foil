@@ -151,11 +151,16 @@ def test_mail_read_outputs_json(
 # mail list tests
 
 
-def test_mail_list_requires_seat_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """mail list fails without FOIL_SEAT_ID."""
-    _repo(tmp_path, monkeypatch)
-    with pytest.raises(FoilError, match="FOIL_SEAT_ID not set"):
-        mail_list()
+def test_mail_list_outside_the_fleet_is_the_user_mailbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With no FOIL_SEAT_ID, mail list reads the human's mailbox."""
+    repo = _repo(tmp_path, monkeypatch)
+    _create_mail(repo, "worker-1", "lead", "not for the human")
+    mail_file = _create_mail(repo, "user", "lead", "acknowledged")
+    mail_list()
+    expected = ["2026-09-30T12:00:00Z", "lead", str(mail_file.resolve())]
+    assert capsys.readouterr().out.split() == expected
 
 
 def test_mail_list_outputs_mail(
@@ -529,16 +534,27 @@ Done"""
     assert data["body"] == "Done"
 
 
-def test_cli_mail_list_requires_seat_id(
+def test_cli_the_lead_replies_to_the_user_mailbox(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An outside-fleet caller may not list mail."""
+    """Only the lead writes the human's mailbox, and it has no pane to nudge."""
     _repo(tmp_path, monkeypatch)
 
-    assert main(["mail", "list"]) == 1
-    captured = capsys.readouterr()
-    assert captured.err == "foil: not allowed\n"
-    assert captured.out == ""
+    assert main(["mail", "list"]) == 0
+    assert capsys.readouterr().out == ""
+    assert main(["send", "user", "hello"]) == 1
+    assert capsys.readouterr().err == "foil: only the lead may send to user\n"
+    monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
+    assert main(["send", "user", "hello"]) == 1
+    assert capsys.readouterr().err == "foil: only the lead may send to user\n"
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["send", "user", "task acknowledged"]) == 0
+    monkeypatch.delenv("FOIL_SEAT_ID")
+    assert main(["mail", "list"]) == 0
+    line = capsys.readouterr().out
+    assert line.count("\n") == 1 and " lead " in line
+    assert main(["mail", "read", line.split()[-1]]) == 0
+    assert capsys.readouterr().out == "task acknowledged\n"
 
 
 def test_cli_mail_list_rejects_parent_seat_id(
@@ -638,8 +654,8 @@ def test_error_messages_one_line(
     assert "foil:" in captured.err
     assert "Traceback" not in captured.err
 
-    # Test mail list without seat ID
-    assert main(["mail", "list"]) == 1
+    # Test send to the human from outside the fleet
+    assert main(["send", "user", "hi"]) == 1
     captured = capsys.readouterr()
     assert captured.err.count("\n") == 1
     assert "foil:" in captured.err

@@ -79,6 +79,23 @@ foil seat peek implementer-1 --lines 40
 
 `foil send` writes one mail file and nudges that seat. The body is not typed.
 
+`foil send user` is your mail to the human: an acknowledgement or an answer. It nudges nobody. The human reads it at the next check-in. A question that blocks the goal still goes in `status.md` `questions`.
+
+```text
+foil send user "task received; the plan is in board/status.md"
+```
+
+## Handoff
+
+A seat near a full context writes `board/handoffs/<name>.md`, with what is done, what is next, and its branch, and mails you. Kill that seat and spawn a new seat of the same role from the file. The new seat's worktree is a new branch. It merges the old branch the handoff names first.
+
+```text
+foil seat kill implementer-1
+foil seat spawn implementer --task "Read board/handoffs/implementer-1.md, then continue its task."
+```
+
+Near your own full context, write `board/handoffs/lead.md` the same way, with the plan, the open tasks, and the seats, then `foil send user` that the handoff is ready. A new lead is spawned from it. Nobody watches context for you.
+
 ```text
 foil send implementer-1 "a question for this seat"
 foil send implementer-1 -
@@ -87,6 +104,8 @@ foil send implementer-1 -
 ## Worktrees
 
 Implementation belongs in a seat whose template sets `worktree` to true. That seat works on its own branch. You integrate by merging that branch into the goal branch, then ask a reviewer to check the result before you report the goal done. The goal-branch merge is not shipping. Killing a seat does not delete its branch or its uncommitted files.
+
+Every seat runs git with Foil's hooks. A commit outside the seat's own worktree, and a commit or a push that adds a home directory path, this machine's hostname, a personal email, or a token, is refused with one line. Remove that text. Never use `--no-verify`.
 
 ## Roster
 
@@ -101,7 +120,7 @@ foil roster update reviewer harness=codex/gpt-6.1-sol,claude/opus
 
 `add`, `add --from`, `remove`, `persona`, `worktree`, `permission`, and `--project` are for a caller outside the fleet. You do not run them. The CLI refuses them inside a fleet. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. The packaged personas are read from the package. A changed persona is `<root>/personas/<role>.md`.
 
-When the roster does not have the role, name it in `status.md` `questions` and wait. You do not write the persona. A caller outside the fleet writes that file and runs the add. `foil roster update ROLE harness=ID/MODEL,ID/MODEL` records fleet memory for that role: that list replaces the role's list in your fleet, in the form `roster list` prints, and the next spawn takes the entry at the role's seat count. `foil roster update ROLE model=VALUE` does the same for a role with one entry, and is refused when the list is longer. The default mapping stays. Use them so a researcher or reviewer can be given a stronger model for that ask. Re-read `overrides.toml` before you spawn. Spawn applies the harness and model from that file. You do not pass a harness or a model flag. Neither command sets `permission`. A new seat takes the entry at the count of seats already stored for that role, including killed seats. A seat already alive keeps the harness and model from its last launch, and resume uses that pair.
+When the roster does not have the role, name it in `status.md` `questions` and wait. You do not write the persona. A caller outside the fleet writes that file and runs the add. `foil roster update ROLE harness=ID/MODEL,ID/MODEL` records fleet memory for that role: that list replaces the role's list in your fleet, in the form `roster list` prints, and each spawn takes the next entry. `foil roster update ROLE model=VALUE` does the same for a role with one entry, and is refused when the list is longer. The default mapping stays. Use them so a researcher or reviewer can be given a stronger model for that ask. Re-read `overrides.toml` before you spawn. Spawn applies the harness and model from that file. You do not pass a harness or a model flag. Neither command sets `permission`. A new seat takes the next entry of the role's list, and an edited list starts at its first entry. Spawn and `foil roster update` warn when a model is not in that harness's `models`. Use an id that harness lists. A seat already alive keeps the harness and model from its last launch, and resume uses that pair.
 
 Use the roster commands above. Do not hand-edit the global role file. A caller outside the fleet writes the project override. You do not. An omitted permission is `auto`. You cannot set `permission`. Changing the mapping while a seat is alive is allowed. That seat keeps its launch pair.
 
@@ -128,7 +147,7 @@ Board paths are relative to the board folder. Foil parses front matter only to p
 
 ## Room
 
-Contract `room/v1`: `from`, `time`, an optional `re`, and `nudged`. `foil post` types one nudge into every other alive seat. The body is not typed. Your own seat is not nudged. `TEXT` of `-` reads stdin.
+Contract `room/v1`: `from`, `time`, an optional `re`, and `nudged`. A new `foil post` types one nudge into every other alive seat. A reply with `--re` nudges only the seats that wrote a post in that thread and the seats it names as `@name`, such as `@reviewer-1`. The body is not typed. Your own seat is not nudged. `TEXT` of `-` reads stdin.
 
 ```text
 foil post "a view the thread does not contain"

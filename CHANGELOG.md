@@ -4,6 +4,18 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- The lead can answer the human with `foil send user`. That mail goes to `board/mail/user/` and nudges nothing; outside the fleet, `foil mail list` lists it. The operator skill reads it at each check-in. (#69)
+- Each seat's git runs Foil's `pre-commit` and `pre-push` hooks, set through `GIT_CONFIG_*` in the seat's environment only, before the repository's own hooks. They refuse a commit outside the seat's worktree, and a commit or a push that adds the seat's home directory path, the hostname, a non-noreply git email, or a token. (#69)
+- Spawn and `roster add`/`update` print a warning when a model is not in that harness's `models`, and still launch or write it. (#69)
+- The skills describe a handoff for a seat near a full context: it writes `board/handoffs/<name>.md`, and the lead (or, for the lead, the operator) kills it and spawns a new seat from that file. (#69)
+
+### Changed
+
+- A room reply (`foil post --re`) wakes only the seats that wrote a waking post in that thread and the seats its text names as `@name`. A new post still wakes every other alive seat. (#69)
+- Rotation over a role's pair list now counts that role's spawns in the fleet, stored in the registry's new `rotation` record, instead of its stored seat records. Every lead respawn takes the next entry, and an edited list starts again at its first entry. A fleet started before this change starts each role at its first entry. (#69)
+
 ## [0.6.1] - 2026-10-21
 
 `foil --version` prints 0.6.1. This is the first release on PyPI: install with `uv tool install --upgrade foil-ai`.

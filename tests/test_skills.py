@@ -52,6 +52,8 @@ ROLE_COMMANDS = {
         ("seat", "archive"),
         ("send",),
         ("post",),
+        ("mail", "read"),
+        ("mail", "list"),
         ("memory", "list"),
         ("memory", "accept"),
         ("memory", "reject"),
@@ -297,8 +299,10 @@ def test_operator_spawns_the_lead_once_then_sends_the_goal() -> None:
             spawns.append(invocation)
         if tokens[:3] == ["foil", "send", "lead"]:
             sends.append(invocation)
+    # The first-run check, and the only later one: a lead replaced from its handoff file.
     assert spawns == [
-        'foil seat spawn lead --task "Write board/status.md with state: done"'
+        'foil seat spawn lead --task "Write board/status.md with state: done"',
+        'foil seat spawn lead --task "Read board/handoffs/lead.md, then continue the goal."',
     ]
     assert 'foil send lead "the human\'s goal"' in sends
     assert "Do not spawn the lead again." in text

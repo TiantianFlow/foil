@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from foil.errors import FoilError, shown
@@ -14,6 +15,7 @@ from foil.presets import (
     installed_harness,
     load_preset,
     load_template,
+    model_warning,
     parse_template_text,
     path_description,
     persona_stems,
@@ -158,6 +160,15 @@ def _save_maps_at(root: Path, maps: list[dict[str, str]]) -> None:
     write_bytes(path, render_maps(maps).encode())
 
 
+def _check_entries(toplevel: Path, entries: list[dict[str, str]]) -> None:
+    """Refuse an unknown harness id. Warn about a model that harness does not list."""
+
+    for entry in entries:
+        warning = model_warning(load_preset(toplevel, str(entry["id"])), entry["model"])
+        if warning:
+            print(warning, file=sys.stderr)
+
+
 def _accept(toplevel: Path, role: str, root: Path, *, mapping_only: bool) -> None:
     """Check the layer this write just stored.
 
@@ -180,8 +191,7 @@ def _accept(toplevel: Path, role: str, root: Path, *, mapping_only: bool) -> Non
             raise FoilError("foil: invalid template")
         if persona.endswith(".md") and "\n" not in persona and "\r" not in persona:
             persona_text(_persona_template(toplevel, role, persona))
-    for entry in entries:
-        load_preset(toplevel, str(entry["id"]))
+    _check_entries(toplevel, entries)
 
 
 def _persona_template(toplevel: Path, role: str, persona: str) -> dict:
@@ -674,8 +684,7 @@ def _remember(toplevel: Path, role: str, field: str, value: str) -> None:
     current = fleet_list(toplevel, role) or template["harness"]
     _formatted_value(field, value)
     entries = _new_entries(role, field, value, current)
-    for entry in entries:
-        load_preset(toplevel, entry["id"])
+    _check_entries(toplevel, entries)
     remember_entries(toplevel, role, entries)
     shown_value = value if field == "model" else ",".join(entry_label(e) for e in entries)
     print(f"foil: fleet memory: {role} {field} = {shown_value}")

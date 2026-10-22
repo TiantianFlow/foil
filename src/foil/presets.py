@@ -519,6 +519,34 @@ def spawn_entry(
     return {"id": row["id"] or chosen["id"], "model": row["model"]}
 
 
+def rotation_key(
+    toplevel: Path, role: str, entries: list[dict[str, str]], fleet: str | None = None
+) -> str:
+    """The lists a spawn of ``role`` selects from. Editing either restarts at the first entry."""
+
+    rows = [item for item in fleet_overrides(toplevel, fleet) if item["role"] == role]
+    return ",".join(map(entry_label, entries)) + "|" + ",".join(map(entry_label, rows))
+
+
+def rotation_index(registry: dict[str, Any], role: str, key: str) -> int:
+    """The index the next spawn of ``role`` takes: 0 until a spawn from this same list."""
+
+    held = registry.get("rotation", {}).get(role)
+    return held["next"] if held and held["list"] == key else 0
+
+
+def model_warning(preset: dict[str, Any], model: str) -> str | None:
+    """A warning when ``model`` is not one of the ids the preset lists. Nothing is refused."""
+
+    known = preset["models"]
+    if not model or not known or model in known:
+        return None
+    return (
+        f"foil: warning: model '{shown(model)}' is not in the models of harness "
+        f"'{preset['id']}': {', '.join(known)}"
+    )
+
+
 def fleet_list(toplevel: Path, role: str) -> list[dict[str, str]]:
     """This fleet's list for ``role`` when every row names a harness, else empty."""
 

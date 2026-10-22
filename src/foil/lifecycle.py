@@ -18,6 +18,7 @@ from pathlib import Path
 from foil import __version__
 from foil.board import ensure_board, write_mail
 from foil.errors import FoilError, shown
+from foil.guard import hook_environment
 from foil.presets import (
     BUILTIN_IDS,
     _builtin,
@@ -29,9 +30,12 @@ from foil.presets import (
     installed_presets,
     load_preset,
     load_template,
+    model_warning,
     persona_text,
     read_description,
     read_roles,
+    rotation_index,
+    rotation_key,
     spawn_entry,
     write_default_templates,
 )
@@ -341,6 +345,8 @@ def _seat_name(registry: dict, template_name: str, requested: str | None) -> str
         return "lead"
     if not seats:
         raise FoilError("foil: the first seat must be the lead")
+    if requested == "user":
+        raise FoilError("foil: seat name 'user' is the human's mailbox")
     if requested == "lead" or (requested is not None and requested in seats):
         raise FoilError(f"foil: seat '{shown(requested or '')}' already exists")
     if requested:
@@ -668,6 +674,7 @@ def _open(
         value = os.environ.get(name)
         if value:
             environment[name] = value
+    environment.update(hook_environment(root, cwd, worktree))
     plan = {
         "argv": argv,
         "cwd": str(cwd.resolve()),
@@ -745,10 +752,15 @@ def spawn_seat(
     ensure_registry(root)
     registry = load_registry(root)
     seat = _seat_name(registry, loaded["name"], name)
-    stored = sum(item["template"] == loaded["name"] for item in registry["seats"].values())
-    chosen = spawn_entry(root, loaded["name"], loaded["harness"], stored)
+    role = loaded["name"]
+    key = rotation_key(root, role, loaded["harness"])
+    count = rotation_index(registry, role, key)
+    chosen = spawn_entry(root, role, loaded["harness"], count)
     model = chosen["model"]
     preset = load_preset(root, chosen["id"])
+    warning = model_warning(preset, model)
+    if warning:
+        print(warning, file=sys.stderr)
     native = str(uuid.uuid4()) if preset["session_id"] == "generated" else ""
     worktree, branch = _worktree(root, seat) if loaded["worktree"] else ("", "")
     mailed = write_mail(root, seat, task) if task is not None else None
@@ -790,6 +802,10 @@ def spawn_seat(
         if existing is not None and not (seat == "lead" and existing.get("state") == "killed"):
             raise FoilError(f"foil: seat '{shown(seat)}' already exists")
         fresh["seats"][seat] = record
+        fresh["rotation"][role] = {
+            "list": key,
+            "next": max(rotation_index(fresh, role, key), count) + 1,
+        }
         if session:
             fresh["tmux_session"] = session
         if loaded["name"] == "lead":

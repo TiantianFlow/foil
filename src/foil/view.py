@@ -44,8 +44,11 @@ from foil.presets import (
     entry_label,
     fleet_overrides,
     load_preset,
+    load_template,
     preset_ids,
     read_maps,
+    rotation_index,
+    rotation_key,
     select_harness,
     spawn_entry,
 )
@@ -104,9 +107,9 @@ TIPS = {
     "Worktree": "yes means each seat of this role gets its own git worktree on a new branch, "
     "so its edits do not touch your checkout or other seats. Killing the seat keeps the "
     "branch.",
-    "Harnesses": "How one agent CLI is launched, and the model ids its list names. Spawn does "
-    "not refuse a model that is absent from the list. A file harnesses/<id>.toml replaces "
-    "that one id.",
+    "Harnesses": "How one agent CLI is launched, and the model ids its list names. Spawn and "
+    "roster update warn about a model that is absent from the list, and do not refuse it. A "
+    "file harnesses/<id>.toml replaces that one id.",
     "Installed": "Whether this viewer found the command on the PATH it was started with, and "
     "where. A seat looks the command up on the PATH of the foil command that launched it, so "
     "a viewer started elsewhere, such as a service, can differ.",
@@ -116,15 +119,15 @@ TIPS = {
     "harness and model pairs, shown as pair cards. The rotation is on the pair, never on the "
     "harness or the model alone. An empty model shows harness default: no --model is passed, "
     "so the CLI uses its own default. Resume keeps the pair recorded on the seat.",
-    "Entries, in order": "Each entry is one card, harness on top and model below. The next "
-    "spawn of a role takes entry ((seats stored for that role, including killed) mod "
-    "(number of entries)) + 1.",
+    "Entries, in order": "Each entry is one card, harness on top and model below. Each spawn "
+    "of a role takes the next entry, a new lead included, and an edited list starts again "
+    "at its first entry.",
     "Attach": "The session name stored for this fleet. The viewer does not type into the pane.",
     "Workspace": "The checkout recorded for the project. Every fleet on this repository "
     "shares it. Seat worktrees are separate branches.",
     "Overrides": "This fleet's overrides.toml. A role's entries, in order, replace the pair "
-    "list below this fleet. The Rotation line marks the next seat from this fleet's stored "
-    "count. An empty model is harness default. A model-only row on a multi-entry role is "
+    "list below this fleet. The Rotation line marks the entry the next seat of this fleet "
+    "takes. An empty model is harness default. A model-only row on a multi-entry role is "
     "refused at spawn (F3). A running seat keeps its last launch. Resume does not read "
     "this file.",
     "Projects": "Each project's recorded checkout. A project whose checkout is gone, or now "
@@ -145,8 +148,9 @@ TIPS = {
     "Board": "This fleet's shared folder. Mail is to one seat. Notes are scratch and wake "
     "nobody. tasks/ is the brief. results/ is the report. The viewer shows the files as "
     "written.",
-    "Posts": "Threads under this fleet's board/room/. A post wakes every other alive seat in "
-    "this fleet. A reply stays in that thread. A decline is a file and types nothing. A "
+    "Posts": "Threads under this fleet's board/room/. A new post wakes every other alive "
+    "seat in this fleet. A reply stays in that thread and wakes only the seats that wrote "
+    "a post in it and the seats it names as @name. A decline is a file and types nothing. A "
     "hand-written file there wakes nobody. Status still comes from status.md.",
     "Pane": "Raw tmux capture. The viewer does not decide that the seat is busy, blocked, or "
     "waiting on a dialog.",
@@ -812,8 +816,14 @@ def _project_mapped(root: Path) -> set[str]:
         return set()
 
 
-def _stored(registry: dict, role: str) -> int:
-    return sum(seat["template"] == role for seat in registry["seats"].values())
+def _stored(root: Path, fleet: str, registry: dict, role: str) -> int:
+    """The count the next spawn of ``role`` uses: 0 until a spawn from today's lists (F3)."""
+
+    try:
+        entries = load_template(root, role)["harness"]
+        return rotation_index(registry, role, rotation_key(root, role, entries, fleet))
+    except FoilError:
+        return 0
 
 
 def _next_entries(root: Path, fleet: str, registry: dict) -> dict[str, str]:
@@ -829,7 +839,7 @@ def _next_entries(root: Path, fleet: str, registry: dict) -> dict[str, str]:
         entries = [row for row in maps if row["role"] == role]
         if not entries:
             continue
-        stored = _stored(registry, role)
+        stored = _stored(root, fleet, registry, role)
         upcoming = spawn_entry(root, role, entries, stored, fleet)
         if entry_label(upcoming) != entry_label(select_harness(entries, stored)):
             found[role] = entry_label(upcoming)
@@ -1101,7 +1111,7 @@ def _fleet_page(root: Path, fleet: str, query: dict, base: str) -> _Page:
         mapped = _project_mapped(root)
         lines = []
         for role, entries in _by_role(found).items():
-            count = _stored(registry, role) if registry is not None else None
+            count = _stored(root, fleet, registry, role) if registry is not None else None
             mark = None if count is None else count % len(entries)
             notes = "; ".join(item["note"] for item in entries if item["note"])
             note = f"<small>{escape(notes)}</small>" if notes else ""
