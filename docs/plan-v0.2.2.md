@@ -1,5 +1,7 @@
 # Foil v0.2.2 plan: a progress checklist
 
+This is the record of that release. Current behavior is [requirements.md](requirements.md).
+
 Target: [requirements.md](requirements.md). Issue: TiantianFlow/foil #11
 (Progress report). Baseline: v0.2.1 at `84602ec`. Requirement
 IDs (F, N, D) refer to the requirements document.

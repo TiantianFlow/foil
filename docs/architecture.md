@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes Foil 0.4.0 as implemented. It does not add requirements. The command list and the data layout are specified in [requirements.md](requirements.md).
+This document describes Foil as implemented. It does not add requirements. The command list and the data layout are specified in [requirements.md](requirements.md).
 
 ## Components
 

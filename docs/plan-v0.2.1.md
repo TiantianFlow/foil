@@ -1,5 +1,7 @@
 # Foil v0.2.1 plan: AI-native onboarding
 
+This is the record of that release. Current behavior is [requirements.md](requirements.md).
+
 Target: [requirements.md](requirements.md). Baseline: the v0.2.0 tag.
 The release turns onboarding from a human procedure into one a coding
 agent performs, makes `foil init` report the whole machine instead of one

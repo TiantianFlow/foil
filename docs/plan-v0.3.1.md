@@ -1,5 +1,7 @@
 # Plan: Foil 0.3.1
 
+This is the record of that release. Current behavior is [requirements.md](requirements.md).
+
 **Goal:** the operator sees the roster and the live fleet in full from two
 commands it already runs, and a seat that starts behind a harness dialog is
 found by the fleet and costs the human one answer per harness, not one per

@@ -29,19 +29,21 @@ foil init
 ```
 
 ```text
-foil 0.4.0
+foil 0.6.1
 ...
+Skill: packaged /opt/foil/foil/defaults/skills/operator.md
 Project folder: /var/foil/projects/your-repo-1a2b3c
-Read /var/foil/projects/your-repo-1a2b3c/skills/operator.md and follow it. My goal: <goal>.
+Read /opt/foil/foil/defaults/skills/operator.md and follow it. My goal: <goal>.
 ```
 
 `foil init` writes that project folder outside the repository and writes
 nothing into the working tree, so `git status` stays clean. The first
-line of its output is the version `foil --version` prints. `foil 0.4.0`
-in the sample is an illustration from an older run, not this tree's
-version. The report in between (trimmed here) names the installed
-harnesses and what init wrote. The last line is what you paste into your
-own agent later. The path is the one the report printed.
+line is the version `foil --version` prints. The report in between
+(trimmed here) names the installed harnesses and what init wrote. A fresh
+init has no `<root>/skills/operator.md`, so the `Skill:` line and the last
+line name the packaged file. When that global file exists, both lines name
+it instead. Paste the last line into your own agent, with your goal in
+place of `<goal>`. The path is the one the report printed.
 
 ## 2. Choose a harness and a permission for each role
 
@@ -78,11 +80,13 @@ before some commands, so peek new seats.
 ## 3. Hand over the goal
 
 In your own agent (Claude Code, Codex, or any other), in the repository,
-paste the line from `foil init` with your goal:
+paste the last line from `foil init`, with your goal filled in:
 
 ```text
-Read <root>/skills/operator.md and follow it. My goal: make the tests pass.
+Read /opt/foil/foil/defaults/skills/operator.md and follow it. My goal: make the tests pass.
 ```
+
+When `<root>/skills/operator.md` exists, that line names it instead.
 
 That agent becomes the operator. It checks that a lead can start, then
 sends it the goal. To do the same by hand:
@@ -124,9 +128,9 @@ foil seat peek lead --lines 8
 
 ```text
 ...
-implementer-1 /var/foil/projects/your-repo-1a2b3c/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+implementer-1 /var/foil/projects/your-repo-1a2b3c/fleets/main/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
 ...
-reviewer-1 /var/foil/projects/your-repo-1a2b3c/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
+reviewer-1 /var/foil/projects/your-repo-1a2b3c/fleets/main/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
 ```
 
 Peek prints the raw bottom of that window (trimmed here). Among the
@@ -166,7 +170,7 @@ The tests pass.
 
 Use `foil board list` and `foil board read` from outside the fleet; seats
 prefer `foil mail list` and `foil mail read` for their mailbox. Every
-message is still a file under the project folder's `board/`. `status.md` is the lead's
+message is a file under that fleet's `board/`, in the project folder. `status.md` is the lead's
 own report. When the lead needs you, it lists questions there, and you
 answer with `foil send lead "..."`.
 

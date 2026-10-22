@@ -1,7 +1,8 @@
 name: Release
 
-# Publishes foil-ai to PyPI when a vX.Y.Z tag is pushed. Run it by hand
-# with a tag to retry a publish that failed.
+# Publishes foil-ai to PyPI when a vX.Y.Z tag is pushed, and only after the
+# CI workflow has succeeded for that commit. Run it by hand with a tag to
+# retry a publish that failed. A manual run waits for CI the same way.
 on:
   push:
     tags: ["v*"]
@@ -15,14 +16,40 @@ permissions:
   contents: read
 
 jobs:
+  ci-green:
+    name: Wait for CI
+    runs-on: ubuntu-latest
+    # Listing workflow runs needs actions: read. Job permissions replace the
+    # workflow permissions, so contents: read is repeated for the checkout.
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      sha: ${{ steps.resolved.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          persist-credentials: false
+      - id: resolved
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Wait until CI succeeds for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.resolved.outputs.sha }}
+        run: python3 .github/workflows/wait_for_ci.py
+
   build:
     name: Build
+    needs: ci-green
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           persist-credentials: false
+      - name: Build the commit CI approved
+        run: test "$(git rev-parse HEAD)" = "${{ needs.ci-green.outputs.sha }}"
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
