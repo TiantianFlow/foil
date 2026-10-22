@@ -26,6 +26,8 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
+          # A release build starts from no cache, so nothing cached elsewhere reaches it.
+          enable-cache: false
       - name: Check the tag matches the package version
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
