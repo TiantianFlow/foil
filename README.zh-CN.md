@@ -1,9 +1,10 @@
 # 运筹 · Foil
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.1-informational)](https://github.com/TiantianFlow/foil)
+[![PyPI](https://img.shields.io/pypi/v/foil-ai)](https://pypi.org/project/foil-ai/)
 [![CI](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml/badge.svg)](https://github.com/TiantianFlow/foil/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
+[![Python](https://img.shields.io/pypi/pyversions/foil-ai)](https://pypi.org/project/foil-ai/)
+[![Downloads](https://img.shields.io/pypi/dm/foil-ai)](https://pypi.org/project/foil-ai/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey)](pyproject.toml)
 [![Runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-none-brightgreen)](pyproject.toml)
 
