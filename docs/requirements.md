@@ -462,9 +462,9 @@ The packaged operator, lead, and worker skills, and the files under `skills/`, m
 | D3 | A Chinese README carries the same content as the English one. |
 | D4 | This is the only requirements document. Other documents describe design, plans, or how to contribute, and never add requirements. |
 | D5 | An architecture document describes Foil's components, data flow, and module boundaries as implemented. |
-| D6 | Each release has a plan named `plan-vX.Y.Z.md` and an entry in the changelog. |
+| D6 | Each release has a plan named `plan-vX.Y.Z.md` and an entry in the changelog. A plan is the record of that release. Current behavior stays in this document. |
 | D7 | A contributor guide explains setup, the checks CI runs, and the rules every change keeps: the command surface (section 6), the size target (N4), and publishing safety (N9). |
-| D8 | A documentation index lists every document in the docs folder, and an automated test checks that none is missing. Documents describe the current state; earlier versions live in git history and at release tags. |
+| D8 | A documentation index lists every document in the docs folder, and an automated test checks that none is missing. An issue note is removed once its decision is in this document. A release plan stays as the record of that release. Earlier drafts live in git history and at release tags. |
 
 ## 10. Verification
 

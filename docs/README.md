@@ -11,9 +11,6 @@
 | [architecture.md](architecture.md) | Components, data flow, and module boundaries of the implementation. |
 | [demo.md](demo.md) | A real run, from `foil init` to a merged fix, replayed from the end-to-end suite. Linked from the English README. |
 | [demo.zh-CN.md](demo.zh-CN.md) | The same demo in Chinese. Linked from the Chinese README. |
-| [issue-18-project-vs-global.md](issue-18-project-vs-global.md) | Rejected survey for issue #18. It recommended against machine-wide settings. [issue-66-global-settings.md](issue-66-global-settings.md) replaces that recommendation. |
-| [issue-66-global-settings.md](issue-66-global-settings.md) | Global settings are the settings. A project override and a fleet override are optional. The earlier project-only finding is rejected (issue #66). |
-| [issue-42-viewer.md](issue-42-viewer.md) | Technical design for `foil view`, the read-only project viewer (issue #42): where it lives, the stack, how it runs, and loopback access. |
 
 Outside this folder: [README.md](../README.md) for users,
 [CONTRIBUTING.md](../CONTRIBUTING.md) for contributors,
@@ -25,7 +22,8 @@ Outside this folder: [README.md](../README.md) for users,
 - **One requirements document.** Behavior changes start in
   requirements.md. Other documents describe design, plans, or how to
   contribute; they never add requirements.
-- **One plan per release**, named `plan-vX.Y.Z.md`.
+- **One plan per release**, named `plan-vX.Y.Z.md`. A plan is the record of
+  that release. Current behavior is requirements.md.
 - **Every document in this folder is listed above.** A test checks this.
-- **No archives.** Documents describe the current state. Earlier versions
-  live in git history and at release tags.
+- **No design archives.** An issue note is removed once its decision is in
+  requirements.md. Earlier drafts live in git history and at release tags.

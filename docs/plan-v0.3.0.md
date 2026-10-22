@@ -1,12 +1,14 @@
 # Plan: Foil 0.3.0
 
+This is the record of that release. Current behavior is [requirements.md](requirements.md).
+
 **Goal:** one release that lets a seat read mail and board files through
 `foil` (issue #12) and lets the operator and the lead view and change the
 roster through `foil` (issue #10).
 
 #12 and #10 were written on separate lines. #12's plan was already named
 0.3.0. #10's plan was named 0.3.1 because it did not know which number it
-would ship under. They ship together here. There is no 0.3.1.
+would ship under. They ship together here. A later plan, [plan-v0.3.1.md](plan-v0.3.1.md), is a different release.
 
 ## Mail and board reads
 
