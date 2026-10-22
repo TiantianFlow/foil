@@ -31,6 +31,12 @@ The contract is `mail/v1`, with `from`, `to`, `time`, and an optional `re`. A pa
 
 If you have a worktree, do the task there. Do not edit the project checkout. If you have no worktree, work in the project checkout and do not take another seat's branch. Killing you does not delete your branch or uncommitted files.
 
+Your git runs Foil's hooks. A commit outside your own worktree, and a commit or a push that adds a home directory path, this machine's hostname, a personal email, or a token, is refused with one line. Remove that text. Never use `--no-verify`.
+
+## Handoff
+
+When your context is nearly full, write `board/handoffs/<your name>.md`: what is done, what is next, the files that matter, and your branch. Then `foil send lead` that the handoff is ready, and stop. The lead starts a new seat from that file. If your task mail names a handoff file, read it first, and with a worktree, merge the branch it names before you continue.
+
 The task is the goal and nothing else. Do not widen it into another issue, a merge to the default branch, a push, a tag, or a ship. A pane is raw text. Nobody decides busy, idle, working, or done from it. You do not type into a pane, and you do not answer a dialog. What the fleet is doing is `board/status.md` and `foil seat list`.
 
 ## Commands
@@ -59,7 +65,7 @@ foil memory list
 foil memory list --json
 ```
 
-`foil send` writes one mail file and nudges that seat. The body is not typed into the pane. `foil post` writes one room file and nudges every other alive seat. The file states how many files the directory has, and that count does not refuse the write. A decline writes the line `decline` and types nothing. `foil seat list` shows name, template, state, worktree, the harness and model recorded at launch, and the template's current description. `foil seat peek` prints the raw pane tail. Do not treat that text as a status report. `foil memory add` proposes a lesson and prints its id. `foil memory list` shows lessons the lead has already accepted.
+`foil send` writes one mail file and nudges that seat. The body is not typed into the pane. `foil post` writes one room file and nudges every other alive seat. A reply with `--re` nudges only the seats that wrote a post in that thread and the seats it names as `@name`, such as `@lead`. The file states how many files the directory has, and that count does not refuse the write. A decline writes the line `decline` and types nothing. `foil seat list` shows name, template, state, worktree, the harness and model recorded at launch, and the template's current description. `foil seat peek` prints the raw pane tail. Do not treat that text as a status report. `foil memory add` proposes a lesson and prints its id. `foil memory list` shows lessons the lead has already accepted.
 
 ## What you may not do
 

@@ -86,6 +86,7 @@ def empty_registry() -> dict[str, Any]:
         "tmux_session": "",
         "lead": "",
         "seats": {},
+        "rotation": {},
     }
 
 
@@ -242,6 +243,25 @@ def _seat_map(raw: Any) -> dict[str, dict[str, str]]:
     return seats
 
 
+def _rotation(raw: Any) -> dict[str, dict[str, Any]]:
+    """Per role, the list the last spawn took from and the index the next spawn takes (F3)."""
+
+    if not isinstance(raw, dict):
+        raise FoilError("foil: invalid record")
+    for role, value in raw.items():
+        if (
+            not isinstance(role, str)
+            or not SAFE_ID.fullmatch(role)
+            or not isinstance(value, dict)
+            or set(value) != {"list", "next"}
+            or not isinstance(value["list"], str)
+            or type(value["next"]) is not int
+            or value["next"] < 0
+        ):
+            raise FoilError("foil: invalid record")
+    return {role: dict(value) for role, value in raw.items()}
+
+
 def load_registry(toplevel: Path, fleet: str | None = None) -> dict[str, Any]:
     path = registry_path(toplevel, fleet)
     if path.is_symlink():
@@ -259,6 +279,7 @@ def load_registry(toplevel: Path, fleet: str | None = None) -> dict[str, Any]:
     if not isinstance(record["fleet_id"], str):
         raise FoilError("foil: invalid record")
     record["seats"] = _seat_map(payload.get("seats", {}))
+    record["rotation"] = _rotation(payload.get("rotation", {}))
     return record
 
 

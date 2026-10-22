@@ -48,7 +48,7 @@ _ALLOWED = {
     "send": {OUTSIDE, LEAD, WORKER},
     "post": {OUTSIDE, LEAD, WORKER},
     "mail-read": {OUTSIDE, LEAD, WORKER},
-    "mail-list": {LEAD, WORKER},
+    "mail-list": {OUTSIDE, LEAD, WORKER},
     "board-read": {OUTSIDE, LEAD, WORKER},
     "board-list": {OUTSIDE, LEAD, WORKER},
     "memory-add": {OUTSIDE, LEAD, WORKER},

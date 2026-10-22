@@ -41,9 +41,8 @@ def mail_read(path_text: str, *, as_json: bool = False) -> None:
 
 
 def mail_list(*, as_json: bool = False) -> None:
-    seat = os.environ.get("FOIL_SEAT_ID", "").strip()
-    if not seat:
-        raise FoilError("foil: FOIL_SEAT_ID not set (mail list needs a seat identity)")
+    # Outside the fleet this is the human's mailbox, which only the lead writes.
+    seat = os.environ.get("FOIL_SEAT_ID", "").strip() or "user"
     if SAFE_ID.fullmatch(seat) is None:
         raise FoilError("foil: invalid seat")
     mail_dir = board_root() / "mail"
