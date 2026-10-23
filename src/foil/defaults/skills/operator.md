@@ -99,7 +99,7 @@ The id order `init` prints is a tiebreak, not a ranking. Foil ships no blocklist
 
 ## Personas from outside
 
-You may adapt text from an outside catalog, including a localized pack, into `<root>/personas/<role>.md`, or `<project>/personas/<role>.md` for one project. Then `foil roster add ROLE` once the file exists, or `foil roster update ROLE persona=VALUE` when the template already exists. One such catalog is the agency-agents GitHub repository. Name it only as a pointer. Do not clone it and do not vendor it. Packaged candidates remain `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`.
+You may adapt text from an outside catalog, including a localized pack, into `<root>/personas/<role>.md`, or `<project>/personas/<role>.md` for one project. Then `foil roster add ROLE` once the file exists, or `foil roster update ROLE persona=VALUE` when the template already exists. Packaged candidates remain `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`.
 
 ## Start
 

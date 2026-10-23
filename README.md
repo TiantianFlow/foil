@@ -20,7 +20,7 @@ Foil turns the coding agents you already use (Claude Code, Codex, Gemini, OpenCo
 
 The pattern that works is a split: one agent plans, another implements, a third reviews. Claude Code even ships an `opusplan` setting that plans with Opus and builds with Sonnet. Across tools, though, the split usually means you do the plumbing: copy the plan into another terminal, relay the result back, remind each agent what was decided.
 
-Foil makes the split a structure. The lead plans, spawns workers by role, and merges their branches. The task file `board/tasks/<id>.md` is the brief, and the mail is the pointer to it. `foil seat spawn --task` writes that mail and does not write the task file. You talk to one operator agent, and the lead does the managing.
+Foil makes the split a structure. The lead plans, spawns workers by role, chooses among their proposals by the evidence each gives, and merges their branches. The task file `board/tasks/<id>.md` is the brief, and the mail is the pointer to it. `foil seat spawn --task` writes that mail and does not write the task file. You talk to one operator agent, and the lead does the managing.
 
 ### A clean-context check that doesn't take "done" for an answer
 
