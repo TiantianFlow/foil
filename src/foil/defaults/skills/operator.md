@@ -75,10 +75,12 @@ A dialog in a seat's pane is the human's, with one exception: a folder-trust pro
 - The seat is in `foil seat list`.
 - You read its window id and worktree from its record in `run/registry.json`, and its launch directory from `cwd` in `run/plans/<seat>.json`. Both are in the fleet folder, `fleets/<fleet>/` under the `Project folder:` path `init` printed.
 - The raw text `foil seat peek` printed shows the folder-trust prompt now, and the prompt names one path.
-- That path, made canonical with `realpath`, is the canonical recorded `cwd`, and that `cwd` is the checkout assigned to the seat: its recorded worktree, or the repository root for a seat without one. A parent directory, a child directory, or any other directory is never trusted.
+- That path, made canonical with `realpath`, is the canonical recorded `cwd`, and that `cwd` is the checkout assigned to the seat: its canonical recorded worktree, or the canonical repository root for a seat without one. A parent directory, a child directory, or any other directory is never trusted.
 - The prompt shows one choice that trusts that folder, and the key that picks it is plain from the pane.
 
-Then send only that key to the recorded window, with `tmux send-keys -t WINDOW_ID KEY`, and peek again to confirm the prompt is gone. Tell the human the seat and the path you trusted. If a check fails, or the prompt is still there after that one key, send nothing more and report it.
+Then send only that key to the recorded window, with `tmux send-keys -t WINDOW_ID KEY`, and peek again to confirm the prompt is gone. Tell the human the seat and the path you trusted.
+
+When `questions` in `board/status.md` names a seat stopped on a folder-trust prompt, peek that seat. If the prompt passes these checks, clear it and tell the lead with `foil send lead` that it is cleared. Otherwise relay the question to the human. If a check fails, or the prompt is still there after that one key, send nothing more and report it.
 
 Everything else is reported to the human with the seat name and what the pane shows, and not answered: a login prompt, an update dialog, a first-run dialog, an opt-in, a command or tool approval, a folder-trust prompt whose path does not match, a choice that is unclear or ambiguous, an error, and any other dialog. You refuse a prompt by sending nothing.
 
@@ -129,7 +131,7 @@ foil send lead "the human's goal"
 
 ## Check in
 
-Every few minutes, read `board/status.md`, run `foil seat list`, read the lead's pane, and list your mail:
+At each check-in, read `board/status.md`, run `foil seat list`, read the lead's pane, and list your mail:
 
 ```text
 foil seat list
@@ -143,7 +145,7 @@ foil mail list
 
 Read the lead's `status.md` in the Foil folder at `board/status.md`. That file is the lead's own report. Its contract is `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`.
 
-You schedule your own check-ins. This is your own scheduling. It is not a Foil command, and Foil has no poll flag. Choose each interval from the work, between 5 and 20 minutes, and change it from one check-in to the next as the work changes. You may go outside that range when you expect to. Check after a minute when the step should be that fast, such as the first-run check or a dialog you just cleared or reported. When that short check finds the step not done, go back to 5 to 20 minutes. Early in a long goal you may start at 30 minutes, then return to 5 to 20 minutes as the checklist nears its end.
+You schedule your own check-ins. This is your own scheduling. It is not a Foil command, and Foil has no poll flag. Choose each interval from the work, between 5 and 20 minutes, and change it from one check-in to the next as the work changes. You may go outside that range when you expect to. Check after a minute when the step should be that fast, such as a dialog you just cleared or reported. When that short check finds the step not done, go back to 5 to 20 minutes. Early in a long goal you may start at 30 minutes, then return to 5 to 20 minutes as the checklist nears its end.
 
 At each check-in, and whenever the human asks for status, tell the human: the `state` and `updated` value from `board/status.md`; the checklist progress and the open items, quoted from that file; any `questions` in that file; which seats `foil seat list` shows alive, dead, or killed; and when you will check again. An archived seat is absent from `foil seat list`. Quote the file. Do not guess progress from the pane. Do not decide from a pane who is working or what they are working on. A blocked worker is named in `questions`. Do not peek workers to find one. If `updated` has not changed over several check-ins, nudge the lead once, as below.
 

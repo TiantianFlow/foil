@@ -193,8 +193,8 @@ reviewer-1	reviewer	killed		claude	You check the change the lead names and repor
 
 ## 如果什么都没发生
 
-运行 `foil seat peek lead`。一个没有进展的席位，通常停在对话框上。操作员清掉一种，
-其余的报告出来。
+运行 `foil seat peek lead`。一个没有进展的席位，通常停在对话框上。操作员只清掉一种对话框，
+其余的都报告给你。
 
 - 路径正好是该席位记录的检出目录的文件夹信任提示：操作员清掉它，再看一眼确认。席位工作树在仓库之外，
   信任仓库一次覆盖不到它。每个席位标签对每个 harness 都要信任一次。
