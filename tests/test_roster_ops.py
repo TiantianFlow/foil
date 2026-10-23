@@ -69,7 +69,7 @@ def test_roster_list_shows_default_templates(
     """list_roster shows the three default templates."""
     list_roster(project, as_json=False)
     out = capsys.readouterr().out
-    assert "\tpackaged\tYou are the lead seat of this fleet." in out
+    assert "\tpackaged\tYou oversee the fleet:" in out
     assert "\tpackaged\tYou make the change the task asks for," in out
     assert "\tpackaged\tYou check the change the lead names" in out
     assert "\tlayer\tglobal\n" in out
@@ -115,7 +115,7 @@ def test_roster_show_displays_template(project: Path, capsys: pytest.CaptureFixt
     assert "preset: packaged" in out
     assert "layer: global" in out
     assert "mapping: global" in out
-    assert "description: You are the lead seat of this fleet." in out
+    assert "description: You oversee the fleet:" in out
 
 
 def test_roster_show_json_format(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -400,7 +400,7 @@ def test_roster_cli_list(project: Path, capsys: pytest.CaptureFixture[str]) -> N
     code = main(["roster", "list"])
     assert code == 0
     out = capsys.readouterr().out
-    assert "\tpackaged\tYou are the lead seat of this fleet." in out
+    assert "\tpackaged\tYou oversee the fleet:" in out
 
 
 def test_roster_cli_show(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -831,7 +831,7 @@ def test_roster_authority_lead_can_list(
     code = main(["roster", "list"])
     assert code == 0
     out = capsys.readouterr().out
-    assert "\tpackaged\tYou are the lead seat of this fleet." in out
+    assert "\tpackaged\tYou oversee the fleet:" in out
 
 
 def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
@@ -997,7 +997,7 @@ def test_seat_list_keeps_an_unreadable_template(
     try:
         assert main(["seat", "list"]) == 0
         out = capsys.readouterr().out
-        assert "lead-1\tlead\tdead\t\tfake\tYou are the lead seat" in out
+        assert "lead-1\tlead\tdead\t\tfake\tYou oversee the fleet" in out
         assert "garbled-1\tgarbled\tdead\t\tfake\t\n" in out
         assert "locked-1\tlocked\tdead\t\tfake\t\n" in out
     finally:

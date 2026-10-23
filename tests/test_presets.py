@@ -926,7 +926,7 @@ def test_init_writes_three_lists_and_a_fleet_workspace(
     assert not (root / "harnesses.toml").exists()
     roles = tomllib.loads((store_root() / "roles.toml").read_text(encoding="utf-8"))
     by_id = {item["id"]: item for item in roles["role"]}
-    assert by_id["lead"]["description"].startswith("You are the lead seat")
+    assert by_id["lead"]["description"].startswith("You oversee the fleet")
     assert by_id["implementer"]["worktree"] is True
     maps = tomllib.loads((store_root() / "mapping.toml").read_text(encoding="utf-8"))
     assigned = {item["role"]: item["harness"] for item in maps["map"]}

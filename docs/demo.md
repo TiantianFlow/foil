@@ -109,7 +109,7 @@ foil seat list
 
 ```text
 implementer-1	implementer	alive	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
-lead	lead	alive		claude	You are the lead seat of this fleet. Your role guidance is the lead skill.
+lead	lead	alive		claude	You oversee the fleet: you ask other seats for proposals, weigh them against the goal, and choose, and you do not do the work yourself.
 reviewer-1	reviewer	alive		claude	You check the change the lead names and report findings, and you do not fix them.
 ```
 
@@ -201,7 +201,7 @@ foil seat list
 
 ```text
 implementer-1	implementer	killed	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
-lead	lead	killed		claude	You are the lead seat of this fleet. Your role guidance is the lead skill.
+lead	lead	killed		claude	You oversee the fleet: you ask other seats for proposals, weigh them against the goal, and choose, and you do not do the work yourself.
 reviewer-1	reviewer	killed		claude	You check the change the lead names and report findings, and you do not fix them.
 ```
 

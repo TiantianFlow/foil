@@ -709,7 +709,7 @@ def test_settings_names_layers_and_keeps_settings_out_of_the_breadcrumb(
     repo = _repo(tmp_path, monkeypatch)
     home = Path(os.environ["FOIL_HOME"])
     (home / "roles.toml").write_text(
-        '[[role]]\nid = "lead"\ndescription = "You are the lead seat."\n'
+        '[[role]]\nid = "lead"\ndescription = "You oversee the fleet."\n'
         'persona = "personas/lead.md"\nworktree = false\npermission = "auto"\n',
         encoding="utf-8",
     )
@@ -733,7 +733,7 @@ def test_settings_names_layers_and_keeps_settings_out_of_the_breadcrumb(
     assert global_page.index("Global") < global_page.index("Project")
     assert global_page.index("Project") < global_page.index("Fleet")
     assert "No rows." not in global_page.split("Roles", 1)[1].split("</section>", 1)[0]
-    assert "You are the lead seat." in global_page
+    assert "You oversee the fleet." in global_page
     assert "Shared by every fleet in this project" not in global_page
     assert "keeps the harness the default mapping selects" not in fleet
     roles = global_page.split("Roles", 1)[1].split("</section>", 1)[0]
