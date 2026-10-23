@@ -6,6 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Added
 
+- The operator skill says when check-ins stop: the goal is done and reported, the fleet is stuck after one nudge, or a question waits on the human. The report that stops says so and names the condition, and a timer that drives the operator pauses on the same conditions. The interval is the operator's choice from the work, usually 5 to 20 minutes, a minute for a step expected to be that fast, and up to 30 minutes early in a long goal. (#83)
 - The lead can answer the human with `foil send user`. That mail goes to `board/mail/user/` and nudges nothing; outside the fleet, `foil mail list` lists it. The operator skill reads it at each check-in. (#69)
 - Each seat's git runs Foil's `pre-commit` and `pre-push` hooks, set through `GIT_CONFIG_*` in the seat's environment only, before the repository's own hooks. In the project's repository they refuse a commit outside the seat's worktree, and a commit or a push that adds the seat's home directory path, the hostname, a non-noreply git email outside a trailer, or a token. A repository's `reference-transaction` and `fsmonitor-watchman` hooks no longer run for seats. (#69)
 - Spawn and `roster add`/`update` print a warning when a model is not in that harness's `models`, and still launch or write it. (#69)
@@ -13,6 +14,7 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
+- The operator clears a seat's folder-trust prompt itself, so the human no longer pre-trusts each path and a fleet can start unattended. It does so only when the seat is in `foil seat list`, the window and worktree come from the seat's registry record, the launch directory comes from its plan, the canonical path the prompt shows is that seat's own checkout, and the choice is unambiguous; then it peeks again. Every other dialog, now including a login prompt and a command or tool approval, is reported to the human and not answered. (#84)
 - A `vX.Y.Z` tag publishes only after the CI workflow has succeeded for that commit. A run still going, a failed or cancelled run, and a commit with no CI run do not publish.
 - The packaged personas are rewritten and much longer. Each now says who the seat is, what it owns and does not own, its rules, how it works, the shape of what it hands back, how it sounds, and its traps. The lead persona is now an overseer: it frames each decision, asks seats for independent proposals, weighs their evidence, settles conflicts with a task rather than a vote, and records what it chose and why. The persona descriptions `seat list` and `roster list` show are unchanged, except the lead's. The lead skill says the same: when seats' results disagree, the lead chooses by their evidence or writes the task that settles the point. The operator skill no longer names an outside persona catalog. (#80)
 - The demos show the current `foil init` pointer and mail under `fleets/main/board/`. `docs/architecture.md` no longer names a version.

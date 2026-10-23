@@ -93,7 +93,7 @@ flowchart TB
 
 ## 开始使用
 
-你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。信任按每个 harness、每条路径生效。席位的工作树在项目目录里、仓库之外，所以不会沿用仓库的信任。每个席位标签对每个 harness 都要信任一次。停在这些提示上的席位，从外面看就像一个正在工作的席位。操作员回答的是审批对话框：文件夹信任提示、登录提示，或一个停住席位、直到你或操作员批准的提示。更新对话框、首次运行对话框和意见征集由它报告给你，留给你来回答。全局预设在 `init` 之前就算数。其他 CLI 用 `<root>/harnesses.toml` 或 `<root>/harnesses/<id>.toml` 里的一个小预设文件接入。
+你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。信任按每个 harness、每条路径生效。席位的工作树在项目目录里、仓库之外，所以不会沿用仓库的信任。每个席位标签对每个 harness 都要信任一次。只有当提示里显示的路径正好是该席位记录的检出目录时，操作员才会自己清掉这个文件夹信任提示。停在提示上的席位，从外面看就像一个正在工作的席位。登录提示、更新对话框、首次运行对话框、意见征集、命令或工具审批，以及其他任何对话框，都由它报告给你，留给你来回答。全局预设在 `init` 之前就算数。其他 CLI 用 `<root>/harnesses.toml` 或 `<root>/harnesses/<id>.toml` 里的一个小预设文件接入。
 
 人要做的只有一句话。在仓库里，把它交给你已经在用的编程 Agent：
 
@@ -104,7 +104,7 @@ Install Foil from https://github.com/TiantianFlow/foil, onboard this repository 
 要从 0.4 升到 0.5.4，在两个目标之间做，不要恢复 0.4 启动的席位。`foil init` 会在 `fleets/main/` 里还没有对应目录、或目录是空的时候，把项目根上的 `board/` 和 `run/` 移进去。它不读取 `templates/<role>.toml`。`init` 把每个还没有的默认角色写进 `<root>/roles.toml`，并在 `<root>/mapping.toml` 里为每个还没有的角色写一行映射。它不写项目里的 `roles.toml`、`mapping.toml` 或 `harnesses.toml`，并且删掉这些路径。新写的清单是 `permission = "auto"`，并且不写 `model`。`memory/` 里的教训和席位工作树都留着。`FOIL_FLEET` 默认是 `main`。要在两个目标之间更新，顺序是先停掉、再升级、最后 `foil init`：目标完成后运行 `foil seat kill --all`，再运行一次安装命令，然后在每个项目里运行 `foil init`，再启动主座。还留着 0.3.x 仓库内 `.foil/` 的项目，要在运行安装命令之前用那个旧的 `foil` 停掉。tmux 窗口已经不在的过期席位同样算在内。如果 `PATH` 上已经没有那个旧的 `foil`，就在旁边安装 0.3.4，这不会替换当前的 `foil`：`UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。用 pipx 则是：`PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。那些席位还在时不要运行 `foil init`，也不要把那个目录挪走。上一个目标留在报告打印的项目目录里的 `board/status.md` 已经写着 `state: done`，所以启动前先记下它的 `updated` 行，等它变化。`foil seat kill --all` 之后两种情况都可能出现，所以要检查：运行 `tmux ls`。如果列出了任何会话，预设里点名的 `env` 变量来自该服务器，启动前用 `tmux set-environment -g NAME VALUE` 设置。如果它说没有服务器在运行，下一次启动会从你的 shell 拉起服务器。
 
 - Agent 安装运筹并运行 `foil init`。如果命令打印 `foil: no harness installed`，它什么都没写。先安装上面的某个 CLI，再运行一次 `foil init`。
-- 它读报告，运行 `foil roster list`，并请你在本仓库里把每个 harness id 运行一次，接受它的文件夹信任、更新、首次运行和意见征集对话框，或者请你确认已经完成。它用 `foil roster` 设置每个模板的 harness 列表和 `permission`。共用清单是 `<root>/harnesses.toml`、`<root>/roles.toml` 和 `<root>/mapping.toml`。`init` 不写项目里的 `roles.toml`、`mapping.toml` 或 `harnesses.toml`，并且删掉这些路径。`init` 为每个角色写入一条映射，并且 `permission = "auto"`。每个舰队共用这三份清单。`FOIL_FLEET` 选择舰队，默认是 `main`。`roster update ROLE harness=ID/MODEL,ID/MODEL` 一次设置角色的整个列表，`model` 只改只有一项的列表。在舰队里，两者都改写该舰队的 `overrides.toml`，下一次启动会带上它。角色每启动一次就取下一项，列表改过之后从第一项重新开始。只把主座改成 `auto` 不会让工人席位无人值守。限制一节说明 `auto` 仍可能让席位停在审批提示上。
+- 它读报告，运行 `foil roster list`，并请你把每个 harness id 运行一次，接受它的更新、首次运行和意见征集对话框，或者请你确认已经完成。每个席位检出目录的文件夹信任提示，由它自己清掉。它用 `foil roster` 设置每个模板的 harness 列表和 `permission`。共用清单是 `<root>/harnesses.toml`、`<root>/roles.toml` 和 `<root>/mapping.toml`。`init` 不写项目里的 `roles.toml`、`mapping.toml` 或 `harnesses.toml`，并且删掉这些路径。`init` 为每个角色写入一条映射，并且 `permission = "auto"`。每个舰队共用这三份清单。`FOIL_FLEET` 选择舰队，默认是 `main`。`roster update ROLE harness=ID/MODEL,ID/MODEL` 一次设置角色的整个列表，`model` 只改只有一项的列表。在舰队里，两者都改写该舰队的 `overrides.toml`，下一次启动会带上它。角色每启动一次就取下一项，列表改过之后从第一项重新开始。只把主座改成 `auto` 不会让工人席位无人值守。限制一节说明 `auto` 仍可能让席位停在审批提示上。
 - 它做首次运行检查，然后把目标发出去。
 - 它自己从不做项目本身的工作。
 
@@ -152,7 +152,7 @@ foil seat peek lead
 
 ### 如果什么都没发生
 
-运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在对话框上。操作员回答的是审批对话框：文件夹信任提示、登录提示，或一个停住席位、直到有人批准的提示。更新对话框、首次运行对话框和意见征集由它报告给你，留给你来回答。那些要你在窗口里处理（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入）。CLI 在窗格里完成不了的登录，先手动登录一次，然后 `foil seat kill lead`，再重新启动主座。如果 `foil seat list` 显示这个主座是 `dead`，`foil seat kill lead` 会清掉它。等它消失之后再做一次首次运行检查。
+运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在对话框上。路径正好是该席位检出目录的文件夹信任提示，由操作员清掉。其他对话框，比如登录提示、更新对话框、首次运行对话框、意见征集或命令审批，都由它报告给你，留给你来回答。那些要你在窗口里处理（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入）。CLI 在窗格里完成不了的登录，先手动登录一次，然后 `foil seat kill lead`，再重新启动主座。如果 `foil seat list` 显示这个主座是 `dead`，`foil seat kill lead` 会清掉它。等它消失之后再做一次首次运行检查。
 
 ## 在浏览器里查看
 
