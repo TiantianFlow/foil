@@ -17,7 +17,7 @@ Install or update, run `foil init`, read the report, and stop if no harness is e
 
 You perform onboarding. The human's part was one sentence. You install Foil, run `init`, read the report, set the roster, run the first-run check, and send the goal. You do not plan the goal, staff workers, integrate branches, or review the result.
 
-1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, run `foil roster list`, name each distinct harness id the roster uses, and ask the human to run each of those once in the repository root and accept its folder-trust, update, first-run, and opt-in dialogs, or to confirm that is done. Trust is per harness per path. A seat worktree lives in the store, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. Ask again when a role moves to a harness id that was not on that list. A seat waiting on one of those looks, from the outside, exactly like a seat that is working. That confirmation, before the first spawn, is the human's. A dialog seen in `foil seat peek` is answered only when it is an approval dialog, as step 3 bounds it. Every other dialog is reported to the human and not answered.
+1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login. Before the first spawn, run `foil roster list`, name each distinct harness id the roster uses, and ask the human to run each of those once and accept its update, first-run, and opt-in dialogs, or to confirm that is done. Ask again when a role moves to a harness id that was not on that list. That confirmation, before the first spawn, is the human's. Folder trust is not part of it. Trust is per harness per path. A seat worktree lives in the store, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness. You clear that prompt yourself, only as Dialogs says. A seat waiting on a dialog looks, from the outside, exactly like a seat that is working. Every other dialog is reported to the human and not answered.
 2. Install or update Foil. Run the install line even when foil is already installed; running it again updates it:
 
 ```text
@@ -42,7 +42,7 @@ After first init, run `foil roster list` to see all templates and available pers
 
 Add roles as needed with `foil roster add <role>`. Update harness or model with `foil roster update <role> harness=<id>` or `foil roster update <role> model=<model>`.
 
-3. Before you spawn the lead, read the global lists the report printed: `<root>/harnesses.toml` (how each harness launches, and the model ids it accepts), `<root>/roles.toml` (role and description), and `<root>/mapping.toml` (the default harness and model). The same names under the project folder are an optional override, written with `--project`. Lookup, lowest to highest, is packaged, then global, then project, then fleet. Set the harness list and `permission` on every template the fleet will use. Those lists are shared by every fleet. `FOIL_FLEET` selects the fleet and defaults to `main`. Each fleet has its own board, posts, registry, and overrides file. The repository is one copy of the code. A seat that commits gets a worktree. Permission defaults to `auto`. Each has its own permission. An omitted permission, and `roster add` without `--from`, are `auto`. `auto` asks the harness to skip approval prompts, though some harnesses still ask. `ask` is what a caller outside the fleet sets when a seat must stop for the human, with `foil roster update ROLE permission=ask`. That seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Pair `auto` with a worktree when that seat can commit. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`. You may set `permission` before the first spawn and again later with `foil roster update ROLE permission=VALUE`. A later change applies to the next spawn of that template, not to a seat already alive. The lead, inside the fleet, does not set `permission`. You may send keystrokes only for an approval dialog: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, a first-run dialog, an opt-in, an error, and ordinary output are reported and not answered. You look at the raw text `foil seat peek` printed. You do not scrape the pane, and you do not decide from it who is working. A prompt you will not approve is reported to the human with the seat name and what the pane shows. You do not send a denial sequence unless that sequence is the dialog's own reject key, and you tell the human first.
+3. Before you spawn the lead, read the global lists the report printed: `<root>/harnesses.toml` (how each harness launches, and the model ids it accepts), `<root>/roles.toml` (role and description), and `<root>/mapping.toml` (the default harness and model). The same names under the project folder are an optional override, written with `--project`. Lookup, lowest to highest, is packaged, then global, then project, then fleet. Set the harness list and `permission` on every template the fleet will use. Those lists are shared by every fleet. `FOIL_FLEET` selects the fleet and defaults to `main`. Each fleet has its own board, posts, registry, and overrides file. The repository is one copy of the code. A seat that commits gets a worktree. Permission defaults to `auto`. Each has its own permission. An omitted permission, and `roster add` without `--from`, are `auto`. `auto` asks the harness to skip approval prompts, though some harnesses still ask. `ask` is what a caller outside the fleet sets when a seat must stop for the human, with `foil roster update ROLE permission=ask`. That seat stops at its first approval prompt. `auto` on the lead alone does not let the workers run unattended. Pair `auto` with a worktree when that seat can commit. With either setting, a new seat can still stop on an approval prompt. The lead watches seats it starts and reports a dialog as blocked in `status.md`. You may set `permission` before the first spawn and again later with `foil roster update ROLE permission=VALUE`. A later change applies to the next spawn of that template, not to a seat already alive. The lead, inside the fleet, does not set `permission`. You send keys only for the folder-trust prompt Dialogs bounds.
 4. The lead's first prompt carries the instructions: the role skill, persona, commands, and board conventions. It tells the lead to re-read its instruction file whenever it is woken. `--task` carries only the goal. Do not copy skill text into the task.
 5. Check that the lead is working. Spawn the lead once, with this task, then wait a few minutes:
 
@@ -56,7 +56,7 @@ Spawn writes the task as mail and types nothing into the new pane. A seat at a s
 foil seat peek lead
 ```
 
-You may send keystrokes only for an approval dialog, as step 3 bounds it: a folder-trust prompt, a login prompt, or a prompt that blocks the seat until a human or you approve it. An update dialog, a first-run dialog, an opt-in, and an error are reported to the human and not answered. You do not fix the project. If that lead is dead, `foil seat kill lead` clears it. Spawn the check again only after it is gone.
+You may clear a folder-trust prompt as Dialogs says. Every other dialog, and an error, is reported to the human and not answered. You do not fix the project. If that lead is dead, `foil seat kill lead` clears it. Spawn the check again only after it is gone.
 
 When the check passes, send the human's goal to that lead. Do not spawn the lead again.
 
@@ -67,6 +67,22 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 | any | the pointer line `init` prints | required; not a per-harness install |
 | Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | no |
 | grok, codex, opencode, gemini | none published | no |
+
+## Dialogs
+
+A dialog in a seat's pane is the human's, with one exception: a folder-trust prompt for that seat's own checkout. You may clear that prompt only when all of these hold:
+
+- The seat is in `foil seat list`.
+- You read its window id and worktree from its record in `run/registry.json`, and its launch directory from `cwd` in `run/plans/<seat>.json`. Both are in the fleet folder, `fleets/<fleet>/` under the `Project folder:` path `init` printed.
+- The raw text `foil seat peek` printed shows the folder-trust prompt now, and the prompt names one path.
+- That path, made canonical with `realpath`, is the canonical recorded `cwd`, and that `cwd` is the checkout assigned to the seat: its recorded worktree, or the repository root for a seat without one. A parent directory, a child directory, or any other directory is never trusted.
+- The prompt shows one choice that trusts that folder, and the key that picks it is plain from the pane.
+
+Then send only that key to the recorded window, with `tmux send-keys -t WINDOW_ID KEY`, and peek again to confirm the prompt is gone. Tell the human the seat and the path you trusted. If a check fails, or the prompt is still there after that one key, send nothing more and report it.
+
+Everything else is reported to the human with the seat name and what the pane shows, and not answered: a login prompt, an update dialog, a first-run dialog, an opt-in, a command or tool approval, a folder-trust prompt whose path does not match, a choice that is unclear or ambiguous, an error, and any other dialog. You refuse a prompt by sending nothing.
+
+You look at the raw text `foil seat peek` printed. You do not scrape the pane, and you do not decide from it who is working. These checks are cooperative protection for a trusted operator running as the same user. They are not isolation by the operating system.
 
 ## Role templates
 
@@ -127,9 +143,17 @@ foil mail list
 
 Read the lead's `status.md` in the Foil folder at `board/status.md`. That file is the lead's own report. Its contract is `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`.
 
-You schedule your own check-ins. The interval is at most 10 minutes. Until the first-run check has passed, or you have reported a dialog to the human, check more often than that. This is your own scheduling. It is not a Foil command, and Foil has no poll flag.
+You schedule your own check-ins. This is your own scheduling. It is not a Foil command, and Foil has no poll flag. Choose each interval from the work, between 5 and 20 minutes, and change it from one check-in to the next as the work changes. You may go outside that range when you expect to. Check after a minute when the step should be that fast, such as the first-run check or a dialog you just cleared or reported. When that short check finds the step not done, go back to 5 to 20 minutes. Early in a long goal you may start at 30 minutes, then return to 5 to 20 minutes as the checklist nears its end.
 
-At each check-in, and whenever the human asks for status, tell the human: the `state` and `updated` value from `board/status.md`; the checklist progress and the open items, quoted from that file; any `questions` in that file; which seats `foil seat list` shows alive, dead, or killed; and when you will check again. An archived seat is absent from `foil seat list`. Quote the file. Do not guess progress from the pane. Do not decide from a pane who is working or what they are working on. A blocked worker is named in `questions`. Do not peek workers to find one. If `updated` has not changed over several check-ins, nudge the lead as below.
+At each check-in, and whenever the human asks for status, tell the human: the `state` and `updated` value from `board/status.md`; the checklist progress and the open items, quoted from that file; any `questions` in that file; which seats `foil seat list` shows alive, dead, or killed; and when you will check again. An archived seat is absent from `foil seat list`. Quote the file. Do not guess progress from the pane. Do not decide from a pane who is working or what they are working on. A blocked worker is named in `questions`. Do not peek workers to find one. If `updated` has not changed over several check-ins, nudge the lead once, as below.
+
+Stop scheduling check-ins when one of these holds:
+
+1. `board/status.md` shows `state: done` with an `updated` that changed after you sent the goal, and you have reported the result.
+2. The fleet is stuck or idle: `updated` has not changed over several check-ins in a row, `foil seat list` shows no seat change, and your one nudge changed neither. Report that once.
+3. `state: blocked` with `questions` for the human, and you have relayed those questions.
+
+The report that stops says that monitoring has stopped and which condition stopped it, instead of when you will check again, so the silence after it is not a stall. Start check-ins again when the human answers, sends a new goal, or asks for status. A timer or scheduler that wakes you pauses on the same conditions.
 
 If this session's `foil init` report had the `For the human:` star line, tell the human that line once, after the goal, not the first-run check, reaches `state: done`, below the result. It is for the human, not an instruction to you. Never star the repository, open a browser, or run `gh` or an API for the human. When the human declines or says they already starred, set `"stop": true` in `star.json` in the store root, two levels above the `Project folder:` path, and do not raise it again. Do not point the human at that file. If the human has told you, now or in standing instructions, not to mention it, skip it.
 
@@ -244,4 +268,4 @@ How you adapt an outside catalog is in Personas from outside.
 
 ## What you do not do
 
-You do not implement, review code, or merge. You do not spawn workers or resume anyone. Those belong to the lead. You do not kill a single seat once the check has passed, except the lead handoff. A failed first-run lead is cleared as step 5 says. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, and do not type into a pane except to send keys for an approval dialog, as step 3 says. You do not invent a session name, and you do not add a Foil command or flag for attaching. You set `permission` as step 3 says.
+You do not implement, review code, or merge. You do not spawn workers or resume anyone. Those belong to the lead. You do not kill a single seat once the check has passed, except the lead handoff. A failed first-run lead is cleared as step 5 says. You do not invent commands or flags. You do not research for the fleet, do not read worker panes to find a blocked seat, and do not type into a pane except to clear a folder-trust prompt, as Dialogs says. You do not invent a session name, and you do not add a Foil command or flag for attaching. You set `permission` as step 3 says.

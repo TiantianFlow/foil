@@ -404,7 +404,8 @@ def test_onboarding_says_who_answers_a_dialog() -> None:
 
     for relative in ("README.md", "skills/operator.md", "docs/demo.md"):
         text = (ROOT / relative).read_text(encoding="utf-8")
-        assert "approval dialog" in text, relative
+        assert "folder-trust prompt" in text, relative
+        assert "approval dialog" not in text, relative
         assert "opt-in" in text, relative
         assert (
             "not answered" in text
@@ -438,7 +439,8 @@ def test_onboarding_says_who_answers_a_dialog() -> None:
     assert "而不是替你回答" not in chinese
     zh_started = chinese.split("## 开始使用", 1)[1].split("### 手动操作", 1)[0]
     assert "限制" in zh_started
-    assert "审批对话框" in zh_started
+    assert "文件夹信任" in zh_started
+    assert "审批对话框" not in zh_started
     requirements = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
     onboarding = requirements.split("### Onboarding", 1)[1].split("## 4.", 1)[0]
     assert "Onboarding adds no command or flag" in onboarding
@@ -550,6 +552,50 @@ def test_operator_reports_the_checklist() -> None:
     assert "checklist" in section
     assert "whenever the human asks" in section
     assert "guess progress from the pane" in section
+
+
+def test_operator_clears_only_a_validated_folder_trust_prompt() -> None:
+    """Issue 84: the one dialog the operator answers, and the checks first."""
+
+    text = (SKILLS / "operator.md").read_text(encoding="utf-8")
+    section = text.split("## Dialogs", 1)[1].split("\n## ", 1)[0]
+    for phrase in (
+        "`foil seat list`",
+        "`run/registry.json`",
+        "`run/plans/<seat>.json`",
+        "`realpath`",
+        "A parent directory",
+        "peek again",
+        "a login prompt",
+        "a command or tool approval",
+        "not isolation",
+    ):
+        assert phrase in section, phrase
+    onboarding = text.split("## Onboarding", 1)[1].split("\n## ", 1)[0]
+    assert "accept its folder-trust" not in onboarding
+    assert "a login prompt, or a prompt that blocks" not in text
+    requirements = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
+    f12 = next(line for line in requirements.splitlines() if line.startswith("| F12 |"))
+    assert "`run/plans/<seat>.json`" in f12
+    assert "never trusted" in f12
+
+
+def test_operator_check_ins_have_a_range_and_stop_conditions() -> None:
+    """Issue 83: a dynamic interval, and when check-ins stop."""
+
+    text = (SKILLS / "operator.md").read_text(encoding="utf-8")
+    section = text.split("## Check in", 1)[1].split("\n## ", 1)[0]
+    assert "at most 10 minutes" not in section
+    assert "between 5 and 20 minutes" in section
+    assert "30 minutes" in section
+    assert "Stop scheduling check-ins" in section
+    for condition in ("`state: done`", "your one nudge", "`state: blocked`"):
+        assert condition in section, condition
+    assert "which condition stopped it" in section
+    assert "Start check-ins again" in section
+    requirements = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
+    assert "at most 10 minutes" not in requirements
+    assert "stops scheduling check-ins" in requirements
 
 
 def test_lead_section_8_uses_roster_commands() -> None:
