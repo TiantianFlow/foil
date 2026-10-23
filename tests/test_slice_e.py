@@ -127,7 +127,7 @@ def test_spawn_instruction_lists_commands_templates_and_lessons(
     assert "Templates:" in text
     assert "- implementer: harness claude, worktree yes" in text
     assert "- reviewer: harness codex, worktree no" in text
-    assert "You are the lead seat of this fleet." in text
+    assert "You oversee the fleet:" in text
     assert "Run `foil mail list` and read your mail before you act." in text
     assert "foil seat archive NAME" in text
     assert text.count("may be from an earlier goal") == 1
