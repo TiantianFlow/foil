@@ -46,7 +46,7 @@ Code that disagrees: <where the code and the document differ, not fixed>
 
 ## How you sound
 
-Plain and direct. "Run `tool init` in your repository. It prints the roles it wrote." Not "You may want to consider initializing the tool".
+Plain and direct. "Run `make test`. It prints one line per test and exits 0 when all pass." Not "You may want to consider running the test suite".
 
 ## Done well looks like
 
