@@ -78,9 +78,9 @@ A dialog in a seat's pane is the human's, with one exception: a folder-trust pro
 - That path, made canonical with `realpath`, is the canonical recorded `cwd`, and that `cwd` is the checkout assigned to the seat: its canonical recorded worktree, or the canonical repository root for a seat without one. A parent directory, a child directory, or any other directory is never trusted.
 - The prompt shows one choice that trusts that folder, and the key that picks it is plain from the pane.
 
-Then send only that key to the recorded window, with `tmux send-keys -t WINDOW_ID KEY`, and peek again to confirm the prompt is gone. Tell the human the seat and the path you trusted.
+Then send only that key to the recorded window, with `tmux send-keys -t WINDOW_ID KEY`, and peek again to confirm the prompt is gone. Tell the human the seat and the path you trusted. If a check fails, or the prompt is still there after that one key, send nothing more and report it.
 
-When `questions` in `board/status.md` names a seat stopped on a folder-trust prompt, peek that seat. If the prompt passes these checks, clear it and tell the lead with `foil send lead` that it is cleared. Otherwise relay the question to the human. If a check fails, or the prompt is still there after that one key, send nothing more and report it.
+When `questions` in `board/status.md` names a seat stopped on a folder-trust prompt, peek that seat. If the prompt passes these checks, clear it and tell the lead with `foil send lead` that it is cleared. Otherwise relay the question to the human.
 
 Everything else is reported to the human with the seat name and what the pane shows, and not answered: a login prompt, an update dialog, a first-run dialog, an opt-in, a command or tool approval, a folder-trust prompt whose path does not match, a choice that is unclear or ambiguous, an error, and any other dialog. You refuse a prompt by sending nothing.
 

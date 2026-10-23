@@ -76,10 +76,10 @@ human ──▶ operator (outside the fleet)
    A note under `board/notes/` is scratch that wakes nobody.
    Do not put the result or a decision there.
    Do not continue a thread by mailing another seat.
-6. At an interval it chooses from the work, the operator checks in: it lists seats, peeks at the
-   lead, and reads the lead's status file. It passes the lead's questions
-   to the human, sends the human's answers to the lead, and nudges the
-   lead if it looks stuck. It does no project work. The lead doesn't know
+6. At an interval it chooses from the work, the operator checks in: it
+   lists seats, peeks at the lead, and reads the lead's status file. It
+   passes the lead's questions to the human, sends the human's answers to
+   the lead, and nudges the lead if it looks stuck. It does no project work. The lead doesn't know
    an operator exists; it acts as if a human is talking to it. It stops
    checking in when the goal is done, when the fleet is stuck after one
    nudge, or while a question waits on the human, and says so.
