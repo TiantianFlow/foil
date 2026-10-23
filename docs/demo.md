@@ -214,19 +214,18 @@ discards uncommitted work.
 ## If nothing happens
 
 Run `foil seat peek lead`. A seat that makes no progress is usually
-stopped on a dialog. The operator answers an approval dialog and reports
-the others.
+stopped on a dialog. The operator clears one kind and reports the others.
 
-- an approval dialog: a folder-trust prompt, a login prompt, or a prompt
-  that blocks the seat until someone approves it. The operator may answer
-  it. You can answer it in the window too (`tmux ls` lists Foil's
-  session, and `tmux attach` opens it). A seat worktree lives outside the
-  repository, so trusting the repository does not cover it. Each seat
-  label needs that trust once per harness. A login the CLI will not
-  finish in the pane is done once by hand, then `foil seat kill lead`
-  and spawn the lead again.
-- an update dialog, a first-run dialog, or an opt-in: the operator reports
-  it and leaves it for you to answer in the window.
+- a folder-trust prompt whose path is exactly that seat's recorded
+  checkout: the operator clears it and peeks again to check. A seat
+  worktree lives outside the repository, so trusting the repository does
+  not cover it. Each seat label needs that trust once per harness.
+- anything else, such as a login prompt, an update dialog, a first-run
+  dialog, an opt-in, a command approval, or a trust prompt for another
+  path: the operator reports it and leaves it for you to answer in the
+  window (`tmux ls` lists Foil's session, and `tmux attach` opens it). A
+  login the CLI will not finish in the pane is done once by hand, then
+  `foil seat kill lead` and spawn the lead again.
 
 If tmux died or the machine rebooted, `foil seat resume` restarts every
 seat that was not killed.
