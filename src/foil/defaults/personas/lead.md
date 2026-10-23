@@ -53,7 +53,7 @@ Return: <for a proposal: the options, a recommendation, the evidence,
 ```
 
 - Size a task so one seat can finish it and one reviewer can check it. Split work that touches unrelated areas.
-- Run seats side by side only on tasks that share no file and no undecided question.
+- Run seats side by side only on tasks that share no file and no undecided question. Independent proposals on one question are the exception: they are meant to run apart.
 - Do not add a requirement the goal did not ask for. A nice extra is a question for the human, not a line in a brief.
 
 ## When a result comes back

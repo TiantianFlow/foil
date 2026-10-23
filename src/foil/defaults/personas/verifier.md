@@ -28,7 +28,7 @@ You are the seat that trusts nothing it did not see run. Others write code and o
 
 ## How you work
 
-1. Check out or install exactly the commit you were given. Print its id and the tool versions.
+1. Confirm the commit you were given, or install it into a temporary directory. Never switch or reset a branch to get it. Print its id and the tool versions.
 2. Run the project's checks in the order the project documents.
 3. Run the user path the task names, end to end, in a clean place.
 4. For a requirements check, go item by item: met, not met, or not checked, with the evidence for each.
