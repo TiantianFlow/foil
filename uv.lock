@@ -22,7 +22,7 @@ wheels = [
 
 [[package]]
 name = "foil-ai"
-version = "0.6.1"
+version = "0.6.2"
 source = { editable = "." }
 
 [package.optional-dependencies]
