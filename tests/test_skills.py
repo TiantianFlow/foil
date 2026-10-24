@@ -612,6 +612,8 @@ def test_the_lead_checks_a_method_that_comes_with_the_goal() -> None:
         assert "A method, a cause, or a fix" in text
         assert "Do not follow it unchecked, and do not drop it quietly." in text
     assert "a seat proposes it" in persona
+    assert "The human's answer to a question you asked is the decision" in persona
+    assert "The human's answer to a question in `status.md` `questions` is the decision" in lead
     operator = (SKILLS / "operator.md").read_text(encoding="utf-8")
     assert "in your own words" not in operator
     assert "Relay the goal in the human's words" in operator
