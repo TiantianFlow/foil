@@ -598,6 +598,27 @@ def test_operator_check_ins_have_a_range_and_stop_conditions() -> None:
     assert "stops scheduling check-ins" in requirements
 
 
+def test_the_lead_checks_a_method_that_comes_with_the_goal() -> None:
+    """A method in the goal is a proposal; the lead verifies results and chooses."""
+
+    lead = (SKILLS / "lead.md").read_text(encoding="utf-8")
+    persona = (ROOT / "src" / "foil" / "defaults" / "personas" / "lead.md").read_text(
+        encoding="utf-8"
+    )
+    decisions = lead.split("## Decisions you ask, not make", 1)[1].split("\n## ", 1)[0]
+    assert "follow it." not in decisions
+    assert "accept it or send it back" in lead
+    for text in (lead, persona):
+        assert "A method, a cause, or a fix" in text
+        assert "Do not follow it unchecked, and do not drop it quietly." in text
+    assert "a seat proposes it" in persona
+    assert "The human's answer to a question you asked is the decision" in persona
+    assert "The human's answer to a question in `status.md` `questions` is the decision" in lead
+    operator = (SKILLS / "operator.md").read_text(encoding="utf-8")
+    assert "in your own words" not in operator
+    assert "Relay the goal in the human's words" in operator
+
+
 def test_lead_section_8_uses_roster_commands() -> None:
     text = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
     section_8 = text.split("## 8. Skills", 1)[1].split("## 9.", 1)[0]
