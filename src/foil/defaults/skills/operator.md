@@ -204,7 +204,7 @@ List `board/room`. If threads exist, tell the human that a room exists. Read a t
 
 A note wakes nobody. Do not write it up as a board note for the fleet to treat as findings.
 
-You may read only enough to relay the human's goal in your own words. That reading is not research, not a plan, and not a source the fleet may follow. The lead spawns a researcher when the goal needs research. You never do the project work.
+You may read only enough to understand the human's goal. Relay the goal in the human's words, and add no method, cause, or plan of your own. Anything you add reaches the lead as if the human said it. That reading is not research, not a plan, and not a source the fleet may follow. The lead spawns a researcher when the goal needs research. You never do the project work.
 
 ## Lead handoff
 
