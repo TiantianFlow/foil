@@ -2,6 +2,19 @@
 
 Notable changes to Foil, newest first.
 
+## Unreleased
+
+### Changed
+
+- Rooms are scoped. Only the lead and a caller outside the fleet open a room, and `foil post --members NAMES` names its members; without it, the members are every alive seat at that moment. A post wakes the room's members and its `@name` seats, not every seat that ever posted there. A worker replies with `--re` and asks the lead to open a room or bring in a seat. (#88)
+- A room member whose last file in that room is a decline is not woken again until a post names it as `@name` or it posts again. (#88)
+- `foil view` shows each room's purpose, members, and whether it is open or closed. (#88)
+- The lead skill hands seats off at milestones (end of a round, an accepted design, the start of a coding phase), not only near a full context, and no longer mails a checkpoint into a running seat. A re-check after a fix checks the fix and the acceptance items that failed before, one seat runs the full suite once per round and the others read its result, and the lead ends its turn instead of polling, backing off when it must check. Seats write long output to files. (#88)
+
+### Added
+
+- `foil post --re PATH --members NAMES` changes a room's members and wakes only the seats it adds. `foil post --re PATH --close TEXT` closes a room, and a closed room refuses later posts. (#88)
+
 ## [0.6.2] - 2026-10-23
 
 `foil --version` prints 0.6.2.

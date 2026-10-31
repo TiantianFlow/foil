@@ -25,7 +25,7 @@ FLAGS = {
     ("seat", "archive"): set(),
     ("seat", "peek"): {"--lines"},
     ("send",): set(),
-    ("post",): {"--re", "--decline"},
+    ("post",): {"--re", "--decline", "--members", "--close"},
     ("mail", "read"): {"--json"},
     ("mail", "list"): {"--json"},
     ("board", "read"): {"--json"},
@@ -460,7 +460,8 @@ def test_skills_state_the_channel_choice() -> None:
     }
     step_5 = requirements.split("5. Seats send short messages", 1)[1].split("\n6. ", 1)[0]
     shared = (
-        "Send is one seat. Post is every other alive seat.",
+        "Send is one seat. Post is a room's members.",
+        "A worker replies in a room and does not open one.",
         "`foil send lead` is the goal, the human's answer, and a nudge when the lead looks stuck.",
         "Ordinary human answers stay `foil send lead`.",
         "`foil post` is for words the human wants every alive seat to see, "
@@ -524,6 +525,7 @@ def test_skills_state_the_channel_choice() -> None:
         "The mail is the pointer.",
         "A question or a result for the lead alone is `foil send lead`.",
         "`foil post` when other seats need the point, not the lead alone.",
+        "A worker asks the lead to open a room or to bring in a seat.",
         "Do not continue a thread by mailing another seat.",
         "A note under `board/notes/` is scratch that wakes nobody.",
         "Do not put the result or a decision there.",
@@ -991,3 +993,33 @@ def test_a_toml_model_is_checked_against_the_harness_it_names() -> None:
         _packaged_models(),
     )
     assert any("claude/gpt-6.1-sol" in item for item in problems), problems
+
+
+def test_skills_keep_seat_context_small() -> None:
+    """Issue 88: milestone handoffs, delta re-checks, waits that back off, and long output."""
+
+    lead = (SKILLS / "lead.md").read_text(encoding="utf-8")
+    worker = (SKILLS / "worker.md").read_text(encoding="utf-8")
+    requirements = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
+    section_8 = requirements.split("## 8. Skills", 1)[1].split("## 9.", 1)[0]
+    output = (
+        "Write long command output to a file and read its tail. Write a long document once "
+        "with your file tool, not inline in a shell command. A post or a mail points at the "
+        "board file instead of repeating its body."
+    )
+    for text in (lead, worker, section_8):
+        assert output in text
+    for sentence in (
+        "Hand off at milestones too, not only near a full context",
+        "Do not mail a checkpoint into a seat that keeps running.",
+        "A re-check after a fix checks the fix and every acceptance item that failed before",
+        "A full test suite runs once per round, by the seat that owns acceptance",
+        "A nudge wakes you, so end your turn instead of polling.",
+        "double the wait",
+        "`--members` on a reply sets the whole list",
+        "A closed room refuses every later post",
+    ):
+        assert sentence in lead, sentence
+    assert "When the lead asks for a handoff, or your context is nearly full" in worker
+    assert "read it instead of running the suite again" in worker
+    assert "You do not open a room." in worker

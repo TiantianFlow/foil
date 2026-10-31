@@ -419,7 +419,7 @@ foil seat resume [NAME]
 foil seat list [--json] [--archived]
 foil seat peek NAME [--lines N]
 foil send TO TEXT
-foil post [TEXT] [--re PATH] [--decline]
+foil post [TEXT] [--re PATH] [--decline] [--members NAMES] [--close]
 foil mail read PATH [--json]
 foil mail list [--json]
 foil board read PATH [--json]
@@ -435,7 +435,7 @@ foil roster update ROLE FIELD=VALUE"""
 _WORKER_COMMANDS = """foil seat list [--json]
 foil seat peek NAME [--lines N]
 foil send TO TEXT
-foil post [TEXT] [--re PATH] [--decline]
+foil post --re PATH [TEXT] [--decline]
 foil mail read PATH [--json]
 foil mail list [--json]
 foil board read PATH [--json]
@@ -491,8 +491,8 @@ def _instruction(
         f"Identity is `FOIL_SEAT_ID` (yours is `{seat}`). You cannot change it with flags.",
         "Commands you may run:",
         _LEAD_COMMANDS if lead else _WORKER_COMMANDS,
-        "Mail: `foil send TO TEXT`. Room: `foil post TEXT`.",
-        "Send is one seat. Post is every other alive seat. "
+        "Mail: `foil send TO TEXT`. Room: `foil post --re PATH TEXT`.",
+        "Send is one seat. Post is a room's members. "
         "The task and result files are the durable record. A note wakes nobody.",
         "A nudge line is `from path`. A path under `board/mail/` is `foil mail read`. "
         "A path under `board/room/` is `foil board read`.",
@@ -503,7 +503,7 @@ def _instruction(
         "status/v1 (state working|blocked|done, updated, questions),",
         "task/v1 (id, owner, state open|doing|done, acceptance),",
         "result/v1 (task, author, branch, outcome pass|fail),",
-        "room/v1 (from, time, optional re, nudged).",
+        "room/v1 (from, time, optional re, members, closed, nudged).",
         f"Worktree: {work}",
         f"Persona:\n{_persona_line(template)}",
         skill_text,

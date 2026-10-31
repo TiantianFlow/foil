@@ -123,9 +123,11 @@ def _build_parser() -> argparse.ArgumentParser:
     send.add_argument("TO", metavar="TO")
     send.add_argument("TEXT", metavar="TEXT")
 
-    post = sub.add_parser("post", help="Write a room file and nudge other seats")
+    post = sub.add_parser("post", help="Write a room file and nudge its members")
     post.add_argument("--re", metavar="PATH")
     post.add_argument("--decline", action="store_true")
+    post.add_argument("--members", metavar="NAMES")
+    post.add_argument("--close", action="store_true")
     post.add_argument("TEXT", nargs="?", metavar="TEXT")
 
     mail = sub.add_parser("mail", help="Read mail files")
@@ -282,11 +284,15 @@ def _run(args: argparse.Namespace) -> int:
         if args.decline:
             if args.TEXT is not None:
                 raise FoilError("foil: --decline takes no text")
-            post_room(root, "", reply=args.re, decline=True)
+            post_room(
+                root, "", reply=args.re, decline=True, members=args.members, close=args.close
+            )
         else:
             if args.TEXT is None:
                 raise FoilError("foil: TEXT is required")
-            post_room(root, _text_arg(args.TEXT), reply=args.re)
+            post_room(
+                root, _text_arg(args.TEXT), reply=args.re, members=args.members, close=args.close
+            )
         return 0
     if args.command == "mail":
         action = args.mail_command

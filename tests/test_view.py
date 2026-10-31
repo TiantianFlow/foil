@@ -1495,3 +1495,30 @@ def test_the_info_text_the_page_serves_is_the_text_f38_names(
     assert found == set(view.TIPS.values())
     assert html.escape(view.HELP) in served
     assert html.escape(view.PROJECTS) in served
+
+
+def test_a_room_heading_shows_its_purpose_members_and_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    room = _board(repo) / "room"
+    head = "---\ncontract: room/v1\nfrom: lead\ntime: 2026-01-01T00:00:0{n}Z\n"
+    for thread, extra in (("r1", ""), ("r2", "closed: true\n")):
+        (room / thread).mkdir()
+        (room / thread / f"{thread}.md").write_text(
+            head.format(n=1) + "members: [lead, reviewer-1]\nnudged: []\n---\n\n"
+            "preamble\n\n<b>Which store?</b>\n",
+            encoding="utf-8",
+        )
+        (room / thread / "z.md").write_text(
+            head.format(n=2) + f"members: [lead]\n{extra}nudged: []\n---\n\nlater\n",
+            encoding="utf-8",
+        )
+    with _serving(repo) as port:
+        page = _page(port, "/fleets/main")
+    posts = page.split("<h2>Posts")[1].split("</section>")[0]
+    one = posts.split("<h3>room/r1/</h3>")[1].split("<h3>")[0]
+    two = posts.split("<h3>room/r2/</h3>")[1].split("<h3>")[0]
+    assert "&lt;b&gt;Which store?&lt;/b&gt;" in one and "<b>Which" not in page
+    assert "open · members: lead" in one
+    assert "closed · members: lead" in two

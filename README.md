@@ -54,7 +54,7 @@ flowchart TB
   you <-->|chat| operator
   operator -->|"foil init · seat spawn lead<br/>send · seat peek"| foil
   lead -->|"seat spawn · seat kill · send"| foil
-  foil -->|"launch seats · send mail to one seat<br/>or post a room file that nudges every other alive seat"| fleet
+  foil -->|"launch seats · send mail to one seat<br/>or post to a room that nudges its members"| fleet
   fleet <-->|read and write| disk
   impl -->|commit| tree
   lead -->|merge| tree
@@ -74,7 +74,7 @@ flowchart TB
 
 - **You** talk only to the operator agent.
 - **Operator agent**: any harness you like, with its normal interface. It follows the operator skill and never does the project work itself.
-- **foil**: this command-line tool. It launches seats in tmux. `foil send` writes one mail file and nudges that recipient. `foil post` writes one room file and nudges every other alive seat; a reply nudges only the seats that wrote a post in that thread and the seats it names as `@name`. The lead can answer you with `foil send user`, which you read with `foil mail list`. The body is not typed. Both wait 200ms, then send Enter once. It runs no daemon of its own and never interprets what is on a seat's screen. `foil view` is an optional read-only page in your browser.
+- **foil**: this command-line tool. It launches seats in tmux. `foil send` writes one mail file and nudges that recipient. `foil post` writes one room file and nudges that room's members and the seats it names as `@name`, except a member whose last file there is a decline. The lead opens a room with its members, changes them, and closes it; a worker only replies. The lead can answer you with `foil send user`, which you read with `foil mail list`. The body is not typed. Both wait 200ms, then send Enter once. It runs no daemon of its own and never interprets what is on a seat's screen. `foil view` is an optional read-only page in your browser.
 - **Lead, implementer, reviewer**: agent CLIs running headless in tmux windows, each started with its role's instructions. By default only the implementer gets its own Git worktree and branch.
 - **Board**: mail, room threads, notes, and `status.md`, as plain files in the project folder `foil init` prints. That folder is outside the repository. Seats read mail with `foil mail` and other board files, including room threads, with `foil board`.
 
@@ -241,7 +241,7 @@ Foil never interprets what is on a seat's screen. `foil seat peek` prints the ra
 
 `foil view` has no login. Your project folders are private to you, but a port on `127.0.0.1` is open to every account on the machine, so while the viewer runs anyone logged in can read it, including every project's pane text and board files. It hides launch-command tokens that look like credentials, as a best effort. On a machine other people log in to, stop it when you are done. The tailnet check guards only the tailnet name: an account on this machine can still read the page on `127.0.0.1`.
 
-A nudge is typed even when the window is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path. `foil post` writes one room file and types that same line into every other alive seat, or, for a reply, into the seats that wrote a post in that thread and the seats it names. Either command waits 200ms, then sends Enter once, so a harness that treats Enter inside a fast burst as an unsent paste submits the line instead of leaving it in the input. The message body is never typed. `foil post --re PATH --decline` writes a room file and types nothing. If the agent is not waiting for input, those keystrokes still go into the window. Foil does not look at the screen to decide, and it does not send Enter again.
+A nudge is typed even when the window is not at a prompt. `foil send` writes the mail file first, then types one line into the recipient's window: the sender, a space, and the mail file's absolute path. `foil post` writes one room file and types that same line into that room's members and the seats it names, except a member whose last file there is a decline. Either command waits 200ms, then sends Enter once, so a harness that treats Enter inside a fast burst as an unsent paste submits the line instead of leaving it in the input. The message body is never typed. `foil post --re PATH --decline` writes a room file and types nothing. If the agent is not waiting for input, those keystrokes still go into the window. Foil does not look at the screen to decide, and it does not send Enter again.
 
 ## Learn more
 
