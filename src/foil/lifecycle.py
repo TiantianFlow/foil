@@ -496,7 +496,8 @@ def _instruction(
         "The task and result files are the durable record. A note wakes nobody.",
         "A nudge line is `from path`. A path under `board/mail/` is `foil mail read`. "
         "A path under `board/room/` is `foil board read`.",
-        "List `board/room` and read threads this seat has not answered.",
+        "List `board/room` and read the open rooms this seat is a member of or that name it "
+        "as @name, where it has not answered.",
         "There is no ack command.",
         "Notes: write files under `board/notes/`. They wake no one.",
         "Contracts (parsed only to print; Foil does not act on them):",

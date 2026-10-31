@@ -351,15 +351,17 @@ def _new_thread(
 def _child(
     directory: Path,
     sender: str,
-    when: str,
+    now: datetime,
     body_for,
     nudged: list[str],
     parent: Path,
     extra: tuple[str, ...] = (),
 ) -> Path:
     private_dir(directory)
-    # Microseconds order posts within one second of `time` (room_state sorts by name).
-    token = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    # `time` and the name come from one clock reading. room_state sorts by `time`,
+    # then by name, so the microseconds put posts in one second in write order.
+    when = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    token = now.strftime("%Y%m%dT%H%M%S%fZ")
     for _ in range(8):
         path = directory / f"{token}-{sender}-{secrets.token_hex(4)}.md"
         rendered = _room_document(sender, when, body_for(path), nudged, parent, extra)
@@ -394,8 +396,7 @@ def post_room(
         if members is not None or close:
             raise FoilError("foil: --decline takes no --members or --close")
         parent, _state = _open_room(toplevel, reply)
-        when = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        _child(parent.parent, sender, when, lambda _path: "decline\n", [], parent)
+        _child(parent.parent, sender, datetime.now(UTC), lambda _path: "decline\n", [], parent)
         return
     # The lead and the human scope the rooms. A worker replies in its rooms.
     steering = sender in {"lead", "user"}
@@ -413,8 +414,8 @@ def post_room(
     extra: tuple[str, ...] = ()
     if given is not None:
         extra = ("members: [" + ", ".join(sorted(given)) + "]",)
-    when = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     if reply is None:
+        when = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         names = _wake_names(toplevel, given)
         if given is None:
             extra = ("members: [" + ", ".join(sorted({*names, sender})) + "]",)
@@ -438,5 +439,5 @@ def post_room(
             return _CLOSED + "\n" + caller
         return _preamble(path, _listing(directory) + 1) + "\n" + caller
 
-    path = _child(parent.parent, sender, when, waking, names, parent, extra)
+    path = _child(parent.parent, sender, datetime.now(UTC), waking, names, parent, extra)
     _fan_out(toplevel, path, names)

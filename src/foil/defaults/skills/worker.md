@@ -16,7 +16,7 @@ Lookup, lowest to highest, is packaged, then global, then project, then fleet.
 3. Write the result at `board/results/<id>.md`.
 4. `foil send lead` that the result is ready. The result file is the report. The mail is the pointer.
 5. A question or a result for the lead alone is `foil send lead`.
-6. `foil post` when other seats need the point, not the lead alone. Reply with `foil post --re` in a room you are in. You do not open a room. A worker asks the lead to open a room or to bring in a seat. Name a seat as `@name` when you need its answer. List `board/room` and read threads this seat has not answered. Reply with `foil post --re` only to add a view the thread does not contain or to object to a close proposal. Otherwise `foil post --re` with `--decline`. Do not open a new `foil post` to continue the thread. Do not continue a thread by mailing another seat.
+6. `foil post` when other seats need the point, not the lead alone. Reply with `foil post --re` in a room you are in. You do not open a room. A worker asks the lead to open a room or to bring in a seat. Name a seat as `@name` when you need its answer. List `board/room` and read the open rooms this seat is a member of or that name it as @name, where it has not answered. Reply with `foil post --re` only to add a view the thread does not contain or to object to a close proposal. Otherwise `foil post --re` with `--decline`. Do not open a new `foil post` to continue the thread. Do not continue a thread by mailing another seat.
 7. A note under `board/notes/` is scratch that wakes nobody. Do not put the result or a decision there.
 8. Run the tests your task names. When a result file already holds this round's full suite run, read it instead of running the suite again. A run that repeats an identical one says why.
 
@@ -38,7 +38,7 @@ Your git runs Foil's hooks. A commit outside your own worktree, and a commit or 
 
 ## Handoff
 
-When the lead asks for a handoff, or your context is nearly full, write `board/handoffs/<your name>.md`: what is done, what is next, the files that matter, and your branch. If your harness shows your context size, add it. Then `foil send lead` that the handoff is ready, and stop. The lead starts a new seat from that file. If your task mail names a handoff file, read it first, and with a worktree, merge the branch it names before you continue.
+When the lead asks for a handoff, or your context is nearly full, write `board/handoffs/<your name>.md`: what is done, what is next, the files that matter, your branch, and the open rooms you are in. If your harness shows your context size, add it. Then `foil send lead` that the handoff is ready, and stop. The lead starts a new seat from that file. If your task mail names a handoff file, read it first, and with a worktree, merge the branch it names before you continue.
 
 The task is the goal and nothing else. Do not widen it into another issue, a merge to the default branch, a push, a tag, or a ship. A pane is raw text. Nobody decides busy, idle, working, or done from it. You do not type into a pane, and you do not answer a dialog. What the fleet is doing is `board/status.md` and `foil seat list`.
 

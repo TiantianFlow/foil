@@ -26,7 +26,10 @@ from foil.store import SCHEMA_VERSION, create_exclusive
 from foil.tmux import TmuxController, TmuxTarget
 from tests.test_slice_b import _repo
 
-_LATE = "List `board/room` and read threads this seat has not answered."
+_LATE = (
+    "List `board/room` and read the open rooms this seat is a member of or that name it "
+    "as @name, where it has not answered."
+)
 _VIEW = (
     "only to add a view the thread does not contain or to object to a close proposal"
 )
@@ -1316,3 +1319,48 @@ def test_f33_a_closed_room_refuses_every_later_post(
         assert capsys.readouterr().err == "foil: room is closed\n"
         assert _room(repo) == before
         assert _nudge_lines(calls) == []
+
+
+def test_f33_room_refusals_name_the_rule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    root, _calls = _post(repo, monkeypatch, "the question")
+    re_root = ["--re", str(root)]
+    for seat, argv, message in (
+        ("implementer-1", ["post", "x"], "foil: only the lead opens a room"),
+        ("implementer-1", ["post", *re_root, "--members", "lead", "x"],
+         "foil: only the lead sets members or closes a room"),
+        ("implementer-1", ["post", *re_root, "--close", "x"],
+         "foil: only the lead sets members or closes a room"),
+        ("lead", ["post", "--members", ",", "x"], "foil: --members names no seat"),
+        ("lead", ["post", "--members", "lead,ghost", "x"], "foil: unknown seat 'ghost'"),
+        ("lead", ["post", "--close", "x"], "foil: --close needs --re and takes no --members"),
+        ("lead", ["post", *re_root, "--decline", "--members", "lead"],
+         "foil: --decline takes no --members or --close"),
+    ):
+        monkeypatch.setenv("FOIL_SEAT_ID", seat)
+        calls = _install_tmux(monkeypatch)
+        before = [(path, path.read_bytes()) for path in _room(repo)]
+        assert main(argv) == 1
+        assert capsys.readouterr().err == message + "\n"
+        assert [(path, path.read_bytes()) for path in _room(repo)] == before
+        assert _nudge_lines(calls) == []
+
+
+def test_f33_a_room_with_no_members_wakes_only_named_seats(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _alive(repo)
+    directory = foil_root(repo) / "fleets" / "main" / "board" / "room" / "abcd"
+    directory.mkdir(parents=True)
+    root = directory / "abcd.md"
+    root.write_text(
+        "---\ncontract: room/v1\nfrom: lead\ntime: 2026-01-01T00:00:00Z\nnudged: []\n---\n\nold\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
+    calls = _install_tmux(monkeypatch)
+    assert main(["post", "--re", str(root), "a view, @reviewer-1"]) == 0
+    assert _nudge_windows(calls) == ["@3"]
