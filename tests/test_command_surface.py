@@ -91,6 +91,8 @@ SECTION_6 = CommandSpec(
             flags=(
                 FlagSpec("--re", metavar="PATH"),
                 FlagSpec("--decline"),
+                FlagSpec("--members", metavar="NAMES"),
+                FlagSpec("--close"),
             ),
             positionals=(PositionalSpec("TEXT", "?"),),
         ),
