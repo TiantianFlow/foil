@@ -200,7 +200,7 @@ foil post -
 foil post --re /absolute/path/from/nudge --decline
 ```
 
-List `board/room`. If threads exist, tell the human that a room exists. Read a thread when the human asks about it, or before you post. Status still comes from `status.md`. Do not guess progress from a room file you have not read.
+List `board/room`. If threads exist, tell the human that a room exists. A room has a purpose, its first post, and members, and it is open or closed. Name an open room by its purpose. A closed room's last post points at the room that continues it. Read a thread when the human asks about it, or before you post. Status still comes from `status.md`. Do not guess progress from a room file you have not read.
 
 A note wakes nobody. Do not write it up as a board note for the fleet to treat as findings.
 
@@ -208,7 +208,7 @@ You may read only enough to understand the human's goal. Relay the goal in the h
 
 ## Lead handoff
 
-Foil does not watch a seat's context, and neither do you. When the lead is near a full context, it writes `board/handoffs/lead.md` and mails you that it is ready. Then replace the lead, and tell the human you did:
+Foil does not watch a seat's context, and neither do you. When the lead is near a full context, or at a milestone it picks, it writes `board/handoffs/lead.md` and mails you that it is ready. Then replace the lead, and tell the human you did:
 
 ```text
 foil seat kill lead

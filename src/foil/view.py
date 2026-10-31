@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
+from foil.board import room_state
 from foil.errors import FoilError, assert_no_secret
 from foil.lifecycle import peek_text, seat_rows
 from foil.memory import read_lessons
@@ -148,10 +149,11 @@ TIPS = {
     "Board": "This fleet's shared folder. Mail is to one seat. Notes are scratch and wake "
     "nobody. tasks/ is the brief. results/ is the report. The viewer shows the files as "
     "written.",
-    "Posts": "Threads under this fleet's board/room/. A new post wakes every other alive "
-    "seat in this fleet. A reply stays in that thread and wakes only the seats that wrote "
-    "a post in it and the seats it names as @name. A decline is a file and types nothing. A "
-    "hand-written file there wakes nobody. Status still comes from status.md.",
+    "Posts": "Rooms under this fleet's board/room/, each with its purpose, its members, and "
+    "whether it is open or closed. A post wakes the room's members and the seats it names as "
+    "@name, except a member whose last file there is a decline. A closed room refuses later "
+    "posts. A decline is a file and types nothing. A hand-written file there wakes nobody. "
+    "Status still comes from status.md.",
     "Pane": "Raw tmux capture. The viewer does not decide that the seat is busy, blocked, or "
     "waiting on a dialog.",
 }
@@ -981,12 +983,33 @@ def _file_rows(files: list[tuple[str, int, float]], here: str, folder: str) -> s
     return f"<ul>{''.join(items)}</ul>"
 
 
-def _grouped(files: list[tuple[str, int, float]], here: str, newest: bool) -> str:
+def _room_line(root: Path, fleet: str, group: list[tuple[str, int, float]]) -> str:
+    """A room's purpose, members, and open or closed state, read from its listed files."""
+
+    texts = []
+    for rel, _size, _mtime in group:
+        with suppress(Exception):
+            texts.append((rel.rsplit("/", 1)[-1], _read_listed(root, fleet, rel)[0]))
+    state = room_state(group[0][0].split("/")[1], texts)
+    members = ", ".join(state["members"]) or "none"
+    shown = f"{'closed' if state['closed'] else 'open'} · members: {members}"
+    purpose = f"<p>{escape(state['purpose'])}</p>" if state["purpose"] else ""
+    return f'{purpose}<p class="muted">{escape(shown)}</p>'
+
+
+def _grouped(
+    files: list[tuple[str, int, float]], here: str, newest: bool, room=None
+) -> str:
     groups: dict[str, list[tuple[str, int, float]]] = {}
     for item in files:
         groups.setdefault(_folder(item[0]), []).append(item)
     order = sorted(groups, key=lambda key: -max(f[2] for f in groups[key])) if newest else groups
-    return "".join(f"<h3>{escape(key)}/</h3>{_file_rows(groups[key], here, key)}" for key in order)
+    return "".join(
+        f"<h3>{escape(key)}/</h3>"
+        + (_guard(lambda key=key: room(groups[key])) if room and key.count("/") else "")
+        + _file_rows(groups[key], here, key)
+        for key in order
+    )
 
 
 def _status(root: Path, fleet: str, files: list[tuple[str, int, float]], here: str) -> str:
@@ -1020,12 +1043,17 @@ def _board_sections(root: Path, fleet: str, here: str) -> str:
     def meta(group: list) -> str:
         return f"{len(group)} {'file' if len(group) == 1 else 'files'}"
 
-    def listing(group: list, empty: str, newest: bool) -> str:
-        return _grouped(group, here, newest) if group else f'<p class="empty">{empty}</p>'
+    def listing(group: list, empty: str, newest: bool, room=None) -> str:
+        if not group:
+            return f'<p class="empty">{empty}</p>'
+        return _grouped(group, here, newest, room)
+
+    def room(group: list) -> str:
+        return _room_line(root, fleet, group)
 
     return (
         _guard(lambda: _status(root, fleet, files, here))
-        + _section("Posts", _guard(lambda: listing(posts, "No posts.", True)),
+        + _section("Posts", _guard(lambda: listing(posts, "No posts.", True, room)),
                    meta=meta(posts), anchor="posts")
         + _section("Board", _guard(lambda: listing(board, "No files.", False)),
                    meta=meta(board), anchor="board")
