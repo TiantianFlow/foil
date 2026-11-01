@@ -29,7 +29,7 @@ foil init
 ```
 
 ```text
-foil 0.6.2
+foil 0.6.3
 ...
 Skill: packaged /opt/foil/foil/defaults/skills/operator.md
 Project folder: /var/foil/projects/your-repo-1a2b3c
