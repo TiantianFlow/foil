@@ -2,7 +2,9 @@
 
 Notable changes to Foil, newest first.
 
-## Unreleased
+## [0.6.3] - 2026-10-31
+
+`foil --version` prints 0.6.3.
 
 ### Changed
 
@@ -457,6 +459,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.6.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.6.3
 [0.6.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.6.2
 [0.6.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.6.1
 [0.6.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.6.0
