@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tomllib
@@ -69,7 +70,18 @@ def test_expansion_drops_missing_values_and_their_flags(tmp_path: Path) -> None:
     claude = load_preset(tmp_path, "claude")
     assert expand_argv(
         claude, model="sonnet", prompt=prompt, session_id="abc", permission="auto"
-    ) == ["claude", "--model", "sonnet", "--session-id", "abc", "--permission-mode", "auto", prompt]
+    ) == [
+        "claude",
+        "--disallowedTools",
+        "AskUserQuestion",
+        "--model",
+        "sonnet",
+        "--session-id",
+        "abc",
+        "--permission-mode",
+        "auto",
+        prompt,
+    ]
 
     codex = load_preset(tmp_path, "codex")
     assert codex["unverified"] == ["resume-session-id"]
@@ -142,7 +154,15 @@ def test_resume_keeps_permission_flags(tmp_path: Path) -> None:
         session_id="abc",
         permission="auto",
         resume=True,
-    ) == ["claude", "--resume", "abc", "--permission-mode", "auto"]
+    ) == [
+        "claude",
+        "--disallowedTools",
+        "AskUserQuestion",
+        "--resume",
+        "abc",
+        "--permission-mode",
+        "auto",
+    ]
     assert expand_argv(
         load_preset(tmp_path, "grok"),
         model="grok-4",
@@ -936,3 +956,60 @@ def test_init_writes_three_lists_and_a_fleet_workspace(
     assert (root / "fleets" / "main" / "board" / "room").is_dir()
     assert main(["init"]) == 0
     assert not (root / "fleet.json").exists()
+
+
+def test_builtin_presets_turn_off_the_question_tool() -> None:
+    from foil.presets import _packaged_catalog
+
+    catalog = _packaged_catalog()
+    claude = catalog["claude"]
+    for argv in (claude["command"], claude["resume"]):
+        index = argv.index("--disallowedTools")
+        assert argv[index + 1] == "AskUserQuestion"
+        # The tool list is variadic: the next token must be a flag, never the prompt.
+        assert argv[index + 2].startswith("--")
+    content = catalog["opencode"]["set_env"]["OPENCODE_CONFIG_CONTENT"]
+    assert json.loads(content) == {"permission": {"question": "deny"}}
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        'set_env = { FOIL_SEAT_ID = "x" }',
+        'set_env = { GIT_DIR = "x" }',
+        'set_env = { PATH = "x" }',
+        'set_env = { HOME = "x" }',
+        'set_env = { FORWARDED = "x" }',
+        'set_env = { "1BAD" = "x" }',
+        "set_env = { NUMBER = 1 }",
+        'set_env = ["A=b"]',
+        'set_env = { NUL = "a\\u0000b" }',
+    ],
+)
+def test_set_env_refuses_reserved_forwarded_and_malformed_rows(table: str) -> None:
+    from foil.presets import _parse_preset
+
+    text = (
+        'id = "custom"\ncommand = ["custom", "{prompt}"]\nsession_id = "none"\n'
+        f'env = ["FORWARDED"]\n{table}\nmodels = []\n\n'
+        "[permission]\nask = []\nauto = []\n"
+    )
+    with pytest.raises(FoilError):
+        _parse_preset(text, "custom")
+
+
+def test_skills_route_questions_away_from_the_pane() -> None:
+    skills = files("foil").joinpath("defaults", "skills")
+    lead = skills.joinpath("lead.md").read_text(encoding="utf-8")
+    worker = skills.joinpath("worker.md").read_text(encoding="utf-8")
+    operator = skills.joinpath("operator.md").read_text(encoding="utf-8")
+    for text in (lead, worker):
+        assert "Nobody reads your pane." in text
+        assert "Do not use your harness's own prompt" in text
+    assert "## Questions for the human" in lead
+    assert "Set `state: blocked` when the goal cannot go on without the answer." in lead
+    assert "### A question from the lead" in operator
+    assert "Each is a question for the human, not a seat dialog." in operator
+    assert "Never answer with a method, a cause, or a plan the human did not give." in operator
+    assert "send one Escape with `tmux send-keys -t WINDOW_ID Escape`" in operator
+    assert "One Escape per question, never a second one." in operator

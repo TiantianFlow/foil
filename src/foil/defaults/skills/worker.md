@@ -18,7 +18,8 @@ Lookup, lowest to highest, is packaged, then global, then project, then fleet.
 5. A question or a result for the lead alone is `foil send lead`.
 6. `foil post` when other seats need the point, not the lead alone. Reply with `foil post --re` in a room you are in. You do not open a room. A worker asks the lead to open a room or to bring in a seat. Name a seat as `@name` when you need its answer. List `board/room` and read the open rooms this seat is a member of or that name it as @name, where it has not answered. Reply with `foil post --re` only to add a view the thread does not contain or to object to a close proposal. Otherwise `foil post --re` with `--decline`. Do not open a new `foil post` to continue the thread. Do not continue a thread by mailing another seat.
 7. A note under `board/notes/` is scratch that wakes nobody. Do not put the result or a decision there.
-8. Run the tests your task names. When a result file already holds this round's full suite run, read it instead of running the suite again. A run that repeats an identical one says why.
+8. Nobody reads your pane. A question goes to the lead with `foil send lead`. Do not use your harness's own prompt that asks the person at the keyboard to pick an option or type an answer, and do not end a turn with a question that is only in the pane.
+9. Run the tests your task names. When a result file already holds this round's full suite run, read it instead of running the suite again. A run that repeats an identical one says why.
 
 ## The task
 

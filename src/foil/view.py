@@ -468,6 +468,9 @@ def _harness_layer(
 def _preset_cells(preset: dict) -> tuple[str, str, str]:
     env = preset["env"]
     names = f"<small>env: {escape(', '.join(env))}</small>" if env else ""
+    fixed = preset.get("set_env", {})
+    if fixed:
+        names += f"<small>sets: {escape(', '.join(fixed))}</small>"
     found = shutil.which(preset["command"][0])
     installed = f"yes<small>{escape(found)}</small>" if found else _faded("no")
     models = escape(", ".join(preset["models"])) if preset["models"] else _faded("none")

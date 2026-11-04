@@ -2,6 +2,18 @@
 
 Notable changes to Foil, newest first.
 
+## [Unreleased]
+
+### Changed
+
+- The lead skill says nobody reads its pane: a question for the human goes in `status.md` `questions`, with `state: blocked` when the goal waits on it, and a `foil send user` line points at it. The lead and the workers do not use their harness's own prompt for asking the person at the keyboard. (#91)
+- The operator skill treats a question from the lead, in `status.md`, in mail, or in its pane, as a question to relay, not a seat dialog. It answers alone only when the human already answered it or the goal settles it, and says so. Before it sends an answer to a lead whose pane shows a question prompt, it sends one Escape to that window. (#91)
+- The built-in `claude` preset launches and resumes with `--disallowedTools AskUserQuestion`, and the `opencode` preset denies its `question` tool. (#91)
+
+### Added
+
+- A harness preset may set fixed, non-secret environment values with `set_env`. (#91)
+
 ## [0.6.3] - 2026-10-31
 
 `foil --version` prints 0.6.3.

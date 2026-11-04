@@ -667,6 +667,7 @@ def _open(
             forward.append(name)
     plan_path = (fleet_dir(root) / "run" / "plans" / f"{seat}.json").resolve()
     environment = {
+        **preset.get("set_env", {}),
         "FOIL_SEAT_ID": seat,
         "FOIL_PROJECT": project_key(common_dir(root)),
         "FOIL_FLEET": fleet_id(),
