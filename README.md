@@ -152,7 +152,7 @@ foil seat peek lead
 
 ### If nothing happens
 
-Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually stopped on a dialog. The operator clears a folder-trust prompt whose path is exactly that seat's checkout. It reports every other dialog, such as a login prompt, an update dialog, a first-run dialog, an opt-in, or a command approval, and leaves those for you. Answer those in the window (`tmux ls` lists Foil's session and `tmux attach` opens it). A login the CLI will not finish in the pane is done once by hand, then `foil seat kill lead` and spawn the lead again. If `foil seat list` shows that lead as `dead`, `foil seat kill lead` clears it. Spawn the check again only after it is gone.
+Run `foil seat peek lead`, and do the same for a seat that was just spawned or resumed. A seat that makes no progress is usually stopped on a dialog. The operator clears a folder-trust prompt whose path is exactly that seat's checkout. It reports every other dialog, such as a login prompt, an update dialog, a first-run dialog, an opt-in, or a command approval, and leaves those for you. Answer those in the window (`tmux ls` lists Foil's session and `tmux attach` opens it). A question the lead asks you is not a dialog: the operator relays it, and answers it alone only when you already answered it or your goal settles it. A login the CLI will not finish in the pane is done once by hand, then `foil seat kill lead` and spawn the lead again. If `foil seat list` shows that lead as `dead`, `foil seat kill lead` clears it. Spawn the check again only after it is gone.
 
 ## See it in a browser
 

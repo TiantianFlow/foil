@@ -946,3 +946,23 @@ def test_the_first_spawn_in_a_new_fleet_stores_the_fleet_id_it_launched_with(
     assert not (foil_root(repo) / "fleets" / "other" / "run" / "registry.json").exists()
     assert main(["seat", "spawn", "lead"]) == 0
     assert calls[0]["fleet_id"] == load_registry(repo, "other")["fleet_id"]
+
+
+def test_spawn_sets_a_preset_set_env_value_in_the_plan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    harnesses = store_root() / "harnesses"
+    harnesses.mkdir(parents=True, exist_ok=True)
+    (harnesses / "claude.toml").write_text(
+        'id = "claude"\ncommand = ["claude", "{prompt}"]\nsession_id = "none"\n'
+        'env = []\nset_env = { HARNESS_CONFIG = "quiet" }\nmodels = []\n\n'
+        "[permission]\nask = []\nauto = []\n",
+        encoding="utf-8",
+    )
+    assert main(["seat", "spawn", "lead"]) == 0
+    plan = json.loads(Path(calls[0]["runner_argv"][3]).read_text(encoding="utf-8"))
+    assert plan["env"]["HARNESS_CONFIG"] == "quiet"
+    assert plan["env"]["FOIL_SEAT_ID"] == "lead"
+    assert "HARNESS_CONFIG" not in plan["env_forward"]
