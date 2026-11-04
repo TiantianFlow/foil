@@ -143,6 +143,7 @@ def _set_env(raw: Any, forwarded: list[str]) -> dict[str, str]:
             not isinstance(name, str)
             or not _ENV_NAME.fullmatch(name)
             or not isinstance(value, str)
+            or "\x00" in value
             or name in forwarded
             or name in _RESERVED_ENV
             or name.startswith(_RESERVED_ENV_PREFIXES)

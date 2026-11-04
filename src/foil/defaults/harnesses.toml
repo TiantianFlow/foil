@@ -5,7 +5,8 @@
 [[harness]]
 id = "claude"
 # AskUserQuestion is off: a seat's pane has nobody at the keyboard. The tool list
-# is variadic, so the next flag ends it, never the prompt.
+# is variadic: a flag must always follow it (--session-id is always bound), so it
+# never takes the prompt.
 command = ["claude", "--disallowedTools", "AskUserQuestion", "--model", "{model}", "--session-id", "{session_id}", "{prompt}"]
 resume = ["claude", "--disallowedTools", "AskUserQuestion", "--resume", "{session_id}"]
 session_id = "generated"

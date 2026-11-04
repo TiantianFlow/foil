@@ -983,6 +983,7 @@ def test_builtin_presets_turn_off_the_question_tool() -> None:
         'set_env = { "1BAD" = "x" }',
         "set_env = { NUMBER = 1 }",
         'set_env = ["A=b"]',
+        'set_env = { NUL = "a\\u0000b" }',
     ],
 )
 def test_set_env_refuses_reserved_forwarded_and_malformed_rows(table: str) -> None:
@@ -1011,3 +1012,4 @@ def test_skills_route_questions_away_from_the_pane() -> None:
     assert "Each is a question for the human, not a seat dialog." in operator
     assert "Never answer with a method, a cause, or a plan the human did not give." in operator
     assert "send one Escape with `tmux send-keys -t WINDOW_ID Escape`" in operator
+    assert "One Escape per question, never a second one." in operator

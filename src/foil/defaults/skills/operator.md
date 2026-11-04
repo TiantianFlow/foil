@@ -70,7 +70,7 @@ A persistent copy of this skill is optional and stays at user level, out of `git
 
 ## Dialogs
 
-A dialog in a seat's pane is the human's, with one exception: a folder-trust prompt for that seat's own checkout. A question the lead asks the human is not a dialog. It is handled in A question from the lead. You may clear that prompt only when all of these hold:
+A dialog in a seat's pane is the human's, with one exception: a folder-trust prompt for that seat's own checkout. A question the lead asks the human is not a dialog. It is handled in A question from the lead. You may clear a folder-trust prompt only when all of these hold:
 
 - The seat is in `foil seat list`.
 - You read its window id and worktree from its record in `run/registry.json`, and its launch directory from `cwd` in `run/plans/<seat>.json`. Both are in the fleet folder, `fleets/<fleet>/` under the `Project folder:` path `init` printed.
@@ -194,7 +194,7 @@ A question from the lead reaches you in `status.md` `questions`, in its mail to 
 
 You may answer it yourself only when the human already answered it, in this session or in standing instructions, or when the human's goal already settles it and nothing is left for the human to weigh, such as whether to go on with the goal as stated. Quote the human's words you relied on. Never answer with a method, a cause, or a plan the human did not give. Then tell the human the question and the answer you sent. Otherwise relay the question to the human in the lead's words, with its options and its recommendation, and send the human's answer back. A relayed question that waits on the human stops check-ins, as condition 3 in Check in says, whether it came in the file, in mail, or in the pane.
 
-The answer always goes by `foil send lead`. When the lead's pane shows a prompt that waits for a choice or typed text, a nudge would be typed into that prompt. Clear the prompt first: check that the lead is in `foil seat list`, read its window id from its record in `run/registry.json`, send one Escape with `tmux send-keys -t WINDOW_ID Escape`, and peek again. When the prompt is gone, `foil send lead` the answer. When it is still there, send nothing more, and give the human the answer to type after `tmux attach`, as Check in says.
+The answer always goes by `foil send lead`. When the lead's pane shows a prompt that waits for a choice or typed text, a nudge would be typed into that prompt. Clear the prompt first: check that the lead is in `foil seat list`, read its window id from its record in `run/registry.json`, and run `foil seat peek lead` right before the key. Only when that peek still ends on the waiting prompt, send one Escape with `tmux send-keys -t WINDOW_ID Escape`, and peek again. One Escape per question, never a second one. When the prompt is gone, `foil send lead` the answer. When it is still there, send nothing more, and give the human the answer to type after `tmux attach`, as Check in says.
 
 ## Channels
 
