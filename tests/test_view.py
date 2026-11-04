@@ -464,7 +464,7 @@ def test_an_invalid_roles_file_leaves_the_rest_of_settings(
         page = _page(port, "/settings")
     roles = page.split("<h2>Roles")[1].split("</section>")[0]
     assert 'class="empty err">foil: invalid template</p>' in roles
-    assert "claude --model" in page
+    assert "claude --disallowedTools AskUserQuestion --model" in page
 
 
 def _role_block(page: str, role: str, following: str = "") -> str:

@@ -38,6 +38,16 @@ Write long command output to a file and read its tail. Write a long document onc
 
 A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `foil board read`.
 
+## Questions for the human
+
+Nobody reads your pane. The human reads `board/status.md` and your mail to `user`, and the answer comes back to you as mail. A question for the human goes in `status.md` `questions`: the decision, the options, your recommendation, and what the fleet does while it waits. Set `state: blocked` when the goal cannot go on without the answer. Then `foil send user` one line that points at the question, and end your turn.
+
+```text
+foil send user "question in board/status.md: which reading of the goal"
+```
+
+Do not use your harness's own prompt that asks the person at the keyboard to pick an option or type an answer. Do not end a turn with a question that is only in the pane. Nobody sees either, and the fleet waits on an answer that never comes.
+
 ## Spawn, kill, archive, and resume
 
 Spawn a worker from a template. `--task` is the text of the first mail. Pass the task file's path. Foil does not write the task file. The role instructions arrive in the first prompt.
@@ -85,7 +95,7 @@ foil seat peek implementer-1 --lines 40
 
 `foil send` writes one mail file and nudges that seat. The body is not typed.
 
-`foil send user` is your mail to the human: an acknowledgement or an answer. It nudges nobody. The human reads it at the next check-in. A question that blocks the goal still goes in `status.md` `questions`.
+`foil send user` is your mail to the human: an acknowledgement, an answer, or a pointer to a question. It nudges nobody. The human reads it at the next check-in. The question itself goes in `status.md` `questions`, as Questions for the human says.
 
 ```text
 foil send user "task received; the plan is in board/status.md"

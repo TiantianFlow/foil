@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import tomllib
 import uuid
@@ -22,6 +23,7 @@ _PRESET_KEYS = {
     "resume",
     "session_id",
     "env",
+    "set_env",
     "unverified",
     "models",
 }
@@ -30,7 +32,20 @@ _ENTRY_KEYS = {"id", "model"}
 _ROLE_KEYS = {"id", "description", "persona", "worktree", "permission"}
 _MAP_KEYS = {"role", "harness", "model"}
 _FLEET_KEYS = {"role", "harness", "model", "note"}
-_PRESET_SAME = ("command", "permission", "resume", "session_id", "env", "unverified", "models")
+_PRESET_SAME = (
+    "command",
+    "permission",
+    "resume",
+    "session_id",
+    "env",
+    "set_env",
+    "unverified",
+    "models",
+)
+# Variables Foil sets itself, which a preset's set_env may not replace.
+_RESERVED_ENV_PREFIXES = ("FOIL_", "GIT_")
+_RESERVED_ENV = {"PATH", "HOME", "XDG_DATA_HOME"}
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 _ROLES = ("lead", "implementer", "reviewer")
 BUILTIN_IDS = ("claude", "codex", "gemini", "opencode", "grok", "fake")
 # Set while init checks that a harness is installed, before the project folder is ready.
@@ -90,6 +105,7 @@ def _preset_from_table(raw: dict[str, Any]) -> dict[str, Any]:
     resume = raw.get("resume")
     env = _strings(raw.get("env", []), "preset")
     assert_no_secret(env)
+    set_env = _set_env(raw.get("set_env", {}), env)
     models = raw.get("models", [])
     if not isinstance(models, list) or any(
         not isinstance(item, str) or not item or item.startswith("-") for item in models
@@ -105,9 +121,36 @@ def _preset_from_table(raw: dict[str, Any]) -> dict[str, Any]:
         "resume": None if resume is None else _strings(resume, "preset"),
         "session_id": raw["session_id"],
         "env": env,
+        "set_env": set_env,
         "unverified": _strings(raw.get("unverified", []), "preset"),
         "models": list(models),
     }
+
+
+def _set_env(raw: Any, forwarded: list[str]) -> dict[str, str]:
+    """Fixed values a preset sets for every launch, such as a harness's own config.
+
+    They are not secrets: they are written to the plan, shown by the viewer,
+    and scanned like any other plan text. A name the preset also forwards, or
+    a variable Foil sets itself, is refused.
+    """
+
+    if not isinstance(raw, dict):
+        _fail("preset")
+    values: dict[str, str] = {}
+    for name, value in raw.items():
+        if (
+            not isinstance(name, str)
+            or not _ENV_NAME.fullmatch(name)
+            or not isinstance(value, str)
+            or name in forwarded
+            or name in _RESERVED_ENV
+            or name.startswith(_RESERVED_ENV_PREFIXES)
+        ):
+            _fail("preset")
+        values[name] = value
+    assert_no_secret(values)
+    return values
 
 
 def _parse_preset(text: str, harness_id: str) -> dict[str, Any]:
