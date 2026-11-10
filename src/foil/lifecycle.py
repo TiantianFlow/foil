@@ -223,12 +223,6 @@ def _print_init_report(
         f"{role} {load_template(toplevel, role)['permission']}" for role in roles
     )
     del updated_skills
-    operator = store_root() / "skills" / "operator.md"
-    packaged = Path(str(files("foil").joinpath("defaults", "skills", "operator.md")))
-    if operator.is_file() and not operator.is_symlink():
-        print(f"Skill: {operator}")
-    else:
-        print(f"Skill: packaged {packaged}")
     print(f"permission: {permissions}.")
     print(
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
@@ -243,10 +237,7 @@ def _print_init_report(
     sys.stdout.flush()
     if _star_saved(_star_due()):
         print(f"For the human: if Foil helps, a GitHub star helps others find it: {STAR_URL}")
-    if operator.is_file() and not operator.is_symlink():
-        print(f"Read {operator} and follow it. My goal: <goal>.")
-    else:
-        print(f"Read {packaged} and follow it. My goal: <goal>.")
+    print("Run foil seat join lead, then read the file it names. My goal: <goal>.")
 
 
 def _unlink_project_settings(root: Path) -> list[Path]:
@@ -340,6 +331,8 @@ def _seat_name(registry: dict, template_name: str, requested: str | None) -> str
         if requested not in (None, "lead"):
             raise FoilError("foil: lead seat must be named lead")
         existing = seats.get("lead")
+        if existing and existing.get("state") == "joined":
+            raise FoilError("foil: lead is joined. Run foil seat leave first")
         if existing and existing.get("state") != "killed":
             raise FoilError("foil: lead already exists")
         return "lead"
@@ -347,6 +340,8 @@ def _seat_name(registry: dict, template_name: str, requested: str | None) -> str
         raise FoilError("foil: the first seat must be the lead")
     if requested == "user":
         raise FoilError("foil: seat name 'user' is the human's mailbox")
+    if requested == "foil":
+        raise FoilError("foil: seat name 'foil' is reserved")
     if requested == "lead" or (requested is not None and requested in seats):
         raise FoilError(f"foil: seat '{shown(requested or '')}' already exists")
     if requested:
@@ -443,6 +438,15 @@ foil board list PATTERN [--json]
 foil memory add TEXT [--replaces ID]
 foil memory list [--all] [--json]"""
 
+_JOINED_COMMANDS = """foil seat kill --all
+foil seat leave
+foil mail wait [--timeout SECONDS] [--wake]
+foil roster add ROLE [--from FILE] [--project]
+foil roster update ROLE FIELD=VALUE [--project]
+foil roster remove ROLE [--project]
+foil init
+foil view [--port N]"""
+
 
 def _accepted(root: Path) -> list[tuple[str, str]]:
     directory = foil_root(root) / "memory"
@@ -458,6 +462,35 @@ def _accepted(root: Path) -> list[tuple[str, str]]:
     return found
 
 
+_MARK = re.compile(r"^<!-- (launched|joined|end) -->$")
+# A joined lead has done the setup, and the README carries the rest (F24).
+_JOINED_DROPPED = ("Setup", "Roster", "The viewer", "Teardown and upgrading")
+
+
+def _for_lead(text: str, *, joined: bool) -> str:
+    """The lead skill as one kind of lead reads it, without the other kind's paragraphs."""
+
+    keep, block = [], None
+    for line in text.splitlines():
+        mark = _MARK.match(line)
+        if mark:
+            block = None if mark.group(1) == "end" else mark.group(1)
+            continue
+        if block is None or (block == "joined") == joined:
+            keep.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(keep)).strip()
+
+
+def _joined_sections(text: str) -> str:
+    keep, dropping = [], False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            dropping = line[3:].strip() in _JOINED_DROPPED
+        if not dropping:
+            keep.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(keep)).strip()
+
+
 def _persona_line(template: dict) -> str:
     return persona_text(template).strip() or "none"
 
@@ -470,6 +503,7 @@ def _instruction(
     restarted: bool,
     first_launch: bool = False,
     task: Path | None = None,
+    joined: bool = False,
 ) -> str:
     board = (fleet_dir(root) / "board").resolve()
     lessons = _accepted(root)
@@ -478,23 +512,39 @@ def _instruction(
         learned = "\n".join(f"- {item}: {text}" for item, text in lessons)
     lead = template["name"] == "lead"
     skill_text = _builtin("skills", "lead.md" if lead else "worker.md").strip()
+    if lead:
+        skill_text = _for_lead(skill_text, joined=joined)
     work = (
         "Stay in your worktree. Do not modify the project toplevel. "
         "Killing you will not delete your branch."
         if template["worktree"]
         else "You have no worktree. Killing you will not delete your branch."
     )
+    identity = (
+        "You joined with `foil seat join lead`. Every foil command you run outside a seat "
+        "acts as `lead` until `foil seat leave`."
+        if joined
+        else f"Identity is `FOIL_SEAT_ID` (yours is `{seat}`). You cannot change it with flags."
+    )
+    commands = _LEAD_COMMANDS if lead else _WORKER_COMMANDS
+    if joined:
+        commands = f"{commands}\n{_JOINED_COMMANDS}"
     lines = [
         f"Written by foil {__version__}.",
         f"You are seat `{seat}`. Lead is `lead`.",
         f"Board: `{board}`.",
-        f"Identity is `FOIL_SEAT_ID` (yours is `{seat}`). You cannot change it with flags.",
+        identity,
         "Commands you may run:",
-        _LEAD_COMMANDS if lead else _WORKER_COMMANDS,
+        commands,
         "Mail: `foil send TO TEXT`. Room: `foil post --re PATH TEXT`.",
         "Send is one seat. Post is a room's members. "
         "The task and result files are the durable record. A note wakes nobody.",
-        "A nudge line is `from path`. A path under `board/mail/` is `foil mail read`. "
+        (
+            "A `foil mail wait` line is `time from path`. "
+            if joined
+            else "A nudge line is `from path`. "
+        )
+        + "A path under `board/mail/` is `foil mail read`. "
         "A path under `board/room/` is `foil board read`.",
         "List `board/room` and read the open rooms this seat is a member of or that name it "
         "as @name, where it has not answered.",
@@ -508,6 +558,7 @@ def _instruction(
         f"Worktree: {work}",
         f"Persona:\n{_persona_line(template)}",
         skill_text,
+        *([_joined_sections(_builtin("skills", "joined.md"))] if joined else []),
         f"Accepted lessons: {learned}",
     ]
     if lead:
@@ -551,11 +602,20 @@ def _instruction(
                 "You do not pass a harness or a model flag.",
                 "Current overrides:",
                 memory,
-                "Record them with `foil roster update ROLE harness=ID/MODEL,ID/MODEL` "
-                "or, for one entry, `model=VALUE`. That leaves the default mapping unchanged.",
             ]
         )
-    if restarted:
+        if not joined:
+            lines.append(
+                "Record them with `foil roster update ROLE harness=ID/MODEL,ID/MODEL` "
+                "or, for one entry, `model=VALUE`. That leaves the default mapping unchanged."
+            )
+    if joined:
+        lines.append(
+            "The mail from before the join was listed in the brief. Hear from the fleet "
+            "the way the brief named. `foil mail wait --timeout 0` at the start of each "
+            "turn is always safe."
+        )
+    elif restarted:
         lines.append(
             "You were restarted. List your mail with `foil mail list` "
             "and read each file with `foil mail read`."
@@ -581,10 +641,15 @@ def _instruction(
             flag = "yes" if item["worktree"] else "no"
             labels = ", ".join(entry_label(entry) for entry in item["harness"])
             roster.append(f"- {item['name']}: harness {labels}, worktree {flag}")
+        kill = (
+            "You may kill another seat by name. `foil seat kill --all` stops every other seat."
+            if joined
+            else "You may kill another seat by name. You may not kill yourself "
+            "and you may not run `foil seat kill --all`."
+        )
         lines.extend(
             [
-                "You may kill another seat by name. You may not kill yourself "
-                "and you may not run `foil seat kill --all`.",
+                kill,
                 "Templates:",
                 *roster,
                 'Staff with `foil seat spawn implementer --task "..."`. '
@@ -603,6 +668,7 @@ def _write_instruction(
     restarted: bool,
     first_launch: bool = False,
     task: Path | None = None,
+    joined: bool = False,
 ) -> Path:
     path = (fleet_dir(root) / "run" / "instructions" / f"{seat}.md").resolve()
     body = _instruction(
@@ -612,8 +678,14 @@ def _write_instruction(
         restarted=restarted,
         first_launch=first_launch,
         task=task,
+        joined=joined,
     ).rstrip("\n")
-    text = f"{body}\nRe-read `{path}` whenever you are woken.\n"
+    reread = (
+        f"Re-read `{path}` after your harness compacts this conversation, or when unsure."
+        if joined
+        else f"Re-read `{path}` whenever you are woken."
+    )
+    text = f"{body}\n{reread}\n"
     scan(text)
     write_bytes(path, text.encode())
     return path
@@ -704,9 +776,12 @@ def _open(
     return target.window_id
 
 
+JOINED = "foil: lead is joined. It has no pane."
+
+
 def _state(registry: dict, name: str, record: dict[str, str]) -> str:
-    if record.get("state") == "killed":
-        return "killed"
+    if record.get("state") in ("killed", "joined"):
+        return record["state"]
     try:
         owned = TmuxController().matches_window(
             str(registry["fleet_id"]),
@@ -870,6 +945,10 @@ def kill_seats(
     names = list(registry["seats"]) if all_seats else [_known(registry, name)["name"]]
     for seat_name in names:
         record = registry["seats"][seat_name]
+        if record.get("state") == "joined":
+            if all_seats:
+                continue
+            raise FoilError(JOINED)
         window = record.get("window_id") or ""
         if _state(registry, seat_name, record) != "killed":
             _remove_leftover(registry, root, seat_name, window)
@@ -952,6 +1031,8 @@ def resume_seats(root: Path, name: str | None) -> int:
     if name is not None:
         _known(registry, name)
         state = _state(registry, name, registry["seats"][name])
+        if state == "joined":
+            raise FoilError(JOINED)
         if state == "killed":
             raise FoilError(f"foil: seat '{name}' is killed")
         if state == "alive":
@@ -1163,6 +1244,8 @@ def peek_text(root: Path, name: str, *, lines: int, fleet: str | None = None) ->
     registry = load_registry(root, fleet)
     record = _known(registry, name)
     state = _state(registry, name, record)
+    if state == "joined":
+        raise FoilError(JOINED)
     window = record.get("window_id") or ""
     controller = TmuxController()
     try:

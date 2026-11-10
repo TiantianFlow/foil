@@ -305,6 +305,9 @@ class TmuxController:
         )
         return probe.state is ProbeState.ALIVE and bool(probe.identity_matches)
 
+    def start_server(self) -> None:
+        self._required(["start-server"], "start-server")
+
     def window_exists(self, window_id: str) -> bool:
         if not window_id.startswith("@"):
             return False

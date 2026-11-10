@@ -326,14 +326,22 @@ def test_restart_peek_and_nudge_stay_on_the_same_seat(
         _close(repo)
 
 
-def test_scenario_4_operator_answer_is_raw_on_the_pane(
+def test_scenario_4a_launched_lead_asks_the_human(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = _prepare(tmp_path, "scenario-4", monkeypatch)
+    for variable in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "GROK_SESSION_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    repo = _prepare(tmp_path, "scenario-4a", monkeypatch)
+    board = foil_root(repo) / "fleets" / "main" / "board"
     try:
-        _scripts(repo, "scenario-4", {"lead": "lead.json"})
-        assert main(["seat", "spawn", "lead", "--task", "ask the operator"]) == 0
-        _wait(repo, lambda: "Which color" in _status(repo))
+        _scripts(repo, "scenario-4a", {"lead": "lead.json"})
+        assert main(["seat", "spawn", "lead", "--task", "ask the human"]) == 0
+        capsys.readouterr()
+        assert main(["mail", "wait", "--timeout", "90"]) == 0
+        waited = capsys.readouterr().out
+        assert " lead " in waited
+        assert str((board / "mail" / "user").resolve()) in waited
+        assert "Which color" in _status(repo)
         assert main(["send", "lead", "use blue"]) == 0
         _wait(repo, lambda: "The answer is blue." in _status(repo))
         window = load_registry(repo)["seats"]["lead"]["window_id"]
@@ -347,6 +355,63 @@ def test_scenario_4_operator_answer_is_raw_on_the_pane(
         assert main(["seat", "peek", "lead"]) == 0
         assert capsys.readouterr().out == captured.stdout
         assert "foil-fake lead ready" in captured.stdout
+    finally:
+        _close(repo)
+
+
+def test_scenario_4b_joined_lead_waits_for_a_worker_and_hands_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for variable in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "GROK_SESSION_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    repo = _prepare(tmp_path, "scenario-4b", monkeypatch)
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    try:
+        _scripts(repo, "scenario-4b", {"implementer-1": "implementer.json"})
+        # Every wait checks seats, so a live worker reported dead fails the first wait.
+        monkeypatch.setattr("foil.joined.DEAD_EVERY", 0)
+        capsys.readouterr()
+        assert main(["seat", "join", "lead"]) == 0
+        brief = capsys.readouterr().out
+        assert "Read first:" in brief
+        assert f"Board: {board.resolve()}." in brief
+        assert len(brief.encode()) < 2048
+        assert load_registry(repo)["seats"]["lead"]["state"] == "joined"
+        assert main(["seat", "spawn", "implementer", "--task", "pick a color"]) == 0
+        capsys.readouterr()
+        assert main(["mail", "wait", "--timeout", "90"]) == 0
+        waited = capsys.readouterr().out
+        assert len(waited.splitlines()) == 1 and " implementer-1 " in waited
+        assert str((board / "mail" / "lead").resolve()) in waited
+        mailed = Path(waited.split()[-1]).read_text(encoding="utf-8")
+        assert f"foil {__version__}" in mailed
+        assert "The color is blue." in (board / "results" / "t1.md").read_text(encoding="utf-8")
+        assert main(["mail", "wait", "--timeout", "0"]) == 0
+        assert capsys.readouterr().out == waited
+        assert main(["mail", "wait", "--timeout", "0"]) == 0
+        assert capsys.readouterr().out == "no new mail\n"
+
+        window = load_registry(repo)["seats"]["implementer-1"]["window_id"]
+        subprocess.run(["tmux", "kill-window", "-t", window], check=True)
+        assert main(["mail", "wait", "--timeout", "30"]) == 0
+        died = capsys.readouterr().out.splitlines()
+        assert len(died) == 1 and " foil " in died[0]
+        assert "implementer-1 died." in Path(died[0].split()[-1]).read_text(encoding="utf-8")
+        assert main(["mail", "wait", "--timeout", "0"]) == 0
+        capsys.readouterr()
+
+        assert main(["seat", "leave"]) == 1
+        assert capsys.readouterr().err == "foil: write board/handoffs/lead.md first\n"
+        (board / "handoffs").mkdir(parents=True, exist_ok=True)
+        (board / "handoffs" / "lead.md").write_text("t1 is done.\n", encoding="utf-8")
+        assert main(["seat", "leave"]) == 0
+        assert load_registry(repo)["seats"]["lead"]["state"] == "killed"
+        assert main(["seat", "join", "lead"]) == 0
+        assert "New for lead: none." in capsys.readouterr().out
+        assert main(["seat", "kill", "--all"]) == 0
+        seats = load_registry(repo)["seats"]
+        assert seats["lead"]["state"] == "joined"
+        assert seats["implementer-1"]["state"] == "killed"
     finally:
         _close(repo)
 
@@ -741,7 +806,7 @@ def test_star_line_reaches_the_operator_once_per_store_and_no_seat(tmp_path: Pat
         assert [entry for entry in report if entry.startswith(line)] == [
             f"{line} https://github.com/TiantianFlow/foil"
         ]
-        assert report[-1].startswith("Read ")
+        assert report[-1].startswith("Run foil seat join lead")
         assert line not in foil(second, "init").stdout
         assert line not in foil(first, "init").stdout
 

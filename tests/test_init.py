@@ -92,10 +92,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     repo.mkdir()
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
-    from importlib.resources import files
-
-    package = Path(str(files("foil").joinpath("defaults", "skills", "operator.md")))
-    pointer = f"Read {package} and follow it. My goal: <goal>."
+    pointer = "Run foil seat join lead, then read the file it names. My goal: <goal>."
     ask = "permission: lead auto, implementer auto, reviewer auto."
     rule = (
         "ask stops a seat at its first approval prompt; auto asks the harness to skip "
@@ -111,7 +108,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     first = capsys.readouterr()
     assert first.err == ""
     assert first.out.startswith(f"foil {__version__}\n")
-    assert f"Skill: packaged {package}" in first.out
+    assert "Skill:" not in first.out
     assert f"Project folder: {foil_root(repo)}" in first.out
     assert pointer in first.out
     assert ask in first.out
@@ -137,7 +134,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     assert "Left templates: lead, implementer, reviewer" in second.out
     assert "Wrote templates: none" in second.out
     assert second.out.startswith(f"foil {__version__}\n")
-    assert f"Skill: packaged {package}" in second.out
+    assert "Skill:" not in second.out
     assert ask in second.out
     assert lead.read_text(encoding="utf-8") == original
 

@@ -1,1 +1,0 @@
-../src/foil/defaults/skills/operator.md

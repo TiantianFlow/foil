@@ -830,6 +830,29 @@ def test_attach_uses_the_exact_session_and_a_verified_window(
     assert "foil: seat &#x27;reviewer-1&#x27; is dead" in reused
 
 
+def test_a_joined_lead_is_running_and_has_no_pane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _registry(
+        repo,
+        _seat("lead", window="", state="joined"),
+        _seat("implementer-1", window="@2"),
+    )
+    _windows(monkeypatch, {"@2": "implementer-1"})
+    with _serving(repo) as port:
+        default = _page(port, "/fleets/main")
+        alive = _page(port, "/fleets/main?state=alive")
+        seat = _page(port, "/fleets/main/seats/lead")
+        fleets = _page(port, "/")
+    for page in (default, alive):
+        agents = page.split("<h2>Agents")[1].split("</section>")[0]
+        assert "Running · 2" in agents
+        assert '<span class="dot joined"></span>joined' in agents
+    assert "lead is joined. It has no pane." in seat
+    assert "<td>2</td><td>0</td><td>0</td>" in fleets
+
+
 def test_every_seat_is_listed_with_state_and_branch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

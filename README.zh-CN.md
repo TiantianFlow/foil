@@ -12,7 +12,7 @@
 
 **你的 Agent 们的忠诚反对派。**
 
-运筹把你已经在用的编程 Agent（Claude Code、Codex、Gemini、OpenCode、Grok）组成一支小团队。你只和一个 Agent 对话，它把目标交给主座。主座规划工作，把每个任务交给有自己 Git 分支的工人席位，让另一个 Agent 检查结果，再把结果合并。每个 Agent 都跑在 tmux 里，每条消息都是你能直接读的文件。
+运筹把你已经在用的编程 Agent（Claude Code、Codex、Gemini、OpenCode、Grok）组成一支小团队。你继续和自己已经在用的 Agent 对话，它加入团队，成为主座。主座规划工作，把每个任务交给有自己 Git 分支的工人席位，让另一个 Agent 检查结果，再把结果合并。每个 Agent 都跑在 tmux 里，每条消息都是你能直接读的文件。
 
 ## 为什么选择运筹
 
@@ -20,7 +20,7 @@
 
 行之有效的做法是分工：一个 Agent 规划，一个实现，一个审查。Claude Code 甚至自带 `opusplan` 设置，用 Opus 规划、用 Sonnet 动手。但跨工具时，这种分工通常意味着由你来打杂：把计划复制到另一个终端，再把结果转述回来，还要提醒每个 Agent 之前定过什么。
 
-运筹把这种分工变成结构。主座负责规划，按角色派出工人席位，根据各自给出的证据在它们的提案中做出选择，再合并它们的分支。任务文件 `board/tasks/<id>.md` 是任务说明，邮件是指向它的指针。`foil seat spawn --task` 写成那封邮件，并不写任务文件。你只和一个操作员 Agent 对话，管理的活由主座来做。
+运筹把这种分工变成结构。主座负责规划，按角色派出工人席位，根据各自给出的证据在它们的提案中做出选择，再合并它们的分支。任务文件 `board/tasks/<id>.md` 是任务说明，邮件是指向它的指针。`foil seat spawn --task` 写成那封邮件，并不写任务文件。你自己的 Agent 就是主座，所以你直接和负责管理的那一个对话。
 
 ### 一个不轻信"做完了"的干净上下文检查
 
@@ -37,11 +37,10 @@
 ```mermaid
 flowchart TB
   you(["你"])
-  operator["<b>操作员 Agent</b><br/>你与之对话的 harness<br/>例如 Claude Code 或 Codex"]
+  lead["<b>你的 Agent，作为主座加入</b><br/>你与之对话的 harness<br/>规划 · 分派 · 合并"]
   foil[["<b>foil</b><br/>命令行工具"]]
 
   subgraph fleet["tmux 会话 · 无界面的 Agent，各自用你选的 harness 和模型"]
-    lead["<b>主座</b><br/>规划 · 分派 · 合并"]
     impl["<b>实现者</b><br/>写代码"]
     rev["<b>审查者</b><br/>检查工作"]
   end
@@ -51,14 +50,13 @@ flowchart TB
     tree[("<b>Git worktree</b><br/>分支 foil/implementer-1")]
   end
 
-  you <-->|对话| operator
-  operator -->|"foil init · seat spawn lead<br/>send · seat peek"| foil
-  lead -->|"seat spawn · seat kill · send"| foil
+  you <-->|对话| lead
+  lead -->|"foil init · seat join lead<br/>seat spawn · send · mail wait"| foil
   foil -->|"启动席位 · 给一个席位发邮件<br/>或写房间文件，提醒其他每个仍在运行的席位"| fleet
   fleet <-->|读写| disk
+  lead <-->|读写| board
   impl -->|提交| tree
   lead -->|合并| tree
-  operator -.->|读 status.md| board
 
   classDef human fill:#fde68a,stroke:#b45309,color:#1f2937
   classDef yours fill:#bfdbfe,stroke:#1d4ed8,color:#1f2937
@@ -66,21 +64,21 @@ flowchart TB
   classDef seat fill:#bbf7d0,stroke:#15803d,color:#1f2937
   classDef data fill:#fbcfe8,stroke:#be185d,color:#1f2937
   class you human
-  class operator yours
+  class lead yours
   class foil tool
-  class lead,impl,rev seat
+  class impl,rev seat
   class board,tree data
 ```
 
-- **你**只和操作员 Agent 对话。
-- **操作员 Agent**：你喜欢的任何 harness，带着它原本的界面。它按操作员技能行事，自己从不做项目本身的工作。
-- **foil**：就是这个命令行工具。它在 tmux 里启动席位。`foil send` 写成一份邮件文件，并提醒那个收件人。`foil post` 写成一份房间文件，并提醒该房间的成员，以及用 `@名字` 点到的席位；最后一份文件是 decline 的成员不再被提醒。主座开房间、指定和调整成员、关闭房间；工作席位只回复。主座可以用 `foil send user` 回复你，你用 `foil mail list` 读取。正文不会被打进窗口。两者都等待 200ms，然后发送一次 Enter。它自己不跑守护进程，也从不解读席位屏幕上显示的内容。`foil view` 是一个可选的只读网页，在浏览器里看。
-- **主座、实现者、审查者**：在 tmux 窗口里无界面运行的 Agent CLI，每个都带着自己角色的指令启动。默认只有实现者拥有自己的 Git worktree 和分支。
+- **你**只和自己的 Agent 对话。
+- **你的 Agent，作为主座加入**：你喜欢的任何 harness，带着它原本的界面。`foil seat join lead` 让它成为舰队的主座，一个没有窗口的席位。它规划、派人、整合，有问题就在自己的对话里问你。它用 `foil mail wait` 接收舰队的消息。运筹从不启动它，也从不往它里面打字。
+- **foil**：就是这个命令行工具。它在 tmux 里启动席位。`foil send` 写成一份邮件文件，并提醒那个收件人。`foil post` 写成一份房间文件，并提醒该房间的成员，以及用 `@名字` 点到的席位；最后一份文件是 decline 的成员不再被提醒。主座开房间、指定和调整成员、关闭房间；工作席位只回复。运筹在 tmux 里启动的主座用 `foil send user` 回复你，你用 `foil mail list` 或 `foil mail wait` 读取。正文不会被打进窗口。两者都等待 200ms，然后发送一次 Enter。它自己不跑守护进程，也从不解读席位屏幕上显示的内容。`foil view` 是一个可选的只读网页，在浏览器里看。
+- **实现者、审查者**：在 tmux 窗口里无界面运行的 Agent CLI，每个都带着自己角色的指令启动。默认只有实现者拥有自己的 Git worktree 和分支。
 - **看板**：邮件、房间线程、笔记和 `status.md`，都是普通文件，放在 `foil init` 报告打印的项目目录里。这个目录在仓库之外。席位用 `foil mail` 读邮件，用 `foil board` 读板上的其他文件，包括房间线程。
 
 ## 尽量不碍事的设计
 
-- **由你自己的 Agent 来管理舰队。** 你不需要操作仪表盘，也不用亲手把 Agent 连在一起。你只要告诉自己常用的那个 Agent 想做什么，用哪个界面都行，只要它能在你的仓库里执行命令。它按一份技能文件行事：启动主座、查看进展、转达问题。
+- **由你自己的 Agent 来带领舰队。** 你不需要操作仪表盘，也不用亲手把 Agent 连在一起。你只要告诉自己常用的那个 Agent 想做什么，用哪个界面都行，只要它能在你的仓库里执行命令。它作为主座加入，安排人手，有问题直接问你。
 - **每个 CLI 都按原样使用。** 运筹用每个 CLI 自己公开的命令行参数启动它，并用你会用的方式和它交流：往它的窗口里打一行短短的提醒，消息本身放在文件里。它从不读屏幕去猜 Agent 在做什么，所以 CLI 升级很少会让它失效；接入新的 CLI 只需要一个小小的预设文件，不用写代码。
 - **有 tmux 的地方就能跑。** 一个命令行工具，自己没有守护进程，另有一个可选的只读网页，可以在 Linux 或 macOS 上运行，本机或通过 SSH 连到远程机器都行。关掉终端，舰队照样工作；用 tmux 重新连上即可。
 - **没有暗箱。** 邮件、任务、状态和经验都是普通文件，工作成果落在普通的 Git 分支上。你可以直接阅读、搜索或修改其中任何一项。它们经得住 tmux 会话被杀或机器重启，`foil seat resume` 会把席位重新拉起来。
@@ -93,7 +91,7 @@ flowchart TB
 
 ## 开始使用
 
-你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。信任按每个 harness、每条路径生效。席位的工作树在项目目录里、仓库之外，所以不会沿用仓库的信任。每个席位标签对每个 harness 都要信任一次。只有当提示里显示的路径正好是该席位记录的检出目录时，操作员才会自己清掉这个文件夹信任提示。停在提示上的席位，从外面看就像一个正在工作的席位。登录提示、更新对话框、首次运行对话框、意见征集、命令或工具审批，以及其他任何对话框，都由它报告给你，留给你来回答。全局预设在 `init` 之前就算数。其他 CLI 用 `<root>/harnesses.toml` 或 `<root>/harnesses/<id>.toml` 里的一个小预设文件接入。
+你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。信任按每个 harness、每条路径生效。席位的工作树在项目目录里、仓库之外，所以不会沿用仓库的信任。每个席位标签对每个 harness 都要信任一次。只有当提示里显示的路径正好是该席位记录的检出目录时，作为主座加入的 Agent 才会自己清掉这个文件夹信任提示。停在提示上的席位，从外面看就像一个正在工作的席位。登录提示、更新对话框、首次运行对话框、意见征集、命令或工具审批，以及其他任何对话框，都由它报告给你，留给你来回答。全局预设在 `init` 之前就算数。其他 CLI 用 `<root>/harnesses.toml` 或 `<root>/harnesses/<id>.toml` 里的一个小预设文件接入。
 
 人要做的只有一句话。在仓库里，把它交给你已经在用的编程 Agent：
 
@@ -101,28 +99,22 @@ flowchart TB
 Install Foil from https://github.com/TiantianFlow/foil, onboard this repository with it, and start a fleet. My goal: <goal>.
 ```
 
-要从 0.4 升到 0.5.4，在两个目标之间做，不要恢复 0.4 启动的席位。`foil init` 会在 `fleets/main/` 里还没有对应目录、或目录是空的时候，把项目根上的 `board/` 和 `run/` 移进去。它不读取 `templates/<role>.toml`。`init` 把每个还没有的默认角色写进 `<root>/roles.toml`，并在 `<root>/mapping.toml` 里为每个还没有的角色写一行映射。它不写项目里的 `roles.toml`、`mapping.toml` 或 `harnesses.toml`，并且删掉这些路径。新写的清单是 `permission = "auto"`，并且不写 `model`。`memory/` 里的教训和席位工作树都留着。`FOIL_FLEET` 默认是 `main`。要在两个目标之间更新，顺序是先停掉、再升级、最后 `foil init`：目标完成后运行 `foil seat kill --all`，再运行一次安装命令，然后在每个项目里运行 `foil init`，再启动主座。还留着 0.3.x 仓库内 `.foil/` 的项目，要在运行安装命令之前用那个旧的 `foil` 停掉。tmux 窗口已经不在的过期席位同样算在内。如果 `PATH` 上已经没有那个旧的 `foil`，就在旁边安装 0.3.4，这不会替换当前的 `foil`：`UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。用 pipx 则是：`PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。那些席位还在时不要运行 `foil init`，也不要把那个目录挪走。上一个目标留在报告打印的项目目录里的 `board/status.md` 已经写着 `state: done`，所以启动前先记下它的 `updated` 行，等它变化。`foil seat kill --all` 之后两种情况都可能出现，所以要检查：运行 `tmux ls`。如果列出了任何会话，预设里点名的 `env` 变量来自该服务器，启动前用 `tmux set-environment -g NAME VALUE` 设置。如果它说没有服务器在运行，下一次启动会从你的 shell 拉起服务器。
+要从 0.4 升到 0.5.4，在两个目标之间做，不要恢复 0.4 启动的席位。`foil init` 会在 `fleets/main/` 里还没有对应目录、或目录是空的时候，把项目根上的 `board/` 和 `run/` 移进去。它不读取 `templates/<role>.toml`。`init` 把每个还没有的默认角色写进 `<root>/roles.toml`，并在 `<root>/mapping.toml` 里为每个还没有的角色写一行映射。它不写项目里的 `roles.toml`、`mapping.toml` 或 `harnesses.toml`，并且删掉这些路径。新写的清单是 `permission = "auto"`，并且不写 `model`。`memory/` 里的教训和席位工作树都留着。`FOIL_FLEET` 默认是 `main`。要在两个目标之间更新，顺序是先停掉、再升级、最后 `foil init`：目标完成后运行 `foil seat kill --all` 和 `foil seat leave`，再运行一次安装命令，然后在每个项目里运行 `foil init`，再重新加入。还留着 0.3.x 仓库内 `.foil/` 的项目，要在运行安装命令之前用那个旧的 `foil` 停掉。tmux 窗口已经不在的过期席位同样算在内。如果 `PATH` 上已经没有那个旧的 `foil`，就在旁边安装 0.3.4，这不会替换当前的 `foil`：`UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。用 pipx 则是：`PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`，然后运行 `DIR/bin/foil seat kill --all`。那些席位还在时不要运行 `foil init`，也不要把那个目录挪走。上一个目标留在报告打印的项目目录里的 `board/status.md` 已经写着 `state: done`，所以下一个目标开始前先记下它的 `updated` 行，等它变化。`foil seat kill --all` 之后两种情况都可能出现，所以要检查：运行 `tmux ls`。如果列出了任何会话，预设里点名的 `env` 变量来自该服务器，启动前用 `tmux set-environment -g NAME VALUE` 设置。如果它说没有服务器在运行，下一次启动会从你的 shell 拉起服务器。
 
-- Agent 安装运筹并运行 `foil init`。如果命令打印 `foil: no harness installed`，它什么都没写。先安装上面的某个 CLI，再运行一次 `foil init`。
+- Agent 把 `foil` 设为在沙箱外、不经提示运行，并让自己的文件工具只能写这个舰队的看板目录，存储里的其他目录都不行（这是一次性设置，由你批准）。`tmux` 不这样放行，所以清掉席位文件夹信任提示的那一次按键会先问你。`foil mail wait --wake` 只运行全局或内置预设里的命令。启动席位时仍会运行项目目录里 harness 文件指定的命令；那个文件在看板目录之外，技能文件也要求 Agent 不要写它。然后安装运筹并运行 `foil init`。如果命令打印 `foil: no harness installed`，它什么都没写。先安装上面的某个 CLI，再运行一次 `foil init`。
 - 它读报告，运行 `foil roster list`，并请你把每个 harness id 运行一次，接受它的更新、首次运行和意见征集对话框，或者请你确认已经完成。每个席位检出目录的文件夹信任提示，由它自己清掉。它用 `foil roster` 设置每个模板的 harness 列表和 `permission`。共用清单是 `<root>/harnesses.toml`、`<root>/roles.toml` 和 `<root>/mapping.toml`。`init` 不写项目里的 `roles.toml`、`mapping.toml` 或 `harnesses.toml`，并且删掉这些路径。`init` 为每个角色写入一条映射，并且 `permission = "auto"`。每个舰队共用这三份清单。`FOIL_FLEET` 选择舰队，默认是 `main`。`roster update ROLE harness=ID/MODEL,ID/MODEL` 一次设置角色的整个列表，`model` 只改只有一项的列表。在舰队里，两者都改写该舰队的 `overrides.toml`，下一次启动会带上它。角色每启动一次就取下一项，列表改过之后从第一项重新开始。只把主座改成 `auto` 不会让工人席位无人值守。限制一节说明 `auto` 仍可能让席位停在审批提示上。
-- 它做首次运行检查，然后把目标发出去。
-- 它自己从不做项目本身的工作。
+- 它先提交或收起自己手上未完成的改动，因为工人席位从 `HEAD` 开分支。
+- 它运行 `foil seat join lead`，读简报里点名的指令文件。从这时起它就是主座。它自己不实现目标。你在目标之外交给它的工作，归它自己。
+- 它用 `foil mail wait` 接收舰队的消息，harness 允许时放在后台运行。
+- 你结束时，或它的上下文快满时，它写好 `board/handoffs/lead.md`，再运行 `foil seat leave`。
 
-没有拿到那句话就启动的 Agent，改用 `init` 打印的指针。当 `<root>/skills/operator.md` 存在时，那一行是：
+没有拿到那句话就启动的 Agent，改用 `init` 打印的指针：
 
 ```text
-Read <root>/skills/operator.md and follow it. My goal: <goal>.
+Run foil seat join lead, then read the file it names. My goal: <goal>.
 ```
 
-否则指针是打包的 `operator.md`。
-
-持久安装操作员技能是可选的。把它复制到该 harness 发现技能的位置，放在用户级，这样它不会出现在 `git status` 里。下面的路径都没有对照该 harness 的当前文档核对过。
-
-| Harness | 安装路径 | 已核对 |
-|---|---|---|
-| 任意 | 上面的指针行 | 必需；不是按 harness 安装 |
-| Claude Code | `~/.claude/skills/foil-operator/SKILL.md` | 否 |
-| grok、codex、opencode、gemini | 没有公布的路径 | 否 |
+你的 harness 里不用安装任何东西。技能随加入时写出的指令文件一起到达。
 
 ### 手动操作
 
@@ -134,25 +126,20 @@ cd your-repo
 foil init
 ```
 
-读报告，用 `foil roster` 设置那三个模板。如果项目目录里已经有 `board/status.md`，先记下它的 `updated`。然后只启动一次主座：
+读报告，用 `foil roster` 设置那三个模板。没有可以加入的 Agent 会话时，运筹在 tmux 里启动一个主座。如果项目目录里已经有 `board/status.md`，先记下它的 `updated`。然后带着目标启动主座：
 
 ```sh
-foil seat spawn lead --task "Write board/status.md with state: done"
-```
-
-当项目目录里的 `board/status.md` 出现 `state: done`，把目标发给这个主座。如果这个文件本来就在，只有 `updated` 变了才算通过。不要再启动一次主座。主座的第一条提示已经带上了它的指令，所以消息里只放目标或回答。
-
-```sh
-foil send lead "the goal"
+foil seat spawn lead --task "the goal"
+foil mail wait
 foil seat list
 foil seat peek lead
 ```
 
-项目目录里的 `board/status.md` 是主座自己的报告，也会列出要问你的问题；用 `foil send lead "..."` 回答。它带有一份清单，写明已经完成的和还剩下的，操作员在每次查看时、以及你问起时，报告这份清单。结束时，`foil seat kill --all` 会停掉每个席位，分支和 worktree 都会保留。被停掉的席位名字会一直保留，直到 `foil seat archive NAME`。这条命令释放名字，不删除 worktree、分支、邮箱或未提交的工作。`foil seat list --archived` 显示保存的 worktree 路径。留下的席位工作树在 `<项目目录>/worktrees/<label>`。干净的用 `git worktree remove <path>` 删掉。不干净的需要 `--force`，那会丢掉未提交的工作。
+主座的第一条提示已经带上了它的指令，所以消息里只放目标或回答。主座给你发邮件时，`foil mail wait` 就会返回，但那封邮件仍算新的，直到 `foil mail wait --timeout 0` 再打印一次并把它记为已看。项目目录里的 `board/status.md` 是主座自己的报告，也会列出要问你的问题；用 `foil send lead "..."` 回答。它带有一份清单，写明已经完成的和还剩下的。如果这个文件本来就在，只有 `updated` 变了，目标才算完成。结束时，`foil seat kill --all` 会停掉每个席位，分支和 worktree 都会保留。被停掉的席位名字会一直保留，直到 `foil seat archive NAME`。这条命令释放名字，不删除 worktree、分支、邮箱或未提交的工作。`foil seat list --archived` 显示保存的 worktree 路径。留下的席位工作树在 `<项目目录>/worktrees/<label>`。干净的用 `git worktree remove <path>` 删掉。不干净的需要 `--force`，那会丢掉未提交的工作。
 
 ### 如果什么都没发生
 
-运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在对话框上。路径正好是该席位检出目录的文件夹信任提示，由操作员清掉。其他对话框，比如登录提示、更新对话框、首次运行对话框、意见征集或命令审批，都由它报告给你，留给你来回答。那些要你在窗口里处理（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入）。主座问你的问题不算对话框：操作员会转达给你，只有在你已经答过、或你的目标已经说清楚时，才自己回答。CLI 在窗格里完成不了的登录，先手动登录一次，然后 `foil seat kill lead`，再重新启动主座。如果 `foil seat list` 显示这个主座是 `dead`，`foil seat kill lead` 会清掉它。等它消失之后再做一次首次运行检查。
+运行 `foil seat peek lead`；刚启动或刚恢复的席位也这样看一眼。一个没有进展的席位，通常停在对话框上。路径正好是该席位检出目录的文件夹信任提示，由加入的主座清掉。其他对话框，比如登录提示、更新对话框、首次运行对话框、意见征集或命令审批，都由它报告给你，留给你来回答。那些要你在窗口里处理（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入）。CLI 在窗格里完成不了的登录，先手动登录一次，然后由主座停掉那个席位并重新启动它。主座等待期间死掉的席位，会变成一封来自 `foil`、写明席位名字的邮件。
 
 ## 在浏览器里查看
 
@@ -169,7 +156,7 @@ foil view --port 8790
 
 ### 让查看器一直运行
 
-运筹没有守护进程模式。macOS 上的 launchd 和 Linux 上的 `systemd --user` 可以原样运行 `foil view`，登录时启动它，失败时重启它。你的操作员 Agent 可以替你填好这些文件。一个服务就覆盖这台机器上的所有项目。给它一个 7460-7509 之外的端口，这样临时运行的 `foil view` 不会占走它。服务运行期间，这台机器上的每个账号都能读到这个网页，只要你还登录着（见“限制”），所以只在不与他人共用的机器上设置它。把每个大写占位符换掉：
+运筹没有守护进程模式。macOS 上的 launchd 和 Linux 上的 `systemd --user` 可以原样运行 `foil view`，登录时启动它，失败时重启它。你的 Agent 可以替你填好这些文件。一个服务就覆盖这台机器上的所有项目。给它一个 7460-7509 之外的端口，这样临时运行的 `foil view` 不会占走它。服务运行期间，这台机器上的每个账号都能读到这个网页，只要你还登录着（见“限制”），所以只在不与他人共用的机器上设置它。把每个大写占位符换掉：
 
 - `FOIL`：`command -v foil` 打印的绝对路径。
 - `PORT`：端口。
@@ -237,7 +224,7 @@ journalctl --user -u foil-view
 
 模板默认是 `permission = "auto"`。省略 `permission` 时，席位无人值守地运行。把 `permission` 设成 `"ask"` 是模板重新选择提示的方式：那个席位会停在第一个审批提示上。把 `permission` 设成 `auto` 会插入该预设的自动批准参数。对 Claude，这些参数是 `--permission-mode` 和 `auto`。Claude Code 的 auto 模式仍可能在某些命令前询问，所以 auto 席位可能停在审批提示上。要看一眼新席位。那个席位仍然是你。
 
-运筹从不解读窗口里的内容。`foil seat peek` 打印 tmux 原样捕获的文本，`foil seat list` 报告 `alive`、`dead` 或 `killed`，依据是席位的窗口还在不在，而不是屏幕上显示了什么。Agent 是否卡住、是否做完，由它们自己写在看板文件里。运筹不会抓取窗格，不会判断对话框是否出现，也不会发送按键。
+运筹从不解读窗口里的内容。`foil seat peek` 打印 tmux 原样捕获的文本，`foil seat list` 报告 `alive`、`dead` 或 `killed`，依据是席位的窗口还在不在（你自己的 Agent 则是 `joined`），而不是屏幕上显示了什么。Agent 是否卡住、是否做完，由它们自己写在看板文件里。运筹不会抓取窗格，不会判断对话框是否出现，也不会发送按键。
 
 `foil view` 没有登录。你的项目文件夹只有你能读，但 `127.0.0.1` 上的端口对这台机器上的每个账号都开放，所以查看器运行期间，任何登录这台机器的人都能读到它，包括每个项目的窗格文本和看板文件。它会尽力隐藏启动命令里看起来像凭据的参数。在别人也会登录的机器上，用完就停掉它。tailnet 检查只保护 tailnet 名称：这台机器上的账号仍然可以在 `127.0.0.1` 上读到这个页面。
 
@@ -247,6 +234,6 @@ journalctl --user -u foil-view
 
 - [docs/demo.zh-CN.md](docs/demo.zh-CN.md) — 一次真实运行，从 `foil init` 到修复被合并
 - [docs/architecture.md](docs/architecture.md) — 组件、数据流和模块边界
-- [skills/operator.md](skills/operator.md)、[skills/lead.md](skills/lead.md)、[skills/worker.md](skills/worker.md) — 每个角色运行哪些命令
+- [skills/joined.md](skills/joined.md)、[skills/lead.md](skills/lead.md)、[skills/worker.md](skills/worker.md) — 每个角色运行哪些命令
 - [CONTRIBUTING.md](CONTRIBUTING.md) — 搭建与检查
 - [CHANGELOG.md](CHANGELOG.md) — 版本历史

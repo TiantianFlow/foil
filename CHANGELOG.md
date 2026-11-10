@@ -4,15 +4,25 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
-### Changed
+### Breaking
 
-- The lead skill says nobody reads its pane: a question for the human goes in `status.md` `questions`, with `state: blocked` when the goal waits on it, and a `foil send user` line points at it. The lead and the workers do not use their harness's own prompt for asking the person at the keyboard. (#91)
-- The operator skill treats a question from the lead, in `status.md`, in mail, or in its pane, as a question to relay, not a seat dialog. It answers alone only when the human already answered it or the goal settles it, and says so. Before it sends an answer to a lead whose pane shows a question prompt, it sends one Escape to that window. (#91)
-- The built-in `claude` preset launches and resumes with `--disallowedTools AskUserQuestion`, and the `opencode` preset denies its `question` tool. (#91)
+- **The operator is gone. Your own agent joins the fleet as its lead.** `foil seat join lead` makes the calling session the `lead` seat, with no window, and prints a short brief that names its instruction file and the fleet's board folder, the only folder in the store its file tools may write without a prompt. That file holds the lead skill in its joined form, without the launched lead's paragraphs, and the `joined` skill without its setup sections. The joined lead re-reads it after its harness compacts the conversation, not on every wake. The `operator` skill, its `Skill:` line in the `init` report, and the relay between you, an operator, and a launched lead are removed. The `init` pointer line is now `Run foil seat join lead, then read the file it names. My goal: <goal>.` A lead Foil launches in tmux still works, for running without an agent session. (#92)
+- Outside the fleet, `foil send`, `foil post`, and `foil mail list` act as `lead` while a lead is joined, and as `user` otherwise. A joined lead asks you in its own chat; `foil send user` from it prints `foil: a joined lead asks in its own chat`. `foil` is a reserved seat name. (#92)
 
 ### Added
 
+- `foil seat leave` ends the join once `board/handoffs/lead.md` is written, and stores the lead as `killed`, so a later join or spawn may take the seat. `seat kill`, `resume`, and `peek` on a joined lead say it has no pane, and `seat kill --all` leaves it. (#92)
+- `foil mail wait [--timeout SECONDS] [--wake]` blocks until the caller's mailbox has something new: mail, or a room post that woke it. It prints the new items in the `mail list` format. Only `--timeout 0` marks them seen, so a wake the harness drops still shows on the next command. A seat that dies, including one that dies right after its spawn, becomes mail from `foil` once. A wake text names senders from file names `foil` could have written. `--wake` runs the joined lead's harness preset `wake` command once, without a shell, with the recorded session id and a line naming each sender and path, for a harness that does not resume on a finished background command. The preset is read from the global layer and the package only. The built-in `codex` preset has one. (#92)
+- While a lead is joined, every other `foil` command run outside the fleet, except `foil view`, ends with `foil: N new for lead. Run foil mail wait --timeout 0.` on stderr when something is new. (#92)
+- `foil seat list` and `foil view` show the joined lead as `joined`, with the running seats. (#92)
 - A harness preset may set fixed, non-secret environment values with `set_env`. (#91)
+- A harness preset may name a `wake` argv with `{session_id}` and `{text}`, which `foil mail wait --wake` runs for a joined lead. (#92)
+
+### Changed
+
+- The lead skill says nobody reads its pane: a question for the human goes in `status.md` `questions`, with `state: blocked` when the goal waits on it, and a `foil send user` line points at it. The lead and the workers do not use their harness's own prompt for asking the person at the keyboard. (#91)
+- The built-in `claude` preset launches and resumes with `--disallowedTools AskUserQuestion`, and the `opencode` preset denies its `question` tool. (#91)
+- `foil mail list` lists only files whose name `foil send` could have written, and takes the time and the sender from that name, not from the file's front matter. (#92)
 
 ## [0.6.3] - 2026-10-31
 

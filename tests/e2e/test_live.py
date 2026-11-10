@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
 
+from foil import __version__
 from foil.cli import main
 from foil.project import foil_root
 from foil.store import load_registry
@@ -40,10 +42,16 @@ _TASK_1 = (
     "Spawn implementer-1 to run sh fix.sh, then reviewer-1 to run sh review.sh. "
     "Merge foil/implementer-1 and write board/status.md containing the line state: done."
 )
-_TASK_4 = (
-    "ask the operator. Follow TASK.md. "
-    "Write board/status.md containing the line: Which color should the status use? "
+_TASK_4A = (
+    "ask the human. Follow TASK.md. "
+    "Write board/status.md listing the question: Which color should the status use? "
+    "Then run foil send user with one line that says the question is in board/status.md. "
     "After mail that says use blue, write board/status.md containing the line: The answer is blue."
+)
+_TASK_4B = (
+    "pick a color. Follow TASK.md. Write board/results/t1.md containing the line "
+    "The color is blue. Then run foil send lead with one line that says the result is ready "
+    "and includes the output of foil --version."
 )
 _TASK_5 = (
     "staff a worker. Follow TASK.md. "
@@ -119,15 +127,20 @@ def test_scenario_3_live(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
         _close(repo)
 
 
-def test_scenario_4_live(
+def test_scenario_4a_live(
     tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = _prepare(tmp_path, "scenario-4", monkeypatch, fake=False)
+    for variable in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "GROK_SESSION_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    repo = _prepare(tmp_path, "scenario-4a", monkeypatch, fake=False)
     _set_auto(repo)
     try:
         with _live_failure_panes(repo):
-            assert main(["seat", "spawn", "lead", "--task", _TASK_4]) == 0
-            _wait(repo, lambda: "Which color" in _status(repo), _TIMEOUT)
+            assert main(["seat", "spawn", "lead", "--task", _TASK_4A]) == 0
+            capsys.readouterr()
+            assert main(["mail", "wait", "--timeout", str(int(_TIMEOUT))]) == 0
+            assert " lead " in capsys.readouterr().out
+            assert "Which color" in _status(repo)
             assert main(["send", "lead", "use blue"]) == 0
             _wait(repo, lambda: "The answer is blue." in _status(repo), _TIMEOUT)
             window = load_registry(repo)["seats"]["lead"]["window_id"]
@@ -140,6 +153,41 @@ def test_scenario_4_live(
             capsys.readouterr()
             assert main(["seat", "peek", "lead"]) == 0
             assert capsys.readouterr().out == captured.stdout
+    finally:
+        _close(repo)
+
+
+def test_scenario_4b_live(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for variable in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "GROK_SESSION_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    repo = _prepare(tmp_path, "scenario-4b", monkeypatch, fake=False)
+    _set_auto(repo)
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    try:
+        with _live_failure_panes(repo):
+            monkeypatch.setattr("foil.joined.DEAD_EVERY", 0)
+            assert main(["seat", "join", "lead"]) == 0
+            assert main(["seat", "spawn", "implementer", "--task", _TASK_4B]) == 0
+            capsys.readouterr()
+            assert main(["mail", "wait", "--timeout", str(int(_TIMEOUT))]) == 0
+            waited = capsys.readouterr().out
+            assert " implementer-1 " in waited and " foil " not in waited
+            mailed = Path(waited.splitlines()[-1].split()[-1]).read_text(encoding="utf-8")
+            assert f"foil {__version__}" in mailed
+            result = board / "results" / "t1.md"
+            assert "The color is blue." in result.read_text(encoding="utf-8")
+            assert main(["mail", "wait", "--timeout", "0"]) == 0
+            capsys.readouterr()
+            window = load_registry(repo)["seats"]["implementer-1"]["window_id"]
+            subprocess.run(["tmux", "kill-window", "-t", window], check=True)
+            assert main(["mail", "wait", "--timeout", "30"]) == 0
+            died = capsys.readouterr().out.splitlines()
+            assert len(died) == 1 and " foil " in died[0]
+            (board / "handoffs").mkdir(parents=True, exist_ok=True)
+            (board / "handoffs" / "lead.md").write_text("t1 is done.\n", encoding="utf-8")
+            assert main(["seat", "leave"]) == 0
     finally:
         _close(repo)
 

@@ -551,6 +551,10 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
         skill = "lead.md" if seat == "lead" else "worker.md"
         packaged = Path(__file__).resolve().parents[1] / "src" / "foil" / "defaults" / "skills"
         skill_text = (packaged / skill).read_text(encoding="utf-8").strip()
+        if seat == "lead":
+            from foil.lifecycle import _for_lead
+
+            skill_text = _for_lead(skill_text, joined=False)
         assert skill_text in text
         reread = (
             foil_root(repo) / "fleets" / "main" / "run" / "instructions" / f"{seat}.md"

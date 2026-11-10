@@ -16,11 +16,13 @@ from foil.project import foil_root, store_root
 from foil.store import SAFE_ID, fleet_dir, scan, write_bytes
 
 _PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}")
+WAKE_PLACEHOLDERS = ("{session_id}", "{text}")
 _PRESET_KEYS = {
     "id",
     "command",
     "permission",
     "resume",
+    "wake",
     "session_id",
     "env",
     "set_env",
@@ -36,6 +38,7 @@ _PRESET_SAME = (
     "command",
     "permission",
     "resume",
+    "wake",
     "session_id",
     "env",
     "set_env",
@@ -65,10 +68,12 @@ def template_permission(text: str) -> Any:
     return _permission_field(_load_toml(text, "template"))
 
 
-def _strings(value: Any, label: str) -> list[str]:
+def _strings(
+    value: Any, label: str, placeholders: tuple[str, ...] = _PLACEHOLDERS
+) -> list[str]:
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         _fail(label)
-    if any(("{" in item or "}" in item) and item not in _PLACEHOLDERS for item in value):
+    if any(("{" in item or "}" in item) and item not in placeholders for item in value):
         _fail(label)
     return list(value)
 
@@ -103,6 +108,9 @@ def _preset_from_table(raw: dict[str, Any]) -> dict[str, Any]:
     if not command:
         _fail("preset")
     resume = raw.get("resume")
+    wake = raw.get("wake")
+    if wake is not None and not _strings(wake, "preset", WAKE_PLACEHOLDERS):
+        _fail("preset")
     env = _strings(raw.get("env", []), "preset")
     assert_no_secret(env)
     set_env = _set_env(raw.get("set_env", {}), env)
@@ -119,6 +127,7 @@ def _preset_from_table(raw: dict[str, Any]) -> dict[str, Any]:
             "auto": _strings(permission.get("auto", []), "preset"),
         },
         "resume": None if resume is None else _strings(resume, "preset"),
+        "wake": None if wake is None else list(wake),
         "session_id": raw["session_id"],
         "env": env,
         "set_env": set_env,
@@ -235,12 +244,13 @@ def _preset_on(base: Path, harness_id: str) -> dict[str, Any] | None:
         return None
 
 
-def load_preset(toplevel: Path, harness_id: str) -> dict[str, Any]:
+def load_preset(toplevel: Path, harness_id: str, *, global_only: bool = False) -> dict[str, Any]:
     if not SAFE_ID.fullmatch(harness_id):
         raise FoilError(f"foil: unknown harness '{shown(harness_id)}'")
     # File beats list inside one layer. A higher list beats a lower file.
-    # The init check reads the global layer and the package, not a project file.
-    layers = (store_root(),) if _init_check.get() else _layer_dirs(toplevel)
+    # The init check and the wake command read the global layer and the package, not a
+    # project file, so a file in the project folder cannot change what runs.
+    layers = (store_root(),) if global_only or _init_check.get() else _layer_dirs(toplevel)
     for base in reversed(layers):
         found = _preset_on(base, harness_id)
         if found is not None:

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
+from foil.board import mail_name
 from foil.board_ops import board_root, inside, read_text, split_front_matter
 from foil.errors import FoilError
-from foil.store import SAFE_ID
+from foil.store import actor
 
 
 def _fields(text: str, shown: str) -> tuple[dict[str, str | list[str]], str]:
@@ -41,10 +41,8 @@ def mail_read(path_text: str, *, as_json: bool = False) -> None:
 
 
 def mail_list(*, as_json: bool = False) -> None:
-    # Outside the fleet this is the human's mailbox, which only the lead writes.
-    seat = os.environ.get("FOIL_SEAT_ID", "").strip() or "user"
-    if SAFE_ID.fullmatch(seat) is None:
-        raise FoilError("foil: invalid seat")
+    # Outside the fleet this is the joined lead's mailbox, or the human's.
+    seat = actor()
     mail_dir = board_root() / "mail"
     mails = []
     # A symlinked mail root resolves outside the board. Do not follow it.
@@ -57,7 +55,8 @@ def mail_list(*, as_json: bool = False) -> None:
             and directory.resolve().is_relative_to(mail_root)
         ):
             for path in directory.glob("*.md"):
-                if path.is_symlink() or not path.is_file():
+                named = mail_name(path.name)
+                if named is None or path.is_symlink() or not path.is_file():
                     continue
                 resolved = path.resolve()
                 if not resolved.is_relative_to(mail_root):
@@ -66,14 +65,11 @@ def mail_list(*, as_json: bool = False) -> None:
                     fields, _ = _fields(path.read_text(encoding="utf-8"), str(path))
                 except (OSError, UnicodeDecodeError, FoilError):
                     continue
-                mails.append(
-                    {
-                        "from": fields.get("from", ""),
-                        "to": fields.get("to", ""),
-                        "time": fields.get("time", ""),
-                        "path": str(resolved),
-                    }
-                )
+                if fields.get("contract") != "mail/v1":
+                    continue
+                # Not from front matter: a hand-written file could choose it (F30).
+                when, sender = named
+                mails.append({"from": sender, "to": seat, "time": when, "path": str(resolved)})
     mails.sort(key=lambda m: (m["time"], m["path"]), reverse=True)
     if as_json:
         print(json.dumps(mails))

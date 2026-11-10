@@ -52,7 +52,7 @@ class CommandSpec:
     commands: dict[str, CommandSpec] | None = None
 
 
-# docs/requirements.md §6.1 — nine top-level commands, twenty-three actions.
+# docs/requirements.md §6.1 — nine top-level commands, twenty-six actions.
 SECTION_6 = CommandSpec(
     flags=(FlagSpec("--version"),),
     commands={
@@ -79,6 +79,15 @@ SECTION_6 = CommandSpec(
                     flags=(FlagSpec("--lines", metavar="N", default=40),),
                     positionals=(PositionalSpec("NAME"),),
                 ),
+                "join": CommandSpec(
+                    flags=(
+                        FlagSpec("--harness", metavar="ID"),
+                        FlagSpec("--session", metavar="ID"),
+                        FlagSpec("--take"),
+                    ),
+                    positionals=(PositionalSpec("lead"),),
+                ),
+                "leave": CommandSpec(),
             }
         ),
         "send": CommandSpec(
@@ -103,6 +112,12 @@ SECTION_6 = CommandSpec(
                     positionals=(PositionalSpec("PATH"),),
                 ),
                 "list": CommandSpec(flags=(FlagSpec("--json"),)),
+                "wait": CommandSpec(
+                    flags=(
+                        FlagSpec("--timeout", metavar="SECONDS", default=1800),
+                        FlagSpec("--wake"),
+                    ),
+                ),
             }
         ),
         "board": CommandSpec(
@@ -169,10 +184,13 @@ SECTION_6_SYNOPSES = (
     "foil seat resume [NAME]",
     "foil seat list",
     "foil seat peek NAME",
+    "foil seat join lead",
+    "foil seat leave",
     "foil send TO TEXT",
     "foil post [TEXT]",
     "foil mail read PATH",
     "foil mail list",
+    "foil mail wait",
     "foil board read PATH",
     "foil board list PATTERN",
     "foil memory add TEXT",
@@ -314,7 +332,7 @@ def test_section_6_synopses_are_the_requirements_oracle() -> None:
     text = REQUIREMENTS.read_text(encoding="utf-8")
     missing = [synopsis for synopsis in SECTION_6_SYNOPSES if f"`{synopsis}`" not in text]
     assert missing == [], "section 6.1 is missing synopses:\n" + "\n".join(missing)
-    assert "twenty-three actions" in text
+    assert "twenty-six actions" in text
     assert "nine top-level commands" in text
     list_row = next(line for line in text.splitlines() if line.startswith("| `foil seat list`"))
     assert "--json" in list_row and "--archived" in list_row

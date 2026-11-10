@@ -14,6 +14,9 @@ def _harness_stubs(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
     monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
+    # A suite run inside an agent harness must not join as that session.
+    for name in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "GROK_SESSION_ID"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("FOIL_HOME", str(tmp_path_factory.mktemp("foil-home")))
     bindir = tmp_path_factory.mktemp("harnesses")
     for name in _HARNESSES:

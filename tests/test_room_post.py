@@ -1110,22 +1110,12 @@ def test_f24_instruction_offers_unanswered_room_threads(
     assert "foil post" in skill_text["worker"]
 
 
-def test_s8_operator_skill_reaches_every_alive_seat() -> None:
-    text = (Path(__file__).resolve().parents[1] / "skills" / "operator.md").read_text(
+def test_s8_lead_skill_says_a_post_without_members_reaches_every_alive_seat() -> None:
+    text = (Path(__file__).resolve().parents[1] / "skills" / "lead.md").read_text(
         encoding="utf-8"
     )
-    assert (
-        "`foil send lead` is the goal, the human's answer, and a nudge when the lead looks stuck."
-        in text
-    )
-    assert "Ordinary human answers stay `foil send lead`." in text
-    assert (
-        "`foil post` is for words the human wants every alive seat to see, "
-        "such as a question for the whole fleet."
-    ) in text
-    assert "You are outside the fleet, so that post reaches every alive seat." in text
-    assert "A decline writes a file and types nothing." in text
-    assert "A note wakes nobody." in text
+    assert "Without `--members`, its members are every alive seat at that moment." in text
+    assert "A decline writes the line `decline` and types nothing." in text
 
 
 def test_f24_a_later_launch_is_not_a_second_nudge_and_writes_no_ledger(
