@@ -1,9 +1,9 @@
-# Ask the operator
+# Report to a joined lead
 
-Write `.foil/board/status.md` so it contains this line:
+The lead is the test itself, joined with `foil seat join lead`.
 
-Which color should the status use?
+When mail arrives that contains `pick a color`, write `board/results/t1.md` so it contains this line:
 
-When mail arrives that contains `use blue`, write `.foil/board/status.md` so it contains this line:
+The color is blue.
 
-The answer is blue.
+Then send the lead one line that says the result is ready.

@@ -66,11 +66,11 @@ def _message(sender: str, to: str, when: str, text: str) -> str:
     )
 
 
-def write_mail(toplevel: Path, to: str, text: str) -> Path:
+def write_mail(toplevel: Path, to: str, text: str, *, sender: str | None = None) -> Path:
     if not SAFE_ID.fullmatch(to):
         raise FoilError(f"foil: unknown seat '{shown(to)}'")
     scan(text)
-    sender = actor()
+    sender = sender or actor(toplevel)
     when = datetime.now(UTC)
     rendered = _message(sender, to, when.strftime("%Y-%m-%dT%H:%M:%SZ"), text)
     scan(rendered)
@@ -91,16 +91,19 @@ def write_mail(toplevel: Path, to: str, text: str) -> Path:
 
 
 def send_mail(toplevel: Path, to: str, text: str) -> None:
+    sender = actor(toplevel)
     if to == "user":
-        # The human's mailbox. Only the lead writes it, and it has no pane to nudge.
-        if actor() != "lead":
+        # The human's mailbox. Only a launched lead writes it, and it has no pane to nudge.
+        if sender == "lead" and not os.environ.get("FOIL_SEAT_ID", "").strip():
+            raise FoilError("foil: a joined lead asks in its own chat")
+        if sender != "lead":
             raise FoilError("foil: only the lead may send to user")
-        write_mail(toplevel, to, text)
+        write_mail(toplevel, to, text, sender=sender)
         return
     seat = find_seat(toplevel, to)
     if seat is None:
         raise FoilError(f"foil: unknown seat '{shown(to)}'")
-    path = write_mail(toplevel, to, text)
+    path = write_mail(toplevel, to, text, sender=sender)
     if not seat["window_id"]:
         return
     registry = load_registry(toplevel)
@@ -109,14 +112,9 @@ def send_mail(toplevel: Path, to: str, text: str) -> None:
         to,
         str(registry.get("tmux_session") or ""),
         seat["window_id"],
-        actor(),
+        sender,
         path.resolve(),
     )
-
-
-def _author() -> str | None:
-    seat = os.environ.get("FOIL_SEAT_ID", "").strip()
-    return seat or None
 
 
 def _listing(directory: Path) -> int:
@@ -251,15 +249,19 @@ def _member_list(toplevel: Path, text: str) -> set[str]:
 
 def _wake_names(toplevel: Path, only: set[str] | None = None) -> list[str]:
     registry = load_registry(toplevel)
-    author = _author()
+    author = actor(toplevel)
     fleet = str(registry["fleet_id"])
     session = str(registry.get("tmux_session") or "")
     controller = TmuxController()
     names: list[str] = []
     for name in sorted(registry["seats"]):
-        if (author is not None and name == author) or (only is not None and name not in only):
+        if (name == author and author != "user") or (only is not None and name not in only):
             continue
         seat = registry["seats"][name]
+        # A joined lead has no window. It hears by reading the file (F41).
+        if seat.get("state") == "joined":
+            names.append(name)
+            continue
         # Spawn leaves state empty. Alive is the window check below, the same
         # one mail uses. A stored dead or killed seat is omitted either way.
         if seat.get("state") in {"dead", "killed"}:
@@ -292,13 +294,14 @@ def _fan_out(toplevel: Path, path: Path, planned: list[str]) -> None:
     if not planned:
         return
     registry = load_registry(toplevel)
-    sender = actor()
+    sender = actor(toplevel)
     fleet = str(registry["fleet_id"])
     session = str(registry.get("tmux_session") or "")
     typed = [
         name
         for name in planned
-        if nudge(
+        if registry["seats"][name].get("state") == "joined"
+        or nudge(
             fleet,
             name,
             session,
@@ -387,7 +390,7 @@ def post_room(
     members: str | None = None,
     close: bool = False,
 ) -> None:
-    sender = actor()
+    sender = actor(toplevel)
     if decline:
         if not reply:
             raise FoilError("foil: --decline requires --re")

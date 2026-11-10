@@ -31,19 +31,15 @@ foil init
 ```text
 foil 0.6.3
 ...
-Skill: packaged /opt/foil/foil/defaults/skills/operator.md
 Project folder: /var/foil/projects/your-repo-1a2b3c
-Read /opt/foil/foil/defaults/skills/operator.md and follow it. My goal: <goal>.
+Run foil seat join lead, then read the file it names. My goal: <goal>.
 ```
 
 `foil init` writes that project folder outside the repository and writes
 nothing into the working tree, so `git status` stays clean. The first
 line is the version `foil --version` prints. The report in between
-(trimmed here) names the installed harnesses and what init wrote. A fresh
-init has no `<root>/skills/operator.md`, so the `Skill:` line and the last
-line name the packaged file. When that global file exists, both lines name
-it instead. Paste the last line into your own agent, with your goal in
-place of `<goal>`. The path is the one the report printed.
+(trimmed here) names the installed harnesses and what init wrote. Paste
+the last line into your own agent, with your goal in place of `<goal>`.
 
 ## 2. Choose a harness and a permission for each role
 
@@ -83,13 +79,13 @@ In your own agent (Claude Code, Codex, or any other), in the repository,
 paste the last line from `foil init`, with your goal filled in:
 
 ```text
-Read /opt/foil/foil/defaults/skills/operator.md and follow it. My goal: make the tests pass.
+Run foil seat join lead, then read the file it names. My goal: make the tests pass.
 ```
 
-When `<root>/skills/operator.md` exists, that line names it instead.
-
-That agent becomes the operator. It checks that a lead can start, then
-sends it the goal. To do the same by hand:
+That agent joins as the lead, a seat with no window, and plans the goal in
+your conversation. It hears from the fleet with `foil mail wait`. This
+demo replays the other way in, a lead Foil launches in tmux, which is
+what you type by hand:
 
 ```sh
 foil seat spawn lead --task "Make the tests pass."
@@ -214,15 +210,15 @@ discards uncommitted work.
 ## If nothing happens
 
 Run `foil seat peek lead`. A seat that makes no progress is usually
-stopped on a dialog. The operator clears one kind and reports the others.
+stopped on a dialog. A joined lead clears one kind and reports the others.
 
 - a folder-trust prompt whose path is exactly that seat's recorded
-  checkout: the operator clears it and peeks again to check. A seat
+  checkout: the joined lead clears it and peeks again to check. A seat
   worktree lives outside the repository, so trusting the repository does
   not cover it. Each seat label needs that trust once per harness.
 - anything else, such as a login prompt, an update dialog, a first-run
   dialog, an opt-in, a command approval, or a trust prompt for another
-  path: the operator reports it and leaves it for you to answer in the
+  path: the lead reports it and leaves it for you to answer in the
   window (`tmux ls` lists Foil's session, and `tmux attach` opens it). A
   login the CLI will not finish in the pane is done once by hand, then
   `foil seat kill lead` and spawn the lead again.

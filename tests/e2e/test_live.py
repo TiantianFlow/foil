@@ -20,7 +20,6 @@ from tests.e2e.test_scenarios import (
     _live_failure_panes,
     _prepare,
     _set_auto,
-    _status,
     _wait,
 )
 
@@ -41,9 +40,8 @@ _TASK_1 = (
     "Merge foil/implementer-1 and write board/status.md containing the line state: done."
 )
 _TASK_4 = (
-    "ask the operator. Follow TASK.md. "
-    "Write board/status.md containing the line: Which color should the status use? "
-    "After mail that says use blue, write board/status.md containing the line: The answer is blue."
+    "pick a color. Follow TASK.md. Write board/results/t1.md containing the line "
+    "The color is blue. Then run foil send lead with one line that says the result is ready."
 )
 _TASK_5 = (
     "staff a worker. Follow TASK.md. "
@@ -122,24 +120,23 @@ def test_scenario_3_live(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_scenario_4_live(
     tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    for variable in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "GROK_SESSION_ID"):
+        monkeypatch.delenv(variable, raising=False)
     repo = _prepare(tmp_path, "scenario-4", monkeypatch, fake=False)
     _set_auto(repo)
+    board = foil_root(repo) / "fleets" / "main" / "board"
     try:
         with _live_failure_panes(repo):
-            assert main(["seat", "spawn", "lead", "--task", _TASK_4]) == 0
-            _wait(repo, lambda: "Which color" in _status(repo), _TIMEOUT)
-            assert main(["send", "lead", "use blue"]) == 0
-            _wait(repo, lambda: "The answer is blue." in _status(repo), _TIMEOUT)
-            window = load_registry(repo)["seats"]["lead"]["window_id"]
-            captured = subprocess.run(
-                ["tmux", "capture-pane", "-p", "-t", window, "-S", "-40"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            assert main(["seat", "join", "lead"]) == 0
+            assert main(["seat", "spawn", "implementer", "--task", _TASK_4]) == 0
             capsys.readouterr()
-            assert main(["seat", "peek", "lead"]) == 0
-            assert capsys.readouterr().out == captured.stdout
+            assert main(["mail", "wait", "--timeout", str(int(_TIMEOUT))]) == 0
+            assert " implementer-1 " in capsys.readouterr().out
+            result = board / "results" / "t1.md"
+            assert "The color is blue." in result.read_text(encoding="utf-8")
+            (board / "handoffs").mkdir(parents=True, exist_ok=True)
+            (board / "handoffs" / "lead.md").write_text("t1 is done.\n", encoding="utf-8")
+            assert main(["seat", "leave"]) == 0
     finally:
         _close(repo)
 

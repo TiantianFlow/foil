@@ -1,0 +1,11 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "pick a color"},
+      "do": [
+        {"write": "board/results/t1.md", "text": "The color is blue.\n"},
+        {"send": "lead", "text": "result ready in board/results/t1.md"}
+      ]
+    }
+  ]
+}

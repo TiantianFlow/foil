@@ -204,6 +204,14 @@ def test_tracked_tree_has_no_report_or_inventory_artifacts() -> None:
     assert sorted(leftovers) == []
 
 
+REMOVED_PATHS = {"skills/operator.md", "src/foil/defaults/skills/operator.md"}
+
+
+def _is_history(relative: str) -> bool:
+    plan = re.fullmatch(r"docs/plan-v[\d.]+\.md", relative)
+    return relative == "CHANGELOG.md" or plan is not None
+
+
 def test_tracked_markdown_paths_and_links_exist() -> None:
     missing: list[str] = []
     tracked = {relative for relative, path, _text in _tracked_text() if path.suffix == ".md"}
@@ -233,6 +241,8 @@ def test_tracked_markdown_paths_and_links_exist() -> None:
                 if not candidate or "{" in candidate or "example" in candidate:
                     continue
                 repo_path = ROOT / candidate
+                if _is_history(relative) and candidate in REMOVED_PATHS:
+                    continue
                 if not repo_path.exists():
                     missing.append(f"{relative}:{line_number}:`{candidate}`")
 

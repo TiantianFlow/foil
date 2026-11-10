@@ -40,7 +40,7 @@ A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `f
 
 ## Questions for the human
 
-Nobody reads your pane. The human reads `board/status.md` and your mail to `user`, and the answer comes back to you as mail. A question for the human goes in `status.md` `questions`: the decision, the options, your recommendation, and what the fleet does while it waits. Set `state: blocked` when the goal cannot go on without the answer. Then `foil send user` one line that points at the question, and end your turn.
+Nobody reads your pane. The human reads `board/status.md` and your mail to `user`, and the answer comes back to you as mail. A question for the human goes in `status.md` `questions`: the decision, the options, your recommendation, and what the fleet does while it waits. Set `state: blocked` when the goal cannot go on without the answer. Then `foil send user` one line that points at the question, and end your turn. A joined lead asks the human in its own chat, as the joined skill says.
 
 ```text
 foil send user "question in board/status.md: which reading of the goal"

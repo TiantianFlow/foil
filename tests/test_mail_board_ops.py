@@ -571,7 +571,7 @@ def test_cli_mail_list_rejects_parent_seat_id(
 
     assert main(["mail", "list"]) == 1
     captured = capsys.readouterr()
-    assert captured.err == "foil: invalid seat\n"
+    assert captured.err == "foil: unknown seat\n"
     assert captured.out == ""
     assert "escaped.md" not in captured.out
 

@@ -29,16 +29,14 @@ foil init
 ```text
 foil 0.6.3
 ...
-Skill: packaged /opt/foil/foil/defaults/skills/operator.md
 Project folder: /var/foil/projects/your-repo-1a2b3c
-Read /opt/foil/foil/defaults/skills/operator.md and follow it. My goal: <goal>.
+Run foil seat join lead, then read the file it names. My goal: <goal>.
 ```
 
 `foil init` 把项目目录写在仓库之外，工作区里什么都不写，所以 `git status` 保持干净。
 输出的第一行是 `foil --version` 打印的版本号。中间的报告（这里有删节）列出已安装的
-harness 和 init 写了什么。第一次 init 还没有 `<root>/skills/operator.md`，所以
-`Skill:` 行和最后一行都指向包里的文件。那个全局文件存在时，两行都改指它。最后一行是你稍后要粘贴给自己的
-Agent 的那句话，把 `<goal>` 换成你的目标。路径以报告打印的为准。
+harness 和 init 写了什么。最后一行是你稍后要粘贴给自己的 Agent 的那句话，把 `<goal>`
+换成你的目标。
 
 ## 2. 给每个角色选 harness 和权限
 
@@ -72,12 +70,11 @@ harness = "codex"
 `foil init` 的最后一行，并把目标填进去：
 
 ```text
-Read /opt/foil/foil/defaults/skills/operator.md and follow it. My goal: make the tests pass.
+Run foil seat join lead, then read the file it names. My goal: make the tests pass.
 ```
 
-`<root>/skills/operator.md` 存在时，那一行改指这个文件。
-
-这个 Agent 就成了操作员。它先确认主座能正常启动，再把目标发给主座。手动做同样的事：
+这个 Agent 作为主座加入，成为一个没有窗口的席位，在你的对话里规划目标，并用 `foil mail wait`
+接收舰队的消息。这个演示重放的是另一种方式：由运筹在 tmux 里启动主座，也就是你手动输入的这一条：
 
 ```sh
 foil seat spawn lead --task "Make the tests pass."
@@ -193,13 +190,13 @@ reviewer-1	reviewer	killed		claude	You check the change the lead names and repor
 
 ## 如果什么都没发生
 
-运行 `foil seat peek lead`。一个没有进展的席位，通常停在对话框上。操作员只清掉一种对话框，
+运行 `foil seat peek lead`。一个没有进展的席位，通常停在对话框上。加入的主座只清掉一种对话框，
 其余的都报告给你。
 
-- 路径正好是该席位记录的检出目录的文件夹信任提示：操作员清掉它，再看一眼确认。席位工作树在仓库之外，
+- 路径正好是该席位记录的检出目录的文件夹信任提示：加入的主座清掉它，再看一眼确认。席位工作树在仓库之外，
   信任仓库一次覆盖不到它。每个席位标签对每个 harness 都要信任一次。
 - 其他任何对话框，比如登录提示、更新对话框、首次运行对话框、意见征集、命令审批，或另一条路径的信任提示：
-  操作员报告它，留给你在窗口里回答（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入）。
+  主座报告它，留给你在窗口里回答（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入）。
   CLI 在窗格里完成不了的登录，先手动登录一次，然后 `foil seat kill lead`，再重新启动主座。
 
 如果 tmux 挂了或机器重启了，`foil seat resume` 会重新启动所有没被 kill 的席位。

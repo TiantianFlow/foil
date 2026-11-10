@@ -137,9 +137,10 @@ TIPS = {
     "Agents": "Every seat stored for this fleet, grouped by state. A dead window can still be "
     "peeked. A killed seat stays listed and its name stays reserved until foil seat archive "
     "frees it. An archived seat is not listed.",
-    "State": "alive: the window exists and the process is running. dead: the window is gone "
-    "or the process has exited, and the seat was not killed. killed: stopped with foil seat "
-    "kill.",
+    "State": "alive: the window exists and the process is running. joined: your own agent "
+    "session took the lead seat with foil seat join lead. It has no window or pane. dead: the "
+    "window is gone or the process has exited, and the seat was not killed. killed: stopped "
+    "with foil seat kill, or a joined lead that left.",
     "Harness / model": "The pair this seat was launched with: the agent CLI and the model "
     "passed to it. Resume launches the same pair. A second line shows the pair the next "
     "spawn of that role takes when this fleet's overrides change it.",
@@ -158,11 +159,11 @@ TIPS = {
     "waiting on a dialog.",
 }
 FILTERS = {
-    "": ("Not killed", ("dead", "alive")),
-    "alive": ("Alive", ("alive",)),
+    "": ("Not killed", ("dead", "alive", "joined")),
+    "alive": ("Alive", ("alive", "joined")),
     "dead": ("Dead", ("dead",)),
     "killed": ("Killed", ("killed",)),
-    "all": ("All", ("dead", "alive", "killed")),
+    "all": ("All", ("dead", "alive", "joined", "killed")),
 }
 STATUS_LINES = 15
 _CSS = """
@@ -233,7 +234,7 @@ border-radius:6px;padding:4px 8px;background:var(--soft);min-width:5rem}
 .layers span+span:before{content:"\\2192";margin-right:8px}
 .pairs i{font-style:normal;color:var(--muted);font-size:11px;margin-right:4px}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;
-background:var(--muted)}.alive{background:var(--ok)}.dead{background:var(--warn)}
+background:var(--muted)}.alive,.joined{background:var(--ok)}.dead{background:var(--warn)}
 .killed{background:var(--bad)}.agents td:first-child{width:46%}.agents td:nth-child(2){width:11%}
 .agents td:nth-child(3){width:23%}tr.group th{background:var(--soft);border-top:1px solid
 var(--line);font-size:12px}tr.attention th{background:var(--warn-soft);color:var(--fg)}
@@ -588,7 +589,11 @@ def _fleets_page(root: Path, base: str) -> _Page:
             except Exception as exc:
                 rows.append([link, f'<span class="err">{escape(_error(exc))}</span>', "", "", ""])
                 continue
-            counts = [str(states.count(state)) for state in ("alive", "dead", "killed")]
+            counts = [
+                str(states.count("alive") + states.count("joined")),
+                str(states.count("dead")),
+                str(states.count("killed")),
+            ]
             latest = _ago(max(item[2] for item in files)) if files else _faded("no files")
             rows.append([link, *counts, latest])
         return _table(["Fleet", "Alive", "Dead", "Killed", "Last activity"], rows, "No fleets.")
@@ -1064,11 +1069,12 @@ def _board_sections(root: Path, fleet: str, here: str) -> str:
 
 
 def _ordered(rows: list[dict]) -> list[dict]:
-    """Dead first, then alive, then killed; in each, the lead, then by role and name."""
+    """Dead first, then alive or joined, then killed; in each, the lead, then by role and name."""
 
     def key(row: dict) -> tuple:
         number = re.search(r"(\d+)$", row["name"])
-        return (("dead", "alive", "killed").index(row["state"]), row["template"] != "lead",
+        rank = {"dead": 0, "alive": 1, "joined": 1, "killed": 2}[row["state"]]
+        return (rank, row["template"] != "lead",
                 row["template"], int(number.group(1)) if number else 0, row["name"])
 
     return sorted(rows, key=key)
@@ -1097,7 +1103,8 @@ def _agents(rows: list[dict], upcoming: dict[str, str], here: str, state: str) -
               ("alive", "Running", ' class="group"')]
     body = ""
     for name, title, cls in groups:
-        members = [row for row in rows if row["state"] == name]
+        wanted = {"alive", "joined"} if name == "alive" else {name}
+        members = [row for row in rows if row["state"] in wanted]
         if name in shown and members:
             body += f'<tr{cls}><th colspan="4">{title} · {len(members)}</th></tr>'
             body += "".join(line(row) for row in members)

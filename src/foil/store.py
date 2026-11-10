@@ -32,15 +32,33 @@ SEAT_FIELDS = (
     "session_id",
 )
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+RESERVED = ("user", "foil")
 
 
-def actor() -> str:
+def actor(toplevel: Path | None = None) -> str:
+    """A seat acts as itself. Outside: `lead` while one is joined, else `user`."""
+
     seat = os.environ.get("FOIL_SEAT_ID", "").strip()
     if not seat:
-        return "user"
+        return "lead" if joined(toplevel) else "user"
     if not SAFE_ID.fullmatch(seat):
         raise FoilError("foil: unknown seat")
     return seat
+
+
+def joined(toplevel: Path | None = None) -> bool:
+    if toplevel is None:
+        from foil.project import discover_project
+
+        try:
+            toplevel = discover_project()
+        except FoilError:
+            return False
+    try:
+        record = load_registry(toplevel)["seats"].get("lead")
+    except (FoilError, OSError):
+        return False
+    return bool(record) and record.get("state") == "joined"
 
 
 def scan(value: Any) -> None:

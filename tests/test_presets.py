@@ -620,18 +620,18 @@ def test_init_refreshes_skills_and_leaves_templates_and_personas(
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
     first = capsys.readouterr().out
-    packaged = files("foil").joinpath("defaults", "skills", "operator.md").read_bytes()
+    packaged = files("foil").joinpath("defaults", "skills", "joined.md").read_bytes()
     header = packaged.decode().split("---", 2)[1]
-    assert "name:" in header
+    assert "name: joined" in header
     assert "description:" in header
-    assert "Skill: packaged" in first
+    assert "Skill:" not in first
     root = foil_root(repo)
-    assert not (root / "skills" / "operator.md").exists()
+    assert not (root / "skills" / "joined.md").exists()
     assert not (root / "skills" / "lead.md").exists()
     assert not (root / "skills" / "worker.md").exists()
-    global_skill = store_root() / "skills" / "operator.md"
-    global_skill.parent.mkdir(parents=True, exist_ok=True)
-    global_skill.write_text("edited operator\n", encoding="utf-8")
+    stale_operator = root / "skills" / "operator.md"
+    stale_operator.parent.mkdir(parents=True, exist_ok=True)
+    stale_operator.write_text("old operator\n", encoding="utf-8")
     stale = root / "skills" / "lead.md"
     stale.parent.mkdir(parents=True, exist_ok=True)
     stale.write_text("old lead\n", encoding="utf-8")
@@ -642,14 +642,12 @@ def test_init_refreshes_skills_and_leaves_templates_and_personas(
     template_bytes = template.read_bytes()
     assert main(["init"]) == 0
     report = capsys.readouterr().out
-    assert f"Skill: {global_skill}" in report
-    assert global_skill.read_text(encoding="utf-8") == "edited operator\n"
+    assert "Skill:" not in report
+    assert not stale_operator.exists()
     assert not stale.exists()
     assert not (root / "skills" / "worker.md").exists()
     assert persona.read_text(encoding="utf-8") == "edited persona\n"
     assert template.read_bytes() == template_bytes
-    assert main(["init"]) == 0
-    assert f"Skill: {global_skill}" in capsys.readouterr().out
 
 
 def test_init_refuses_a_skill_symlink(
@@ -1002,14 +1000,12 @@ def test_skills_route_questions_away_from_the_pane() -> None:
     skills = files("foil").joinpath("defaults", "skills")
     lead = skills.joinpath("lead.md").read_text(encoding="utf-8")
     worker = skills.joinpath("worker.md").read_text(encoding="utf-8")
-    operator = skills.joinpath("operator.md").read_text(encoding="utf-8")
+    joined = skills.joinpath("joined.md").read_text(encoding="utf-8")
     for text in (lead, worker):
         assert "Nobody reads your pane." in text
         assert "Do not use your harness's own prompt" in text
     assert "## Questions for the human" in lead
     assert "Set `state: blocked` when the goal cannot go on without the answer." in lead
-    assert "### A question from the lead" in operator
-    assert "Each is a question for the human, not a seat dialog." in operator
-    assert "Never answer with a method, a cause, or a plan the human did not give." in operator
-    assert "send one Escape with `tmux send-keys -t WINDOW_ID Escape`" in operator
-    assert "One Escape per question, never a second one." in operator
+    assert "A joined lead asks the human in its own chat" in lead
+    assert "You ask the human in your own chat" in joined
+    assert "Escape" not in joined

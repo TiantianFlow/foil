@@ -34,7 +34,7 @@ INTENDED_SDIST_MEMBERS = (
     "LICENSE",
     "uv.lock",
     "docs/requirements.md",
-    "skills/operator.md",
+    "skills/joined.md",
     "src/foil/__init__.py",
     "src/foil/cli.py",
     "tests/test_init.py",
@@ -48,7 +48,7 @@ INTENDED_WHEEL_MEMBERS = (
     "foil/tmux.py",
     "foil/defaults/harnesses.toml",
     "foil/defaults/personas/lead.md",
-    "foil/defaults/skills/operator.md",
+    "foil/defaults/skills/joined.md",
     "foil/defaults/skills/lead.md",
     "foil/defaults/skills/worker.md",
 )
@@ -190,7 +190,7 @@ def test_wheel_contains_only_the_package_and_packaged_resources(built: Built) ->
 
 def test_wheel_skills_have_name_and_description(built: Built) -> None:
     _sdist, wheel, _marker, _stage = built
-    for name in ("operator.md", "lead.md", "worker.md"):
+    for name in ("joined.md", "lead.md", "worker.md"):
         text = wheel[f"foil/defaults/skills/{name}"].decode()
         assert text.startswith("---\n")
         header = text.split("---", 2)[1]

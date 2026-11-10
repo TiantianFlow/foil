@@ -634,11 +634,11 @@ def test_resume_does_not_unkill_a_seat(tmp_path: Path, monkeypatch: pytest.Monke
     assert load_registry(repo)["seats"]["implementer-1"]["state"] == "killed"
 
 
-def test_operator_skill_says_archive_keeps_the_mailbox() -> None:
+def test_lead_skill_says_archive_keeps_the_mailbox() -> None:
     text = (
-        Path(__file__).resolve().parents[1] / "src" / "foil" / "defaults" / "skills" / "operator.md"
+        Path(__file__).resolve().parents[1] / "src" / "foil" / "defaults" / "skills" / "lead.md"
     ).read_text(encoding="utf-8")
-    assert "does not delete the worktree, the branch, the mailbox" in text
+    assert "it does not delete the branch, the mailbox" in text
 
 
 def test_kill_does_not_restore_an_archived_seat(

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 
 from foil.board_ops import board_root, inside, read_text, split_front_matter
 from foil.errors import FoilError
-from foil.store import SAFE_ID
+from foil.store import actor
 
 
 def _fields(text: str, shown: str) -> tuple[dict[str, str | list[str]], str]:
@@ -41,10 +40,8 @@ def mail_read(path_text: str, *, as_json: bool = False) -> None:
 
 
 def mail_list(*, as_json: bool = False) -> None:
-    # Outside the fleet this is the human's mailbox, which only the lead writes.
-    seat = os.environ.get("FOIL_SEAT_ID", "").strip() or "user"
-    if SAFE_ID.fullmatch(seat) is None:
-        raise FoilError("foil: invalid seat")
+    # Outside the fleet this is the joined lead's mailbox, or the human's.
+    seat = actor()
     mail_dir = board_root() / "mail"
     mails = []
     # A symlinked mail root resolves outside the board. Do not follow it.

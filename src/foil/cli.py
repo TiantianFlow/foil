@@ -12,6 +12,7 @@ from foil import __version__
 from foil.board import post_room, send_mail
 from foil.board_ops import board_list, board_read
 from foil.errors import FoilError
+from foil.joined import join_lead, leave_lead, mail_wait, notice
 from foil.lifecycle import (
     archive_seat,
     init_project,
@@ -41,6 +42,8 @@ _ALLOWED = {
     "spawn": {OUTSIDE, LEAD},
     "kill": {OUTSIDE, LEAD},
     "kill-all": {OUTSIDE},
+    "join": {OUTSIDE},
+    "leave": {OUTSIDE},
     "archive": {OUTSIDE, LEAD},
     "resume": {OUTSIDE, LEAD},
     "list": {OUTSIDE, LEAD, WORKER},
@@ -49,6 +52,7 @@ _ALLOWED = {
     "post": {OUTSIDE, LEAD, WORKER},
     "mail-read": {OUTSIDE, LEAD, WORKER},
     "mail-list": {OUTSIDE, LEAD, WORKER},
+    "mail-wait": {OUTSIDE},
     "board-read": {OUTSIDE, LEAD, WORKER},
     "board-list": {OUTSIDE, LEAD, WORKER},
     "memory-add": {OUTSIDE, LEAD, WORKER},
@@ -119,6 +123,14 @@ def _build_parser() -> argparse.ArgumentParser:
     peek.add_argument("NAME", metavar="NAME")
     peek.add_argument("--lines", metavar="N", type=int, default=40)
 
+    join = seat_sub.add_parser("join", help="Take the lead seat for this session")
+    join.add_argument("SEAT", metavar="lead", choices=["lead"])
+    join.add_argument("--harness", metavar="ID")
+    join.add_argument("--session", metavar="ID")
+    join.add_argument("--take", action="store_true")
+
+    seat_sub.add_parser("leave", help="End the joined lead")
+
     send = sub.add_parser("send", help="Write mail and nudge the recipient")
     send.add_argument("TO", metavar="TO")
     send.add_argument("TEXT", metavar="TEXT")
@@ -139,6 +151,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     mail_list_p = mail_sub.add_parser("list", help="List mail for current seat")
     mail_list_p.add_argument("--json", action="store_true")
+
+    mail_wait_p = mail_sub.add_parser("wait", help="Wait for new mail")
+    mail_wait_p.add_argument("--timeout", metavar="SECONDS", type=int, default=1800)
+    mail_wait_p.add_argument("--wake", metavar="CMD")
 
     board = sub.add_parser("board", help="Read board files")
     board_sub = board.add_subparsers(dest="board_command", required=True)
@@ -271,6 +287,12 @@ def _run(args: argparse.Namespace) -> int:
         elif action == "list":
             authorize("list")
             list_seats(root, as_json=args.json, archived=args.archived)
+        elif action == "join":
+            authorize("join")
+            join_lead(root, harness=args.harness, session=args.session, take=args.take)
+        elif action == "leave":
+            authorize("leave")
+            leave_lead(root)
         else:
             authorize("peek")
             peek_seat(root, args.NAME, lines=args.lines)
@@ -299,6 +321,10 @@ def _run(args: argparse.Namespace) -> int:
         if action == "read":
             authorize("mail-read")
             mail_read(args.PATH, as_json=args.json)
+        elif action == "wait":
+            if _caller() != OUTSIDE:
+                raise FoilError("foil: mail wait is outside the fleet only")
+            mail_wait(root, timeout=args.timeout, wake=args.wake)
         else:
             authorize("mail-list")
             mail_list(as_json=args.json)
@@ -379,15 +405,36 @@ def _refuse_project(project: bool) -> None:
         raise FoilError("foil: --project is outside the fleet only")
 
 
+def _notice(args: argparse.Namespace) -> None:
+    """The joined lead's new-items line, after every other command outside the fleet (F41)."""
+    quiet = (
+        args.command == "view"
+        or (args.command == "seat" and args.seat_command in {"join", "leave"})
+        or (args.command == "mail" and args.mail_command == "wait")
+    )
+    if quiet or _caller() != OUTSIDE:
+        return
+    try:
+        root = discover_project()
+        if is_initialized(root):
+            notice(root)
+    except (FoilError, OSError):
+        pass
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    args = None
     try:
         parser = _build_parser()
         args = parser.parse_args(None if argv is None else list(argv))
         code = _run(args)
         sys.stdout.flush()
+        _notice(args)
         return code
     except FoilError as exc:
         print(str(exc), file=sys.stderr)
+        if args is not None:
+            _notice(args)
         return 1
     except BrokenPipeError:
         devnull = os.open(os.devnull, os.O_WRONLY)

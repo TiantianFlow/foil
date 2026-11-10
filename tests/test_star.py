@@ -70,7 +70,7 @@ def test_first_init_shows_the_line_once_and_records_it(
     assert "https://github.com/TiantianFlow/foil" in star[0]
     assert "star.json" not in star[0]
     assert lines.index(star[0]) == len(lines) - 2
-    assert lines[-1].startswith("Read ")
+    assert lines[-1].startswith("Run foil seat join lead")
     assert _saved() == {
         "schema_version": 1,
         "shown": [TODAY.isoformat()],
