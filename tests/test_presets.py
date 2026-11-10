@@ -84,7 +84,7 @@ def test_expansion_drops_missing_values_and_their_flags(tmp_path: Path) -> None:
     ]
 
     codex = load_preset(tmp_path, "codex")
-    assert codex["unverified"] == ["resume-session-id"]
+    assert codex["unverified"] == ["resume-session-id", "wake-queue"]
     assert codex["session_id"] == "none"
     assert expand_argv(codex, model="gpt", prompt=prompt, session_id="ignored") == [
         "codex",
@@ -279,6 +279,23 @@ def test_unknown_placeholder_and_template_key_are_rejected(tmp_path: Path) -> No
     )
     with pytest.raises(FoilError, match="invalid preset"):
         load_preset(tmp_path, "grok")
+    for line in (
+        'command = ["grok", "{text}"]',
+        'command = ["grok"]\nwake = ["w", "{prompt}"]',
+        'command = ["grok"]\nwake = "w {text}"',
+    ):
+        (builtin / "grok.toml").write_text(
+            f'id = "grok"\n{line}\nsession_id = "none"\n', encoding="utf-8"
+        )
+        with pytest.raises(FoilError, match="invalid preset"):
+            load_preset(tmp_path, "grok")
+    (builtin / "grok.toml").write_text(
+        'id = "grok"\ncommand = ["grok"]\nsession_id = "none"\n'
+        'wake = ["w", "{session_id}", "{text}"]\n',
+        encoding="utf-8",
+    )
+    assert load_preset(tmp_path, "grok")["wake"] == ["w", "{session_id}", "{text}"]
+    assert load_preset(tmp_path, "grok", global_only=True)["wake"] is None
 
     templates = tmp_path / ".foil" / "templates"
     templates.mkdir(parents=True)

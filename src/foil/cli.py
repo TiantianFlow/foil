@@ -154,7 +154,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     mail_wait_p = mail_sub.add_parser("wait", help="Wait for new mail")
     mail_wait_p.add_argument("--timeout", metavar="SECONDS", type=int, default=1800)
-    mail_wait_p.add_argument("--wake", metavar="CMD")
+    mail_wait_p.add_argument("--wake", action="store_true")
 
     board = sub.add_parser("board", help="Read board files")
     board_sub = board.add_subparsers(dest="board_command", required=True)

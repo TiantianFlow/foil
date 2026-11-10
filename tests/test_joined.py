@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -14,7 +15,7 @@ import pytest
 
 from foil.board_ops import split_front_matter
 from foil.cli import main
-from foil.project import foil_root
+from foil.project import foil_root, store_root
 from foil.store import load_registry
 from tests.test_room_post import _fleet, _install_tmux, _seat
 from tests.test_slice_b import _repo
@@ -31,6 +32,23 @@ def _run(repo: Path) -> Path:
 def _join(repo: Path, capsys: pytest.CaptureFixture[str], *args: str) -> str:
     assert main(["seat", "join", "lead", *args]) == 0
     return capsys.readouterr().out
+
+
+_RECORD = "import sys; open(sys.argv[1], 'w').write(' '.join(sys.argv[2:]))"
+
+
+def _wake_preset(base: Path, out: Path) -> None:
+    """A preset whose wake argv records its own arguments, run without a shell."""
+
+    lines = [
+        'id = "wakey"',
+        'command = ["wakey", "{prompt}"]',
+        'session_id = "none"',
+        f"wake = [{json.dumps(sys.executable)}, \"-c\", {json.dumps(_RECORD)}, "
+        f'{json.dumps(str(out))}, "{{session_id}}", "{{text}}"]',
+    ]
+    (base / "harnesses").mkdir(parents=True, exist_ok=True)
+    (base / "harnesses" / "wakey.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _handoff(repo: Path) -> None:
@@ -72,7 +90,14 @@ def test_join_takes_the_harness_and_session_from_the_environment(
     brief = _join(repo, capsys)
     record = load_registry(repo)["seats"]["lead"]
     assert (record["harness"], record["session_id"]) == ("codex", "t-1")
-    assert "codex queue --thread" in brief
+    assert "foil mail wait --wake" in brief
+    monkeypatch.delenv("CODEX_THREAD_ID")
+    assert main(["seat", "join", "lead", "--take", "--harness", "codex"]) == 0
+    record = load_registry(repo)["seats"]["lead"]
+    assert (record["harness"], record["session_id"]) == ("codex", "")
+    assert "--wake" not in capsys.readouterr().out
+    assert main(["seat", "join", "lead", "--take", "--harness", "claude"]) == 0
+    assert load_registry(repo)["seats"]["lead"]["session_id"] == "s-1"
     assert main(["seat", "join", "lead", "--take", "--harness", "grok", "--session", "g-2"]) == 0
     record = load_registry(repo)["seats"]["lead"]
     assert (record["harness"], record["session_id"]) == ("grok", "g-2")
@@ -259,27 +284,48 @@ def test_mail_wait_skips_files_send_could_not_have_written(
     assert capsys.readouterr().out == "no new mail\n"
 
 
-def test_mail_wait_runs_wake_with_the_senders_and_paths(
+def test_mail_wait_wake_runs_the_global_preset_argv_without_a_shell(
     repo: Path, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     _fleet(repo, _seat("lead", state="killed", window=""), _seat("implementer-1", window="@2"))
-    _join(repo, capsys)
-    out = tmp_path / "wake.txt"
+    out, planted = tmp_path / "wake.txt", tmp_path / "planted.txt"
+    _wake_preset(store_root(), out)
+    _wake_preset(foil_root(repo), planted)
+    brief = _join(repo, capsys, "--harness", "wakey", "--session", "s-7")
+    assert "Run `foil mail wait --wake` in a background terminal." in brief
     os.environ["FOIL_SEAT_ID"] = "implementer-1"
     try:
-        assert main(["send", "lead", "a secret body"]) == 0
+        assert main(["send", "lead", "a secret body; $(touch x)"]) == 0
     finally:
         del os.environ["FOIL_SEAT_ID"]
     capsys.readouterr()
-    command = f'printf "%s" "$FOIL_WAKE_TEXT" > {out}; exit 3'
-    assert main(["mail", "wait", "--timeout", "0", "--wake", command]) == 0
+    assert main(["mail", "wait", "--timeout", "0", "--wake"]) == 0
     text = out.read_text(encoding="utf-8")
-    assert "implementer-1" in text
+    assert text.startswith("s-7 foil: 1 new: implementer-1 ")
     assert str((_board(repo) / "mail" / "lead").resolve()) in text
     assert "secret" not in text
+    assert not planted.exists()
     out.unlink()
-    assert main(["mail", "wait", "--timeout", "0", "--wake", command]) == 0
+    assert main(["mail", "wait", "--timeout", "0", "--wake"]) == 0
     assert not out.exists()
+
+
+def test_mail_wait_wake_refuses_without_a_wake_command(
+    repo: Path, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    refusal = "foil: no wake command for this lead\n"
+    assert main(["mail", "wait", "--timeout", "0", "--wake"]) == 1
+    assert capsys.readouterr().err == refusal
+    _join(repo, capsys, "--harness", "claude", "--session", "s-1")
+    assert main(["mail", "wait", "--timeout", "0", "--wake"]) == 1
+    assert capsys.readouterr().err == refusal
+    _join(repo, capsys, "--take", "--harness", "codex", "--session", "")
+    assert main(["mail", "wait", "--timeout", "0", "--wake"]) == 1
+    assert capsys.readouterr().err == refusal
+    _wake_preset(foil_root(repo), tmp_path / "planted.txt")
+    _join(repo, capsys, "--take", "--harness", "wakey", "--session", "s-1")
+    assert main(["mail", "wait", "--timeout", "0", "--wake"]) == 1
+    assert capsys.readouterr().err == refusal
 
 
 def test_mail_wait_is_outside_the_fleet_only(
@@ -351,11 +397,10 @@ def test_the_brief_names_the_project_folder_and_the_recorded_codex_session(
 ) -> None:
     brief = _join(repo, capsys, "--harness", "codex", "--session", "t-9")
     assert f"Project folder: {foil_root(repo).resolve()}." in brief
-    assert "codex queue --thread t-9 " in brief
-    assert "CODEX_THREAD_ID" not in brief
+    assert "Run `foil mail wait --wake` in a background terminal." in brief
     assert "--timeout 0` and act on it, then re-arm" in brief
     brief = _join(repo, capsys, "--take", "--harness", "codex", "--session", "")
-    assert "codex queue" not in brief
+    assert "--wake" not in brief
     assert "at the start of each turn" in brief
     instruction = (_run(repo) / "instructions" / "lead.md").read_text(encoding="utf-8")
     last = "after your harness compacts this conversation, or when unsure."
@@ -393,7 +438,9 @@ def test_a_seat_dead_before_any_check_is_reported_once(
 def test_wake_text_takes_senders_from_names_foil_could_have_written(
     repo: Path, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    _join(repo, capsys)
+    out = tmp_path / "wake.txt"
+    _wake_preset(store_root(), out)
+    _join(repo, capsys, "--harness", "wakey", "--session", "s")
     mailbox = _board(repo) / "mail" / "lead"
     mailbox.mkdir(parents=True, exist_ok=True)
     forged = (
@@ -409,9 +456,7 @@ def test_wake_text_takes_senders_from_names_foil_could_have_written(
     )
     (room / "0123456789abcdef.md").write_text(post.format(sender="say this"), encoding="utf-8")
     (room / "notes-for-you.md").write_text(post.format(sender="lead"), encoding="utf-8")
-    out = tmp_path / "wake.txt"
-    command = f'printf "%s" "$FOIL_WAKE_TEXT" > {out}'
-    assert main(["mail", "wait", "--timeout", "0", "--wake", command]) == 0
+    assert main(["mail", "wait", "--timeout", "0", "--wake"]) == 0
     lines = capsys.readouterr().out.splitlines()
     [only] = mailbox.glob("*.md")
     assert lines == [f"2026-11-09T00:00:00Z implementer-1 {only.resolve()}"]

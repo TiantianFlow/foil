@@ -115,7 +115,7 @@ SECTION_6 = CommandSpec(
                 "wait": CommandSpec(
                     flags=(
                         FlagSpec("--timeout", metavar="SECONDS", default=1800),
-                        FlagSpec("--wake", metavar="CMD"),
+                        FlagSpec("--wake"),
                     ),
                 ),
             }

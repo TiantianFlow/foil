@@ -985,7 +985,7 @@ def test_joined_instruction_adds_the_joined_skill_and_outside_commands(
     commands = text.split("Commands you may run:", 1)[1].split("Mail:", 1)[0]
     for command in ("foil seat kill --all", "foil seat leave", "foil roster remove ROLE"):
         assert command in commands, command
-    assert "foil mail wait [--timeout SECONDS] [--wake CMD]" in commands
+    assert "foil mail wait [--timeout SECONDS] [--wake]" in commands
     assert "listed in the brief" in text
     assert "Your task is" not in text
     assert "Older mail in your mailbox" not in text

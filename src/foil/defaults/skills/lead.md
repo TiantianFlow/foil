@@ -206,10 +206,10 @@ Write tasks at `board/tasks/<id>.md`. Contract `task/v1`: `id`, `owner`, `state`
 
 Read results at `board/results/<id>.md`. Contract `result/v1`: `task`, `author`, `branch` if any, and `outcome` of `pass` or `fail`.
 
-Mail is a file with contract `mail/v1`: `from`, `to`, `time`, and an optional `re`. A nudge line is the sender, a space, and an absolute path. A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `foil board read`. Read it, list your mail, and read board files with:
+Mail is a file with contract `mail/v1`: `from`, `to`, `time`, and an optional `re`. A nudge, or a line a wait prints, ends with the sender and an absolute path. A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `foil board read`. Read it, list your mail, and read board files with:
 
 ```text
-foil mail read /absolute/path/from/nudge
+foil mail read /absolute/path/of/the/file
 foil mail list
 foil mail list --json
 foil board read tasks/t1.md
@@ -232,14 +232,14 @@ foil post -
 A post in a room nudges its members and every seat it names as `@name`, such as `@reviewer-1`, except a member whose last file there is a decline. That member reads the room the next time anything wakes it. Name a seat as `@name` when you need its answer. The body is not typed. Your own seat is not nudged. `TEXT` of `-` reads stdin.
 
 ```text
-foil post --re /absolute/path/from/nudge "a fact the thread does not contain"
-foil post --re /absolute/path/from/nudge --decline
+foil post --re /absolute/path/of/the/file "a fact the thread does not contain"
+foil post --re /absolute/path/of/the/file --decline
 ```
 
 Keep a room to the seats whose view it still needs. `--members` on a reply sets the whole list, and you stay in it. It nudges only the seats it adds and the seats it names. Take a seat out when it no longer adds to the discussion, and bring one in when its view is needed.
 
 ```text
-foil post --re /absolute/path/from/nudge --members architect-1,implementer-1 "implementer-1 joins for the build plan"
+foil post --re /absolute/path/of/the/file --members architect-1,implementer-1 "implementer-1 joins for the build plan"
 ```
 
 Rotate a room when its topic shifts or its history gets long. Open a fresh room whose first post is a short summary of where things stand, then close the old one with a pointer to the new one. A closed room refuses every later post, a decline included. The close nudges only the seats it names.

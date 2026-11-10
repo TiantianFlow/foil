@@ -19,13 +19,15 @@ You are the human's own agent session, and you joined the fleet as its lead with
 ## Setup
 
 1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login.
-2. Run `foil` and `tmux send-keys` outside your harness sandbox and without a prompt, and let your file tools write the project folder that `foil init` prints as `Project folder:`. The board is in that folder, outside the repository, and you write `board/status.md` and `board/handoffs/lead.md` there. This is a one-time setting the human approves. These rules were read from each harness's documentation and not tested on every version:
+2. Run `foil` outside your harness sandbox and without a prompt, and let your file tools write the project folder that `foil init` prints as `Project folder:`. The board is in that folder, outside the repository, and you write `board/status.md` and `board/handoffs/lead.md` there. This is a one-time setting the human approves. These rules were read from each harness's documentation and not tested on every version:
 
 | Harness | Setting |
 |---|---|
-| Codex | `prefix_rule(pattern=["foil"], decision="allow")` and `prefix_rule(pattern=["tmux", "send-keys"], decision="allow")` in a file under `~/.codex/rules/`, and the project folder in `writable_roots` under `[sandbox_workspace_write]` in `~/.codex/config.toml` |
-| Claude Code | `"permissions": {"allow": ["Bash(foil:*)", "Bash(tmux send-keys:*)"], "additionalDirectories": ["<project folder>"]}` in `~/.claude/settings.json`, and `"sandbox": {"excludedCommands": ["foil", "tmux"]}` when its sandbox is on |
-| Grok | `{ action = "allow", tool = "bash", pattern = "foil *" }` and the same rule for `tmux send-keys *` in its permission rules, and the project folder among the paths its file tools may write |
+| Codex | `prefix_rule(pattern=["foil"], decision="allow")` in a file under `~/.codex/rules/`, and the project folder in `writable_roots` under `[sandbox_workspace_write]` in `~/.codex/config.toml` |
+| Claude Code | `"permissions": {"allow": ["Bash(foil:*)"], "additionalDirectories": ["<project folder>"]}` in `~/.claude/settings.json`, and `"sandbox": {"excludedCommands": ["foil"]}` when its sandbox is on |
+| Grok | `{ action = "allow", tool = "bash", pattern = "foil *" }` in its permission rules, and the project folder among the paths its file tools may write |
+
+Do not allow `tmux` the same way. An allowed `tmux` lets any session of that harness type any command into a new window outside the sandbox. The folder-trust keystroke in Dialogs stays under your harness's approval prompt, and the human approves it. The `foil` rule grants every `foil` command, and no `foil` command runs a command you name.
 
 Without the `foil` rule, `foil seat join lead` prints `foil: run foil outside your harness sandbox and without a prompt` and changes nothing. The join cannot check your file tools, so step 7 does.
 
@@ -73,13 +75,11 @@ Picking a harness and a model: match the model to the work; keep the reviewer of
 Nobody types into your session. Mail to `lead` and room posts that wake `lead` wait on the board until you look. The brief names the route for your harness:
 
 - A background `foil mail wait`, when your harness wakes you on a finished background command.
-- `--wake CMD`, for a harness that does not resume on a finished command. CMD runs once when something is new, with `FOIL_WAKE_TEXT` naming each sender and path:
+- `foil mail wait --wake`, for a harness that does not resume on a finished command and whose preset has a `wake` command. When something is new, Foil runs that command once, without a shell, with your recorded session id and one line naming each sender and path:
 
 ```text
-foil mail wait --wake 'codex queue --thread SESSION_ID --message "$FOIL_WAKE_TEXT" --resume'
+foil mail wait --wake
 ```
-
-Use the command the brief prints, which names your recorded session id.
 
 - Otherwise `foil mail wait --timeout 0` at the start of each turn. Any other `foil` command you run ends with `foil: N new for lead.` on stderr when something is new.
 
@@ -99,7 +99,7 @@ A dialog in a seat's pane is the human's, with one exception: a folder-trust pro
 - That path, made canonical with `realpath`, is the canonical recorded `cwd`, and that `cwd` is the seat's checkout: its recorded worktree, or the repository root for a seat without one. A parent directory, a child directory, or any other directory is never trusted.
 - The prompt shows one choice that trusts that folder, and the key that picks it is plain from the pane.
 
-Then send only that key with `tmux send-keys -t WINDOW_ID KEY`, which needs the same one-time setting as `foil`, peek again to confirm the prompt is gone, and tell the human the seat and the path. If a check fails, or the prompt is still there, send nothing more and report it. Everything else is reported to the human and not answered: a login prompt, an update, first-run, or opt-in dialog, a command or tool approval, a path that does not match, an unclear choice, and any other dialog. You do not send keys for anything else, and you do not decide from a pane who is working. These checks are cooperative protection for a trusted agent running as the same user, not isolation by the operating system.
+Then send only that key with `tmux send-keys -t WINDOW_ID KEY`. Your harness asks the human to approve that command; say which seat and path it is for. Then peek again to confirm the prompt is gone, and tell the human the seat and the path. If a check fails, or the prompt is still there, send nothing more and report it. Everything else is reported to the human and not answered: a login prompt, an update, first-run, or opt-in dialog, a command or tool approval, a path that does not match, an unclear choice, and any other dialog. You do not send keys for anything else, and you do not decide from a pane who is working. These checks are cooperative protection for a trusted agent running as the same user, not isolation by the operating system.
 
 ## The viewer
 

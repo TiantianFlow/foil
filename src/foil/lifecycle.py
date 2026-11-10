@@ -440,7 +440,7 @@ foil memory list [--all] [--json]"""
 
 _JOINED_COMMANDS = """foil seat kill --all
 foil seat leave
-foil mail wait [--timeout SECONDS] [--wake CMD]
+foil mail wait [--timeout SECONDS] [--wake]
 foil roster add ROLE [--from FILE] [--project]
 foil roster update ROLE FIELD=VALUE [--project]
 foil roster remove ROLE [--project]

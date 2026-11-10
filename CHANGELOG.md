@@ -12,10 +12,11 @@ Notable changes to Foil, newest first.
 ### Added
 
 - `foil seat leave` ends the join once `board/handoffs/lead.md` is written, and stores the lead as `killed`, so a later join or spawn may take the seat. `seat kill`, `resume`, and `peek` on a joined lead say it has no pane, and `seat kill --all` leaves it. (#92)
-- `foil mail wait [--timeout SECONDS] [--wake CMD]` blocks until the caller's mailbox has something new: mail, or a room post that woke it. It prints the new items in the `mail list` format. Only `--timeout 0` marks them seen, so a wake the harness drops still shows on the next command. A seat that dies, including one that dies right after its spawn, becomes mail from `foil` once. A wake text names senders from file names `foil` could have written. `--wake` runs a command once with `FOIL_WAKE_TEXT` naming each sender and path, for a harness that does not resume on a finished background command. (#92)
+- `foil mail wait [--timeout SECONDS] [--wake]` blocks until the caller's mailbox has something new: mail, or a room post that woke it. It prints the new items in the `mail list` format. Only `--timeout 0` marks them seen, so a wake the harness drops still shows on the next command. A seat that dies, including one that dies right after its spawn, becomes mail from `foil` once. A wake text names senders from file names `foil` could have written. `--wake` runs the joined lead's harness preset `wake` command once, without a shell, with the recorded session id and a line naming each sender and path, for a harness that does not resume on a finished background command. The preset is read from the global layer and the package only. The built-in `codex` preset has one. (#92)
 - While a lead is joined, every other `foil` command run outside the fleet, except `foil view`, ends with `foil: N new for lead. Run foil mail wait --timeout 0.` on stderr when something is new. (#92)
 - `foil seat list` and `foil view` show the joined lead as `joined`, with the running seats. (#92)
 - A harness preset may set fixed, non-secret environment values with `set_env`. (#91)
+- A harness preset may name a `wake` argv with `{session_id}` and `{text}`, which `foil mail wait --wake` runs for a joined lead. (#92)
 
 ### Changed
 

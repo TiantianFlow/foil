@@ -15,7 +15,7 @@ from foil.board import write_mail
 from foil.board_ops import split_front_matter
 from foil.errors import FoilError
 from foil.lifecycle import _state, _write_instruction
-from foil.presets import load_template
+from foil.presets import load_preset, load_template
 from foil.project import foil_root
 from foil.store import (
     SAFE_ID,
@@ -137,7 +137,7 @@ def _new_items(root: Path, name: str, seen: set[str]) -> list[dict[str, str]]:
         fields = _fields(path)
         if fields is None:
             continue
-        # The sender and time reach FOIL_WAKE_TEXT, which a harness may queue as a message,
+        # The sender and time reach the wake text, which a harness may queue as a message,
         # so neither is taken from text a hand-written file could choose.
         if mail:
             if fields.get("contract") != "mail/v1":
@@ -198,14 +198,16 @@ def _dead_check(root: Path, name: str, record: dict, *, force: bool = False) -> 
 
 
 def _harness(given: str | None, session: str | None) -> tuple[str, str]:
-    harness, found = "", ""
+    detected, found = "", ""
     for preset, variable in _HARNESS_ENV:
         value = os.environ.get(variable, "").strip()
         if value:
-            harness, found = preset, value
+            detected, found = preset, value
             break
-    harness = given if given is not None else harness
-    session = session if session is not None else found
+    harness = given if given is not None else detected
+    # Another harness's session id would be wrong for this one (F42).
+    if session is None:
+        session = found if harness == detected else ""
     for value in (harness, session):
         if value and not SAFE_ID.fullmatch(value):
             raise FoilError("foil: invalid id")
@@ -224,17 +226,27 @@ def _preflight(root: Path) -> None:
         raise FoilError(SANDBOX) from None
 
 
-def _route(harness: str, session: str) -> str:
+def _wake_argv(root: Path, harness: str, session: str) -> list[str] | None:
+    """The preset's wake argv, read from the global layer and the package only (F41)."""
+
+    if not harness:
+        return None
+    try:
+        argv = load_preset(root, harness, global_only=True).get("wake")
+    except FoilError:
+        return None
+    if not argv or ("{session_id}" in argv and not session):
+        return None
+    return argv
+
+
+def _route(root: Path, harness: str, session: str) -> str:
     rearm = (
         "On each wake, run `foil mail wait --timeout 0` and act on it, then re-arm. "
         "Stop after three quiet timeouts in a row."
     )
-    if harness == "codex" and session:
-        return (
-            "Run this in a background terminal: "
-            f"foil mail wait --wake 'codex queue --thread {session} "
-            f"--message \"$FOIL_WAKE_TEXT\" --resume'. {rearm}"
-        )
+    if _wake_argv(root, harness, session):
+        return f"Run `foil mail wait --wake` in a background terminal. {rearm}"
     if harness in ("claude", "grok"):
         return f"Run `foil mail wait` as a background command. Its exit wakes you. {rearm}"
     return "Run `foil mail wait --timeout 0` at the start of each turn."
@@ -307,7 +319,7 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
             lines.append(f"... and {len(items) - BRIEF_ITEMS} more. Run foil mail list.")
     else:
         lines.append("New for lead: none.")
-    lines.append(f"Hear from the fleet: {_route(harness, session)}")
+    lines.append(f"Hear from the fleet: {_route(root, harness, session)}")
     lines.append(
         f"Project folder: {project_root}. Before your first spawn, write board/status.md "
         "there with your file tool. If your harness asks or refuses, allow that folder "
@@ -352,16 +364,15 @@ def leave_lead(root: Path) -> None:
     print("lead left. Mail to lead queues until a lead joins or is spawned.")
 
 
-def _wake(command: str, items: list[dict[str, str]]) -> None:
-    text = "; ".join(f"{item['from']} {item['path']}" for item in items)
-    environment = dict(os.environ, FOIL_WAKE_TEXT=f"foil: {len(items)} new: {text}")
+def _wake(argv: list[str], session: str, items: list[dict[str, str]]) -> None:
+    listed = "; ".join(f"{item['from']} {item['path']}" for item in items)
+    values = {"{session_id}": session, "{text}": f"foil: {len(items)} new: {listed}"}
     try:
         child = subprocess.Popen(
-            ["sh", "-c", command],
+            [values.get(token, token) for token in argv],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            env=environment,
             start_new_session=True,
         )
     except OSError:
@@ -374,12 +385,20 @@ def _wake(command: str, items: list[dict[str, str]]) -> None:
         child.wait()
 
 
-def mail_wait(root: Path, *, timeout: int, wake: str | None) -> None:
+def mail_wait(root: Path, *, timeout: int, wake: bool) -> None:
     if not _outside():
         raise FoilError("foil: mail wait is outside the fleet only")
     if timeout < 0:
         raise FoilError("foil: invalid timeout")
     name = actor(root)
+    wake_argv, session = None, ""
+    if wake:
+        lead = load_registry(root)["seats"].get("lead") or {}
+        session = lead.get("session_id", "")
+        if name == "lead":
+            wake_argv = _wake_argv(root, lead.get("harness", ""), session)
+        if wake_argv is None:
+            raise FoilError("foil: no wake command for this lead")
     deadline = time.monotonic() + timeout
     first = True
     quiet = 0
@@ -417,8 +436,8 @@ def mail_wait(root: Path, *, timeout: int, wake: str | None) -> None:
     for item in items:
         print(_line(item))
     sys.stdout.flush()
-    if wake:
-        _wake(wake, items)
+    if wake_argv:
+        _wake(wake_argv, session, items)
 
 
 def notice(root: Path) -> None:
