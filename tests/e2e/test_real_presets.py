@@ -17,7 +17,7 @@ import pytest
 from foil.cli import main
 from foil.presets import load_preset
 from foil.store import load_registry
-from tests.e2e.support import board, close, launches, scripts, states, wait
+from tests.e2e.support import board, close, handled, launches, scripts, states, wait
 from tests.e2e.test_scenarios import _no_windows, _prepare, _status
 from tests.harness import standin
 from tests.test_standins import PERMISSION
@@ -51,6 +51,11 @@ def test_scenario_10_a_real_preset_launches_and_resumes_its_cli(
         scripts(repo, "scenario-10", {"lead": "lead.json", "implementer-1": "implementer.json"})
         assert main(["seat", "spawn", "lead", "--task", "staff one worker"]) == 0
         wait(repo, lambda: "state: done" in _status(repo), what="the worker's report")
+        wait(
+            repo,
+            lambda: (handled(repo, "lead"), handled(repo, "implementer-1")) == (2, 1),
+            what="both seats to finish their steps",
+        )
 
         seats = load_registry(repo)["seats"]
         first = {name: launches(repo, name) for name in ("lead", "implementer-1")}

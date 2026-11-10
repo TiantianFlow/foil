@@ -1,0 +1,24 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "pick a color"},
+      "do": [
+        {
+          "write": "board/status.md",
+          "text": "---\ncontract: status/v1\nstate: blocked\nupdated: 2026-11-10T00:00:00Z\nquestions:\n  - Which color should the status use?\n---\n\nWaiting for the human.\n"
+        },
+        {"send": "user", "text": "question in board/status.md: which color"}
+      ]
+    },
+    {
+      "when": {"mail_contains": "use blue"},
+      "do": [
+        {
+          "write": "board/status.md",
+          "text": "---\ncontract: status/v1\nstate: done\nupdated: 2026-11-10T00:00:01Z\nquestions: []\n---\n\nThe answer is blue.\n"
+        },
+        {"send": "user", "text": "done: the status uses blue"}
+      ]
+    }
+  ]
+}
