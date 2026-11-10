@@ -298,10 +298,11 @@ def test_mail_wait_without_a_join_waits_on_the_users_mailbox(
 def test_a_dead_seat_becomes_mail_from_foil(
     repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    alive = {"implementer-1"}
-    monkeypatch.setattr("foil.joined._alive_now", lambda root: set(alive))
+    states = {"implementer-1": "alive", "reviewer-1": "alive", "reviewer-2": "alive"}
+    monkeypatch.setattr("foil.joined._states_now", lambda root: dict(states))
     _join(repo, capsys)
-    alive.clear()
+    states.update({"implementer-1": "dead", "reviewer-1": "killed"})
+    del states["reviewer-2"]
     seen = _run(repo) / "seats" / "lead.json"
     record = json.loads(seen.read_text(encoding="utf-8"))
     record["checked"] = 0
@@ -309,7 +310,7 @@ def test_a_dead_seat_becomes_mail_from_foil(
     assert main(["mail", "wait", "--timeout", "0"]) == 0
     out = capsys.readouterr().out
     assert " foil " in out
-    mail = next((_board(repo) / "mail" / "lead").glob("*-foil-*.md"))
+    [mail] = (_board(repo) / "mail" / "lead").glob("*-foil-*.md")
     assert "implementer-1 died. See foil seat peek implementer-1 --lines 200." in mail.read_text(
         encoding="utf-8"
     )

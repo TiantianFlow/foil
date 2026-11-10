@@ -572,8 +572,9 @@ def _instruction(
         )
     if joined:
         lines.append(
-            "The mail from before the join was listed in the brief. "
-            "Run `foil mail wait --timeout 0` at the start of each turn."
+            "The mail from before the join was listed in the brief. Hear from the fleet "
+            "the way the brief named. `foil mail wait --timeout 0` at the start of each "
+            "turn is always safe."
         )
     elif restarted:
         lines.append(

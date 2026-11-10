@@ -150,24 +150,27 @@ def _line(item: dict[str, str]) -> str:
     return f"{item['time']} {item['from']} {item['path']}"
 
 
-def _alive_now(root: Path) -> set[str]:
+def _states_now(root: Path) -> dict[str, str]:
     registry = load_registry(root)
     return {
-        name
-        for name, record in registry["seats"].items()
-        if record.get("state") not in ("killed", "joined")
-        and _state(registry, name, record) == "alive"
+        name: _state(registry, name, record) for name, record in registry["seats"].items()
     }
 
 
 def _dead_check(root: Path, name: str, record: dict, *, force: bool = False) -> None:
-    """Mail ``name`` from ``foil`` for each seat alive at the last check and dead now."""
+    """Mail ``name`` from ``foil`` for each seat alive at the last check and dead now.
+
+    A seat killed or removed since the last check was stopped on purpose, so it gets no mail.
+    """
 
     now = time.time()
     if not force and now - record["checked"] < DEAD_EVERY:
         return
-    alive = _alive_now(root)
-    for seat in sorted(set(record["alive"]) - alive):
+    states = _states_now(root)
+    alive = {seat for seat, state in states.items() if state == "alive"}
+    for seat in sorted(set(record["alive"])):
+        if states.get(seat) != "dead":
+            continue
         write_mail(
             root,
             name,

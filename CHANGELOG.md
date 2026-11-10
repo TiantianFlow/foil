@@ -13,17 +13,14 @@ Notable changes to Foil, newest first.
 
 - `foil seat leave` ends the join once `board/handoffs/lead.md` is written, and stores the lead as `killed`, so a later join or spawn may take the seat. `seat kill`, `resume`, and `peek` on a joined lead say it has no pane, and `seat kill --all` leaves it. (#92)
 - `foil mail wait [--timeout SECONDS] [--wake CMD]` blocks until the caller's mailbox has something new: mail, or a room post that woke it. It prints the new items in the `mail list` format and marks them seen. A seat that dies while it waits becomes mail from `foil`. `--wake` runs a command once with `FOIL_WAKE_TEXT` naming each sender and path, for a harness that does not resume on a finished background command. (#92)
-- While a lead is joined, every other `foil` command run outside the fleet ends with `foil: N new for lead. Run foil mail wait --timeout 0.` on stderr when something is new. (#92)
+- While a lead is joined, every other `foil` command run outside the fleet, except `foil view`, ends with `foil: N new for lead. Run foil mail wait --timeout 0.` on stderr when something is new. (#92)
 - `foil seat list` and `foil view` show the joined lead as `joined`, with the running seats. (#92)
+- A harness preset may set fixed, non-secret environment values with `set_env`. (#91)
 
 ### Changed
 
 - The lead skill says nobody reads its pane: a question for the human goes in `status.md` `questions`, with `state: blocked` when the goal waits on it, and a `foil send user` line points at it. The lead and the workers do not use their harness's own prompt for asking the person at the keyboard. (#91)
 - The built-in `claude` preset launches and resumes with `--disallowedTools AskUserQuestion`, and the `opencode` preset denies its `question` tool. (#91)
-
-### Added
-
-- A harness preset may set fixed, non-secret environment values with `set_env`. (#91)
 
 ## [0.6.3] - 2026-10-31
 
