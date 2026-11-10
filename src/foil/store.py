@@ -41,7 +41,7 @@ def actor(toplevel: Path | None = None) -> str:
     seat = os.environ.get("FOIL_SEAT_ID", "").strip()
     if not seat:
         return "lead" if joined(toplevel) else "user"
-    if not SAFE_ID.fullmatch(seat):
+    if not SAFE_ID.fullmatch(seat) or seat in RESERVED:
         raise FoilError("foil: unknown seat")
     return seat
 
@@ -81,6 +81,39 @@ def fleet_id() -> str:
     if not SAFE_ID.fullmatch(raw):
         raise FoilError(f"foil: invalid fleet '{shown(raw)}'")
     return raw
+
+
+def fleet_ids(toplevel: Path) -> list[str]:
+    """Every fleet of the project that has a registry, in id order."""
+
+    directory = foil_root(toplevel) / "fleets"
+    if directory.is_symlink() or not directory.is_dir():
+        return []
+    return sorted(
+        path.name
+        for path in directory.iterdir()
+        if SAFE_ID.fullmatch(path.name)
+        and not path.is_symlink()
+        and (path / "run" / "registry.json").is_file()
+    )
+
+
+@contextmanager
+def in_fleet(fleet: str | None) -> Iterator[None]:
+    """Run the body as if ``FOIL_FLEET`` named ``fleet``. None leaves it as it is."""
+
+    if fleet is None:
+        yield
+        return
+    previous = os.environ.get("FOIL_FLEET")
+    os.environ["FOIL_FLEET"] = fleet
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("FOIL_FLEET", None)
+        else:
+            os.environ["FOIL_FLEET"] = previous
 
 
 def fleet_dir(toplevel: Path, fleet: str | None = None) -> Path:

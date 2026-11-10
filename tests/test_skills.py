@@ -21,7 +21,8 @@ FLAGS = {
     ("seat", "spawn"): {"--name", "--task"},
     ("seat", "kill"): {"--all"},
     ("seat", "resume"): set(),
-    ("seat", "list"): {"--json", "--archived"},
+    ("seat", "renew"): set(),
+    ("seat", "list"): {"--json", "--archived", "--all-fleets"},
     ("seat", "archive"): set(),
     ("seat", "peek"): {"--lines"},
     ("seat", "join"): {"--harness", "--session", "--take"},
@@ -30,7 +31,7 @@ FLAGS = {
     ("post",): {"--re", "--decline", "--members", "--close"},
     ("mail", "read"): {"--json"},
     ("mail", "list"): {"--json"},
-    ("mail", "wait"): {"--timeout", "--wake"},
+    ("mail", "wait"): {"--timeout", "--wake", "--all-fleets"},
     ("board", "read"): {"--json"},
     ("board", "list"): {"--json"},
     ("memory", "add"): {"--replaces"},
@@ -54,9 +55,9 @@ ROLE_COMMANDS = {
         ("seat", "leave"),
         ("seat", "spawn"),
         ("seat", "list"),
-        ("seat", "peek"),
         ("seat", "kill"),
         ("seat", "archive"),
+        ("seat", "renew"),
         ("send",),
         ("mail", "wait"),
         ("roster", "list"),
@@ -72,6 +73,7 @@ ROLE_COMMANDS = {
         ("seat", "kill"),
         ("seat", "archive"),
         ("seat", "resume"),
+        ("seat", "renew"),
         ("seat", "list"),
         ("seat", "peek"),
         ("send",),
@@ -311,8 +313,10 @@ def test_joined_skill_spawns_a_lead_only_from_the_handoff() -> None:
         if tokens[:3] == ["foil", "seat", "spawn"] and "lead" in tokens:
             spawns.append(invocation)
     assert spawns == [
+        "foil seat spawn lead",
         'foil seat spawn lead --task "Read board/handoffs/lead.md, then continue the goal."',
     ]
+    assert 'FOIL_FLEET=docs foil seat spawn lead --task "board/tasks/goal.md"' in text
     assert "foil seat join lead" in text
     assert "`foil send user`" in text.split("## What differs", 1)[1].split("\n## ", 1)[0]
     assert "three quiet timeouts in a row" in text
@@ -385,14 +389,9 @@ def test_onboarding_says_who_answers_a_dialog() -> None:
 
     for relative in ("README.md", "skills/joined.md", "docs/demo.md"):
         text = (ROOT / relative).read_text(encoding="utf-8")
-        assert "folder-trust prompt" in text, relative
+        assert "folder-trust" not in text, relative
         assert "approval dialog" not in text, relative
         assert "opt-in" in text, relative
-        assert (
-            "not answered" in text
-            or "leaves those for you" in text
-            or "leaves it for you" in text
-        )
         assert "reports any prompt it sees rather than answering it" not in text
     skill = (SKILLS / "joined.md").read_text(encoding="utf-8")
     assert "Write board/status.md with state: done" not in skill
@@ -415,7 +414,9 @@ def test_onboarding_says_who_answers_a_dialog() -> None:
     assert "而不是替你回答" not in chinese
     zh_started = chinese.split("## 开始使用", 1)[1].split("### 手动操作", 1)[0]
     assert "限制" in zh_started
-    assert "文件夹信任" in zh_started
+    assert "文件夹信任" not in zh_started
+    assert "leaves those for you" in started
+    assert "留给你" in zh_started
     assert "审批对话框" not in zh_started
     requirements = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
     onboarding = requirements.split("### Onboarding", 1)[1].split("## 4.", 1)[0]
@@ -438,7 +439,7 @@ def test_skills_state_the_channel_choice() -> None:
     shared = (
         "Send is one seat. Post is a room's members.",
         "A worker replies in a room and does not open one.",
-        "A decline writes a file and types nothing.",
+        "A decline writes a file and wakes nobody.",
         "Status still comes from `status.md`.",
         "`foil send` one seat when the point is for that seat alone: a question or a correction.",
         "`foil post` when more than one other seat needs the same point.",
@@ -508,30 +509,21 @@ def test_skills_state_the_channel_choice() -> None:
     assert "is a room file" not in lead
 
 
-def test_joined_lead_clears_only_a_validated_folder_trust_prompt() -> None:
-    """Issue 84: the one dialog the joined lead answers, and the checks first."""
+def test_no_skill_types_into_a_pane() -> None:
+    """Turns are headless: no skill clears a dialog, and Foil has no key-sending code."""
 
-    text = (SKILLS / "joined.md").read_text(encoding="utf-8")
-    section = text.split("## Dialogs", 1)[1].split("\n## ", 1)[0]
-    for phrase in (
-        "`foil seat list`",
-        "`run/registry.json`",
-        "`run/plans/<seat>.json`",
-        "`realpath`",
-        "A parent directory",
-        "peek again",
-        "a login prompt",
-        "a command or tool approval",
-        "not isolation",
-    ):
-        assert phrase in section, phrase
-    setup = text.split("## Setup", 1)[1].split("\n## ", 1)[0]
-    assert "accept its folder-trust" not in setup
-    assert "a login prompt, or a prompt that blocks" not in text
+    for name in ("joined.md", "lead.md", "worker.md"):
+        text = (SKILLS / name).read_text(encoding="utf-8")
+        assert "folder-trust" not in text, name
+        assert "send-keys" not in text, name
+        assert "nudge" not in text.lower(), name
+    source = ROOT / "src" / "foil"
+    for path in source.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        assert "send-keys" not in text, path
     requirements = (ROOT / "docs" / "requirements.md").read_text(encoding="utf-8")
     f12 = next(line for line in requirements.splitlines() if line.startswith("| F12 |"))
-    assert "`run/plans/<seat>.json`" in f12
-    assert "never trusted" in f12
+    assert "Nothing types into a seat's pane: Foil sends no keys" in f12
 
 
 def test_joined_lead_stops_waiting_after_quiet_timeouts() -> None:
@@ -959,7 +951,7 @@ def test_skills_keep_seat_context_small() -> None:
         "Do not mail a checkpoint into a seat that keeps running.",
         "A re-check after a fix checks the fix and every acceptance item that failed before",
         "A full test suite runs once per round, by the seat that owns acceptance",
-        "A nudge wakes you, so end your turn instead of polling.",
+        "New mail or a post starts your next turn, so end your turn instead of polling.",
         "double the wait",
         "`--members` on a reply sets the whole list",
         "A closed room refuses every later post",
@@ -1011,22 +1003,32 @@ def test_each_lead_reads_only_its_own_paragraphs(
     for text in (joined, launched):
         assert "<!--" not in text
     for line in (
-        "A nudge wakes you",
+        "New mail or a post starts your next turn",
         "you may not run `foil seat kill --all`",
-        "You do not type into a pane",
         "Record them with `foil roster update",
         "## Setup",
         "## The viewer",
         "## Teardown and upgrading",
     ):
         assert line not in joined, line
-    for line in ("Nothing nudges you", "The human reads your chat", "## Dialogs", "## Leaving"):
+    for line in (
+        "Nothing starts a turn for you",
+        "The human reads your chat",
+        "## Several goals",
+        "## Leaving",
+        "You do not type into a pane",
+    ):
         assert line in joined, line
+    assert "## Dialogs" not in joined
     assert joined.count("foil send user") == 1
     assert "not with `foil send user`" in joined
     assert joined.count("## Roster") == 1
-    for line in ("A nudge wakes you", "foil send user", "You do not type into a pane"):
+    for line in (
+        "New mail or a post starts your next turn",
+        "foil send user",
+        "You do not type into a pane",
+    ):
         assert line in launched, line
-    for line in ("Nothing nudges you", "The human reads your chat", "# Joined lead"):
+    for line in ("Nothing starts a turn for you", "The human reads your chat", "# Joined lead"):
         assert line not in launched, line
     assert len(joined.encode()) < 30_000

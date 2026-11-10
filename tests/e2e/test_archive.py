@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import signal
 import subprocess
 from pathlib import Path
 
@@ -37,7 +40,7 @@ def _peek(capsys: pytest.CaptureFixture[str], name: str) -> str:
 
 
 def _ready(repo: Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
-    needle = f"foil-fake {name} ready"
+    needle = f"foil-fake {name} turn 0"
     _wait(repo, lambda: needle in _peek(capsys, name).replace("\n", ""))
 
 
@@ -61,12 +64,6 @@ def test_exited_fake_leaves_a_window_until_kill(
 ) -> None:
     repo = _prepare(tmp_path, "scenario-2", monkeypatch)
     try:
-        fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
-        fake.mkdir(parents=True, exist_ok=True)
-        (fake / "implementer-1.json").write_text(
-            json.dumps({"exit_on_input": True}),
-            encoding="utf-8",
-        )
         assert main(["seat", "spawn", "lead"]) == 0
         assert main(["seat", "spawn", "implementer"]) == 0
         _ready(repo, capsys, "implementer-1")
@@ -74,10 +71,14 @@ def test_exited_fake_leaves_a_window_until_kill(
         session = str(load_registry(repo)["tmux_session"])
         window = seat["window_id"]
         assert window in _windows(session)
-        assert main(["send", "implementer-1", "exit now"]) == 0
+        pid = subprocess.run(
+            ["tmux", "display-message", "-p", "-t", window, "#{pane_pid}"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        os.kill(int(pid), signal.SIGKILL)
         _wait(repo, lambda: "implementer-1\timplementer\tdead\t" in _list(capsys))
         assert window in _windows(session)
-        assert "foil-fake implementer-1 ready" in _peek(capsys, "implementer-1").replace("\n", "")
+        assert "foil-fake implementer-1 turn 0" in _peek(capsys, "implementer-1").replace("\n", "")
         assert main(["seat", "archive", "implementer-1"]) == 1
         assert capsys.readouterr().err == "foil: seat 'implementer-1' is dead\n"
         assert "implementer-1" in load_registry(repo)["seats"]
@@ -153,7 +154,7 @@ def test_list_shows_the_live_lead_and_the_archived_worktree(
         assert main(["seat", "archive", "implementer-1"]) == 0
         capsys.readouterr()
         listed = _list(capsys)
-        assert "lead\tlead\talive\t" in listed
+        assert re.search(r"lead\tlead\t(working|idle)\t", listed)
         assert "implementer-1" not in listed
         assert main(["seat", "list", "--archived"]) == 0
         archived = capsys.readouterr().out.strip()
@@ -184,7 +185,7 @@ def test_lead_is_never_archived(
         _ready(repo, capsys, "lead")
         assert main(["seat", "archive", "lead"]) == 1
         assert capsys.readouterr().err == "foil: seat 'lead' cannot be archived\n"
-        assert "foil-fake lead ready" in _peek(capsys, "lead")
+        assert "foil-fake lead turn 0" in _peek(capsys, "lead")
         assert main(["seat", "kill", "lead"]) == 0
         assert main(["seat", "archive", "lead"]) == 1
         assert capsys.readouterr().err == "foil: seat 'lead' cannot be archived\n"
@@ -216,7 +217,7 @@ def test_a_worker_cannot_archive(
         assert capsys.readouterr().err == "foil: not allowed\n"
         assert registry_path(repo).read_bytes() == before
         assert not (foil_root(repo) / "fleets" / "main" / "run" / "archive").exists()
-        assert "lead\tlead\talive\t" in _list(capsys)
+        assert re.search(r"lead\tlead\t(working|idle)\t", _list(capsys))
         monkeypatch.delenv("FOIL_SEAT_ID")
         assert main(["seat", "archive", "implementer-1"]) == 0
         assert "implementer-1" not in load_registry(repo)["seats"]

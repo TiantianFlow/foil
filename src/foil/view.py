@@ -32,6 +32,7 @@ from typing import Any, NamedTuple
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from foil.board import room_state
+from foil.board_ops import split_front_matter
 from foil.errors import FoilError, assert_no_secret
 from foil.lifecycle import peek_text, seat_rows
 from foil.memory import read_lessons
@@ -98,72 +99,81 @@ _FLEET_NONE = (
 )
 FOOTER = "This viewer does not type into a pane and does not decide progress."
 TIPS = {
-    "Lessons": "Project lessons. They outlive fleets and are copied into a seat at the next "
-    "spawn or resume. States are proposed, accepted, rejected, and superseded. This is not "
-    "the fleet override list.",
+    "Lessons": "Project lessons. They outlive fleets and are copied into a seat at the "
+    "next spawn or resume. States are proposed, accepted, rejected, and superseded. This "
+    "is not the fleet override list.",
     "Roles": "A role is a description, a persona, a worktree flag, and a permission. The "
     "description is the first line of the persona.",
-    "Permission": "auto asks the harness to skip approval prompts. ask stops the seat at its "
-    "first approval prompt.",
-    "Worktree": "yes means each seat of this role gets its own git worktree on a new branch, "
-    "so its edits do not touch your checkout or other seats. Killing the seat keeps the "
-    "branch.",
-    "Harnesses": "How one agent CLI is launched, and the model ids its list names. Spawn and "
-    "roster update warn about a model that is absent from the list, and do not refuse it. A "
-    "file harnesses/<id>.toml replaces that one id.",
-    "Installed": "Whether this viewer found the command on the PATH it was started with, and "
-    "where. A seat looks the command up on the PATH of the foil command that launched it, so "
-    "a viewer started elsewhere, such as a service, can differ.",
-    "Launch command": "The argv foil runs to start a seat, with placeholders as written. A "
-    "value that looks like a credential shows as [hidden].",
-    "Default mapping": "The shared default in mapping.toml: for each role, one ordered list of "
-    "harness and model pairs, shown as pair cards. The rotation is on the pair, never on the "
-    "harness or the model alone. An empty model shows harness default: no --model is passed, "
-    "so the CLI uses its own default. Resume keeps the pair recorded on the seat.",
-    "Entries, in order": "Each entry is one card, harness on top and model below. Each spawn "
-    "of a role takes the next entry, a new lead included, and an edited list starts again "
-    "at its first entry.",
-    "Attach": "The session name stored for this fleet. The viewer does not type into the pane.",
+    "Permission": "auto asks the harness to skip approval prompts. ask stops the seat at "
+    "its first approval prompt.",
+    "Worktree": "yes means each seat of this role gets its own git worktree on a new "
+    "branch, so its edits do not touch your checkout or other seats. Killing the seat "
+    "keeps the branch.",
+    "Harnesses": "How one agent CLI is launched, and the model ids its list names. Spawn "
+    "and roster update warn about a model that is absent from the list, and do not refuse "
+    "it. A file harnesses/<id>.toml replaces that one id.",
+    "Installed": "Whether this viewer found the command on the PATH it was started with, "
+    "and where. A seat looks the command up on the PATH of the foil command that launched "
+    "it, so a viewer started elsewhere, such as a service, can differ.",
+    "Launch command": "The start argv a seat's runner runs for its first turn and the turn "
+    "argv for each later turn, with placeholders as written. A value that looks like a "
+    "credential shows as [hidden].",
+    "Default mapping": "The shared default in mapping.toml: for each role, one ordered "
+    "list of harness and model pairs, shown as pair cards. The rotation is on the pair, "
+    "never on the harness or the model alone. An empty model shows harness default: no "
+    "--model is passed, so the CLI uses its own default. Resume keeps the pair recorded on "
+    "the seat.",
+    "Entries, in order": "Each entry is one card, harness on top and model below. Each "
+    "spawn of a role takes the next entry, a new lead included, and an edited list starts "
+    "again at its first entry.",
+    "Attach": "The session name stored for this fleet. Nothing types into a seat's pane.",
     "Workspace": "The checkout recorded for the project. Every fleet on this repository "
     "shares it. Seat worktrees are separate branches.",
-    "Overrides": "This fleet's overrides.toml. A role's entries, in order, replace the pair "
-    "list below this fleet. The Rotation line marks the entry the next seat of this fleet "
-    "takes. An empty model is harness default. A model-only row on a multi-entry role is "
-    "refused at spawn (F3). A running seat keeps its last launch. Resume does not read "
-    "this file.",
-    "Projects": "Each project's recorded checkout. A project whose checkout is gone, or now "
-    "belongs to another project folder, has no link until foil init runs in that checkout.",
+    "Overrides": "This fleet's overrides.toml. A role's entries, in order, replace the "
+    "pair list below this fleet. The Rotation line marks the entry the next seat of this "
+    "fleet takes. An empty model is harness default. A model-only row on a multi-entry "
+    "role is refused at spawn (F3). A running seat keeps its last launch. Resume does not "
+    "read this file.",
+    "Projects": "Each project's recorded checkout. A project whose checkout is gone, or "
+    "now belongs to another project folder, has no link until foil init runs in that "
+    "checkout.",
     "Last activity": "When a file on this fleet's board last changed.",
-    "Agents": "Every seat stored for this fleet, grouped by state. A dead window can still be "
-    "peeked. A killed seat stays listed and its name stays reserved until foil seat archive "
-    "frees it. An archived seat is not listed.",
-    "State": "alive: the window exists and the process is running. joined: your own agent "
-    "session took the lead seat with foil seat join lead. It has no window or pane. dead: the "
-    "window is gone or the process has exited, and the seat was not killed. killed: stopped "
-    "with foil seat kill, or a joined lead that left.",
+    "Agents": "Every seat stored for this fleet, grouped by state. A dead window can still "
+    "be peeked. A killed seat stays listed and its name stays reserved until foil seat "
+    "archive frees it. An archived seat is not listed.",
+    "State": "working, idle, and paused are alive: the window exists and the runner is "
+    "running. working: a turn is running. idle: it waits for mail or a post. paused: its "
+    "turns failed, and foil seat resume retries. joined: your own agent session took the "
+    "lead seat with foil seat join lead. It has no window or pane. dead: the window is "
+    "gone or the runner has exited, and the seat was not killed. killed: stopped with foil "
+    "seat kill, or a joined lead that left.",
     "Harness / model": "The pair this seat was launched with: the agent CLI and the model "
     "passed to it. Resume launches the same pair. A second line shows the pair the next "
     "spawn of that role takes when this fleet's overrides change it.",
     "Branch": "The git branch of this seat's worktree. A role without a worktree has no "
     "branch. Killing the seat keeps the branch.",
-    "status.md": "The lead's report for this fleet, including the checklist, shown as written.",
+    "status.md": "The lead's report for this fleet: the mandate, the checklist, and the "
+    "decisions it made, shown as written.",
     "Board": "This fleet's shared folder. Mail is to one seat. Notes are scratch and wake "
     "nobody. tasks/ is the brief. results/ is the report. The viewer shows the files as "
     "written.",
-    "Posts": "Rooms under this fleet's board/room/, each with its purpose, its members, and "
-    "whether it is open or closed. A post wakes the room's members and the seats it names as "
-    "@name, except a member whose last file there is a decline. A closed room refuses later "
-    "posts. A decline is a file and types nothing. A hand-written file there wakes nobody. "
-    "Status still comes from status.md.",
-    "Pane": "Raw tmux capture. The viewer does not decide that the seat is busy, blocked, or "
-    "waiting on a dialog.",
+    "Posts": "Rooms under this fleet's board/room/, each with its purpose, its members, "
+    "and whether it is open or closed. A post wakes the room's members and the seats it "
+    "names as @name, except a member whose last file there is a decline. A closed room "
+    "refuses later posts. A decline is a file and wakes nobody. Status still comes from "
+    "status.md.",
+    "Pane": "Raw tmux capture of the runner's window: each turn's output as the harness "
+    "printed it. The viewer does not decide that the seat is busy or blocked.",
+    "Needs you": "The questions in status.md, and the seats that are paused or dead. foil "
+    "seat resume restarts a dead seat and retries a paused one.",
 }
+_ALIVE = ("working", "idle", "paused", "joined")
 FILTERS = {
-    "": ("Not killed", ("dead", "alive", "joined")),
-    "alive": ("Alive", ("alive", "joined")),
+    "": ("Not killed", ("dead", *_ALIVE)),
+    "alive": ("Alive", _ALIVE),
     "dead": ("Dead", ("dead",)),
     "killed": ("Killed", ("killed",)),
-    "all": ("All", ("dead", "alive", "joined", "killed")),
+    "all": ("All", ("dead", *_ALIVE, "killed")),
 }
 STATUS_LINES = 15
 _CSS = """
@@ -234,7 +244,7 @@ border-radius:6px;padding:4px 8px;background:var(--soft);min-width:5rem}
 .layers span+span:before{content:"\\2192";margin-right:8px}
 .pairs i{font-style:normal;color:var(--muted);font-size:11px;margin-right:4px}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;
-background:var(--muted)}.alive,.joined{background:var(--ok)}.dead{background:var(--warn)}
+background:var(--muted)}.working,.idle,.joined{background:var(--ok)}.dead,.paused{background:var(--warn)}
 .killed{background:var(--bad)}.agents td:first-child{width:46%}.agents td:nth-child(2){width:11%}
 .agents td:nth-child(3){width:23%}tr.group th{background:var(--soft);border-top:1px solid
 var(--line);font-size:12px}tr.attention th{background:var(--warn-soft);color:var(--fg)}
@@ -472,10 +482,13 @@ def _preset_cells(preset: dict) -> tuple[str, str, str]:
     fixed = preset.get("set_env", {})
     if fixed:
         names += f"<small>sets: {escape(', '.join(fixed))}</small>"
-    found = shutil.which(preset["command"][0])
+    found = shutil.which(preset["start"][0])
     installed = f"yes<small>{escape(found)}</small>" if found else _faded("no")
     models = escape(", ".join(preset["models"])) if preset["models"] else _faded("none")
-    launch = f"<code>{escape(_argv(preset['command']))}</code>{names}"
+    launch = (
+        f"<code>{escape(_argv(preset['start']))}</code>"
+        f"<small>turn: <code>{escape(_argv(preset['turn']))}</code></small>{names}"
+    )
     return installed, f"<code>{models}</code>", launch
 
 
@@ -584,13 +597,16 @@ def _fleets_page(root: Path, base: str) -> _Page:
         for fleet in _fleet_ids(root):
             link = f'<a class="mono" href="{base}/fleets/{quote(fleet)}">{escape(fleet)}</a>'
             try:
-                states = [row["state"] for row in seat_rows(root, load_registry(root, fleet))]
+                states = [
+                    row["state"]
+                    for row in seat_rows(root, load_registry(root, fleet), fleet=fleet)
+                ]
                 files = _board_files(root, fleet)
             except Exception as exc:
                 rows.append([link, f'<span class="err">{escape(_error(exc))}</span>', "", "", ""])
                 continue
             counts = [
-                str(states.count("alive") + states.count("joined")),
+                str(sum(states.count(state) for state in _ALIVE)),
                 str(states.count("dead")),
                 str(states.count("killed")),
             ]
@@ -1035,9 +1051,33 @@ def _status(root: Path, fleet: str, files: list[tuple[str, int, float]], here: s
         more = f'<p class="bar muted">Showing {STATUS_LINES} of {len(lines)} lines. {link}</p>'
     shown = escape("\n".join(lines[:STATUS_LINES]))
     meta = f"modified {_ago(found[0][2])} · {link}"
+    fields, _body = split_front_matter(text)
+    decisions = (fields or {}).get("decisions")
+    listed = ""
+    if isinstance(decisions, list) and decisions:
+        listed = "<ul>" + "".join(f"<li>{escape(item)}</li>" for item in decisions) + "</ul>"
     return _section(
-        "status.md", f'<pre class="wrap">{shown}</pre>{more}', meta=meta, anchor="status"
+        "status.md", f'{listed}<pre class="wrap">{shown}</pre>{more}', meta=meta, anchor="status"
     )
+
+
+def _needs_you(root: Path, fleet: str, rows: list[dict], here: str) -> str:
+    """Status questions, then paused and dead seats. Empty when there are none."""
+
+    items = []
+    with suppress(Exception):
+        text, _size = _read_listed(root, fleet, "status.md")
+        questions = (split_front_matter(text)[0] or {}).get("questions")
+        if isinstance(questions, list):
+            items += [escape(item) for item in questions if item]
+    for row in rows:
+        if row["state"] in ("paused", "dead"):
+            link = escape(f"{here}/seats/{quote(row['name'])}")
+            items.append(f'<a class="mono" href="{link}">{escape(row["name"])}</a> is '
+                         f"{escape(row['state'])}")
+    if not items:
+        return ""
+    return _section("Needs you", "<ul>" + "".join(f"<li>{item}</li>" for item in items) + "</ul>")
 
 
 def _board_sections(root: Path, fleet: str, here: str) -> str:
@@ -1073,7 +1113,7 @@ def _ordered(rows: list[dict]) -> list[dict]:
 
     def key(row: dict) -> tuple:
         number = re.search(r"(\d+)$", row["name"])
-        rank = {"dead": 0, "alive": 1, "joined": 1, "killed": 2}[row["state"]]
+        rank = {"dead": 0, "paused": 0, "killed": 2}.get(row["state"], 1)
         return (rank, row["template"] != "lead",
                 row["template"], int(number.group(1)) if number else 0, row["name"])
 
@@ -1099,13 +1139,12 @@ def _agents(rows: list[dict], upcoming: dict[str, str], here: str, state: str) -
         return "<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
 
     head = _head(["Seat", "State", "Harness / model", "Branch"])
-    groups = [("dead", "Needs attention", ' class="group attention"'),
-              ("alive", "Running", ' class="group"')]
+    groups = [({"dead", "paused"}, "Needs attention", ' class="group attention"'),
+              ({"working", "idle", "joined"}, "Running", ' class="group"')]
     body = ""
-    for name, title, cls in groups:
-        wanted = {"alive", "joined"} if name == "alive" else {name}
-        members = [row for row in rows if row["state"] in wanted]
-        if name in shown and members:
+    for wanted, title, cls in groups:
+        members = [row for row in rows if row["state"] in wanted and row["state"] in shown]
+        if members:
             body += f'<tr{cls}><th colspan="4">{title} · {len(members)}</th></tr>'
             body += "".join(line(row) for row in members)
     killed = [row for row in rows if row["state"] == "killed"]
@@ -1136,7 +1175,7 @@ def _fleet_page(root: Path, fleet: str, query: dict, base: str) -> _Page:
     state = state if state in FILTERS else ""
     try:
         registry = load_registry(root, fleet)
-        rows = _ordered(seat_rows(root, registry))
+        rows = _ordered(seat_rows(root, registry, fleet=fleet))
         attach, failure = _command(_attach(registry)), None
     except Exception as exc:
         registry, rows, failure = None, [], exc
@@ -1166,7 +1205,8 @@ def _fleet_page(root: Path, fleet: str, query: dict, base: str) -> _Page:
     noun = "seat" if len(rows) == 1 else "seats"
     workspace = _guard(lambda: f"<code>{escape(_checkout(root))}</code>")
     body = (
-        f'<section id="agents"><h2>{_label("Agents")} <span class="muted">{len(rows)} '
+        _needs_you(root, fleet, rows, here)
+        + f'<section id="agents"><h2>{_label("Agents")} <span class="muted">{len(rows)} '
         f"{noun}</span></h2>{_guard(agents)}</section>"
         + _board_sections(root, fleet, here)
         + _section("Fleet overrides", _guard(overrides), tip="Overrides")
@@ -1184,11 +1224,11 @@ def _seat_page(root: Path, fleet: str, name: str, lines: int, base: str) -> _Pag
     registry = load_registry(root, fleet)
     if not SAFE_ID.fullmatch(name) or name not in registry["seats"]:
         raise _Missing(f"No seat named {name} in fleet {fleet}.")
-    row = seat_rows(root, registry, only=name, owned=True)[0]
+    row = seat_rows(root, registry, only=name, owned=True, fleet=fleet)[0]
     upcoming = _next_entries(root, fleet, registry).get(row["template"], "")
     fleet_link = f"{base}/fleets/{quote(fleet)}"
     here = f"{fleet_link}/seats/{quote(name)}"
-    order = [item["name"] for item in _ordered(seat_rows(root, registry))]
+    order = [item["name"] for item in _ordered(seat_rows(root, registry, fleet=fleet))]
     at = order.index(name)
     steps = [
         f'<a href="{escape(fleet_link)}/seats/{quote(order[at + step])}">{label} '

@@ -29,7 +29,6 @@ _IDENTITY_FORMAT = "#{session_id}\t#{window_id}\t#{window_name}"
 # Enter inside a fast burst stays in the harness input. Codex keeps that
 # burst open for 120ms. The pause starts after the line has been written,
 # and Enter is sent once.
-NUDGE_ENTER_DELAY = 0.2
 
 
 _budget = threading.local()
@@ -326,16 +325,6 @@ class TmuxController:
             ["capture-pane", "-p", "-t", window_id, "-S", f"-{lines}"],
             "capture-pane",
         )
-
-    def nudge(self, window_id: str, line: str) -> bool:
-        if not window_id.startswith("@"):
-            return False
-        typed = self._run(["send-keys", "-l", "-t", window_id, "--", line])
-        if typed.returncode != 0:
-            return False
-        time.sleep(NUDGE_ENTER_DELAY)
-        self._run(["send-keys", "-t", window_id, "Enter"])
-        return True
 
     def remove_verified(self, fleet_id: str, seat_id: str, target: TmuxTarget) -> bool:
         """Remove this seat's window, including one whose process has exited.

@@ -1,85 +1,203 @@
-"""Runner plan validation and exec-time environment forwarding."""
+"""The runner: plan validation, prompts, its record, and exec-time environment."""
 
 from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
-from foil.runner import RunnerError, _load_plan
+from foil.runner import (
+    INLINE,
+    RESTARTED,
+    RunnerError,
+    load_plan,
+    load_record,
+    record_path,
+    wake_prompt,
+)
 
 
-def _write_plan(tmp_path: Path, payload: dict) -> Path:
-    plan = tmp_path / "plan.json"
-    plan.write_text(json.dumps(payload), encoding="utf-8")
+def _plan(tmp_path: Path, **changes: object) -> dict:
+    board = tmp_path / "fleet" / "board"
+    (board / "mail" / "seat-1").mkdir(parents=True, exist_ok=True)
+    instruction = tmp_path / "fleet" / "run" / "instructions" / "seat-1.md"
+    instruction.parent.mkdir(parents=True, exist_ok=True)
+    instruction.write_text("Do the task.\n", encoding="utf-8")
+    plan = {
+        "start": [sys.executable, str(tmp_path / "probe.py"), "start", "{prompt}"],
+        "turn": [sys.executable, str(tmp_path / "probe.py"), "turn", "{prompt}"],
+        "session_key": "",
+        "session_id": "s-1",
+        "cwd": str(tmp_path),
+        "env": {"FOIL_SEAT_ID": "seat-1"},
+        "env_forward": [],
+        "instruction": str(instruction),
+        "board": str(board),
+        "seat": "seat-1",
+        "reader": "lead",
+        "worker": False,
+        "turn_timeout": 60,
+        "retry": [0.1, 0.1, 0.1],
+        "first": "start",
+        "restarted": False,
+    }
+    plan.update(changes)
     return plan
 
 
-def _base_plan(tmp_path: Path) -> dict:
-    return {"argv": ["fixture", "--version"], "cwd": str(tmp_path), "env": {}}
+def _write(tmp_path: Path, plan: dict) -> Path:
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps(plan), encoding="utf-8")
+    return path
 
 
-def test_plan_accepts_an_optional_env_forward_list(tmp_path: Path) -> None:
-    payload = _base_plan(tmp_path)
-    payload["env_forward"] = ["FOIL_FORWARD_ME"]
-    plan = _write_plan(tmp_path, payload)
+def _run(tmp_path: Path, plan: dict) -> subprocess.Popen:
+    return subprocess.Popen(
+        [sys.executable, "-P", "-m", "foil.runner", str(_write(tmp_path, plan))],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
 
-    loaded = _load_plan(plan)
 
+def _until(predicate, timeout: float = 20) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.1)
+    raise AssertionError("timed out")
+
+
+def test_a_plan_with_exactly_the_runner_fields_loads(tmp_path: Path) -> None:
+    loaded = load_plan(_write(tmp_path, _plan(tmp_path, env_forward=["FOIL_FORWARD_ME"])))
     assert loaded["env_forward"] == ["FOIL_FORWARD_ME"]
 
 
-def test_plan_rejects_unknown_fields_and_bad_forward_names(tmp_path: Path) -> None:
-    unknown = _base_plan(tmp_path)
-    unknown["secrets"] = {"token": "sk-nope"}
-    with pytest.raises(RunnerError, match="invalid fields"):
-        _load_plan(_write_plan(tmp_path, unknown))
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"secrets": {"token": "sk-nope"}},
+        {"env_forward": ["NAME=WITH-VALUE"]},
+        {"start": ["claude", "-p"]},
+        {"first": "resume"},
+        {"turn_timeout": 0},
+        {"retry": [-1]},
+        {"seat": "../lead"},
+        {"cwd": "relative"},
+    ],
+)
+def test_a_plan_with_a_bad_field_is_refused(tmp_path: Path, change: dict) -> None:
+    with pytest.raises(RunnerError):
+        load_plan(_write(tmp_path, _plan(tmp_path, **change)))
 
-    missing = {"argv": ["fixture"], "cwd": str(tmp_path)}
-    with pytest.raises(RunnerError, match="invalid fields"):
-        _load_plan(_write_plan(tmp_path, missing))
 
-    bad_name = _base_plan(tmp_path)
-    bad_name["env_forward"] = ["NAME=WITH-VALUE"]
-    with pytest.raises(RunnerError, match="env_forward"):
-        _load_plan(_write_plan(tmp_path, bad_name))
+def test_a_symlinked_plan_is_refused(tmp_path: Path) -> None:
+    real = _write(tmp_path, _plan(tmp_path))
+    link = tmp_path / "link.json"
+    link.symlink_to(real)
+    with pytest.raises(RunnerError, match="symlink"):
+        load_plan(link)
 
 
-def test_runner_merges_forwarded_values_at_exec_time(tmp_path: Path) -> None:
-    probe = tmp_path / "probe.py"
-    probe.write_text(
-        "import os\n"
-        "print(os.environ.get('FOIL_FORWARD_ME', 'absent'))\n"
-        "print(os.environ.get('FOIL_FORWARD_MISSING', 'absent'))\n",
+def test_the_wake_prompt_inlines_short_mail_and_names_the_rest(tmp_path: Path) -> None:
+    plan = _plan(tmp_path)
+    board = Path(plan["board"])
+    short = board / "mail" / "seat-1" / "a.md"
+    long = board / "mail" / "seat-1" / "b.md"
+    short.write_text("---\nfrom: lead\n---\n" + "a" * (INLINE - 1) + "\n", encoding="utf-8")
+    long.write_text("---\nfrom: lead\n---\n" + "b" * INLINE + "\n", encoding="utf-8")
+    items = [
+        {"time": "t1", "from": "lead", "path": str(short), "relative": "mail/seat-1/a.md"},
+        {"time": "t2", "from": "lead", "path": str(long), "relative": "mail/seat-1/b.md"},
+    ]
+    prompt = wake_prompt(plan, items, restarted=True)
+    lines = prompt.splitlines()
+    assert lines[0] == RESTARTED
+    assert lines[1] == "New for seat-1 (2):"
+    assert lines[2:4] == [f"t1 lead {short}", f"t2 lead {long}"]
+    assert f"--- {short}" in prompt and f"--- {long}" not in prompt
+    assert lines[-1].startswith(f"Re-read {plan['instruction']} before you act. Read each item")
+    assert wake_prompt(plan, [], restarted=False) == (
+        f"Nothing new for seat-1.\nRe-read {plan['instruction']} before you act.\n"
+    )
+
+
+def test_a_damaged_record_loads_as_defaults(tmp_path: Path) -> None:
+    board = tmp_path / "board"
+    path = record_path(board, "seat-1")
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"delivered": "x", "failures": "2", "last_exit": True}))
+    record = load_record(board, "seat-1")
+    assert record["delivered"] == [] and record["failures"] == 0 and record["last_exit"] is None
+
+
+def test_forwarded_values_are_read_at_exec_time_and_stdin_is_empty(tmp_path: Path) -> None:
+    out = tmp_path / "out.json"
+    (tmp_path / "probe.py").write_text(
+        "import json, os, sys\n"
+        f"open({str(out)!r}, 'w').write(json.dumps([os.environ.get('FOIL_FORWARD_ME', 'absent'),"
+        " os.environ.get('FOIL_FORWARD_MISSING', 'absent'), sys.stdin.read(), sys.argv[1:]]))\n",
         encoding="utf-8",
     )
-    plan = _write_plan(
-        tmp_path,
-        {
-            "argv": [sys.executable, str(probe)],
-            "cwd": str(tmp_path),
-            "env": {"PATH": os.environ.get("PATH", "")},
-            "env_forward": ["FOIL_FORWARD_ME", "FOIL_FORWARD_MISSING"],
-        },
-    )
-    environment = {
-        "PATH": os.environ.get("PATH", ""),
-        "FOIL_FORWARD_ME": "forwarded-exec-value",
-    }
+    plan = _plan(tmp_path, env_forward=["FOIL_FORWARD_ME", "FOIL_FORWARD_MISSING"])
+    os.environ["FOIL_FORWARD_ME"] = "forwarded"
+    try:
+        runner = _run(tmp_path, plan)
+    finally:
+        del os.environ["FOIL_FORWARD_ME"]
+    try:
+        _until(out.is_file)
+        _until(lambda: out.read_text() != "")
+        forwarded, missing, stdin, argv = json.loads(out.read_text())
+        assert (forwarded, missing, stdin) == ("forwarded", "absent", "")
+        assert argv == ["start", "Do the task.\n"]
+    finally:
+        os.killpg(runner.pid, signal.SIGKILL)
+        runner.wait()
 
-    result = subprocess.run(
-        [sys.executable, "-m", "foil.runner", str(plan)],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=environment,
-    )
 
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == ["forwarded-exec-value", "absent"]
-    # The persisted plan holds variable names only, never values.
-    assert "forwarded-exec-value" not in plan.read_text(encoding="utf-8")
+def test_a_turn_killed_by_a_signal_records_128_plus_n(tmp_path: Path) -> None:
+    (tmp_path / "probe.py").write_text(
+        "import os, signal\nos.kill(os.getpid(), signal.SIGTERM)\n", encoding="utf-8"
+    )
+    runner = _run(tmp_path, _plan(tmp_path, retry=[30]))
+    try:
+        board = Path(_plan(tmp_path)["board"])
+        _until(lambda: load_record(board, "seat-1")["last_exit"] is not None)
+        record = load_record(board, "seat-1")
+        assert record["last_exit"] == 128 + signal.SIGTERM and record["failures"] == 1
+    finally:
+        os.killpg(runner.pid, signal.SIGKILL)
+        runner.wait()
+
+
+def test_stopping_the_runner_ends_the_turn_and_its_children(tmp_path: Path) -> None:
+    child = tmp_path / "child.pid"
+    (tmp_path / "probe.py").write_text(
+        "import subprocess, sys, time\n"
+        "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'])\n"
+        f"open({str(child)!r}, 'w').write(str(p.pid))\n"
+        "time.sleep(600)\n",
+        encoding="utf-8",
+    )
+    runner = _run(tmp_path, _plan(tmp_path))
+    _until(lambda: child.is_file() and child.read_text() != "")
+    pid = int(child.read_text())
+    runner.send_signal(signal.SIGTERM)
+    runner.wait(timeout=20)
+
+    def gone() -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        status = Path(f"/proc/{pid}/status")
+        return status.is_file() and "State:\tZ" in status.read_text()
+
+    _until(gone)

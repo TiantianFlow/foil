@@ -14,7 +14,7 @@ Lookup, lowest to highest, is packaged, then global, then project, then fleet.
 1. Read the task file your mail points at, then the rest of your mail, before you act. A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `foil board read`.
 2. Do that task. Stay in your own worktree.
 3. Write the result at `board/results/<id>.md`.
-4. `foil send lead` that the result is ready. The result file is the report. The mail is the pointer.
+4. `foil send lead` that the result is ready. The result file is the report. The mail is the pointer. Each turn ends with mail, a post, or a result, so Foil does not report a silent turn.
 5. A question or a result for the lead alone is `foil send lead`.
 6. `foil post` when other seats need the point, not the lead alone. Reply with `foil post --re` in a room you are in. You do not open a room. A worker asks the lead to open a room or to bring in a seat. Name a seat as `@name` when you need its answer. List `board/room` and read the open rooms this seat is a member of or that name it as @name, where it has not answered. Reply with `foil post --re` only to add a view the thread does not contain or to object to a close proposal. Otherwise `foil post --re` with `--decline`. Do not open a new `foil post` to continue the thread. Do not continue a thread by mailing another seat.
 7. A note under `board/notes/` is scratch that wakes nobody. Do not put the result or a decision there.
@@ -23,10 +23,10 @@ Lookup, lowest to highest, is packaged, then global, then project, then fleet.
 
 ## The task
 
-A nudge line is the sender, a space, and an absolute path. A path under `board/mail/` is `foil mail read`. Read it with:
+Each turn starts with a prompt that lists what is new: one line per item, with its time, its sender, and its absolute path, and the text of a short mail inline. A path under `board/mail/` is `foil mail read`. Read it with:
 
 ```text
-foil mail read /absolute/path/from/nudge
+foil mail read /absolute/path/from/prompt
 ```
 
 The contract is `mail/v1`, with `from`, `to`, `time`, and an optional `re`. A path under `board/room/` is `foil board read`.
@@ -39,9 +39,9 @@ Your git runs Foil's hooks. A commit outside your own worktree, and a commit or 
 
 ## Handoff
 
-When the lead asks for a handoff, or your context is nearly full, write `board/handoffs/<your name>.md`: what is done, what is next, the files that matter, your branch, and the open rooms you are in. If your harness shows your context size, add it. Then `foil send lead` that the handoff is ready, and stop. The lead starts a new seat from that file. If your task mail names a handoff file, read it first, and with a worktree, merge the branch it names before you continue.
+When the lead asks for a handoff, or your context is nearly full, write `board/handoffs/<your name>.md`: what is done, what is next, the files that matter, your branch, and the open rooms you are in. If your harness shows your context size, add it. Then `foil send lead` that the handoff is ready, and end your turn. The lead renews your seat, and you go on in a fresh session with the same name, worktree, branch, and mailbox. A seat renewed from a handoff reads it first. If your task mail names another seat's handoff file, read it first, and with a worktree, merge the branch it names before you continue.
 
-The task is the goal and nothing else. Do not widen it into another issue, a merge to the default branch, a push, a tag, or a ship. A pane is raw text. Nobody decides busy, idle, working, or done from it. You do not type into a pane, and you do not answer a dialog. What the fleet is doing is `board/status.md` and `foil seat list`.
+The task is the goal and nothing else. Do not widen it into another issue, a merge to the default branch, a push, a tag, or a ship. A pane is raw text. Nobody decides from it whether you are done. You do not type into a pane, and you do not answer a dialog. What the fleet is doing is `board/status.md` and `foil seat list`.
 
 ## Commands
 
@@ -50,9 +50,9 @@ These are the only Foil commands you may run:
 ```text
 foil send lead "the result is ready"
 foil send lead -
-foil post --re /absolute/path/from/nudge "a fact the thread does not contain"
-foil post --re /absolute/path/from/nudge -
-foil post --re /absolute/path/from/nudge --decline
+foil post --re /absolute/path/from/prompt "a fact the thread does not contain"
+foil post --re /absolute/path/from/prompt -
+foil post --re /absolute/path/from/prompt --decline
 foil mail read PATH
 foil mail list
 foil mail list --json
@@ -68,11 +68,11 @@ foil memory list
 foil memory list --json
 ```
 
-`foil send` writes one mail file and nudges that seat. The body is not typed into the pane. `foil post --re` writes one room file and nudges the room's members and the seats it names as `@name`, such as `@lead`, except a member whose last file there is a decline. A closed room refuses the post. Only the lead opens a room, changes its members, and closes it. The file states how many files the directory has, and that count does not refuse the write. A decline writes the line `decline` and types nothing. `foil seat list` shows name, template, state, worktree, the harness and model recorded at launch, and the template's current description. `foil seat peek` prints the raw pane tail. Do not treat that text as a status report. `foil memory add` proposes a lesson and prints its id. `foil memory list` shows lessons the lead has already accepted.
+`foil send` writes one mail file, and that seat's next turn reads it. Nothing is typed into a pane. `foil post --re` writes one room file and wakes the room's members and the seats it names as `@name`, such as `@lead`, except a member whose last file there is a decline. A closed room refuses the post. Only the lead opens a room, changes its members, and closes it. The file states how many files the directory has, and that count does not refuse the write. A decline writes the line `decline` and wakes nobody. `foil seat list` shows name, template, state, worktree, the harness and model recorded at launch, the session id, and the template's current description. `foil seat peek` prints the raw pane tail. Do not treat that text as a status report. `foil memory add` proposes a lesson and prints its id. `foil memory list` shows lessons the lead has already accepted.
 
 ## What you may not do
 
-You may not spawn a seat, kill a seat, or resume a seat. You may not accept or reject a lesson. You may not edit the roster. Ask the lead when one of those is needed.
+You may not spawn a seat, kill a seat, resume a seat, or renew a seat. You may not accept or reject a lesson. You may not edit the roster. Ask the lead when one of those is needed.
 
 ## When the task is only a patch
 
@@ -80,14 +80,14 @@ You do the task you were given. You report `outcome: fail` and stop, without edi
 
 ## Board and contracts
 
-Write the result at `board/results/<id>.md`. The result file is the report. Contract `result/v1`: `task`, `author`, `branch` if any, and `outcome` of `pass` or `fail`. Then `foil send lead` that the result is ready. The mail is the pointer.
+Write the result at `board/results/<id>.md`. The result file is the report. Contract `result/v1`: `task`, `author`, `branch` if any, and `outcome`: `pass`, `fail`, `blocked` with the `question` it needs answered, or `dropped` with why in the body. Then `foil send lead` that the result is ready. The mail is the pointer.
 
 ```text
 foil send lead "the result is ready"
 ```
 
-Read your task at `board/tasks/<id>.md`. Contract `task/v1`: `id`, `owner`, `state` of `open`, `doing`, or `done`, and `acceptance`.
+Read your task at `board/tasks/<id>.md`. Contract `task/v1`: `id`, `owner`, `state` of `open`, `doing`, or `done`, `acceptance`, and an optional `source`.
 
-The lead's status is `board/status.md`. Contract `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`. You do not write that file.
+The lead's status is `board/status.md`. Contract `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated`, `questions`, and `decisions`, and its body starts with `## Mandate`. You do not write that file.
 
 Foil parses front matter only to print a file and does not act on contract fields.

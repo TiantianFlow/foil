@@ -1,14 +1,15 @@
 # One list of harness launch config and the model ids each harness accepts.
 # Read live from this package. A global or project file is an optional override.
 # Spawn does not reject a model that is absent from models.
+# Each seat runs its CLI headless: start is the first turn, turn every later one.
 
 [[harness]]
 id = "claude"
-# AskUserQuestion is off: a seat's pane has nobody at the keyboard. The tool list
-# is variadic: a flag must always follow it (--session-id is always bound), so it
-# never takes the prompt.
-command = ["claude", "--disallowedTools", "AskUserQuestion", "--model", "{model}", "--session-id", "{session_id}", "{prompt}"]
-resume = ["claude", "--disallowedTools", "AskUserQuestion", "--resume", "{session_id}"]
+unverified = ["start", "turn", "permission-auto"]
+# AskUserQuestion is off: nobody reads a turn while it runs. The tool list is
+# variadic, so the prompt comes before it and a flag always follows it.
+start = ["claude", "-p", "{prompt}", "--disallowedTools", "AskUserQuestion", "--session-id", "{session_id}", "--model", "{model}"]
+turn = ["claude", "-p", "{prompt}", "--disallowedTools", "AskUserQuestion", "--resume", "{session_id}", "--model", "{model}"]
 session_id = "generated"
 env = []
 models = ["sonnet", "opus", "haiku", "fable"]
@@ -19,41 +20,42 @@ auto = ["--permission-mode", "auto"]
 
 [[harness]]
 id = "codex"
-unverified = ["resume-session-id", "wake-queue"]
-command = ["codex", "--model", "{model}", "{prompt}"]
-resume = ["codex", "resume", "--last", "{prompt}"]
+unverified = ["start", "turn", "session-key", "permission-auto", "wake-queue"]
+start = ["codex", "exec", "{permission}", "--json", "--model", "{model}", "{prompt}"]
+turn = ["codex", "exec", "{permission}", "--json", "--model", "{model}", "resume", "{session_id}", "{prompt}"]
 # Wakes a joined lead's thread with one line naming the new items (F41).
 wake = ["codex", "queue", "--thread", "{session_id}", "--message", "{text}", "--resume"]
-session_id = "none"
+session_id = "output"
+session_key = "thread_id"
 env = []
 models = ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]
 
 [harness.permission]
-ask = ["--ask-for-approval", "on-request"]
-auto = ["--ask-for-approval", "never"]
+ask = []
+# A seat writes the board and the Git common dir, outside its worktree.
+auto = ["--dangerously-bypass-approvals-and-sandbox"]
 
 [[harness]]
 id = "gemini"
-unverified = ["all-flags-docs-only"]
-command = ["gemini", "--model", "{model}", "{prompt}"]
-resume = ["gemini", "--resume"]
-session_id = "none"
+unverified = ["start", "turn", "skip-trust", "permission-auto"]
+start = ["gemini", "-p", "{prompt}", "--session-id", "{session_id}", "--skip-trust", "--model", "{model}"]
+turn = ["gemini", "-p", "{prompt}", "--resume", "{session_id}", "--skip-trust", "--model", "{model}"]
+session_id = "generated"
 env = []
 models = ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash"]
 
 [harness.permission]
 ask = []
-auto = ["--approval-mode=yolo"]
+auto = ["--approval-mode", "yolo"]
 
 [[harness]]
 id = "opencode"
-unverified = ["set-env-question-deny"]
-command = ["opencode", ".", "--model", "{model}", "--prompt", "{prompt}"]
-resume = ["opencode", ".", "--continue", "--prompt", "{prompt}"]
-session_id = "none"
+unverified = ["start", "turn", "session-key", "permission-auto"]
+start = ["opencode", "run", "{permission}", "--format", "json", "--model", "{model}", "{prompt}"]
+turn = ["opencode", "run", "{permission}", "--format", "json", "--session", "{session_id}", "--model", "{model}", "{prompt}"]
+session_id = "output"
+session_key = "sessionID"
 env = []
-# The question tool is off: a seat's pane has nobody at the keyboard.
-set_env = { OPENCODE_CONFIG_CONTENT = '{"permission":{"question":"deny"}}' }
 models = ["anthropic/claude-sonnet-4-5", "openai/gpt-5.5"]
 
 [harness.permission]
@@ -62,8 +64,9 @@ auto = ["--auto"]
 
 [[harness]]
 id = "grok"
-command = ["grok", "--model", "{model}", "--session-id", "{session_id}", "{prompt}"]
-resume = ["grok", "--model", "{model}", "--resume", "{session_id}"]
+unverified = ["start", "turn", "permission-auto"]
+start = ["grok", "-p", "{prompt}", "--session-id", "{session_id}", "--model", "{model}"]
+turn = ["grok", "-p", "{prompt}", "--resume", "{session_id}", "--model", "{model}"]
 session_id = "generated"
 env = []
 models = ["grok-4.7"]
@@ -74,8 +77,8 @@ auto = ["--always-approve"]
 
 [[harness]]
 id = "fake"
-command = ["foil-fake", "--session", "{session_id}", "--prompt", "{prompt}"]
-resume = ["foil-fake", "--session", "{session_id}", "--prompt", "{prompt}"]
+start = ["foil-fake", "--session", "{session_id}", "{prompt}"]
+turn = ["foil-fake", "--resume", "{session_id}", "{prompt}"]
 session_id = "generated"
 env = []
 models = []

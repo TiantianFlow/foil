@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -16,11 +18,12 @@ from importlib.resources import files
 from pathlib import Path
 
 from foil import __version__
-from foil.board import ensure_board, write_mail
+from foil.board import ensure_board, items_for, write_mail
 from foil.errors import FoilError, shown
 from foil.guard import hook_environment
 from foil.presets import (
     BUILTIN_IDS,
+    TURN_TIMEOUT,
     _builtin,
     _init_check,
     entry_label,
@@ -52,6 +55,7 @@ from foil.project import (
     rewrite_stored_paths,
     store_root,
 )
+from foil.runner import empty_record, load_record, record_path, save_record
 from foil.store import (
     SAFE_ID,
     SCHEMA_VERSION,
@@ -61,6 +65,8 @@ from foil.store import (
     exclusive_lock,
     fleet_dir,
     fleet_id,
+    fleet_ids,
+    in_fleet,
     load_registry,
     read_json,
     registry_path,
@@ -74,6 +80,7 @@ from foil.tmux import ProbeState, TmuxController, TmuxError, TmuxTarget
 STAR_URL = "https://github.com/TiantianFlow/foil"
 STAR_GAPS = (3, 14)  # days before the second and the third star line
 STAR_LATER = 30  # days before one more line on a new minor version
+RETRY = (30, 120, 480)  # seconds before each retry of a failed turn (F43)
 
 
 def _minor(version: str) -> tuple[int, int]:
@@ -374,7 +381,7 @@ def _refused_worktree(project: Path, destination: Path) -> bool:
     return inside and not under_foil
 
 
-def _worktree(toplevel: Path, seat: str) -> tuple[str, str]:
+def _worktree(toplevel: Path, seat: str, base: str = "") -> tuple[str, str]:
     project = toplevel.resolve()
     parent = foil_root(project) / "worktrees"
     for number in range(1, 10001):
@@ -389,7 +396,9 @@ def _worktree(toplevel: Path, seat: str) -> tuple[str, str]:
         if destination.exists() or destination.is_symlink():
             continue
         destination.parent.mkdir(parents=True, exist_ok=True)
-        created = _git(toplevel, ["worktree", "add", "-b", branch, str(destination)])
+        created = _git(
+            toplevel, ["worktree", "add", "-b", branch, str(destination), *([base] if base else [])]
+        )
         if created.returncode != 0:
             raise FoilError("foil: could not create worktree")
         return str(destination), branch
@@ -504,6 +513,8 @@ def _instruction(
     first_launch: bool = False,
     task: Path | None = None,
     joined: bool = False,
+    handoff: Path | None = None,
+    branch: str = "",
 ) -> str:
     board = (fleet_dir(root) / "board").resolve()
     lessons = _accepted(root)
@@ -542,7 +553,8 @@ def _instruction(
         (
             "A `foil mail wait` line is `time from path`. "
             if joined
-            else "A nudge line is `from path`. "
+            else "You are woken by a prompt that lists new files as `time from path`. "
+            "End your turn when you wait for mail or a post: Foil starts your next turn. "
         )
         + "A path under `board/mail/` is `foil mail read`. "
         "A path under `board/room/` is `foil board read`.",
@@ -551,16 +563,22 @@ def _instruction(
         "There is no ack command.",
         "Notes: write files under `board/notes/`. They wake no one.",
         "Contracts (parsed only to print; Foil does not act on them):",
-        "status/v1 (state working|blocked|done, updated, questions),",
-        "task/v1 (id, owner, state open|doing|done, acceptance),",
-        "result/v1 (task, author, branch, outcome pass|fail),",
-        "room/v1 (from, time, optional re, members, closed, nudged).",
+        "status/v1 (state working|blocked|done, updated, questions, decisions; "
+        "the body starts with ## Mandate),",
+        "task/v1 (id, owner, state open|doing|done, acceptance, optional source),",
+        "result/v1 (task, author, branch, outcome pass|fail|blocked|dropped, optional question),",
+        "room/v2 (from, time, optional re, members, closed, wakes).",
         f"Worktree: {work}",
         f"Persona:\n{_persona_line(template)}",
         skill_text,
         *([_joined_sections(_builtin("skills", "joined.md"))] if joined else []),
         f"Accepted lessons: {learned}",
     ]
+    if lead and branch:
+        lines.append(
+            f"Your goal branch is `{branch}`, checked out in your worktree. Integrate there; "
+            "the human merges it when status.md says done."
+        )
     if lead:
         workspace = project_record(foil_root(root)).get("path") or str(root.resolve())
         posts = (fleet_dir(root) / "board" / "room").resolve()
@@ -617,8 +635,13 @@ def _instruction(
         )
     elif restarted:
         lines.append(
-            "You were restarted. List your mail with `foil mail list` "
-            "and read each file with `foil mail read`."
+            "You were restarted. Check before you repeat a merge, push, post or send. "
+            "List your mail with `foil mail list` and read each file with `foil mail read`."
+        )
+    elif handoff is not None:
+        lines.append(
+            f"Read your handoff `{handoff.resolve()}` first, then list your mail with "
+            "`foil mail list`."
         )
     elif task is not None:
         lines.append(
@@ -669,6 +692,8 @@ def _write_instruction(
     first_launch: bool = False,
     task: Path | None = None,
     joined: bool = False,
+    handoff: Path | None = None,
+    branch: str = "",
 ) -> Path:
     path = (fleet_dir(root) / "run" / "instructions" / f"{seat}.md").resolve()
     body = _instruction(
@@ -679,6 +704,8 @@ def _write_instruction(
         first_launch=first_launch,
         task=task,
         joined=joined,
+        handoff=handoff,
+        branch=branch,
     ).rstrip("\n")
     reread = (
         f"Re-read `{path}` after your harness compacts this conversation, or when unsure."
@@ -691,21 +718,29 @@ def _write_instruction(
     return path
 
 
-def _native_resume(preset: dict, session_id: str, *, worktree: str) -> bool:
-    argv = preset.get("resume") or []
-    if not argv:
-        return False
-    if preset["session_id"] == "generated" and session_id:
-        return True
-    # `--continue` / `--last` mean "the last session in this directory".
-    # A seat with no worktree runs in the project directory, so those flags
-    # would resume someone else's session. Start that seat fresh instead.
-    if not worktree:
-        return False
-    return preset["session_id"] == "none" and bool({"--continue", "--last"} & set(argv))
+def _board(root: Path) -> Path:
+    return (fleet_dir(root) / "board").resolve()
 
 
-def _open(
+def _present(root: Path, seat: str) -> list[str]:
+    """Every item for the seat now, so a fresh session does not get older mail as new."""
+
+    return [item["relative"] for item in items_for(_board(root), seat, set())]
+
+
+def _seat_cwd(root: Path, registry: dict, worktree: str) -> Path:
+    """Its worktree, else a launched lead's worktree, else the checkout (F45)."""
+
+    if worktree:
+        return Path(worktree)
+    lead = registry["seats"].get("lead") or {}
+    path = lead.get("worktree") or ""
+    if path and lead.get("state") not in ("joined", "killed") and Path(path).is_dir():
+        return Path(path)
+    return root
+
+
+def _write_plan(
     root: Path,
     registry: dict,
     seat: str,
@@ -714,30 +749,28 @@ def _open(
     *,
     worktree: str,
     session_id: str,
-    native: bool,
-    restarted: bool,
     model: str,
-    first_launch: bool = False,
-    task: Path | None = None,
-) -> str:
-    cwd = Path(worktree) if worktree else root
-    instruction = _write_instruction(
-        root, seat, template, restarted=restarted, first_launch=first_launch, task=task
-    )
-    prompt = instruction.read_text(encoding="utf-8")
-    argv = expand_argv(
-        preset,
-        model=model or None,
-        prompt=prompt,
-        session_id=session_id or None,
-        permission=template["permission"],
-        resume=native,
-    )
+    first: str,
+    restarted: bool,
+    instruction: Path,
+) -> tuple[Path, Path]:
+    """The plan the runner runs, and the directory it runs in (F43)."""
+
+    cwd = _seat_cwd(root, registry, worktree)
+    argv = {
+        kind: expand_argv(
+            preset,
+            model=model or None,
+            session_id=session_id or None,
+            permission=template["permission"],
+            turn=kind == "turn",
+        )
+        for kind in ("start", "turn")
+    }
     forward = list(preset["env"])
     for name in ("PATH", "HOME"):
         if name not in forward:
             forward.append(name)
-    plan_path = (fleet_dir(root) / "run" / "plans" / f"{seat}.json").resolve()
     environment = {
         **preset.get("set_env", {}),
         "FOIL_SEAT_ID": seat,
@@ -750,13 +783,29 @@ def _open(
             environment[name] = value
     environment.update(hook_environment(root, cwd, worktree))
     plan = {
-        "argv": argv,
+        **argv,
+        "session_key": preset["session_key"],
+        "session_id": session_id,
         "cwd": str(cwd.resolve()),
         "env": environment,
         "env_forward": forward,
+        "instruction": str(instruction),
+        "board": str(_board(root)),
+        "seat": seat,
+        "reader": "user" if seat == "lead" else "lead",
+        "worker": seat != "lead",
+        "turn_timeout": int(template.get("turn_timeout", TURN_TIMEOUT)),
+        "retry": list(RETRY),
+        "first": first,
+        "restarted": restarted,
     }
     scan(plan)
+    plan_path = (fleet_dir(root) / "run" / "plans" / f"{seat}.json").resolve()
     write_bytes(plan_path, json.dumps(plan, sort_keys=True).encode())
+    return plan_path, cwd
+
+
+def _launch(root: Path, registry: dict, seat: str, plan_path: Path, cwd: Path) -> str:
     session = registry.get("tmux_session") or _session_name(root)
     registry["tmux_session"] = session
     try:
@@ -766,7 +815,7 @@ def _open(
             session_name=session,
             window_name=seat,
             working_directory=cwd.resolve(),
-            runner_argv=[sys.executable, "-m", "foil.runner", str(plan_path)],
+            runner_argv=[sys.executable, "-P", "-m", "foil.runner", str(plan_path)],
         )
     except TmuxError as exc:
         raise FoilError("foil: could not launch seat") from exc
@@ -774,6 +823,51 @@ def _open(
         TmuxController().abandon_window(target)
         raise FoilError("foil: could not launch seat")
     return target.window_id
+
+
+def _open(
+    root: Path,
+    registry: dict,
+    seat: str,
+    template: dict,
+    preset: dict,
+    *,
+    worktree: str,
+    session_id: str,
+    model: str,
+    first: str,
+    restarted: bool,
+    record: dict,
+    first_launch: bool = False,
+    task: Path | None = None,
+    handoff: Path | None = None,
+    branch: str = "",
+) -> str:
+    instruction = _write_instruction(
+        root,
+        seat,
+        template,
+        restarted=restarted and first == "start",
+        first_launch=first_launch,
+        task=task,
+        handoff=handoff,
+        branch=branch,
+    )
+    plan_path, cwd = _write_plan(
+        root,
+        registry,
+        seat,
+        template,
+        preset,
+        worktree=worktree,
+        session_id=session_id,
+        model=model,
+        first=first,
+        restarted=restarted,
+        instruction=instruction,
+    )
+    save_record(_board(root), seat, record)
+    return _launch(root, registry, seat, plan_path, cwd)
 
 
 JOINED = "foil: lead is joined. It has no pane."
@@ -792,6 +886,20 @@ def _state(registry: dict, name: str, record: dict[str, str]) -> str:
     except TmuxError:
         return "dead"
     return "alive" if owned else "dead"
+
+
+def _shown_state(
+    root: Path, registry: dict, name: str, record: dict[str, str], fleet: str | None = None
+) -> str:
+    """F8: an alive seat is working, idle, or paused by its runner's record."""
+
+    state = _state(registry, name, record)
+    if state != "alive":
+        return state
+    turns = load_record(fleet_dir(root, fleet) / "board", name)
+    if turns["paused"]:
+        return "paused"
+    return "working" if turns["turn_started"] is not None else "idle"
 
 
 def _owned(registry: dict, name: str, record: dict[str, str], state: str) -> bool:
@@ -839,8 +947,19 @@ def spawn_seat(
     if warning:
         print(warning, file=sys.stderr)
     native = str(uuid.uuid4()) if preset["session_id"] == "generated" else ""
-    worktree, branch = _worktree(root, seat) if loaded["worktree"] else ("", "")
+    lead = registry["seats"].get("lead") or {}
+    goal = lead.get("branch", "") if lead.get("state") not in ("joined", "killed") else ""
+    if seat == "lead":
+        worktree, branch = _worktree(root, f"goal-{fleet_id()}")
+    elif loaded["worktree"]:
+        worktree, branch = _worktree(root, seat, goal)
+    else:
+        worktree, branch = "", ""
+    seeded = empty_record()
+    seeded["delivered"] = _present(root, seat)
     mailed = write_mail(root, seat, task) if task is not None else None
+    if mailed is not None:
+        seeded["inflight"].append(mailed.relative_to(_board(root)).as_posix())
     try:
         window = _open(
             root,
@@ -850,11 +969,13 @@ def spawn_seat(
             preset,
             worktree=worktree,
             session_id=native,
-            native=False,
-            restarted=False,
             model=model,
+            first="start",
+            restarted=False,
+            record=seeded,
             first_launch=True,
             task=mailed,
+            branch=branch if seat == "lead" else "",
         )
     except Exception:
         _drop_mail(mailed)
@@ -901,6 +1022,24 @@ def spawn_seat(
         )
         _drop_mail(mailed)
         raise
+    if seat == "lead" and not os.environ.get("FOIL_SEAT_ID", "").strip():
+        print(_supervisor_note(root, worktree, branch))
+
+
+def _supervisor_note(root: Path, worktree: str, branch: str) -> str:
+    """What whoever started a launched lead needs to follow it, under 1 KB (F45)."""
+
+    fleet = fleet_id()
+    status = _board(root) / "status.md"
+    return "\n".join(
+        [
+            f"Lead started in fleet {fleet} on branch {branch} ({worktree}).",
+            "Hear its mail to user: foil mail wait --all-fleets (in the background).",
+            f"Answer it: FOIL_FLEET={fleet} foil send lead TEXT.",
+            f"Progress: {status}.",
+            f"When status.md says done, merge {branch}.",
+        ]
+    )
 
 
 def _drop_mail(path: Path | None) -> None:
@@ -950,7 +1089,10 @@ def kill_seats(
                 continue
             raise FoilError(JOINED)
         window = record.get("window_id") or ""
-        if _state(registry, seat_name, record) != "killed":
+        state = _state(registry, seat_name, record)
+        if state == "alive":
+            _end_turn(root, seat_name)
+        if state != "killed":
             _remove_leftover(registry, root, seat_name, window)
 
         def apply(fresh: dict, seat_name: str = seat_name, window: str = window) -> None:
@@ -968,19 +1110,22 @@ def kill_seats(
         update_registry(root, apply)
 
 
-def _restart(root: Path, registry: dict, name: str) -> None:
-    record = registry["seats"][name]
+def _end_turn(root: Path, seat: str) -> None:
+    """End a running turn's process group. The runner does the same when its window closes."""
+
+    pgid = load_record(_board(root), seat)["pgid"]
+    if pgid > 1:
+        with contextlib.suppress(OSError):
+            os.killpg(pgid, signal.SIGTERM)
+
+
+def _relaunch(
+    root: Path, registry: dict, name: str, record: dict, preset: dict, turns: dict, **opened
+) -> None:
+    """Launch a dead seat's runner again and store the new window."""
+
     loaded = load_template(root, record["template"])
     persona_text(loaded)
-    preset = load_preset(root, record["harness"])
-    stored = record["session_id"]
-    native = _native_resume(preset, stored, worktree=record.get("worktree") or "")
-    if native:
-        session = stored
-    elif preset["session_id"] == "generated":
-        session = str(uuid.uuid4())
-    else:
-        session = ""
     old_window = record.get("window_id") or ""
     _remove_leftover(registry, root, name, old_window)
     window = _open(
@@ -990,14 +1135,13 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         loaded,
         preset,
         worktree=record["worktree"],
-        session_id=session,
-        native=native,
-        restarted=not native,
+        session_id=record["session_id"],
         model=record.get("model") or "",
+        record=turns,
+        **opened,
     )
     record["window_id"] = window
     record["state"] = ""
-    record["session_id"] = session
     tmux_session = str(registry.get("tmux_session") or "")
 
     def apply(fresh: dict) -> None:
@@ -1015,34 +1159,57 @@ def _restart(root: Path, registry: dict, name: str) -> None:
     try:
         update_registry(root, apply)
     except Exception:
-        TmuxController().abandon_window(
-            TmuxTarget(
-                session_name=str(registry.get("tmux_session") or ""),
-                window_name=name,
-                session_id=None,
-                window_id=window,
-            )
-        )
+        TmuxController().abandon_window(_target(registry, root, name, window))
         raise
+
+
+def _restart(root: Path, registry: dict, name: str) -> None:
+    record = dict(registry["seats"][name])
+    preset = load_preset(root, record["harness"])
+    turns = load_record(_board(root), name)
+    # The runner learns an output preset's id; the registry has a generated one.
+    record["session_id"] = turns["session_id"] or record["session_id"]
+    if not record["session_id"] and preset["session_id"] == "generated":
+        record["session_id"] = str(uuid.uuid4())
+    # A generated id names no session until a turn on it has ended.
+    first = "turn" if record["session_id"] and turns["last_exit"] is not None else "start"
+    turns.update({"turn_started": None, "paused": False, "failures": 0, "pgid": 0})
+    turns["session_id"] = record["session_id"]
+    branch = record.get("branch", "") if name == "lead" else ""
+    _relaunch(
+        root, registry, name, record, preset, turns, first=first, restarted=True, branch=branch
+    )
+
+
+def _resume_paused(root: Path, name: str) -> None:
+    marker = record_path(_board(root), name, ".resume")
+    write_bytes(marker, b"")
 
 
 def resume_seats(root: Path, name: str | None) -> int:
     registry = load_registry(root)
     if name is not None:
         _known(registry, name)
-        state = _state(registry, name, registry["seats"][name])
+        state = _shown_state(root, registry, name, registry["seats"][name])
         if state == "joined":
             raise FoilError(JOINED)
         if state == "killed":
             raise FoilError(f"foil: seat '{name}' is killed")
-        if state == "alive":
-            print(f"foil: seat '{name}' is alive")
+        if state == "paused":
+            _resume_paused(root, name)
+        elif state != "dead":
+            print(f"foil: seat '{name}' is {state}")
             return 0
-        _restart(root, registry, name)
+        else:
+            _restart(root, registry, name)
         return 0
     failures: list[str] = []
     for seat_name in sorted(registry["seats"]):
-        if _state(registry, seat_name, registry["seats"][seat_name]) != "dead":
+        state = _shown_state(root, registry, seat_name, registry["seats"][seat_name])
+        if state == "paused":
+            _resume_paused(root, seat_name)
+            continue
+        if state != "dead":
             continue
         try:
             _restart(root, registry, seat_name)
@@ -1053,6 +1220,97 @@ def resume_seats(root: Path, name: str | None) -> int:
         return 0
     print("\n".join(failures), file=sys.stderr)
     return 1
+
+
+def handoff_on_board(root: Path, name: str) -> Path | None:
+    """board/handoffs/<name>.md when no part of it from the board down is a symlink."""
+
+    board = fleet_dir(root) / "board"
+    handoffs = board / "handoffs"
+    handoff = handoffs / f"{name}.md"
+    for part in (board, handoffs, handoff):
+        if part.is_symlink():
+            return None
+    if not handoff.is_file() or not handoff.resolve().is_relative_to(board.resolve()):
+        return None
+    return handoff
+
+
+def renew_seat(root: Path, name: str) -> None:
+    """A fresh session on the same name, worktree, and branch, after its handoff (F44)."""
+
+    registry = load_registry(root)
+    record = dict(_known(registry, name))
+    state = _state(registry, name, record)
+    if state == "joined":
+        raise FoilError(JOINED)
+    if state == "killed":
+        raise FoilError(f"foil: seat '{name}' is killed")
+    handoff = handoff_on_board(root, name)
+    if handoff is None:
+        raise FoilError(f"foil: write board/handoffs/{name}.md first")
+    loaded = load_template(root, record["template"])
+    persona_text(loaded)
+    role = loaded["name"]
+    key = rotation_key(root, role, loaded["harness"])
+    count = rotation_index(registry, role, key)
+    chosen = spawn_entry(root, role, loaded["harness"], count)
+    preset = load_preset(root, chosen["id"])
+    warning = model_warning(preset, chosen["model"])
+    if warning:
+        print(warning, file=sys.stderr)
+    record.update(
+        {
+            "harness": chosen["id"],
+            "model": chosen["model"],
+            "session_id": str(uuid.uuid4()) if preset["session_id"] == "generated" else "",
+        }
+    )
+    present = _present(root, name)
+    branch = record.get("branch", "") if name == "lead" else ""
+    if state == "dead":
+        turns = load_record(_board(root), name)
+        fresh = empty_record()
+        fresh["delivered"] = sorted({*turns["delivered"], *turns["inflight"], *present})
+        _relaunch(
+            root, registry, name, record, preset, fresh,
+            first="start", restarted=False, handoff=handoff, branch=branch,
+        )
+    else:
+        instruction = _write_instruction(
+            root, name, loaded, restarted=False, handoff=handoff, branch=branch
+        )
+        _write_plan(
+            root,
+            registry,
+            name,
+            loaded,
+            preset,
+            worktree=record["worktree"],
+            session_id=record["session_id"],
+            model=record["model"],
+            first="start",
+            restarted=False,
+            instruction=instruction,
+        )
+        write_bytes(record_path(_board(root), name, ".renew"), json.dumps(present).encode())
+
+        def apply(fresh: dict) -> None:
+            current = fresh["seats"].get(name)
+            if current is None or current.get("window_id") != record.get("window_id"):
+                raise FoilError(f"foil: seat '{shown(name)}' changed")
+            current.update({key: record[key] for key in ("harness", "model", "session_id")})
+
+        update_registry(root, apply)
+
+    def rotate(fresh: dict) -> None:
+        fresh["rotation"][role] = {
+            "list": key,
+            "next": max(rotation_index(fresh, role, key), count) + 1,
+        }
+
+    update_registry(root, rotate)
+    print(f"renewed seat '{name}' on {entry_label(chosen)}")
 
 
 def _archive_stamp() -> str:
@@ -1183,7 +1441,12 @@ def _list_archived(root: Path, *, as_json: bool) -> None:
 
 
 def seat_rows(
-    root: Path, registry: dict, *, only: str | None = None, owned: bool = False
+    root: Path,
+    registry: dict,
+    *,
+    only: str | None = None,
+    owned: bool = False,
+    fleet: str | None = None,
 ) -> list[dict]:
     """Seat facts for `seat list`, plus branch and window id.
 
@@ -1200,11 +1463,21 @@ def seat_rows(
         except (FoilError, OSError, UnicodeDecodeError):
             description = ""
         state = _state(registry, seat_name, record)
+        turns = load_record(fleet_dir(root, fleet) / "board", seat_name)
+        shown_state = state
+        if state == "alive":
+            shown_state = "paused" if turns["paused"] else "idle"
+            if not turns["paused"] and turns["turn_started"] is not None:
+                shown_state = "working"
         rows.append(
             {
                 "name": seat_name,
                 "template": record["template"],
-                "state": state,
+                "state": shown_state,
+                "alive": state == "alive",
+                "session_id": turns["session_id"] or record.get("session_id", ""),
+                "turn_started": turns["turn_started"] if state == "alive" else None,
+                "last_exit": turns["last_exit"],
                 "worktree": record["worktree"],
                 "harness": record.get("harness", ""),
                 "model": record.get("model", ""),
@@ -1217,20 +1490,43 @@ def seat_rows(
     return rows
 
 
-def list_seats(root: Path, *, as_json: bool = False, archived: bool = False) -> None:
+def list_seats(
+    root: Path, *, as_json: bool = False, archived: bool = False, all_fleets: bool = False
+) -> None:
     if archived:
+        if all_fleets:
+            raise FoilError("foil: --archived takes no --all-fleets")
         _list_archived(root, as_json=as_json)
         return
-    keys = ("name", "template", "state", "worktree", "harness", "model", "description")
-    rows = [{key: row[key] for key in keys} for row in seat_rows(root, load_registry(root))]
+    keys = (
+        "name",
+        "template",
+        "state",
+        "worktree",
+        "harness",
+        "model",
+        "session_id",
+        "turn_started",
+        "last_exit",
+        "description",
+    )
+    rows = []
+    for fleet in fleet_ids(root) if all_fleets else [None]:
+        with in_fleet(fleet):
+            for row in seat_rows(root, load_registry(root)):
+                picked = {key: row[key] for key in keys}
+                if fleet is not None:
+                    picked["fleet"] = fleet
+                rows.append(picked)
     if as_json:
         print(json.dumps(rows, sort_keys=True))
         return
     for row in rows:
         launched = f"{row['harness']}/{row['model']}" if row["model"] else row["harness"]
+        lead = f"{row['fleet']}\t" if "fleet" in row else ""
         print(
-            f"{row['name']}\t{row['template']}\t{row['state']}\t"
-            f"{row['worktree']}\t{launched}\t{row['description']}"
+            f"{lead}{row['name']}\t{row['template']}\t{row['state']}\t"
+            f"{row['worktree']}\t{launched}\t{row['session_id'] or '-'}\t{row['description']}"
         )
 
 

@@ -4,17 +4,15 @@ from __future__ import annotations
 
 import contextlib
 import os
-import re
 import signal
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from foil.board import mail_name, write_mail
-from foil.board_ops import split_front_matter
+from foil.board import items_for, write_mail
 from foil.errors import FoilError
-from foil.lifecycle import _state, _write_instruction
+from foil.lifecycle import _state, _write_instruction, handoff_on_board
 from foil.presets import load_preset, load_template
 from foil.store import (
     SAFE_ID,
@@ -24,6 +22,8 @@ from foil.store import (
     ensure_registry,
     exclusive_lock,
     fleet_dir,
+    fleet_ids,
+    in_fleet,
     load_registry,
     private_dir,
     read_json,
@@ -38,9 +38,6 @@ COALESCE = 2
 WAKE_LIMIT = 10
 BRIEF_ITEMS = 10
 BRIEF_BYTES = 2048
-_ROOM_ID = re.compile(r"^[0-9a-f]{16}$")
-_ROOM_CHILD = re.compile(r"^\d{8}T\d{12}Z-[A-Za-z0-9][A-Za-z0-9._-]{0,127}-[0-9a-f]{8}\.md$")
-_TIME = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 # Checked in this order (F42).
 _HARNESS_ENV = (
     ("codex", "CODEX_THREAD_ID"),
@@ -96,64 +93,8 @@ def _lock(root: Path, name: str):
     return exclusive_lock(_record_path(root, name).with_suffix(".lock"))
 
 
-def _fields(path: Path) -> dict | None:
-    try:
-        fields, _ = split_front_matter(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError):
-        return None
-    return fields
-
-
 def _new_items(root: Path, name: str, seen: set[str]) -> list[dict[str, str]]:
-    """Unseen mail in ``name``'s mailbox and room files whose ``nudged`` names it."""
-
-    board = fleet_dir(root) / "board"
-    if board.is_symlink() or not board.is_dir():
-        return []
-    items = []
-    candidates: list[tuple[Path, bool]] = []
-    mailbox = board / "mail" / name
-    if not (board / "mail").is_symlink() and not mailbox.is_symlink() and mailbox.is_dir():
-        candidates += [(path, True) for path in mailbox.glob("*.md") if mail_name(path.name)]
-    room = board / "room"
-    if not room.is_symlink() and room.is_dir():
-        for directory in room.iterdir():
-            if directory.is_symlink() or not directory.is_dir():
-                continue
-            if not _ROOM_ID.match(directory.name):
-                continue
-            candidates += [
-                (path, False)
-                for path in directory.glob("*.md")
-                if path.name == f"{directory.name}.md" or _ROOM_CHILD.match(path.name)
-            ]
-    for path, mail in candidates:
-        relative = path.relative_to(board).as_posix()
-        if relative in seen or path.is_symlink() or not path.is_file():
-            continue
-        fields = _fields(path)
-        if fields is None:
-            continue
-        # The sender and time reach the wake text, which a harness may queue as a message,
-        # so neither is taken from text a hand-written file could choose.
-        if mail:
-            if fields.get("contract") != "mail/v1":
-                continue
-            when, sender = mail_name(path.name)
-        else:
-            nudged = fields.get("nudged")
-            if fields.get("contract") != "room/v1" or not isinstance(nudged, list):
-                continue
-            if name not in nudged:
-                continue
-            sender, when = str(fields.get("from", "")), str(fields.get("time", ""))
-            if not SAFE_ID.fullmatch(sender) or not _TIME.match(when):
-                continue
-        items.append(
-            {"time": when, "from": sender, "path": str(path.resolve()), "relative": relative}
-        )
-    items.sort(key=lambda item: (item["time"], item["path"]))
-    return items
+    return items_for(fleet_dir(root) / "board", name, seen)
 
 
 def _line(item: dict[str, str]) -> str:
@@ -330,6 +271,7 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
     board = (fleet_dir(root) / "board").resolve()
     head = [
         f"You are seat lead in fleet {registry['fleet_id']} ({root.resolve()}).",
+        f"Harness: {harness or 'none'}. Session: {session or 'none'}.",
         f"Read first: {instruction}",
     ]
     tail = [
@@ -360,20 +302,6 @@ def _brief(head: list[str], items: list[dict[str, str]], tail: list[str]) -> str
     return text
 
 
-def _handoff_on_board(root: Path) -> Path | None:
-    """board/handoffs/lead.md when no part of it from the board down is a symlink."""
-
-    board = fleet_dir(root) / "board"
-    handoffs = board / "handoffs"
-    handoff = handoffs / "lead.md"
-    for part in (board, handoffs, handoff):
-        if part.is_symlink():
-            return None
-    if not handoff.is_file() or not handoff.resolve().is_relative_to(board.resolve()):
-        return None
-    return handoff
-
-
 def leave_lead(root: Path) -> None:
     if not _outside():
         raise FoilError("foil: not allowed")
@@ -381,7 +309,7 @@ def leave_lead(root: Path) -> None:
     record = registry["seats"].get("lead")
     if not record or record.get("state") != "joined":
         raise FoilError("foil: no joined lead")
-    handoff = _handoff_on_board(root)
+    handoff = handoff_on_board(root, "lead")
     joined_at = _load(root, "lead")["joined"]
     try:
         info = handoff.lstat() if handoff is not None else None
@@ -421,59 +349,78 @@ def _wake(argv: list[str], session: str, items: list[dict[str, str]]) -> None:
         child.wait()
 
 
-def mail_wait(root: Path, *, timeout: int, wake: bool) -> None:
+def _poll(root: Path, name: str, timeout: int) -> list[dict[str, str]]:
+    """One check of one mailbox: its dead-seat check and its new items."""
+
+    with _lock(root, name):
+        record = _load(root, name)
+        _dead_check(root, name, record)
+        items = _new_items(root, name, set(record["seen"]))
+        if items and timeout == 0:
+            # A blocking wait leaves them new, so a lost wake is not lost mail (F41).
+            record["seen"] += [item["relative"] for item in items]
+        _save(root, name, record)
+    return items
+
+
+def _end(root: Path, name: str, *, quiet: bool) -> int:
+    with _lock(root, name):
+        record = _load(root, name)
+        record["quiet"] = record["quiet"] + 1 if quiet else 0
+        _save(root, name, record)
+    return record["quiet"]
+
+
+def mail_wait(root: Path, *, timeout: int, wake: bool, all_fleets: bool = False) -> None:
     if not _outside():
         raise FoilError("foil: mail wait is outside the fleet only")
     if timeout < 0:
         raise FoilError("foil: invalid timeout")
-    name = actor(root)
+    if wake and all_fleets:
+        raise FoilError("foil: --wake takes no --all-fleets")
+    fleets = fleet_ids(root) if all_fleets else [None]
     wake_argv, session = None, ""
     if wake:
         lead = load_registry(root)["seats"].get("lead") or {}
         session = lead.get("session_id", "")
-        if name == "lead":
+        if actor(root) == "lead":
             wake_argv = _wake_argv(root, lead.get("harness", ""), session)
         if wake_argv is None:
             raise FoilError("foil: no wake command for this lead")
     deadline = time.monotonic() + timeout
     first = True
-    quiet = 0
     found_at: float | None = None
     while True:
-        with _lock(root, name):
-            record = _load(root, name)
-            _dead_check(root, name, record)
-            items = _new_items(root, name, set(record["seen"]))
-            ready = bool(items) and (
-                first or (found_at is not None and time.monotonic() - found_at >= COALESCE)
-            )
-            expired = time.monotonic() >= deadline
-            if ready or (items and expired):
-                # A blocking wait leaves them new, so a lost wake is not lost mail (F41).
-                if timeout == 0:
-                    record["seen"] += [item["relative"] for item in items]
-                record["quiet"] = 0
-                _save(root, name, record)
-                break
-            if not items and expired:
-                if timeout > 0:
-                    record["quiet"] += 1
-                _save(root, name, record)
-                quiet = record["quiet"] if timeout > 0 else 0
-                break
-            _save(root, name, record)
-        if items and found_at is None:
+        found: list[tuple[str | None, dict[str, str]]] = []
+        for fleet in fleets:
+            with in_fleet(fleet):
+                items = _poll(root, actor(root), timeout)
+            found += [(fleet, item) for item in items]
+        expired = time.monotonic() >= deadline
+        ready = bool(found) and (
+            first or expired or (found_at is not None and time.monotonic() - found_at >= COALESCE)
+        )
+        if ready or expired:
+            break
+        if found and found_at is None:
             found_at = time.monotonic()
         first = False
         time.sleep(max(0.0, min(1.0, deadline - time.monotonic())))
-    if not items:
+    quiet = 0
+    if found or timeout > 0:
+        for fleet in fleets:
+            with in_fleet(fleet):
+                count = _end(root, actor(root), quiet=not found)
+            quiet = max(quiet, count)
+    if not found:
         print("no new mail" if quiet < 2 else f"no new mail ({quiet} quiet waits in a row)")
         return
-    for item in items:
-        print(_line(item))
+    found.sort(key=lambda pair: (pair[1]["time"], pair[1]["path"]))
+    for fleet, item in found:
+        print(_line(item) if fleet is None else f"{fleet} {_line(item)}")
     sys.stdout.flush()
     if wake_argv:
-        _wake(wake_argv, session, items)
+        _wake(wake_argv, session, [item for _fleet, item in found])
 
 
 def notice(root: Path) -> None:

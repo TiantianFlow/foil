@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import re
 import subprocess
 from importlib.resources import files
 from pathlib import Path
@@ -244,7 +245,8 @@ def test_added_role_can_be_spawned(
             encoding="utf-8"
         )
         assert main(["seat", "list"]) == 0
-        assert "researcher-1\tresearcher\talive\t\tfake\t" in capsys.readouterr().out
+        listed = capsys.readouterr().out
+        assert re.search(r"researcher-1\tresearcher\t(working|idle)\t\tfake\t", listed)
     finally:
         monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
         main(["seat", "kill", "--all"])

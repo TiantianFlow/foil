@@ -46,143 +46,88 @@ def test_builtins_cover_the_six_harnesses(tmp_path: Path) -> None:
     for harness_id in BUILTIN_IDS:
         preset = load_preset(tmp_path, harness_id)
         assert preset["id"] == harness_id
-        assert preset["session_id"] in {"generated", "none"}
-        assert preset["command"]
+        assert preset["session_id"] in {"generated", "output"}
+        assert "{prompt}" in preset["start"] and "{prompt}" in preset["turn"]
+        assert "{session_id}" in preset["turn"]
+        assert harness_id == "fake" or "start" in preset["unverified"]
     package = Path(__file__).resolve().parents[1] / "src" / "foil"
     assert not list(package.rglob("foil-fake*"))
     assert not list(package.rglob("foil_fake.py"))
 
 
-def test_expansion_drops_missing_values_and_their_flags(tmp_path: Path) -> None:
-    prompt = "Read /tmp/instructions.md first."
+_P = "{prompt}"
+
+
+@pytest.mark.parametrize(
+    ("harness", "permission", "start", "turn"),
+    [
+        (
+            "claude", "auto",
+            ["claude", "-p", _P, "--disallowedTools", "AskUserQuestion", "--session-id", "s",
+             "--model", "m", "--permission-mode", "auto"],
+            ["claude", "-p", _P, "--disallowedTools", "AskUserQuestion", "--resume", "s",
+             "--model", "m", "--permission-mode", "auto"],
+        ),
+        (
+            "codex", "auto",
+            ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--json",
+             "--model", "m", _P],
+            ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--json",
+             "--model", "m", "resume", "s", _P],
+        ),
+        (
+            "gemini", "auto",
+            ["gemini", "-p", _P, "--session-id", "s", "--skip-trust", "--model", "m",
+             "--approval-mode", "yolo"],
+            ["gemini", "-p", _P, "--resume", "s", "--skip-trust", "--model", "m",
+             "--approval-mode", "yolo"],
+        ),
+        (
+            "opencode", "auto",
+            ["opencode", "run", "--auto", "--format", "json", "--model", "m", _P],
+            ["opencode", "run", "--auto", "--format", "json", "--session", "s", "--model", "m",
+             _P],
+        ),
+        (
+            "grok", "ask",
+            ["grok", "-p", _P, "--session-id", "s", "--model", "m"],
+            ["grok", "-p", _P, "--resume", "s", "--model", "m"],
+        ),
+        (
+            "fake", "auto",
+            ["foil-fake", "--session", "s", _P],
+            ["foil-fake", "--resume", "s", _P],
+        ),
+    ],
+)
+def test_each_preset_expands_its_start_and_turn_argv(
+    tmp_path: Path, harness: str, permission: str, start: list[str], turn: list[str]
+) -> None:
+    preset = load_preset(tmp_path, harness)
+    model = "m" if preset["models"] else None
+    if model is None:
+        start = [token for token in start if token not in ("--model", "m")]
+        turn = [token for token in turn if token not in ("--model", "m")]
+    assert expand_argv(preset, model=model, session_id="s", permission=permission) == start
+    assert (
+        expand_argv(preset, model=model, session_id="s", permission=permission, turn=True)
+        == turn
+    )
+
+
+def test_an_output_preset_leaves_the_session_for_the_runner(tmp_path: Path) -> None:
+    for harness, key in (("codex", "thread_id"), ("opencode", "sessionID")):
+        preset = load_preset(tmp_path, harness)
+        assert preset["session_id"] == "output" and preset["session_key"] == key
+        assert "{session_id}" not in expand_argv(preset)
+        assert "{session_id}" in expand_argv(preset, turn=True)
+
+
+def test_a_missing_model_drops_its_flag(tmp_path: Path) -> None:
     grok = load_preset(tmp_path, "grok")
-    assert expand_argv(grok, model="grok-4", prompt=prompt, session_id="abc", permission="ask") == [
-        "grok",
-        "--model",
-        "grok-4",
-        "--session-id",
-        "abc",
-        prompt,
+    assert expand_argv(grok, session_id="s", permission="auto") == [
+        "grok", "-p", _P, "--session-id", "s", "--always-approve"
     ]
-    dropped = expand_argv(grok, prompt=prompt, session_id="abc", permission="auto")
-    assert dropped == ["grok", "--session-id", "abc", "--always-approve", prompt]
-
-    claude = load_preset(tmp_path, "claude")
-    assert expand_argv(
-        claude, model="sonnet", prompt=prompt, session_id="abc", permission="auto"
-    ) == [
-        "claude",
-        "--disallowedTools",
-        "AskUserQuestion",
-        "--model",
-        "sonnet",
-        "--session-id",
-        "abc",
-        "--permission-mode",
-        "auto",
-        prompt,
-    ]
-
-    codex = load_preset(tmp_path, "codex")
-    assert codex["unverified"] == ["resume-session-id", "wake-queue"]
-    assert codex["session_id"] == "none"
-    assert expand_argv(codex, model="gpt", prompt=prompt, session_id="ignored") == [
-        "codex",
-        "--model",
-        "gpt",
-        "--ask-for-approval",
-        "on-request",
-        prompt,
-    ]
-    assert expand_argv(codex, prompt=prompt, permission="auto", resume=True) == [
-        "codex",
-        "resume",
-        "--ask-for-approval",
-        "never",
-        "--last",
-        prompt,
-    ]
-
-    opencode = load_preset(tmp_path, "opencode")
-    assert expand_argv(opencode, model="m", prompt=prompt, permission="auto") == [
-        "opencode",
-        ".",
-        "--model",
-        "m",
-        "--auto",
-        "--prompt",
-        prompt,
-    ]
-    assert expand_argv(opencode, prompt=prompt, resume=True) == [
-        "opencode",
-        ".",
-        "--continue",
-        "--prompt",
-        prompt,
-    ]
-
-    gemini = load_preset(tmp_path, "gemini")
-    assert gemini["unverified"] == ["all-flags-docs-only"]
-    assert gemini["session_id"] == "none"
-    assert expand_argv(gemini, model="g", prompt=prompt, permission="auto") == [
-        "gemini",
-        "--model",
-        "g",
-        "--approval-mode=yolo",
-        prompt,
-    ]
-    assert expand_argv(gemini, prompt=prompt, resume=True) == ["gemini", "--resume"]
-
-    fake = load_preset(tmp_path, "fake")
-    assert fake["session_id"] == "generated"
-    launched = expand_argv(fake, prompt=prompt, session_id="abc")
-    assert launched == ["foil-fake", "--session", "abc", "--prompt", prompt]
-
-
-def test_resume_keeps_permission_flags(tmp_path: Path) -> None:
-    prompt = "Read /tmp/instructions.md first."
-    assert expand_argv(
-        load_preset(tmp_path, "codex"), prompt=prompt, permission="ask", resume=True
-    ) == ["codex", "resume", "--ask-for-approval", "on-request", "--last", prompt]
-    assert expand_argv(
-        load_preset(tmp_path, "opencode"), model="m", prompt=prompt, permission="auto", resume=True
-    ) == ["opencode", ".", "--continue", "--auto", "--prompt", prompt]
-    assert expand_argv(
-        load_preset(tmp_path, "claude"),
-        model="sonnet",
-        prompt=prompt,
-        session_id="abc",
-        permission="auto",
-        resume=True,
-    ) == [
-        "claude",
-        "--disallowedTools",
-        "AskUserQuestion",
-        "--resume",
-        "abc",
-        "--permission-mode",
-        "auto",
-    ]
-    assert expand_argv(
-        load_preset(tmp_path, "grok"),
-        model="grok-4",
-        prompt=prompt,
-        session_id="abc",
-        permission="auto",
-        resume=True,
-    ) == ["grok", "--model", "grok-4", "--resume", "abc", "--always-approve"]
-    assert expand_argv(
-        load_preset(tmp_path, "gemini"), prompt=prompt, permission="auto", resume=True
-    ) == ["gemini", "--resume", "--approval-mode=yolo"]
-
-
-def test_generated_session_id_is_filled_when_omitted(tmp_path: Path) -> None:
-    prompt = "Read /tmp/instructions.md first."
-    argv = expand_argv(load_preset(tmp_path, "fake"), prompt=prompt)
-    assert argv[0] == "foil-fake"
-    assert argv[1] == "--session"
-    assert argv[2] not in {"", "none", "{session_id}"}
-    assert argv[3:] == ["--prompt", prompt]
 
 
 def test_project_list_beats_a_global_harness_file(
@@ -201,14 +146,14 @@ def test_project_list_beats_a_global_harness_file(
     home = store_root()
     (home / "harnesses").mkdir(parents=True)
     (home / "harnesses" / "grok.toml").write_text(
-        'id = "grok"\ncommand = ["global-file", "{prompt}"]\nsession_id = "none"\n',
+        'id = "grok"\nstart = ["global-file", "{prompt}"]\nturn = ["global-file", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     def catalog(command: str) -> str:
         return (
             '[[harness]]\nid = "grok"\n'
-            f'command = ["{command}", "{{prompt}}"]\n'
-            'session_id = "none"\nenv = []\nmodels = []\n\n'
+            f'start = [\"{command}\", \"{{prompt}}\"]\nturn = [\"{command}\", \"{{session_id}}\", \"{{prompt}}\"]\n'
+            'session_id = "generated"\nenv = []\nmodels = []\n\n'
             "[harness.permission]\nask = []\nauto = []\n"
         )
 
@@ -216,41 +161,37 @@ def test_project_list_beats_a_global_harness_file(
     root = foil_root(repo)
     root.mkdir(parents=True, exist_ok=True)
     (root / "harnesses.toml").write_text(catalog("project-list"), encoding="utf-8")
-    assert load_preset(repo, "grok")["command"][0] == "project-list"
+    assert load_preset(repo, "grok")["start"][0] == "project-list"
     (root / "harnesses").mkdir()
     (root / "harnesses" / "grok.toml").write_text(
-        'id = "grok"\ncommand = ["project-file", "{prompt}"]\nsession_id = "none"\n',
+        'id = "grok"\nstart = ["project-file", "{prompt}"]\nturn = ["project-file", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
-    assert load_preset(repo, "grok")["command"][0] == "project-file"
+    assert load_preset(repo, "grok")["start"][0] == "project-file"
     (root / "harnesses" / "grok.toml").unlink()
     (root / "harnesses.toml").unlink()
-    assert load_preset(repo, "grok")["command"][0] == "global-file"
+    assert load_preset(repo, "grok")["start"][0] == "global-file"
     (home / "harnesses" / "grok.toml").unlink()
-    assert load_preset(repo, "grok")["command"][0] == "global-list"
+    assert load_preset(repo, "grok")["start"][0] == "global-list"
 
 
 def test_user_harness_overrides_builtin(tmp_path: Path) -> None:
     path = tmp_path / ".foil" / "harnesses" / "grok.toml"
     path.parent.mkdir(parents=True)
     path.write_text(
-        'id = "grok"\ncommand = ["custom-grok", "{prompt}"]\nsession_id = "none"\n',
+        'id = "grok"\nstart = ["custom-grok", "{prompt}"]\nturn = ["custom-grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     preset = load_preset(tmp_path, "grok")
-    assert preset["command"] == ["custom-grok", "{prompt}"]
-    assert expand_argv(preset, prompt="Read /tmp/i first.") == [
-        "custom-grok",
-        "Read /tmp/i first.",
-    ]
+    assert preset["start"] == ["custom-grok", "{prompt}"]
+    assert expand_argv(preset, session_id="s", turn=True) == ["custom-grok", "s", "{prompt}"]
 
 
 def test_expand_argv_does_not_place_a_leading_dash_model(tmp_path: Path) -> None:
-    prompt = "Read /tmp/instructions.md first."
     codex = load_preset(tmp_path, "codex")
     with pytest.raises(FoilError, match="must not start with '-'"):
-        expand_argv(codex, model="--yolo", prompt=prompt, permission="ask")
-    placed = expand_argv(codex, model="gpt", prompt=prompt, permission="ask")
+        expand_argv(codex, model="--yolo", permission="ask")
+    placed = expand_argv(codex, model="gpt", permission="ask")
     assert "--yolo" not in placed
     assert placed[placed.index("--model") + 1] == "gpt"
 
@@ -267,31 +208,34 @@ def test_load_template_rejects_a_leading_dash_model(tmp_path: Path) -> None:
         with pytest.raises(FoilError, match="invalid template"):
             parse_template_text(body)
     with pytest.raises(FoilError, match="unknown template"):
-        launch_command(tmp_path, "lead", prompt="go")
+        launch_command(tmp_path, "lead")
 
 
 def test_unknown_placeholder_and_template_key_are_rejected(tmp_path: Path) -> None:
     builtin = tmp_path / ".foil" / "harnesses"
     builtin.mkdir(parents=True)
     (builtin / "grok.toml").write_text(
-        'id = "grok"\ncommand = ["grok", "{cwd}"]\nsession_id = "none"\n',
+        'id = "grok"\nstart = ["grok", "{cwd}", "{prompt}"]\nturn = ["grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     with pytest.raises(FoilError, match="invalid preset"):
         load_preset(tmp_path, "grok")
+    turn = 'turn = ["grok", "{session_id}", "{prompt}"]'
     for line in (
-        'command = ["grok", "{text}"]',
-        'command = ["grok"]\nresume = ["grok", "{text}"]',
-        'command = ["grok"]\nwake = ["w", "{prompt}"]',
-        'command = ["grok"]\nwake = "w {text}"',
+        f'start = ["grok", "{{text}}", "{{prompt}}"]\n{turn}',
+        'start = ["grok"]\n' + turn,
+        'start = ["grok", "{prompt}"]\nturn = ["grok", "{prompt}"]',
+        f'start = ["grok", "{{prompt}}", "{{permission}}"]\n{turn}',
+        f'start = ["grok", "{{prompt}}"]\n{turn}\nwake = ["w", "{{prompt}}"]',
+        f'start = ["grok", "{{prompt}}"]\n{turn}\nwake = "w {{text}}"',
     ):
         (builtin / "grok.toml").write_text(
-            f'id = "grok"\n{line}\nsession_id = "none"\n', encoding="utf-8"
+            f'id = "grok"\n{line}\nsession_id = "generated"\n', encoding="utf-8"
         )
         with pytest.raises(FoilError, match="invalid preset"):
             load_preset(tmp_path, "grok")
     (builtin / "grok.toml").write_text(
-        'id = "grok"\ncommand = ["grok"]\nsession_id = "none"\n'
+        'id = "grok"\nstart = ["grok", "{prompt}"]\nturn = ["grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n'
         'wake = ["w", "{session_id}", "{text}"]\n',
         encoding="utf-8",
     )
@@ -315,7 +259,6 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
     monkeypatch.chdir(repo)
     assert main(["init"]) == 0
 
-    prompt = "Read /tmp/instructions.md first."
     root = foil_root(repo)
     for role, worktree in (("lead", False), ("implementer", True), ("reviewer", False)):
         template = load_template(repo, role)
@@ -328,9 +271,9 @@ def test_init_writes_real_personas_and_resolves_a_launch_command(
         )
         assert persona_text(template) == packaged
         assert len(packaged) > 50
-        argv = launch_command(repo, role, prompt=prompt, session_id="abc")
+        argv = launch_command(repo, role, session_id="abc")
         assert argv[0] == template["harness"][0]["id"]
-        assert argv[-1] == prompt
+        assert "{prompt}" in argv
         roles = tomllib.loads((store_root() / "roles.toml").read_text(encoding="utf-8"))
         stored = next(item for item in roles["role"] if item["id"] == role)
         assert stored["persona"] == f"personas/{role}.md"
@@ -407,15 +350,15 @@ def test_scan_sees_user_presets_once_and_excludes_fake(
     harnesses = tmp_path / ".foil" / "harnesses"
     harnesses.mkdir(parents=True)
     (harnesses / "my-agent.toml").write_text(
-        'id = "my-agent"\ncommand = ["my-agent", "{prompt}"]\nsession_id = "none"\n',
+        'id = "my-agent"\nstart = ["my-agent", "{prompt}"]\nturn = ["my-agent", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     (harnesses / "grok.toml").write_text(
-        'id = "grok"\ncommand = ["custom-grok", "{prompt}"]\nsession_id = "none"\n',
+        'id = "grok"\nstart = ["custom-grok", "{prompt}"]\nturn = ["custom-grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     (harnesses / "fake.toml").write_text(
-        'id = "fake"\ncommand = ["foil-fake", "{prompt}"]\nsession_id = "none"\n',
+        'id = "fake"\nstart = ["foil-fake", "{prompt}"]\nturn = ["foil-fake", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
 
@@ -425,7 +368,7 @@ def test_scan_sees_user_presets_once_and_excludes_fake(
     assert ids.count("grok") == 1
     assert "fake" not in ids
     grok = next(preset for preset in found if preset["id"] == "grok")
-    assert grok["command"][0] == "custom-grok"
+    assert grok["start"][0] == "custom-grok"
 
 
 def _limit_harnesses(monkeypatch: pytest.MonkeyPatch, allowed: set[str]) -> None:
@@ -441,7 +384,8 @@ def _limit_harnesses(monkeypatch: pytest.MonkeyPatch, allowed: set[str]) -> None
 
 def _write_preset(directory: Path, harness_id: str, program: str) -> None:
     (directory / f"{harness_id}.toml").write_text(
-        f'id = "{harness_id}"\ncommand = ["{program}"]\nsession_id = "none"\n',
+        f'id = "{harness_id}"\nstart = ["{program}", "{{prompt}}"]\n'
+        f'turn = ["{program}", "{{session_id}}", "{{prompt}}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
 
@@ -546,7 +490,7 @@ def test_same_program_counts_as_two_ids_and_one_id_fills_every_template(
     assert main(["init"]) == 0
     assert load_template(repo, "lead")["harness"][0]["id"] == "claude"
     assert load_template(repo, "reviewer")["harness"][0]["id"] == "extra"
-    assert [preset["command"][0] for preset in installed_presets(repo)[0]] == ["claude", "claude"]
+    assert [preset["start"][0] for preset in installed_presets(repo)[0]] == ["claude", "claude"]
 
     (store_root() / "roles.toml").unlink()
     (store_root() / "mapping.toml").unlink()
@@ -775,7 +719,7 @@ def test_init_reports_an_overridden_builtin_and_leaves_the_preset(
     harnesses.mkdir(parents=True)
     preset = (
         'id = "claude"\n'
-        'command = ["claude", "{prompt}"]\n'
+        'start = ["claude", "{prompt}"]\nturn = ["claude", "{session_id}", "{prompt}"]\n'
         'session_id = "generated"\n'
         "env = []\n\n"
         "[permission]\n"
@@ -785,7 +729,7 @@ def test_init_reports_an_overridden_builtin_and_leaves_the_preset(
     (harnesses / "claude.toml").write_text(preset, encoding="utf-8")
     (harnesses / "grok.toml").write_text(
         'id = "grok"\n'
-        'command = ["grok", "{prompt}"]\n'
+        'start = ["grok", "{prompt}"]\nturn = ["grok", "{session_id}", "{prompt}"]\n'
         'session_id = "generated"\n'
         "env = []\n\n"
         "[permission]\n"
@@ -979,13 +923,12 @@ def test_builtin_presets_turn_off_the_question_tool() -> None:
 
     catalog = _packaged_catalog()
     claude = catalog["claude"]
-    for argv in (claude["command"], claude["resume"]):
+    for argv in (claude["start"], claude["turn"]):
         index = argv.index("--disallowedTools")
         assert argv[index + 1] == "AskUserQuestion"
         # The tool list is variadic: the next token must be a flag, never the prompt.
         assert argv[index + 2].startswith("--")
-    content = catalog["opencode"]["set_env"]["OPENCODE_CONFIG_CONTENT"]
-    assert json.loads(content) == {"permission": {"question": "deny"}}
+        assert argv.index("{prompt}") < index
 
 
 @pytest.mark.parametrize(
@@ -1006,7 +949,7 @@ def test_set_env_refuses_reserved_forwarded_and_malformed_rows(table: str) -> No
     from foil.presets import _parse_preset
 
     text = (
-        'id = "custom"\ncommand = ["custom", "{prompt}"]\nsession_id = "none"\n'
+        'id = "custom"\nstart = ["custom", "{prompt}"]\nturn = ["custom", "{session_id}", "{prompt}"]\nsession_id = "generated"\n'
         f'env = ["FORWARDED"]\n{table}\nmodels = []\n\n'
         "[permission]\nask = []\nauto = []\n"
     )

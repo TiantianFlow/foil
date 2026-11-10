@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 import shutil
 import tomllib
-import uuid
 from contextvars import ContextVar
 from importlib.resources import files
 from pathlib import Path
@@ -15,15 +14,16 @@ from foil.errors import FoilError, assert_no_secret, shown
 from foil.project import foil_root, store_root
 from foil.store import SAFE_ID, fleet_dir, scan, write_bytes
 
-_PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}")
+_PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}", "{permission}")
 WAKE_PLACEHOLDERS = ("{session_id}", "{text}")
 _PRESET_KEYS = {
     "id",
-    "command",
+    "start",
+    "turn",
     "permission",
-    "resume",
     "wake",
     "session_id",
+    "session_key",
     "env",
     "set_env",
     "unverified",
@@ -31,15 +31,17 @@ _PRESET_KEYS = {
 }
 _TEMPLATE_KEYS = {"harness", "model", "persona", "worktree", "permission"}
 _ENTRY_KEYS = {"id", "model"}
-_ROLE_KEYS = {"id", "description", "persona", "worktree", "permission"}
+_ROLE_KEYS = {"id", "description", "persona", "worktree", "permission", "turn_timeout"}
+TURN_TIMEOUT = 14400
 _MAP_KEYS = {"role", "harness", "model"}
 _FLEET_KEYS = {"role", "harness", "model", "note"}
 _PRESET_SAME = (
-    "command",
+    "start",
+    "turn",
     "permission",
-    "resume",
     "wake",
     "session_id",
+    "session_key",
     "env",
     "set_env",
     "unverified",
@@ -92,22 +94,37 @@ def _load_toml(text: str, label: str) -> dict[str, Any]:
     return raw
 
 
-def _preset_from_table(raw: dict[str, Any]) -> dict[str, Any]:
+def _preset_from_table(raw: dict[str, Any], label: str = "harnesses.toml") -> dict[str, Any]:
+    if {"command", "resume"} & set(raw):
+        raise FoilError(f"foil: {label}: command and resume are now start and turn")
     permission = raw.get("permission", {})
     harness_id = raw.get("id")
+    mode = raw.get("session_id")
+    key = raw.get("session_key")
     if (
         set(raw) - _PRESET_KEYS
         or not isinstance(harness_id, str)
         or not SAFE_ID.fullmatch(harness_id)
-        or raw.get("session_id") not in {"generated", "none"}
+        or mode not in {"generated", "output"}
+        or (mode == "output") != isinstance(key, str)
+        or (key is not None and not SAFE_ID.fullmatch(str(key)))
         or not isinstance(permission, dict)
         or set(permission) - {"ask", "auto"}
     ):
         _fail("preset")
-    command = _strings(raw.get("command"), "preset")
-    if not command:
+    start = _strings(raw.get("start"), "preset")
+    turn = _strings(raw.get("turn"), "preset")
+    if not start or not turn or "{prompt}" not in start or "{prompt}" not in turn:
         _fail("preset")
-    resume = raw.get("resume")
+    if mode == "output" and "{session_id}" in start:
+        _fail("preset")
+    if "{session_id}" not in turn:
+        _fail("preset")
+    for argv in (start, turn):
+        if "{permission}" in argv and any(
+            token in _PLACEHOLDERS for token in argv[: argv.index("{permission}")]
+        ):
+            _fail("preset")
     wake = raw.get("wake")
     if wake is not None and not _strings(wake, "preset", WAKE_PLACEHOLDERS):
         _fail("preset")
@@ -121,14 +138,15 @@ def _preset_from_table(raw: dict[str, Any]) -> dict[str, Any]:
         _fail("preset")
     return {
         "id": harness_id,
-        "command": command,
+        "start": start,
+        "turn": turn,
         "permission": {
             "ask": _strings(permission.get("ask", []), "preset"),
             "auto": _strings(permission.get("auto", []), "preset"),
         },
-        "resume": None if resume is None else _strings(resume, "preset"),
         "wake": None if wake is None else list(wake),
-        "session_id": raw["session_id"],
+        "session_id": mode,
+        "session_key": key or "",
         "env": env,
         "set_env": set_env,
         "unverified": _strings(raw.get("unverified", []), "preset"),
@@ -164,7 +182,7 @@ def _set_env(raw: Any, forwarded: list[str]) -> dict[str, str]:
 
 
 def _parse_preset(text: str, harness_id: str) -> dict[str, Any]:
-    preset = _preset_from_table(_load_toml(text, "preset"))
+    preset = _preset_from_table(_load_toml(text, "preset"), f"harnesses/{harness_id}.toml")
     if preset["id"] != harness_id:
         _fail("preset")
     return preset
@@ -335,6 +353,8 @@ def render_roles(roles: list[dict[str, Any]]) -> str:
             f"worktree = {'true' if role.get('worktree') else 'false'}",
             f"permission = {_toml_basic(str(role.get('permission') or 'auto'))}",
         ]
+        if role.get("turn_timeout", TURN_TIMEOUT) != TURN_TIMEOUT:
+            lines.append(f"turn_timeout = {int(role['turn_timeout'])}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks) + ("\n" if blocks else "")
 
@@ -372,8 +392,11 @@ def _parse_roles(text: str) -> list[dict[str, Any]]:
         persona = item.get("persona", "")
         worktree = item.get("worktree", False)
         permission = _permission_field(item)
+        timeout = item.get("turn_timeout", TURN_TIMEOUT)
         if (
-            not isinstance(role_id, str)
+            type(timeout) is not int
+            or timeout < 1
+            or not isinstance(role_id, str)
             or not SAFE_ID.fullmatch(role_id)
             or role_id in seen
             or not isinstance(description, str)
@@ -392,6 +415,7 @@ def _parse_roles(text: str) -> list[dict[str, Any]]:
                 "persona": persona,
                 "worktree": worktree,
                 "permission": permission,
+                "turn_timeout": timeout,
             }
         )
     return roles
@@ -636,30 +660,31 @@ def expand_argv(
     preset: dict[str, Any],
     *,
     model: str | None = None,
-    prompt: str | None = None,
     session_id: str | None = None,
     permission: str = "ask",
-    resume: bool = False,
+    turn: bool = False,
 ) -> list[str]:
-    """Expand a preset. ``prompt`` is the caller's instruction sentence."""
+    """A preset's start or turn argv, with ``{prompt}`` left for the runner.
+
+    ``{session_id}`` is left too when no id is given: an ``output`` preset
+    learns it from the first turn (F12).
+    """
 
     if permission not in {"ask", "auto"}:
         _fail("template")
     if model is not None and model.startswith("-"):
         raise FoilError("foil: model must not start with '-'")
-    argv = preset["resume"] if resume else preset["command"]
-    if not argv:
-        _fail("preset")
-    bound = None if preset["session_id"] == "none" else session_id or str(uuid.uuid4())
-    values = {"model": model or None, "prompt": prompt or None, "session_id": bound}
-    filled = _fill(argv, values)
+    argv = preset["turn"] if turn else preset["start"]
+    values = {
+        "model": model or None,
+        "prompt": "{prompt}",
+        "session_id": session_id or "{session_id}",
+    }
     extra = preset["permission"][permission]
-    text = values["prompt"]
-    if not extra or not text or text not in filled:
+    filled = _fill([token for token in argv if token != "{permission}"], values)
+    if "{permission}" not in argv:
         return filled + extra
-    index = filled.index(text)
-    if index > 0 and _is_flag(filled[index - 1]):
-        index -= 1
+    index = argv.index("{permission}")
     return filled[:index] + extra + filled[index:]
 
 
@@ -708,6 +733,7 @@ def _listed_template(toplevel: Path, name: str) -> dict[str, Any] | None:
         "worktree": match["worktree"],
         "permission": match["permission"],
         "description": match["description"],
+        "turn_timeout": match["turn_timeout"],
     }
 
 
@@ -857,16 +883,13 @@ def persona_stems(directory: Path) -> list[str]:
     return sorted(path.stem for path in paths if path.is_file() and not path.is_symlink())
 
 
-def launch_command(
-    toplevel: Path, name: str, *, prompt: str, session_id: str | None = None
-) -> list[str]:
+def launch_command(toplevel: Path, name: str, *, session_id: str | None = None) -> list[str]:
     template = load_template(toplevel, name)
     entry = spawn_entry(toplevel, name, template["harness"], 0)
     preset = load_preset(toplevel, entry["id"])
     return expand_argv(
         preset,
         model=entry["model"] or None,
-        prompt=prompt,
         session_id=session_id,
         permission=template["permission"],
     )
@@ -918,7 +941,7 @@ def installed_presets(
                 (f"harnesses/{harness_id}.toml", str(exc).removeprefix("foil: "))
             )
             continue
-        if shutil.which(preset["command"][0]):
+        if shutil.which(preset["start"][0]):
             found.append(preset)
     return found, skipped
 
