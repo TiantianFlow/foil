@@ -309,8 +309,9 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
         lines.append("New for lead: none.")
     lines.append(f"Hear from the fleet: {_route(harness, session)}")
     lines.append(
-        f"Project folder: {project_root}. Your file tools write the board there, "
-        "so your harness must let them, as the joined skill's Setup says."
+        f"Project folder: {project_root}. Before your first spawn, write board/status.md "
+        "there with your file tool. If your harness asks or refuses, allow that folder "
+        "before you spawn."
     )
     if _dirty(root):
         lines.append(

@@ -76,8 +76,10 @@ Nobody types into your session. Mail to `lead` and room posts that wake `lead` w
 - `--wake CMD`, for a harness that does not resume on a finished command. CMD runs once when something is new, with `FOIL_WAKE_TEXT` naming each sender and path:
 
 ```text
-foil mail wait --wake 'codex queue --thread "$CODEX_THREAD_ID" --message "$FOIL_WAKE_TEXT" --resume'
+foil mail wait --wake 'codex queue --thread SESSION_ID --message "$FOIL_WAKE_TEXT" --resume'
 ```
+
+Use the command the brief prints, which names your recorded session id.
 
 - Otherwise `foil mail wait --timeout 0` at the start of each turn. Any other `foil` command you run ends with `foil: N new for lead.` on stderr when something is new.
 

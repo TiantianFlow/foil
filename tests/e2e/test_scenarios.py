@@ -335,6 +335,7 @@ def test_scenario_4_joined_lead_waits_for_a_worker_and_hands_off(
     board = foil_root(repo) / "fleets" / "main" / "board"
     try:
         _scripts(repo, "scenario-4", {"implementer-1": "implementer.json"})
+        capsys.readouterr()
         assert main(["seat", "join", "lead"]) == 0
         brief = capsys.readouterr().out
         assert "Read first:" in brief
