@@ -281,6 +281,7 @@ def test_unknown_placeholder_and_template_key_are_rejected(tmp_path: Path) -> No
         load_preset(tmp_path, "grok")
     for line in (
         'command = ["grok", "{text}"]',
+        'command = ["grok"]\nresume = ["grok", "{text}"]',
         'command = ["grok"]\nwake = ["w", "{prompt}"]',
         'command = ["grok"]\nwake = "w {text}"',
     ):

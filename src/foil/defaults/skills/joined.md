@@ -27,7 +27,7 @@ You are the human's own agent session, and you joined the fleet as its lead with
 | Claude Code | `"permissions": {"allow": ["Bash(foil:*)"], "additionalDirectories": ["<project folder>"]}` in `~/.claude/settings.json`, and `"sandbox": {"excludedCommands": ["foil"]}` when its sandbox is on |
 | Grok | `{ action = "allow", tool = "bash", pattern = "foil *" }` in its permission rules, and the project folder among the paths its file tools may write |
 
-Do not allow `tmux` the same way. An allowed `tmux` lets any session of that harness type any command into a new window outside the sandbox. The folder-trust keystroke in Dialogs stays under your harness's approval prompt, and the human approves it. The `foil` rule grants every `foil` command, and no `foil` command runs a command you name.
+Do not allow `tmux` the same way. An allowed `tmux` lets any session of that harness type any command into a new window outside the sandbox. The folder-trust keystroke in Dialogs stays under your harness's approval prompt, and the human approves it. The `foil` rule grants every `foil` command. `foil mail wait --wake` runs only the wake command of a global or packaged preset. A spawn runs the launch command of a project harness file, so never write `harnesses.toml` or `harnesses/` in the project folder; ask the human to change a harness.
 
 Without the `foil` rule, `foil seat join lead` prints `foil: run foil outside your harness sandbox and without a prompt` and changes nothing. The join cannot check your file tools, so step 7 does.
 

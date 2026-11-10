@@ -326,6 +326,12 @@ def test_mail_wait_wake_refuses_without_a_wake_command(
     _join(repo, capsys, "--take", "--harness", "wakey", "--session", "s-1")
     assert main(["mail", "wait", "--timeout", "0", "--wake"]) == 1
     assert capsys.readouterr().err == refusal
+    _join(repo, capsys, "--take", "--harness", "codex", "--session", "t-1")
+    _handoff(repo)
+    assert main(["seat", "leave"]) == 0
+    capsys.readouterr()
+    assert main(["mail", "wait", "--timeout", "0", "--wake"]) == 1
+    assert capsys.readouterr().err == refusal
 
 
 def test_mail_wait_is_outside_the_fleet_only(
