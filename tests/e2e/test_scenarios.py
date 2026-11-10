@@ -22,6 +22,7 @@ from foil.board_ops import split_front_matter
 from foil.cli import main
 from foil.project import foil_root, store_root
 from foil.store import load_registry
+from tests.e2e.support import timeout_report
 
 pytestmark = pytest.mark.e2e
 
@@ -82,23 +83,13 @@ def _scripts(repo: Path, fixture: str, seats: dict[str, str]) -> None:
         shutil.copy(source / name, dest / f"{seat}.json")
 
 
-def _logs(repo: Path) -> str:
-    directory = foil_root(repo) / "fleets" / "main" / "run" / "fake"
-    if not directory.is_dir():
-        return ""
-    chunks = []
-    for path in sorted(directory.glob("*.log")):
-        chunks.append(f"----- {path.name}\n{path.read_text(encoding='utf-8')}")
-    return "\n".join(chunks)
-
-
 def _wait(repo: Path, predicate, timeout: float = 90) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
             return
         time.sleep(0.2)
-    raise AssertionError(f"timed out\n{_logs(repo)}")
+    raise AssertionError(f"timed out\n{timeout_report(repo)}")
 
 
 def _set_auto(repo: Path) -> None:
