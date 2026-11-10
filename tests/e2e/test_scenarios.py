@@ -348,6 +348,8 @@ def test_scenario_4_joined_lead_waits_for_a_worker_and_hands_off(
         assert str((board / "mail" / "lead").resolve()) in waited
         assert "The color is blue." in (board / "results" / "t1.md").read_text(encoding="utf-8")
         assert main(["mail", "wait", "--timeout", "0"]) == 0
+        assert capsys.readouterr().out == waited
+        assert main(["mail", "wait", "--timeout", "0"]) == 0
         assert capsys.readouterr().out == "no new mail\n"
 
         assert main(["seat", "leave"]) == 1

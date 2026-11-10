@@ -764,7 +764,10 @@ def test_a_withdrawn_release_does_not_name_a_withdrawn_destination() -> None:
 def test_lead_skill_does_not_run_a_refused_roster_command() -> None:
     """F21: inside a fleet the lead sets harness and model, and runs nothing else."""
 
-    text = (ROOT / "src" / "foil" / "defaults" / "skills" / "lead.md").read_text(encoding="utf-8")
+    from foil.lifecycle import _for_lead
+
+    path = ROOT / "src" / "foil" / "defaults" / "skills" / "lead.md"
+    text = _for_lead(path.read_text(encoding="utf-8"), joined=False)
     absent = (
         "foil roster add",
         "foil roster remove",
@@ -989,3 +992,41 @@ def test_joined_instruction_adds_the_joined_skill_and_outside_commands(
     kill = "You may kill another seat by name. `foil seat kill --all` stops every other seat."
     assert kill in text
     assert _command_problems("joined instruction", text) == []
+
+
+def test_each_lead_reads_only_its_own_paragraphs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F24: the joined file drops the launched-only lines and four sections; and the reverse."""
+    from foil.lifecycle import _instruction, init_project
+
+    repo = tmp_path.resolve()
+    subprocess.run(["git", "-C", str(repo), "init", "--quiet"], check=True, capture_output=True)
+    monkeypatch.chdir(repo)
+    init_project(str(repo))
+    joined = _joined_instruction(repo)
+    launched = _instruction(
+        repo, "lead", {"name": "lead", "worktree": False, "persona": "none"}, restarted=False
+    )
+    for text in (joined, launched):
+        assert "<!--" not in text
+    for line in (
+        "A nudge wakes you",
+        "you may not run `foil seat kill --all`",
+        "You do not type into a pane",
+        "Record them with `foil roster update",
+        "## Setup",
+        "## The viewer",
+        "## Teardown and upgrading",
+    ):
+        assert line not in joined, line
+    for line in ("Nothing nudges you", "The human reads your chat", "## Dialogs", "## Leaving"):
+        assert line in joined, line
+    assert joined.count("foil send user") == 1
+    assert "not with `foil send user`" in joined
+    assert joined.count("## Roster") == 1
+    for line in ("A nudge wakes you", "foil send user", "You do not type into a pane"):
+        assert line in launched, line
+    for line in ("Nothing nudges you", "The human reads your chat", "# Joined lead"):
+        assert line not in launched, line
+    assert len(joined.encode()) < 30_000

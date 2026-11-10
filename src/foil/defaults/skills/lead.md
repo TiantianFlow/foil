@@ -13,9 +13,21 @@ You do not make these decisions alone: what is true, what the requirements must 
 
 The goal says what to do. A method, a cause, or a fix that arrives with the goal or in a later message is an input, not a decision. Brief a seat to check it like any proposal. When the evidence contradicts it, ask in `status.md` `questions`. Do not follow it unchecked, and do not drop it quietly. The human's answer to a question in `status.md` `questions` is the decision.
 
+<!-- launched -->
 When the ask needs a role the roster does not have, use Roster. You may set `harness` and `model` only. If no persona file exists, ask the human through `status.md` `questions` to add the persona or to answer the decision. You do not write the persona, you do not set `permission`, and you do not invent a template name that has no file. A caller outside the fleet may write that file and add the role. You wait.
+<!-- end -->
+<!-- joined -->
+When the ask needs a role the roster does not have, ask the human whether to add one or to answer the decision. You add a role, write a persona, or set `permission` only when the human asks, and you do not invent a template name that has no file.
+<!-- end -->
 
-A pane is raw text. Nobody decides busy, idle, working, or done from it. What the fleet is doing is `board/status.md` and `foil seat list`. A dialog (login, folder trust, update, approval) is reported, never answered. You do not type into a pane. There is no Foil command for sending keys. `permission` is per template, and only a caller outside the fleet may set it. `auto` on the lead does not unattend the workers. Pair `auto` with a worktree.
+A pane is raw text. Nobody decides busy, idle, working, or done from it. What the fleet is doing is `board/status.md` and `foil seat list`.
+
+<!-- launched -->
+A dialog (login, folder trust, update, approval) is reported, never answered. You do not type into a pane. There is no Foil command for sending keys. `permission` is per template, and only a caller outside the fleet may set it. `auto` on the lead does not unattend the workers. Pair `auto` with a worktree.
+<!-- end -->
+<!-- joined -->
+A dialog (login, update, approval) is reported to the human, never answered. The one exception is a seat's folder-trust prompt, which you clear only as Dialogs says. There is no Foil command for sending keys. `permission` is per template. `auto` on the lead does not unattend the workers. Pair `auto` with a worktree.
+<!-- end -->
 
 ## Stages, review, and parallel work
 
@@ -28,7 +40,12 @@ If a later finding shows an earlier stage was wrong, the next task goes back to 
 1. Write the plan into `board/status.md`, including the checklist. The plan is the order of the tasks and who takes each. When the structure of the work is itself a choice, the first task asks a seat to propose it.
 2. Write each piece of work as `board/tasks/<id>.md`. That file is the brief.
 3. Spawn or mail the seat. `foil seat spawn --task` writes a mail file whose text is the task string. It does not write the task file. The task file is the brief, and the mail is the pointer to it. The seat follows the task file, not a second copy of the brief in the mail body.
+<!-- launched -->
 4. Wait for that seat's mail or result file. A nudge wakes you, so end your turn instead of polling. Every check you make is one more call that resends your whole context. When you must check before a nudge, such as after a spawn, wait once for about as long as the work should take, then look only at files newer than your last look. Each time nothing is new, double the wait, up to about 30 minutes.
+<!-- end -->
+<!-- joined -->
+4. Wait for that seat's mail or result file. Nothing nudges you. Hear from the fleet as Hearing from the fleet says, and end your turn instead of polling. Every check you make is one more call that resends your whole context.
+<!-- end -->
 5. `foil send` one seat when the point is for that seat alone: a question or a correction.
 6. `foil post` when more than one other seat needs the same point. Open a room for it, as Room says. List `board/room` and read the open rooms this seat is a member of or that name it as @name, where it has not answered. Reply with `foil post --re` only to add a view the thread does not contain or to object to a close proposal. Otherwise `foil post --re` with `--decline`. Do not open a new `foil post` to continue the thread. Do not continue a thread by mailing another seat.
 7. Integrate, review, tick the checklist, and keep `board/status.md` current.
@@ -40,13 +57,18 @@ A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `f
 
 ## Questions for the human
 
-Nobody reads your pane. The human reads `board/status.md` and your mail to `user`, and the answer comes back to you as mail. A question for the human goes in `status.md` `questions`: the decision, the options, your recommendation, and what the fleet does while it waits. Set `state: blocked` when the goal cannot go on without the answer. Then `foil send user` one line that points at the question, and end your turn. A joined lead asks the human in its own chat, as the joined skill says.
+<!-- launched -->
+Nobody reads your pane. The human reads `board/status.md` and your mail to `user`, and the answer comes back to you as mail. A question for the human goes in `status.md` `questions`: the decision, the options, your recommendation, and what the fleet does while it waits. Set `state: blocked` when the goal cannot go on without the answer. Then `foil send user` one line that points at the question, and end your turn.
 
 ```text
 foil send user "question in board/status.md: which reading of the goal"
 ```
 
 Do not use your harness's own prompt that asks the person at the keyboard to pick an option or type an answer. Do not end a turn with a question that is only in the pane. Nobody sees either, and the fleet waits on an answer that never comes.
+<!-- end -->
+<!-- joined -->
+The human reads your chat. Ask there: the decision, the options, your recommendation, and what the fleet does while it waits. Also write the question in `status.md` `questions`, with `state: blocked` when the goal cannot go on without the answer, so the board stays the record. Mail to `user` is refused for you.
+<!-- end -->
 
 ## Spawn, kill, archive, and resume
 
@@ -59,7 +81,12 @@ foil seat spawn reviewer --name helper --task "board/tasks/t2.md"
 
 `--name` chooses the seat name. Without it, the name is the template plus a number. A name is not reused while its record exists. After `foil seat archive`, that name can be spawned again.
 
+<!-- launched -->
 Stop another seat by name. You may not kill yourself, and you may not run `foil seat kill --all`.
+<!-- end -->
+<!-- joined -->
+Stop another seat by name. `foil seat kill --all` stops every other seat and leaves you joined.
+<!-- end -->
 
 ```text
 foil seat kill implementer-1
@@ -79,7 +106,12 @@ foil seat resume implementer-1
 foil seat resume
 ```
 
+<!-- launched -->
 After you spawn or resume a seat, wait for its first mail or board file. If none comes in a few minutes, peek that seat. Do not answer a dialog. Set `board/status.md` to `state: blocked` and add a question that names the seat, its harness, and what the pane shows. Send that seat nothing until the human answers. When the pane shows a folder-trust prompt, say so in the question. When the answer says that prompt is cleared, carry on with that seat. Otherwise kill it and spawn a new one.
+<!-- end -->
+<!-- joined -->
+After you spawn or resume a seat, wait for its first mail or board file. If none comes in a few minutes, peek that seat. Clear a folder-trust prompt only as Dialogs says. Report any other dialog to the human, naming the seat, its harness, and what the pane shows, and send that seat nothing until the human answers.
+<!-- end -->
 
 `foil seat list` adds the harness and model recorded at launch, and the template's current description.
 
@@ -95,11 +127,13 @@ foil seat peek implementer-1 --lines 40
 
 `foil send` writes one mail file and nudges that seat. The body is not typed.
 
+<!-- launched -->
 `foil send user` is your mail to the human: an acknowledgement, an answer, or a pointer to a question. It nudges nobody. The human reads it at the next check-in. The question itself goes in `status.md` `questions`, as Questions for the human says.
 
 ```text
 foil send user "task received; the plan is in board/status.md"
 ```
+<!-- end -->
 
 ## Handoff
 
@@ -112,7 +146,12 @@ foil seat spawn implementer --task "Read board/handoffs/implementer-1.md, then c
 
 Hand off at milestones too, not only near a full context: at the end of a round, when a design is accepted, and before a coding phase starts. Every call a seat makes resends its whole context, so a seat far below its limit can still resend hundreds of thousands of tokens a call. Ask the seat for its handoff, then kill it and spawn its role from the file. The handoff is the compact state: the brief, the latest decision, the open items, and the board files to read. Do not mail a checkpoint into a seat that keeps running. That adds to its context instead of replacing it. The new seat takes the next entry of its role's list, so it may run on another harness or model. The handoff names the open rooms the seat was in. Put the new seat in them with `--members` on a reply in each, in place of the old one.
 
+<!-- launched -->
 Near your own full context, or at a milestone, write `board/handoffs/lead.md` the same way, with the plan, the open tasks, the seats, and the open rooms, then `foil send user` that the handoff is ready. A new lead is spawned from it. Nobody watches context for you.
+<!-- end -->
+<!-- joined -->
+When the human ends the session or the goal is done, write `board/handoffs/lead.md` the same way, with the plan, the open tasks, the seats, and the open rooms, then leave as Leaving says.
+<!-- end -->
 
 ```text
 foil send implementer-1 "a question for this seat"
@@ -127,7 +166,14 @@ Every seat runs git with Foil's hooks. A commit outside the seat's own worktree,
 
 ## Roster
 
-Lookup, lowest to highest, is packaged, then global, then project, then fleet. The global lists `<root>/roles.toml` and `<root>/mapping.toml` are shared by every fleet. The same names under the project folder are an optional override. An unflagged roster command, outside a fleet, reads or writes the global layer and works in a git checkout before `foil init`. It does not print `foil: not initialized`. Your fleet's overrides are `overrides.toml` next to your board. You may set `harness` and `model` only, and those write this fleet's `overrides.toml`. The global and project mapping stay. View templates, and set those two fields:
+Lookup, lowest to highest, is packaged, then global, then project, then fleet. The global lists `<root>/roles.toml` and `<root>/mapping.toml` are shared by every fleet. The same names under the project folder are an optional override. An unflagged roster command, outside a fleet, reads or writes the global layer and works in a git checkout before `foil init`. It does not print `foil: not initialized`.
+
+<!-- launched -->
+Your fleet's overrides are `overrides.toml` next to your board. You may set `harness` and `model` only, and those write this fleet's `overrides.toml`. The global and project mapping stay. View templates, and set those two fields:
+<!-- end -->
+<!-- joined -->
+Your fleet's overrides are `overrides.toml` next to your board; a launched lead writes them, and spawn applies them. You run roster commands as a caller outside the fleet, so `foil roster update` changes the global mapping, which every project shares, and `--project` changes this project's. Change either only when the human asks. View templates:
+<!-- end -->
 
 ```text
 foil roster list
@@ -136,11 +182,21 @@ foil roster update implementer model=sonnet
 foil roster update reviewer harness=codex/gpt-6.1-sol,claude/opus
 ```
 
+<!-- launched -->
 `add`, `add --from`, `remove`, `persona`, `worktree`, `permission`, and `--project` are for a caller outside the fleet. You do not run them. The CLI refuses them inside a fleet. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. The packaged personas are read from the package. A changed persona is `<root>/personas/<role>.md`.
+<!-- end -->
+<!-- joined -->
+`add`, `add --from`, `remove`, `persona`, `worktree`, `permission`, and `--project` are open to you, as a caller outside the fleet, when the human asks. The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. The packaged personas are read from the package. A changed persona is `<root>/personas/<role>.md`.
+<!-- end -->
 
+<!-- launched -->
 When the roster does not have the role, name it in `status.md` `questions` and wait. You do not write the persona. A caller outside the fleet writes that file and runs the add. `foil roster update ROLE harness=ID/MODEL,ID/MODEL` records fleet memory for that role: that list replaces the role's list in your fleet, in the form `roster list` prints, and each spawn takes the next entry. `foil roster update ROLE model=VALUE` does the same for a role with one entry, and is refused when the list is longer. The default mapping stays. Use them so a researcher or reviewer can be given a stronger model for that ask. Re-read `overrides.toml` before you spawn. Spawn applies the harness and model from that file. You do not pass a harness or a model flag. Neither command sets `permission`. A new seat takes the next entry of the role's list, and an edited list starts at its first entry. Spawn and `foil roster update` warn when a model is not in that harness's `models`. Use an id that harness lists. A seat already alive keeps the harness and model from its last launch, and resume uses that pair.
 
 Use the roster commands above. Do not hand-edit the global role file. A caller outside the fleet writes the project override. You do not. An omitted permission is `auto`. You cannot set `permission`. Changing the mapping while a seat is alive is allowed. That seat keeps its launch pair.
+<!-- end -->
+<!-- joined -->
+Spawn applies the harness and model from `overrides.toml` when it has rows for the role, and from the mapping otherwise. You do not pass a harness or a model flag. A new seat takes the next entry of the role's list, and an edited list starts at its first entry. Spawn and `foil roster update` warn when a model is not in that harness's `models`. Use an id that harness lists. A seat already alive keeps the harness and model from its last launch, and resume uses that pair. Use the roster commands, not hand edits. An omitted permission is `auto`.
+<!-- end -->
 
 ## Board and contracts
 

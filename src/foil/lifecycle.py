@@ -462,6 +462,35 @@ def _accepted(root: Path) -> list[tuple[str, str]]:
     return found
 
 
+_MARK = re.compile(r"^<!-- (launched|joined|end) -->$")
+# A joined lead has done the setup, and the README carries the rest (F24).
+_JOINED_DROPPED = ("Setup", "Roster", "The viewer", "Teardown and upgrading")
+
+
+def _for_lead(text: str, *, joined: bool) -> str:
+    """The lead skill as one kind of lead reads it, without the other kind's paragraphs."""
+
+    keep, block = [], None
+    for line in text.splitlines():
+        mark = _MARK.match(line)
+        if mark:
+            block = None if mark.group(1) == "end" else mark.group(1)
+            continue
+        if block is None or (block == "joined") == joined:
+            keep.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(keep)).strip()
+
+
+def _joined_sections(text: str) -> str:
+    keep, dropping = [], False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            dropping = line[3:].strip() in _JOINED_DROPPED
+        if not dropping:
+            keep.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(keep)).strip()
+
+
 def _persona_line(template: dict) -> str:
     return persona_text(template).strip() or "none"
 
@@ -483,6 +512,8 @@ def _instruction(
         learned = "\n".join(f"- {item}: {text}" for item, text in lessons)
     lead = template["name"] == "lead"
     skill_text = _builtin("skills", "lead.md" if lead else "worker.md").strip()
+    if lead:
+        skill_text = _for_lead(skill_text, joined=joined)
     work = (
         "Stay in your worktree. Do not modify the project toplevel. "
         "Killing you will not delete your branch."
@@ -508,7 +539,12 @@ def _instruction(
         "Mail: `foil send TO TEXT`. Room: `foil post --re PATH TEXT`.",
         "Send is one seat. Post is a room's members. "
         "The task and result files are the durable record. A note wakes nobody.",
-        "A nudge line is `from path`. A path under `board/mail/` is `foil mail read`. "
+        (
+            "A `foil mail wait` line is `time from path`. "
+            if joined
+            else "A nudge line is `from path`. "
+        )
+        + "A path under `board/mail/` is `foil mail read`. "
         "A path under `board/room/` is `foil board read`.",
         "List `board/room` and read the open rooms this seat is a member of or that name it "
         "as @name, where it has not answered.",
@@ -522,7 +558,7 @@ def _instruction(
         f"Worktree: {work}",
         f"Persona:\n{_persona_line(template)}",
         skill_text,
-        *([_builtin("skills", "joined.md").strip()] if joined else []),
+        *([_joined_sections(_builtin("skills", "joined.md"))] if joined else []),
         f"Accepted lessons: {learned}",
     ]
     if lead:
@@ -566,10 +602,13 @@ def _instruction(
                 "You do not pass a harness or a model flag.",
                 "Current overrides:",
                 memory,
-                "Record them with `foil roster update ROLE harness=ID/MODEL,ID/MODEL` "
-                "or, for one entry, `model=VALUE`. That leaves the default mapping unchanged.",
             ]
         )
+        if not joined:
+            lines.append(
+                "Record them with `foil roster update ROLE harness=ID/MODEL,ID/MODEL` "
+                "or, for one entry, `model=VALUE`. That leaves the default mapping unchanged."
+            )
     if joined:
         lines.append(
             "The mail from before the join was listed in the brief. Hear from the fleet "
@@ -641,7 +680,12 @@ def _write_instruction(
         task=task,
         joined=joined,
     ).rstrip("\n")
-    text = f"{body}\nRe-read `{path}` whenever you are woken.\n"
+    reread = (
+        f"Re-read `{path}` after your harness compacts this conversation, or when unsure."
+        if joined
+        else f"Re-read `{path}` whenever you are woken."
+    )
+    text = f"{body}\n{reread}\n"
     scan(text)
     write_bytes(path, text.encode())
     return path

@@ -16,6 +16,7 @@ from foil.board_ops import split_front_matter
 from foil.errors import FoilError
 from foil.lifecycle import _state, _write_instruction
 from foil.presets import load_template
+from foil.project import foil_root
 from foil.store import (
     SAFE_ID,
     SCHEMA_VERSION,
@@ -37,7 +38,12 @@ DEAD_EVERY = 30
 COALESCE = 2
 WAKE_LIMIT = 10
 BRIEF_ITEMS = 10
-_MAIL_NAME = re.compile(r"^\d{8}T\d{6}Z-[A-Za-z0-9][A-Za-z0-9._-]{0,127}-[0-9a-f]{8}\.md$")
+_MAIL_NAME = re.compile(
+    r"^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z-([A-Za-z0-9][A-Za-z0-9._-]{0,127})-[0-9a-f]{8}\.md$"
+)
+_ROOM_ID = re.compile(r"^[0-9a-f]{16}$")
+_ROOM_CHILD = re.compile(r"^\d{8}T\d{12}Z-[A-Za-z0-9][A-Za-z0-9._-]{0,127}-[0-9a-f]{8}\.md$")
+_TIME = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
 # Checked in this order (F42).
 _HARNESS_ENV = (
     ("codex", "CODEX_THREAD_ID"),
@@ -63,13 +69,13 @@ def _load(root: Path, name: str) -> dict:
             raise
         payload = {}
     seen = payload.get("seen", [])
-    alive = payload.get("alive", [])
+    reported = payload.get("reported", [])
     return {
         "schema_version": SCHEMA_VERSION,
         "seen": [item for item in seen if isinstance(item, str)] if isinstance(seen, list) else [],
         "quiet": payload.get("quiet", 0) if type(payload.get("quiet")) is int else 0,
-        "alive": [item for item in alive if isinstance(item, str)]
-        if isinstance(alive, list)
+        "reported": [item for item in reported if isinstance(item, str)]
+        if isinstance(reported, list)
         else [],
         "checked": payload.get("checked", 0.0)
         if isinstance(payload.get("checked"), int | float)
@@ -117,7 +123,13 @@ def _new_items(root: Path, name: str, seen: set[str]) -> list[dict[str, str]]:
         for directory in room.iterdir():
             if directory.is_symlink() or not directory.is_dir():
                 continue
-            candidates += [(path, False) for path in directory.glob("*.md")]
+            if not _ROOM_ID.match(directory.name):
+                continue
+            candidates += [
+                (path, False)
+                for path in directory.glob("*.md")
+                if path.name == f"{directory.name}.md" or _ROOM_CHILD.match(path.name)
+            ]
     for path, mail in candidates:
         relative = path.relative_to(board).as_posix()
         if relative in seen or path.is_symlink() or not path.is_file():
@@ -125,22 +137,24 @@ def _new_items(root: Path, name: str, seen: set[str]) -> list[dict[str, str]]:
         fields = _fields(path)
         if fields is None:
             continue
+        # The sender and time reach FOIL_WAKE_TEXT, which a harness may queue as a message,
+        # so neither is taken from text a hand-written file could choose.
         if mail:
             if fields.get("contract") != "mail/v1":
                 continue
+            year, month, day, hour, minute, second, sender = _MAIL_NAME.match(path.name).groups()
+            when = f"{year}-{month}-{day}T{hour}:{minute}:{second}Z"
         else:
             nudged = fields.get("nudged")
             if fields.get("contract") != "room/v1" or not isinstance(nudged, list):
                 continue
             if name not in nudged:
                 continue
+            sender, when = str(fields.get("from", "")), str(fields.get("time", ""))
+            if not SAFE_ID.fullmatch(sender) or not _TIME.match(when):
+                continue
         items.append(
-            {
-                "time": str(fields.get("time", "")),
-                "from": str(fields.get("from", "")),
-                "path": str(path.resolve()),
-                "relative": relative,
-            }
+            {"time": when, "from": sender, "path": str(path.resolve()), "relative": relative}
         )
     items.sort(key=lambda item: (item["time"], item["path"]))
     return items
@@ -158,18 +172,19 @@ def _states_now(root: Path) -> dict[str, str]:
 
 
 def _dead_check(root: Path, name: str, record: dict, *, force: bool = False) -> None:
-    """Mail ``name`` from ``foil`` for each seat alive at the last check and dead now.
+    """Mail ``name`` from ``foil`` once for each seat that is dead now.
 
-    A seat killed or removed since the last check was stopped on purpose, so it gets no mail.
+    A seat is reported again only after a check sees it alive. Killed, joined, and removed
+    seats were stopped on purpose, so they get no mail.
     """
 
     now = time.time()
     if not force and now - record["checked"] < DEAD_EVERY:
         return
     states = _states_now(root)
-    alive = {seat for seat, state in states.items() if state == "alive"}
-    for seat in sorted(set(record["alive"])):
-        if states.get(seat) != "dead":
+    reported = {seat for seat in record["reported"] if states.get(seat) == "dead"}
+    for seat in sorted(seat for seat, state in states.items() if state == "dead"):
+        if seat in reported:
             continue
         write_mail(
             root,
@@ -177,7 +192,8 @@ def _dead_check(root: Path, name: str, record: dict, *, force: bool = False) -> 
             f"{seat} died. See foil seat peek {seat} --lines 200.",
             sender="foil",
         )
-    record["alive"] = sorted(alive)
+        reported.add(seat)
+    record["reported"] = sorted(reported)
     record["checked"] = now
 
 
@@ -208,18 +224,19 @@ def _preflight(root: Path) -> None:
         raise FoilError(SANDBOX) from None
 
 
-def _route(harness: str) -> str:
-    if harness == "codex":
+def _route(harness: str, session: str) -> str:
+    rearm = (
+        "On each wake, run `foil mail wait --timeout 0` and act on it, then re-arm. "
+        "Stop after three quiet timeouts in a row."
+    )
+    if harness == "codex" and session:
         return (
-            "Run this in a background terminal and re-arm it after each wake: "
-            "foil mail wait --wake 'codex queue --thread \"$CODEX_THREAD_ID\" "
-            "--message \"$FOIL_WAKE_TEXT\" --resume'"
+            "Run this in a background terminal: "
+            f"foil mail wait --wake 'codex queue --thread {session} "
+            f"--message \"$FOIL_WAKE_TEXT\" --resume'. {rearm}"
         )
     if harness in ("claude", "grok"):
-        return (
-            "Run `foil mail wait` as a background command. Its exit wakes you. "
-            "Re-arm it after each wake, and stop after three quiet timeouts in a row."
-        )
+        return f"Run `foil mail wait` as a background command. Its exit wakes you. {rearm}"
     return "Run `foil mail wait --timeout 0` at the start of each turn."
 
 
@@ -278,6 +295,7 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
         record["seen"] += [item["relative"] for item in items]
         _save(root, "lead", record)
     registry = load_registry(root)
+    project_root = foil_root(root).resolve()
     lines = [
         f"You are seat lead in fleet {registry['fleet_id']} ({root.resolve()}).",
         f"Read first: {instruction}",
@@ -289,7 +307,11 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
             lines.append(f"... and {len(items) - BRIEF_ITEMS} more. Run foil mail list.")
     else:
         lines.append("New for lead: none.")
-    lines.append(f"Hear from the fleet: {_route(harness)}")
+    lines.append(f"Hear from the fleet: {_route(harness, session)}")
+    lines.append(
+        f"Project folder: {project_root}. Your file tools write the board there, "
+        "so your harness must let them, as the joined skill's Setup says."
+    )
     if _dirty(root):
         lines.append(
             "Your checkout has uncommitted changes. Workers branch from HEAD and do not see "
@@ -371,14 +393,17 @@ def mail_wait(root: Path, *, timeout: int, wake: str | None) -> None:
             )
             expired = time.monotonic() >= deadline
             if ready or (items and expired):
-                record["seen"] += [item["relative"] for item in items]
+                # A blocking wait leaves them new, so a lost wake is not lost mail (F41).
+                if timeout == 0:
+                    record["seen"] += [item["relative"] for item in items]
                 record["quiet"] = 0
                 _save(root, name, record)
                 break
             if not items and expired:
-                record["quiet"] += 1
+                if timeout > 0:
+                    record["quiet"] += 1
                 _save(root, name, record)
-                quiet = record["quiet"]
+                quiet = record["quiet"] if timeout > 0 else 0
                 break
             _save(root, name, record)
         if items and found_at is None:

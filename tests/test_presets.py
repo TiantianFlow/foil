@@ -1006,6 +1006,6 @@ def test_skills_route_questions_away_from_the_pane() -> None:
         assert "Do not use your harness's own prompt" in text
     assert "## Questions for the human" in lead
     assert "Set `state: blocked` when the goal cannot go on without the answer." in lead
-    assert "A joined lead asks the human in its own chat" in lead
+    assert "The human reads your chat. Ask there" in lead
     assert "You ask the human in your own chat" in joined
     assert "Escape" not in joined
