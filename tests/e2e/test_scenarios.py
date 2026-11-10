@@ -381,7 +381,7 @@ def test_scenario_4b_joined_lead_waits_for_a_worker_and_hands_off(
         capsys.readouterr()
         assert main(["mail", "wait", "--timeout", "90"]) == 0
         waited = capsys.readouterr().out
-        assert " implementer-1 " in waited
+        assert len(waited.splitlines()) == 1 and " implementer-1 " in waited
         assert str((board / "mail" / "lead").resolve()) in waited
         mailed = Path(waited.split()[-1]).read_text(encoding="utf-8")
         assert f"foil {__version__}" in mailed

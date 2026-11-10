@@ -173,7 +173,7 @@ def test_scenario_4b_live(
             capsys.readouterr()
             assert main(["mail", "wait", "--timeout", str(int(_TIMEOUT))]) == 0
             waited = capsys.readouterr().out
-            assert " implementer-1 " in waited
+            assert " implementer-1 " in waited and " foil " not in waited
             mailed = Path(waited.splitlines()[-1].split()[-1]).read_text(encoding="utf-8")
             assert f"foil {__version__}" in mailed
             result = board / "results" / "t1.md"

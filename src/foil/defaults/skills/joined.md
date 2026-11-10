@@ -66,7 +66,7 @@ foil roster update implementer --project harness=ID/MODEL
 foil roster remove researcher
 ```
 
-The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. A changed persona is `<root>/personas/<role>.md`, or `<project>/personas/<role>.md` for one project. A persona file is outside the board, so your harness asks the human before that write; do not widen the setting for it. Do not remove a template while a seat of that template is not killed.
+The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. A changed persona is `<root>/personas/<role>.md`, or `<project>/personas/<role>.md` for one project. A persona file is outside the board, so your harness asks the human before that write, or refuses it; do not widen the setting for it. Do not remove a template while a seat of that template is not killed.
 
 Picking a harness and a model: match the model to the work; keep the reviewer off the implementer's harness when two eligible harnesses are installed; give a large context to roles that read a lot; use a model id that harness lists.
 
