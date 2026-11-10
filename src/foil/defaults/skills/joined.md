@@ -12,7 +12,7 @@ You are the human's own agent session, and you joined the fleet as its lead with
 - You ask the human in your own chat, not with `foil send user`. Still write each question in `status.md` `questions`, and the finish as `state: done`, so the board stays the record.
 - Workers branch from `HEAD`. Commit or set aside your own work in progress before you spawn. The brief warns when the checkout has uncommitted changes.
 - You do not implement the fleet's goal, and you do not grade your own coordination. Work the human gives you outside the goal is your own.
-- You may set `permission`, add and remove roles, and edit personas, only when the human asks.
+- You may set `permission`, add and remove roles, and edit personas, only when the human asks. A persona file is outside the board, so your harness asks the human before that write, or refuses it; do not widen the setting in Setup for it.
 - You may clear a seat's folder-trust prompt, as Dialogs says. A launched lead may not.
 - `foil seat kill --all` stops every other seat and leaves your own.
 
@@ -66,7 +66,7 @@ foil roster update implementer --project harness=ID/MODEL
 foil roster remove researcher
 ```
 
-The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. A changed persona is `<root>/personas/<role>.md`, or `<project>/personas/<role>.md` for one project. A persona file is outside the board, so your harness asks the human before that write, or refuses it; do not widen the setting for it. Do not remove a template while a seat of that template is not killed.
+The packaged candidates are `documentation-writer`, `domain-designer`, `memory-curator`, `researcher`, and `verifier`. A changed persona is `<root>/personas/<role>.md`, or `<project>/personas/<role>.md` for one project. Do not remove a template while a seat of that template is not killed.
 
 Picking a harness and a model: match the model to the work; keep the reviewer off the implementer's harness when two eligible harnesses are installed; give a large context to roles that read a lot; use a model id that harness lists.
 

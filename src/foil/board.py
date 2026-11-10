@@ -24,6 +24,20 @@ from foil.store import (
 )
 from foil.tmux import TmuxController, TmuxError
 
+_MAIL_NAME = re.compile(
+    r"^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z-([A-Za-z0-9][A-Za-z0-9._-]{0,127})-[0-9a-f]{8}\.md$"
+)
+
+
+def mail_name(name: str) -> tuple[str, str] | None:
+    """The time and sender of a mail file name that ``write_mail`` could have written."""
+
+    found = _MAIL_NAME.match(name)
+    if found is None:
+        return None
+    year, month, day, hour, minute, second, sender = found.groups()
+    return f"{year}-{month}-{day}T{hour}:{minute}:{second}Z", sender
+
 
 def notes_dir(toplevel: Path) -> Path:
     return fleet_dir(toplevel) / "board" / "notes"

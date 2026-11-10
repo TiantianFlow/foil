@@ -61,7 +61,7 @@ def _create_mail(repo: Path, seat: str, from_user: str, body: str) -> Path:
     """Create a test mail file."""
     mail_dir = foil_root(repo) / "fleets" / "main" / "board" / "mail" / seat
     mail_dir.mkdir(parents=True, exist_ok=True)
-    mail_file = mail_dir / f"20260930T120000Z-{from_user}-test1234.md"
+    mail_file = mail_dir / f"20260930T120000Z-{from_user}-0123abcd.md"
     content = f"""---
 contract: mail/v1
 from: {from_user}

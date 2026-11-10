@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from foil.board import write_mail
+from foil.board import mail_name, write_mail
 from foil.board_ops import split_front_matter
 from foil.errors import FoilError
 from foil.lifecycle import _state, _write_instruction
@@ -37,9 +37,7 @@ DEAD_EVERY = 30
 COALESCE = 2
 WAKE_LIMIT = 10
 BRIEF_ITEMS = 10
-_MAIL_NAME = re.compile(
-    r"^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z-([A-Za-z0-9][A-Za-z0-9._-]{0,127})-[0-9a-f]{8}\.md$"
-)
+BRIEF_BYTES = 2048
 _ROOM_ID = re.compile(r"^[0-9a-f]{16}$")
 _ROOM_CHILD = re.compile(r"^\d{8}T\d{12}Z-[A-Za-z0-9][A-Za-z0-9._-]{0,127}-[0-9a-f]{8}\.md$")
 _TIME = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
@@ -116,7 +114,7 @@ def _new_items(root: Path, name: str, seen: set[str]) -> list[dict[str, str]]:
     candidates: list[tuple[Path, bool]] = []
     mailbox = board / "mail" / name
     if not (board / "mail").is_symlink() and not mailbox.is_symlink() and mailbox.is_dir():
-        candidates += [(path, True) for path in mailbox.glob("*.md") if _MAIL_NAME.match(path.name)]
+        candidates += [(path, True) for path in mailbox.glob("*.md") if mail_name(path.name)]
     room = board / "room"
     if not room.is_symlink() and room.is_dir():
         for directory in room.iterdir():
@@ -141,8 +139,7 @@ def _new_items(root: Path, name: str, seen: set[str]) -> list[dict[str, str]]:
         if mail:
             if fields.get("contract") != "mail/v1":
                 continue
-            year, month, day, hour, minute, second, sender = _MAIL_NAME.match(path.name).groups()
-            when = f"{year}-{month}-{day}T{hour}:{minute}:{second}Z"
+            when, sender = mail_name(path.name)
         else:
             nudged = fields.get("nudged")
             if fields.get("contract") != "room/v1" or not isinstance(nudged, list):
@@ -273,15 +270,25 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
     template = load_template(root, "lead")
     ensure_registry(root)
 
-    def apply(fresh: dict) -> None:
-        existing = fresh["seats"].get("lead")
+    def refuse(registry: dict) -> None:
+        existing = registry["seats"].get("lead")
         state = (existing or {}).get("state", "")
         if existing and state == "joined":
             if not take:
                 raise FoilError("foil: lead is joined. Pass --take to take it")
         elif existing and state != "killed":
-            shown = _state(fresh, "lead", existing)
+            shown = _state(registry, "lead", existing)
             raise FoilError(f"foil: lead is {shown}. Run foil seat kill lead first")
+
+    # A failed join leaves the seat as it was (F42).
+    refuse(load_registry(root))
+    instruction = _write_instruction(root, "lead", template, restarted=False, joined=True)
+    previous: dict = {}
+
+    def apply(fresh: dict) -> None:
+        refuse(fresh)
+        previous["lead"] = fresh["seats"].get("lead")
+        previous["pointer"] = fresh.get("lead")
         record = {key: "" for key in SEAT_FIELDS}
         record.update(
             {
@@ -296,39 +303,75 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
         fresh["lead"] = "lead"
 
     update_registry(root, apply)
-    instruction = _write_instruction(root, "lead", template, restarted=False, joined=True)
-    with _lock(root, "lead"):
-        record = _load(root, "lead")
-        record["joined"] = time.time()
-        record["quiet"] = 0
-        _dead_check(root, "lead", record, force=True)
-        items = _new_items(root, "lead", set(record["seen"]))
-        record["seen"] += [item["relative"] for item in items]
-        _save(root, "lead", record)
+    try:
+        with _lock(root, "lead"):
+            record = _load(root, "lead")
+            record["joined"] = time.time()
+            record["quiet"] = 0
+            _dead_check(root, "lead", record, force=True)
+            items = _new_items(root, "lead", set(record["seen"]))
+            record["seen"] += [item["relative"] for item in items]
+            _save(root, "lead", record)
+    except BaseException:
+
+        def restore(fresh: dict) -> None:
+            if previous["lead"] is None:
+                fresh["seats"].pop("lead", None)
+            else:
+                fresh["seats"]["lead"] = previous["lead"]
+            if previous["pointer"] is None:
+                fresh.pop("lead", None)
+            else:
+                fresh["lead"] = previous["pointer"]
+
+        update_registry(root, restore)
+        raise
     registry = load_registry(root)
     board = (fleet_dir(root) / "board").resolve()
-    lines = [
+    head = [
         f"You are seat lead in fleet {registry['fleet_id']} ({root.resolve()}).",
         f"Read first: {instruction}",
     ]
-    if items:
-        lines.append(f"New for lead ({len(items)}):")
-        lines += [_line(item) for item in items[:BRIEF_ITEMS]]
-        if len(items) > BRIEF_ITEMS:
-            lines.append(f"... and {len(items) - BRIEF_ITEMS} more. Run foil mail list.")
-    else:
-        lines.append("New for lead: none.")
-    lines.append(f"Hear from the fleet: {_route(root, harness, session)}")
-    lines.append(
+    tail = [
+        f"Hear from the fleet: {_route(root, harness, session)}",
         f"Board: {board}. Before your first spawn, write status.md there with your file "
-        "tool. If your harness asks or refuses, allow that folder alone before you spawn."
-    )
+        "tool. If your harness asks or refuses, allow that folder alone before you spawn.",
+    ]
     if _dirty(root):
-        lines.append(
+        tail.append(
             "Your checkout has uncommitted changes. Workers branch from HEAD and do not see "
             "them. Commit or set them aside before you spawn."
         )
-    print("\n".join(lines))
+    print(_brief(head, items, tail))
+
+
+def _brief(head: list[str], items: list[dict[str, str]], tail: list[str]) -> str:
+    """The brief with as many item lines as fit under BRIEF_BYTES; head and tail always print."""
+
+    if not items:
+        return "\n".join([*head, "New for lead: none.", *tail])
+    for shown in range(min(len(items), BRIEF_ITEMS), -1, -1):
+        middle = [f"New for lead ({len(items)}):", *(_line(item) for item in items[:shown])]
+        if shown < len(items):
+            middle.append(f"... and {len(items) - shown} more. Run foil mail list.")
+        text = "\n".join([*head, *middle, *tail])
+        if len(text.encode()) < BRIEF_BYTES:
+            break
+    return text
+
+
+def _handoff_on_board(root: Path) -> Path | None:
+    """board/handoffs/lead.md when no part of it from the board down is a symlink."""
+
+    board = fleet_dir(root) / "board"
+    handoffs = board / "handoffs"
+    handoff = handoffs / "lead.md"
+    for part in (board, handoffs, handoff):
+        if part.is_symlink():
+            return None
+    if not handoff.is_file() or not handoff.resolve().is_relative_to(board.resolve()):
+        return None
+    return handoff
 
 
 def leave_lead(root: Path) -> None:
@@ -338,18 +381,13 @@ def leave_lead(root: Path) -> None:
     record = registry["seats"].get("lead")
     if not record or record.get("state") != "joined":
         raise FoilError("foil: no joined lead")
-    handoff = fleet_dir(root) / "board" / "handoffs" / "lead.md"
+    handoff = _handoff_on_board(root)
     joined_at = _load(root, "lead")["joined"]
     try:
-        info = handoff.lstat()
+        info = handoff.lstat() if handoff is not None else None
     except OSError:
         info = None
-    if (
-        info is None
-        or handoff.is_symlink()
-        or not handoff.is_file()
-        or info.st_mtime < joined_at
-    ):
+    if info is None or info.st_mtime < joined_at:
         raise FoilError("foil: write board/handoffs/lead.md first")
 
     def apply(fresh: dict) -> None:
