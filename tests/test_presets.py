@@ -146,13 +146,15 @@ def test_project_list_beats_a_global_harness_file(
     home = store_root()
     (home / "harnesses").mkdir(parents=True)
     (home / "harnesses" / "grok.toml").write_text(
-        'id = "grok"\nstart = ["global-file", "{prompt}"]\nturn = ["global-file", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
+        'id = "grok"\nstart = ["global-file", "{prompt}"]\n'
+        'turn = ["global-file", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     def catalog(command: str) -> str:
         return (
             '[[harness]]\nid = "grok"\n'
-            f'start = [\"{command}\", \"{{prompt}}\"]\nturn = [\"{command}\", \"{{session_id}}\", \"{{prompt}}\"]\n'
+            f'start = [\"{command}\", \"{{prompt}}\"]\n'
+            f'turn = [\"{command}\", \"{{session_id}}\", \"{{prompt}}\"]\n'
             'session_id = "generated"\nenv = []\nmodels = []\n\n'
             "[harness.permission]\nask = []\nauto = []\n"
         )
@@ -164,7 +166,8 @@ def test_project_list_beats_a_global_harness_file(
     assert load_preset(repo, "grok")["start"][0] == "project-list"
     (root / "harnesses").mkdir()
     (root / "harnesses" / "grok.toml").write_text(
-        'id = "grok"\nstart = ["project-file", "{prompt}"]\nturn = ["project-file", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
+        'id = "grok"\nstart = ["project-file", "{prompt}"]\n'
+        'turn = ["project-file", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     assert load_preset(repo, "grok")["start"][0] == "project-file"
@@ -179,7 +182,8 @@ def test_user_harness_overrides_builtin(tmp_path: Path) -> None:
     path = tmp_path / ".foil" / "harnesses" / "grok.toml"
     path.parent.mkdir(parents=True)
     path.write_text(
-        'id = "grok"\nstart = ["custom-grok", "{prompt}"]\nturn = ["custom-grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
+        'id = "grok"\nstart = ["custom-grok", "{prompt}"]\n'
+        'turn = ["custom-grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     preset = load_preset(tmp_path, "grok")
@@ -215,7 +219,8 @@ def test_unknown_placeholder_and_template_key_are_rejected(tmp_path: Path) -> No
     builtin = tmp_path / ".foil" / "harnesses"
     builtin.mkdir(parents=True)
     (builtin / "grok.toml").write_text(
-        'id = "grok"\nstart = ["grok", "{cwd}", "{prompt}"]\nturn = ["grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
+        'id = "grok"\nstart = ["grok", "{cwd}", "{prompt}"]\n'
+        'turn = ["grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     with pytest.raises(FoilError, match="invalid preset"):
@@ -235,7 +240,8 @@ def test_unknown_placeholder_and_template_key_are_rejected(tmp_path: Path) -> No
         with pytest.raises(FoilError, match="invalid preset"):
             load_preset(tmp_path, "grok")
     (builtin / "grok.toml").write_text(
-        'id = "grok"\nstart = ["grok", "{prompt}"]\nturn = ["grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n'
+        'id = "grok"\nstart = ["grok", "{prompt}"]\n'
+        'turn = ["grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n'
         'wake = ["w", "{session_id}", "{text}"]\n',
         encoding="utf-8",
     )
@@ -350,15 +356,18 @@ def test_scan_sees_user_presets_once_and_excludes_fake(
     harnesses = tmp_path / ".foil" / "harnesses"
     harnesses.mkdir(parents=True)
     (harnesses / "my-agent.toml").write_text(
-        'id = "my-agent"\nstart = ["my-agent", "{prompt}"]\nturn = ["my-agent", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
+        'id = "my-agent"\nstart = ["my-agent", "{prompt}"]\n'
+        'turn = ["my-agent", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     (harnesses / "grok.toml").write_text(
-        'id = "grok"\nstart = ["custom-grok", "{prompt}"]\nturn = ["custom-grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
+        'id = "grok"\nstart = ["custom-grok", "{prompt}"]\n'
+        'turn = ["custom-grok", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
     (harnesses / "fake.toml").write_text(
-        'id = "fake"\nstart = ["foil-fake", "{prompt}"]\nturn = ["foil-fake", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
+        'id = "fake"\nstart = ["foil-fake", "{prompt}"]\n'
+        'turn = ["foil-fake", "{session_id}", "{prompt}"]\nsession_id = "generated"\n',
         encoding="utf-8",
     )
 
@@ -929,6 +938,8 @@ def test_builtin_presets_turn_off_the_question_tool() -> None:
         # The tool list is variadic: the next token must be a flag, never the prompt.
         assert argv[index + 2].startswith("--")
         assert argv.index("{prompt}") < index
+    content = catalog["opencode"]["set_env"]["OPENCODE_CONFIG_CONTENT"]
+    assert json.loads(content) == {"permission": {"question": "deny"}}
 
 
 @pytest.mark.parametrize(
@@ -949,7 +960,8 @@ def test_set_env_refuses_reserved_forwarded_and_malformed_rows(table: str) -> No
     from foil.presets import _parse_preset
 
     text = (
-        'id = "custom"\nstart = ["custom", "{prompt}"]\nturn = ["custom", "{session_id}", "{prompt}"]\nsession_id = "generated"\n'
+        'id = "custom"\nstart = ["custom", "{prompt}"]\n'
+        'turn = ["custom", "{session_id}", "{prompt}"]\nsession_id = "generated"\n'
         f'env = ["FORWARDED"]\n{table}\nmodels = []\n\n'
         "[permission]\nask = []\nauto = []\n"
     )

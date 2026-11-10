@@ -92,18 +92,14 @@ def test_init_creates_registry_and_notes(tmp_path: Path, monkeypatch: pytest.Mon
     assert note.read_text(encoding="utf-8") == "ordinary\n"
 
 
-def test_send_writes_mail_from_user_and_skips_nudge_without_a_window(
+def test_send_writes_mail_from_user(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _seed(repo, "lead")
-    nudged: list[str] = []
-    monkeypatch.setattr("foil.board.nudge", lambda *args: nudged.append(args[0]))
-
     assert main(["send", "lead", "hello"]) == 0
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert nudged == []
     files = _mail(repo, "lead")
     assert len(files) == 1
     assert stat.S_IMODE(files[0].stat().st_mode) == 0o600
@@ -114,31 +110,14 @@ def test_send_writes_mail_from_user_and_skips_nudge_without_a_window(
     assert "re:" not in text
 
 
-def test_send_from_seat_nudges_only_when_a_window_exists(
+def test_send_from_a_seat_is_mail_from_that_seat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _seed(repo, "implementer", window_id="@12")
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
-    nudged: list[tuple[str, str, Path]] = []
-
-    def record(
-        fleet_id: str,
-        seat: str,
-        session: str,
-        window_id: str,
-        sender: str,
-        mail_path: Path,
-    ) -> None:
-        del fleet_id, seat, session
-        nudged.append((window_id, sender, mail_path))
-
-    monkeypatch.setattr("foil.board.nudge", record)
     assert main(["send", "implementer", "from the lead"]) == 0
-    assert len(nudged) == 1
-    assert nudged[0][0] == "@12"
-    assert nudged[0][1] == "lead"
-    text = nudged[0][2].read_text(encoding="utf-8")
+    text = _mail(repo, "implementer")[0].read_text(encoding="utf-8")
     assert "from: lead\n" in text
     assert text.endswith("from the lead\n")
 

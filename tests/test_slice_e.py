@@ -172,18 +172,39 @@ def test_worker_instruction_and_resume_refreshes_lessons(
         foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "implementer-1.md"
     ).read_text(encoding="utf-8")
     assert f"- {second}: re-read the diff" in refreshed
-    plan = json.loads(Path(calls[-1]["runner_argv"][3]).read_text(encoding="utf-8"))
-    assert plan["cwd"] == load_registry(repo)["seats"]["implementer-1"]["worktree"]
+    plan = json.loads(Path(calls[-1]["runner_argv"][-1]).read_text(encoding="utf-8"))
+    seat = load_registry(repo)["seats"]["implementer-1"]
+    assert plan["cwd"] == seat["worktree"]
     assert plan["env"]["FOIL_SEAT_ID"] == "implementer-1"
     assert plan["env"]["FOIL_PROJECT"]
     assert "FOIL_HOME" in plan["env"]
-    assert "--resume" in plan["argv"]
-    assert "You were restarted" not in refreshed
+    assert plan["restarted"] is True
+    assert "--resume" in plan["turn"]
+    assert seat["session_id"] in plan["start"]
+    assert "You were restarted." in refreshed
 
 
-def test_resume_uses_last_or_continue_and_restarts_otherwise(
+def _turn_ended(repo: Path, seat: str, session: str = "") -> None:
+    from foil.runner import load_record, save_record
+
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    record = load_record(board, seat)
+    record["last_exit"] = 0
+    if session:
+        record["session_id"] = session
+    save_record(board, seat, record)
+
+
+def _plan_of(repo: Path, seat: str) -> dict:
+    path = foil_root(repo) / "fleets" / "main" / "run" / "plans" / f"{seat}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_resume_continues_a_session_only_after_a_turn_ended(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """F9: turn on the recorded session once a turn ended, otherwise start again."""
+
     repo = _repo(tmp_path, monkeypatch)
     _commit(repo)
     calls = _launch(monkeypatch)
@@ -195,38 +216,36 @@ def test_resume_uses_last_or_continue_and_restarts_otherwise(
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "codex-role", "--name", "coder"]) == 0
     assert main(["seat", "spawn", "fresh", "--name", "reader"]) == 0
+    reader_id = load_registry(repo)["seats"]["reader"]["session_id"]
+    assert reader_id
+    _turn_ended(repo, "coder", "thread-7")
     assert main(["seat", "resume"]) == 0
     assert capsys.readouterr().err == ""
 
-    coder = json.loads(
-        (foil_root(repo) / "fleets" / "main" / "run" / "plans" / "coder.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    reader = json.loads(
-        (foil_root(repo) / "fleets" / "main" / "run" / "plans" / "reader.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert coder["argv"][:4] == ["codex", "resume", "--ask-for-approval", "never"]
-    assert "--last" in coder["argv"]
-    assert "--resume" not in reader["argv"]
-    assert reader["argv"][0] == "gemini"
-    assert "--approval-mode=yolo" in reader["argv"]
+    coder = _plan_of(repo, "coder")
+    reader = _plan_of(repo, "reader")
+    assert coder["first"] == "turn"
+    assert coder["session_id"] == "thread-7"
+    assert load_registry(repo)["seats"]["coder"]["session_id"] == "thread-7"
+    assert coder["turn"][:2] == ["codex", "exec"]
+    assert "thread-7" in coder["turn"]
+    assert reader["first"] == "start"
+    assert reader["start"][0] == "gemini"
+    assert reader_id in reader["start"]
+    assert "yolo" in reader["start"]
     reader_text = (
         foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "reader.md"
     ).read_text(encoding="utf-8")
-    mail = foil_root(repo) / "fleets" / "main" / "board" / "mail" / "reader"
     assert "You were restarted." in reader_text
     assert "List your mail with `foil mail list`" in reader_text
     assert "read each file with `foil mail read`" in reader_text
-    assert f"Re-read `{mail.resolve()}/`" not in reader_text
-    assert Path(reader["cwd"]) == repo.resolve()
+    lead_worktree = load_registry(repo)["seats"]["lead"]["worktree"]
+    assert Path(reader["cwd"]) == Path(lead_worktree).resolve()
     assert len(calls) == 6
     assert Path(coder["cwd"]) == Path(load_registry(repo)["seats"]["coder"]["worktree"])
 
 
-def test_resume_without_a_worktree_starts_in_the_project(
+def test_resume_of_an_output_preset_with_no_turn_starts_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
@@ -242,22 +261,15 @@ def test_resume_without_a_worktree_starts_in_the_project(
     captured = capsys.readouterr()
     assert captured.err == ""
     assert "Traceback" not in captured.out
-
-    project = str(repo.resolve())
     for name in ("lead", "clerk"):
-        plan = json.loads(
-            (foil_root(repo) / "fleets" / "main" / "run" / "plans" / f"{name}.json").read_text(
-                encoding="utf-8"
-            )
-        )
+        plan = _plan_of(repo, name)
         text = (
             foil_root(repo) / "fleets" / "main" / "run" / "instructions" / f"{name}.md"
         ).read_text(encoding="utf-8")
-        assert plan["cwd"] == project
-        assert "--last" not in plan["argv"]
-        assert "--continue" not in plan["argv"]
+        assert plan["first"] == "start"
+        assert plan["session_id"] == ""
+        assert "{session_id}" not in plan["start"]
         assert "You were restarted." in text
-        assert load_registry(repo)["seats"][name]["worktree"] == ""
 
 
 def test_alive_resume_does_not_relaunch(
@@ -273,7 +285,7 @@ def test_alive_resume_does_not_relaunch(
     )
     assert main(["seat", "resume", "lead"]) == 0
     captured = capsys.readouterr()
-    assert captured.out.endswith("foil: seat 'lead' is alive\n")
+    assert captured.out.endswith("foil: seat 'lead' is idle\n")
     assert captured.err == ""
     assert len(calls) == 1
     after = (foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md").read_text(
@@ -385,14 +397,29 @@ def test_list_and_peek_report_owned_facts_only(
     assert main(["seat", "list"]) == 0
     listed = capsys.readouterr().out
     lead_row = load_registry(repo)["seats"]["lead"]
-    assert f"lead\tlead\talive\t\t{lead_row['harness']}\t" in listed
     assert (
-        f"implementer-1\timplementer\tdead\t{worker['worktree']}\t{worker['harness']}\t" in listed
+        f"lead\tlead\tidle\t{lead_row['worktree']}\t{lead_row['harness']}\t"
+        f"{lead_row['session_id']}\t" in listed
+    )
+    assert (
+        f"implementer-1\timplementer\tdead\t{worker['worktree']}\t{worker['harness']}\t"
+        f"{worker['session_id']}\t" in listed
     )
     assert "busy" not in listed and "window" not in listed
     assert main(["seat", "list", "--json"]) == 0
     rows = json.loads(capsys.readouterr().out)
-    fields = {"description", "harness", "model", "name", "state", "template", "worktree"}
+    fields = {
+        "description",
+        "harness",
+        "last_exit",
+        "model",
+        "name",
+        "session_id",
+        "state",
+        "template",
+        "turn_started",
+        "worktree",
+    }
     assert [set(row) for row in rows] == [fields, fields]
     assert main(["seat", "peek", "lead"]) == 0
     assert capsys.readouterr().out == "pane-text\n"
@@ -429,7 +456,9 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     capsys.readouterr()
     assert main(["seat", "list"]) == 0
     listed = capsys.readouterr().out
-    assert "worker\tworker\talive\t\tclaude/sonnet\t" in listed
+    worktree = load_registry(repo)["seats"]["lead"]["worktree"]
+    assert f"worker\tworker\tidle\t\tclaude/sonnet\t{previous}\t" in listed
+    assert worktree
     assert "gemini" not in listed
     _alive(monkeypatch, set())
     assert main(["seat", "resume", "worker"]) == 0
@@ -443,10 +472,11 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     assert seat["harness"] == "claude"
     assert seat["model"] == "sonnet"
     assert seat["session_id"] == previous
-    assert plan["argv"][0] == "claude"
-    assert "--resume" in plan["argv"]
-    assert previous in plan["argv"]
-    assert "gemini" not in plan["argv"]
+    assert plan["start"][0] == "claude"
+    assert plan["first"] == "start"
+    assert previous in plan["start"] and previous in plan["turn"]
+    assert "--resume" in plan["turn"]
+    assert "gemini" not in plan["start"] + plan["turn"]
 
 
 def test_resume_names_a_broken_seat_and_continues(
@@ -479,7 +509,7 @@ def test_resume_names_a_broken_seat_and_continues(
     captured = capsys.readouterr()
     assert main(["seat", "list", "--json"]) == 0
     rows = {row["name"]: row["state"] for row in json.loads(capsys.readouterr().out)}
-    assert rows == {"implementer-1": "dead", "lead": "alive", "reviewer-1": "alive"}
+    assert rows == {"implementer-1": "dead", "lead": "idle", "reviewer-1": "idle"}
     assert captured.out == ""
     assert captured.err == (
         "foil: seat 'implementer-1' not resumed: persona file not found: personas/missing.md\n"

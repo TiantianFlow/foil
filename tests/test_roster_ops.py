@@ -858,7 +858,8 @@ def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
     harnesses = store_root() / "harnesses"
     harnesses.mkdir()
     (harnesses / "local.toml").write_text(
-        'id = "local"\ncommand = ["true"]\nsession_id = "none"\n\n'
+        'id = "local"\nstart = ["true", "{prompt}"]\nturn = ["true", "{session_id}", "{prompt}"]\n'
+        'session_id = "generated"\n\n'
         "[permission]\nask = []\nauto = []\n",
         encoding="utf-8",
     )
@@ -919,7 +920,7 @@ def test_roster_list_keeps_a_missing_persona_and_an_unknown_harness(
         }
         save_registry(project, registry)
         assert main(["seat", "list"]) == 0
-        assert "sealed-1\tsealed\tdead\t\tfake\t\n" in capsys.readouterr().out
+        assert "sealed-1\tsealed\tdead\t\tfake\t-\t\n" in capsys.readouterr().out
     finally:
         locked.chmod(0o644)
 
@@ -960,7 +961,7 @@ def test_unreadable_utf8_persona_lists_with_an_empty_description(
     save_registry(project, registry)
     list_seats(project)
     listed = capsys.readouterr().out
-    assert "bad-1\tbad\tdead\t\tfake\t\n" in listed
+    assert "bad-1\tbad\tdead\t\tfake\t-\t\n" in listed
 
 
 def test_seat_list_keeps_an_unreadable_template(
@@ -997,9 +998,9 @@ def test_seat_list_keeps_an_unreadable_template(
     try:
         assert main(["seat", "list"]) == 0
         out = capsys.readouterr().out
-        assert "lead-1\tlead\tdead\t\tfake\tYou oversee the fleet" in out
-        assert "garbled-1\tgarbled\tdead\t\tfake\t\n" in out
-        assert "locked-1\tlocked\tdead\t\tfake\t\n" in out
+        assert "lead-1\tlead\tdead\t\tfake\t-\tYou oversee the fleet" in out
+        assert "garbled-1\tgarbled\tdead\t\tfake\t-\t\n" in out
+        assert "locked-1\tlocked\tdead\t\tfake\t-\t\n" in out
     finally:
         locked.chmod(0o644)
 

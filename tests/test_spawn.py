@@ -239,32 +239,35 @@ def test_spawn_writes_plan_identity_and_window_id(
     assert seat["window_id"] == "@21"
     assert seat["template"] == "lead"
     assert seat["harness"] == "claude"
-    assert seat["worktree"] == ""
-    assert seat["branch"] == ""
+    goal = foil_root(repo) / "worktrees" / "goal-main"
+    assert seat["worktree"] == str(goal)
+    assert seat["branch"] == "foil/goal-main"
     assert seat["state"] != "killed"
     assert seat["session_id"]
     assert registry["lead"] == "lead"
     assert registry["tmux_session"].startswith("foil-")
     assert calls[0]["session_name"] == registry["tmux_session"]
-    assert calls[0]["working_directory"] == repo.resolve()
-    assert calls[0]["runner_argv"][:3] == [
+    assert calls[0]["working_directory"] == goal.resolve()
+    assert calls[0]["runner_argv"][:4] == [
         calls[0]["runner_argv"][0],
+        "-P",
         "-m",
         "foil.runner",
     ]
-    plan = json.loads(Path(calls[0]["runner_argv"][3]).read_text(encoding="utf-8"))
+    plan = json.loads(Path(calls[0]["runner_argv"][-1]).read_text(encoding="utf-8"))
     assert plan["env"]["FOIL_SEAT_ID"] == "lead"
     assert plan["env"]["FOIL_PROJECT"]
     assert "FOIL_HOME" in plan["env"]
     assert "HOME" not in plan["env"]
-    assert plan["cwd"] == str(repo.resolve())
+    assert plan["cwd"] == str(goal.resolve())
     assert "PATH" in plan["env_forward"]
     assert "HOME" in plan["env_forward"]
     assert "HOME" not in plan["env"]
-    assert plan["argv"][0] == "claude"
+    assert plan["start"][0] == "claude"
     instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md"
     text = instruction.read_text(encoding="utf-8")
-    assert text in plan["argv"]
+    assert plan["instruction"] == str(instruction)
+    assert "{prompt}" in plan["start"] and "{prompt}" in plan["turn"]
     assert "You are seat `lead`." in text
     assert "bootstrap.json" not in text
 
@@ -277,13 +280,14 @@ def test_launch_plan_forwards_home_for_a_user_preset_with_empty_env(
     harnesses = foil_root(repo) / "harnesses"
     harnesses.mkdir(parents=True, exist_ok=True)
     (harnesses / "local.toml").write_text(
-        'id = "local"\ncommand = ["grok", "{prompt}"]\nsession_id = "none"\nenv = []\n',
+        'id = "local"\nstart = ["grok", "{prompt}"]\nturn = ["grok", "{session_id}", "{prompt}"]\n'
+        'session_id = "generated"\nenv = []\n',
         encoding="utf-8",
     )
     _set_entries(repo, "lead", [("local", "")])
     assert main(["seat", "spawn", "lead"]) == 0
-    plan = json.loads(Path(calls[0]["runner_argv"][3]).read_text(encoding="utf-8"))
-    assert plan["argv"][0] == "grok"
+    plan = json.loads(Path(calls[0]["runner_argv"][-1]).read_text(encoding="utf-8"))
+    assert plan["start"][0] == "grok"
     assert plan["env"]["FOIL_SEAT_ID"] == "lead"
     assert plan["env"]["FOIL_PROJECT"]
     assert "FOIL_HOME" in plan["env"]
@@ -547,7 +551,8 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
         text = (
             foil_root(repo) / "fleets" / "main" / "run" / "instructions" / f"{seat}.md"
         ).read_text(encoding="utf-8")
-        assert text in plan["argv"]
+        assert Path(plan["instruction"]).read_text(encoding="utf-8") == text
+        assert plan["start"].count("{prompt}") == 1
         skill = "lead.md" if seat == "lead" else "worker.md"
         packaged = Path(__file__).resolve().parents[1] / "src" / "foil" / "defaults" / "skills"
         skill_text = (packaged / skill).read_text(encoding="utf-8").strip()
@@ -565,14 +570,16 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
         allowed = {
             token
             for token in (
-                *preset["command"],
+                *preset["start"],
+                *preset["turn"],
                 *preset["permission"]["ask"],
                 *preset["permission"]["auto"],
             )
             if token.startswith("-")
         }
-        assert {token for token in plan["argv"] if token.startswith("-")} <= allowed
-        assert not any("system-prompt" in token for token in plan["argv"])
+        for argv in (plan["start"], plan["turn"]):
+            assert {token for token in argv if token.startswith("-")} <= allowed
+            assert not any("system-prompt" in token for token in argv)
     mail = _mail(repo, "seat-fake")
     assert len(mail) == 1
     assert mail[0].read_text(encoding="utf-8").endswith("only the goal\n")
@@ -585,7 +592,10 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
             encoding="utf-8"
         )
     )
-    assert fake_plan["argv"][fake_plan["argv"].index("--prompt") + 1] == fake
+    session = load_registry(repo)["seats"]["seat-fake"]["session_id"]
+    assert fake_plan["start"] == ["foil-fake", "--session", session, "{prompt}"]
+    assert fake_plan["turn"] == ["foil-fake", "--resume", session, "{prompt}"]
+    assert "only the goal" not in json.dumps(fake_plan)
 
 
 def _registry_file(repo: Path) -> dict:
@@ -633,7 +643,7 @@ def _killable(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _plan(calls: list[dict], index: int = -1) -> dict:
-    return json.loads(Path(calls[index]["runner_argv"][3]).read_text(encoding="utf-8"))
+    return json.loads(Path(calls[index]["runner_argv"][-1]).read_text(encoding="utf-8"))
 
 
 def test_legacy_string_harness_spawns_that_pair(
@@ -647,8 +657,8 @@ def test_legacy_string_harness_spawns_that_pair(
     assert seat["harness"] == "claude"
     assert seat["model"] == "opus"
     plan = _plan(calls)
-    assert plan["argv"][0] == "claude"
-    assert "opus" in plan["argv"]
+    assert plan["start"][0] == "claude"
+    assert "opus" in plan["start"]
     assert set(_registry_file(repo)) == _REGISTRY_KEYS
 
 
@@ -682,7 +692,7 @@ def test_spawns_alternate_and_a_failed_launch_does_not_advance(
     first = load_registry(repo)["seats"]["implementer-1"]
     assert first["harness"] == "claude"
     assert first["model"] == "opus"
-    assert "opus" in _plan(calls)["argv"]
+    assert "opus" in _plan(calls)["start"]
     assert set(_registry_file(repo)) == _REGISTRY_KEYS
 
     def boom(self: TmuxController, **kwargs: object) -> TmuxTarget:
@@ -707,8 +717,8 @@ def test_spawns_alternate_and_a_failed_launch_does_not_advance(
     assert second["harness"] == "codex"
     assert second["model"] == "gpt-5.5"
     plan = _plan(calls)
-    assert plan["argv"][0] == "codex"
-    assert "gpt-5.5" in plan["argv"]
+    assert plan["start"][0] == "codex"
+    assert "gpt-5.5" in plan["start"]
 
     assert main(["seat", "spawn", "implementer"]) == 0
     assert load_registry(repo)["seats"]["implementer-3"]["harness"] == "claude"
@@ -762,7 +772,7 @@ def test_a_seat_runs_git_with_foil_hooks(tmp_path: Path, monkeypatch: pytest.Mon
     assert env["GIT_CONFIG_KEY_0"] == "core.hooksPath"
     assert env["GIT_CONFIG_VALUE_0"] == str((foil_root(repo) / "hooks").resolve())
     assert env["FOIL_GIT_COMMON"] == str((repo / ".git").resolve())
-    assert "FOIL_WORKTREE" not in env
+    assert env["FOIL_WORKTREE"] == load_registry(repo)["seats"]["lead"]["worktree"]
 
 
 def test_an_edited_list_starts_again_at_its_first_entry(
@@ -790,7 +800,7 @@ def test_a_model_the_harness_does_not_list_warns_and_still_launches(
     _set_entries(repo, "lead", [("claude", "not-a-claude-model")])
     capsys.readouterr()
     assert main(["seat", "spawn", "lead"]) == 0
-    assert "not-a-claude-model" in _plan(calls)["argv"]
+    assert "not-a-claude-model" in _plan(calls)["start"]
     err = capsys.readouterr().err
     assert err.startswith(
         "foil: warning: model 'not-a-claude-model' is not in the models of harness 'claude': "
@@ -815,12 +825,12 @@ def test_fleet_memory_overrides_the_model_on_the_next_spawn(
     )
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "implementer"]) == 0
-    lead = _plan(calls, 0)
+    lead = Path(_plan(calls, 0)["instruction"]).read_text(encoding="utf-8")
     worker = _plan(calls, 1)
-    assert "Workspace:" in lead["argv"][-1]
-    assert "Posts:" in lead["argv"][-1]
-    assert "implementer: claude/opus" in lead["argv"][-1]
-    assert worker["argv"][worker["argv"].index("--model") + 1] == "opus"
+    assert "Workspace:" in lead
+    assert "Posts:" in lead
+    assert "implementer: claude/opus" in lead
+    assert worker["start"][worker["start"].index("--model") + 1] == "opus"
     assert load_registry(repo)["seats"]["implementer-1"]["model"] == "opus"
     assert load_registry(repo)["seats"]["implementer-1"]["harness"] == "claude"
 
@@ -960,13 +970,15 @@ def test_spawn_sets_a_preset_set_env_value_in_the_plan(
     harnesses = store_root() / "harnesses"
     harnesses.mkdir(parents=True, exist_ok=True)
     (harnesses / "claude.toml").write_text(
-        'id = "claude"\ncommand = ["claude", "{prompt}"]\nsession_id = "none"\n'
+        'id = "claude"\nstart = ["claude", "{prompt}"]\n'
+        'turn = ["claude", "{session_id}", "{prompt}"]\n'
+        'session_id = "generated"\n'
         'env = []\nset_env = { HARNESS_CONFIG = "quiet" }\nmodels = []\n\n'
         "[permission]\nask = []\nauto = []\n",
         encoding="utf-8",
     )
     assert main(["seat", "spawn", "lead"]) == 0
-    plan = json.loads(Path(calls[0]["runner_argv"][3]).read_text(encoding="utf-8"))
+    plan = json.loads(Path(calls[0]["runner_argv"][-1]).read_text(encoding="utf-8"))
     assert plan["env"]["HARNESS_CONFIG"] == "quiet"
     assert plan["env"]["FOIL_SEAT_ID"] == "lead"
     assert "HARNESS_CONFIG" not in plan["env_forward"]

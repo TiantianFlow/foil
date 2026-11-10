@@ -42,8 +42,9 @@ def _wake_preset(base: Path, out: Path) -> None:
 
     lines = [
         'id = "wakey"',
-        'command = ["wakey", "{prompt}"]',
-        'session_id = "none"',
+        'start = ["wakey", "{prompt}"]',
+        'turn = ["wakey", "{session_id}", "{prompt}"]',
+        'session_id = "generated"',
         f"wake = [{json.dumps(sys.executable)}, \"-c\", {json.dumps(_RECORD)}, "
         f'{json.dumps(str(out))}, "{{session_id}}", "{{text}}"]',
     ]
@@ -197,7 +198,7 @@ def test_a_room_post_wakes_a_joined_lead_without_a_keystroke(
     opened = next(_board(repo).joinpath("room").rglob("*.md"))
     fields, _ = split_front_matter(opened.read_text(encoding="utf-8"))
     assert fields["from"] == "lead"
-    assert fields["nudged"] == ["implementer-1"]
+    assert fields["wakes"] == ["implementer-1"]
     assert main(["mail", "wait", "--timeout", "0"]) == 0
     assert capsys.readouterr().out == "no new mail\n"
     calls = _install_tmux(monkeypatch)
@@ -206,7 +207,7 @@ def test_a_room_post_wakes_a_joined_lead_without_a_keystroke(
     monkeypatch.delenv("FOIL_SEAT_ID")
     room = next(path for path in opened.parent.glob("*.md") if path != opened)
     fields, _ = split_front_matter(room.read_text(encoding="utf-8"))
-    assert fields["nudged"] == ["lead"]
+    assert fields["wakes"] == ["lead"]
     assert not [call for call in calls if call[:1] == ["send-keys"]]
     capsys.readouterr()
     assert main(["mail", "wait", "--timeout", "0"]) == 0

@@ -50,11 +50,11 @@ def test_fleet_memory_is_what_spawn_puts_on_the_model_flag(
     assert 'model = "opus"' in overrides.read_text(encoding="utf-8")
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "implementer"]) == 0
-    lead = _plan(calls, 0)["argv"][-1]
+    lead = Path(_plan(calls, 0)["instruction"]).read_text(encoding="utf-8")
     assert str(overrides.resolve()) in lead
     assert "implementer: claude/opus" in lead
     assert "model flag" in lead
-    worker = _plan(calls, 1)["argv"]
+    worker = _plan(calls, 1)["start"]
     assert worker[worker.index("--model") + 1] == "opus"
     seat = load_registry(repo)["seats"]["implementer-1"]
     assert seat["model"] == "opus"
@@ -76,7 +76,7 @@ def test_two_fleets_share_the_mapping_and_keep_separate_overrides(
     monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "implementer"]) == 0
-    side = _plan(calls, -1)["argv"]
+    side = _plan(calls, -1)["start"]
     assert side[side.index("--model") + 1] == "opus"
     assert load_registry(repo)["seats"]["implementer-1"]["model"] == "opus"
     assert "lead" in load_registry(repo)["seats"]
@@ -117,7 +117,7 @@ def test_resume_keeps_the_recorded_model_when_fleet_memory_changes(
     assert main(["roster", "update", "implementer", "model=opus"]) == 0
     monkeypatch.delenv("FOIL_SEAT_ID", raising=False)
     assert main(["seat", "resume", "implementer-1"]) == 0
-    resumed = _plan(calls, -1)["argv"]
+    resumed = _plan(calls, -1)["start"]
     assert "--model" not in resumed
     assert load_registry(repo)["seats"]["implementer-1"]["model"] == ""
     assert json.loads((foil_root(repo) / "fleets" / "main" / "run" / "registry.json").read_text())[

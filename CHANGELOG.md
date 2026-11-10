@@ -8,6 +8,11 @@ Notable changes to Foil, newest first.
 
 - **The operator is gone. Your own agent joins the fleet as its lead.** `foil seat join lead` makes the calling session the `lead` seat, with no window, and prints a short brief that names its instruction file and the fleet's board folder, the only folder in the store its file tools may write without a prompt. That file holds the lead skill in its joined form, without the launched lead's paragraphs, and the `joined` skill without its setup sections. The joined lead re-reads it after its harness compacts the conversation, not on every wake. The `operator` skill, its `Skill:` line in the `init` report, and the relay between you, an operator, and a launched lead are removed. The `init` pointer line is now `Run foil seat join lead, then read the file it names. My goal: <goal>.` A lead Foil launches in tmux still works, for running without an agent session. (#92)
 - Outside the fleet, `foil send`, `foil post`, and `foil mail list` act as `lead` while a lead is joined, and as `user` otherwise. A joined lead asks you in its own chat; `foil send user` from it prints `foil: a joined lead asks in its own chat`. `foil` is a reserved seat name. (#92)
+- **Seats run headless, one turn at a time. Foil types nothing into a pane.** A seat's window runs Foil's runner, which starts the harness once per turn: the first turn with the preset's `start` argv and the instruction text, every later turn with its `turn` argv on the same session and a wake prompt listing the new mail and posts. New mail or a post starts the seat's next turn; nothing else does. A turn that fails runs again after 30 seconds, 2 minutes, and 8 minutes, then the seat is `paused` and its reader gets mail from `foil`; `foil seat resume` retries it. A turn past its role's `turn_timeout` (default 4 hours) is stopped. The nudge line, its 200 ms Enter, and folder-trust handling are removed. (#92)
+- Harness presets name `start` and `turn` instead of `command` and `resume`, with the whole-argument placeholders `{model}`, `{prompt}`, `{session_id}`, and `{permission}`, and `session_id = "generated"` or `"output"` with a `session_key`. A preset with `command` or `resume` is refused with a line that names the new keys. Every built-in preset except `fake` is marked unverified: none has been run live against its CLI. (#92)
+- Room files are `room/v2`, with `wakes` in place of `nudged`. Rooms written by 0.6.3 still read. (#92)
+- `foil seat list` states are `working`, `idle`, `paused`, `dead`, `killed`, and `joined`, and each line has the session id, or `-`, before the description. `--json` adds `session_id`, `turn_started`, and `last_exit`. (#92)
+- A launched lead works in its own goal worktree, `worktrees/goal-<fleet>` on branch `foil/goal-<fleet>`, and its workers fork from that branch. (#92)
 
 ### Added
 
@@ -17,12 +22,22 @@ Notable changes to Foil, newest first.
 - `foil seat list` and `foil view` show the joined lead as `joined`, with the running seats. (#92)
 - A harness preset may set fixed, non-secret environment values with `set_env`. (#91)
 - A harness preset may name a `wake` argv with `{session_id}` and `{text}`, which `foil mail wait --wake` runs for a joined lead. (#92)
+- `foil seat renew NAME` gives a seat a fresh session on its role's next harness after it wrote `board/handoffs/<name>.md`, keeping its name, worktree, branch, and mailbox. A running seat is renewed after its current turn. (#92)
+- Several goals at once: each fleet is one goal, and `foil seat list --all-fleets` and `foil mail wait --all-fleets` cover every fleet in the project. The README has a scheduled check. (#94)
+- `status.md` may hold a `decisions` list, and `foil view` shows it. A fleet page starts with Needs you: open questions and paused or dead seats. (#92)
+- The joined lead's brief names its session id. (#92)
 
 ### Changed
 
 - The lead skill says nobody reads its pane: a question for the human goes in `status.md` `questions`, with `state: blocked` when the goal waits on it, and a `foil send user` line points at it. The lead and the workers do not use their harness's own prompt for asking the person at the keyboard. (#91)
 - The built-in `claude` preset launches and resumes with `--disallowedTools AskUserQuestion`, and the `opencode` preset denies its `question` tool. (#91)
 - `foil mail list` lists only files whose name `foil send` could have written, and takes the time and the sender from that name, not from the file's front matter. (#92)
+- Mail from `foil` counts only when Foil wrote its record under `run/foil/`, so a file named as from `foil` on the board cannot speak for Foil. (#92)
+
+### Fixed
+
+- `foil post --members NAMES` now also wakes the `@name` seats in the text when it opens a room. (#92)
+- A task given with `foil seat spawn --task` is given again when the seat's runner stops during its first turn. (#92)
 
 ## [0.6.3] - 2026-10-31
 

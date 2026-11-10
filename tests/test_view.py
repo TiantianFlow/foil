@@ -403,8 +403,9 @@ def test_settings_show_the_three_lists(tmp_path: Path, monkeypatch: pytest.Monke
     )
     (home / "harnesses").mkdir()
     (home / "harnesses" / "secretive.toml").write_text(
-        'id = "secretive"\ncommand = ["no-such-cli", "--api-key", "AKIAEXAMPLE", '
-        '"--auth-token=abc", "sk-live", "two words", "{prompt}"]\nsession_id = "none"\n'
+        'id = "secretive"\nstart = ["no-such-cli", "--api-key", "AKIAEXAMPLE", '
+        '"--auth-token=abc", "sk-live", "two words", "{prompt}"]\n'
+        'turn = ["no-such-cli", "--resume", "{session_id}", "{prompt}"]\nsession_id = "generated"\n'
         'env = ["SECRETIVE_HOME"]\nmodels = []\n',
         encoding="utf-8",
     )
@@ -416,6 +417,7 @@ def test_settings_show_the_three_lists(tmp_path: Path, monkeypatch: pytest.Monke
     launch = page.split("secretive</span>")[1].split("</tr>")[0]
     hidden = "--api-key [hidden] --auth-token=[hidden] [hidden] &#x27;two words&#x27; {prompt}"
     assert f"no-such-cli {hidden}" in launch
+    assert "turn: <code>no-such-cli --resume {session_id} {prompt}</code>" in launch
     assert "AKIA" not in page and "sk-live" not in page and "abc" not in launch
     assert "env: SECRETIVE_HOME" in launch and "<td><span class=\"muted\">no</span>" in launch
     assert "broken</span>" in page and "invalid" in page.split("broken</span>")[1].split("</tr>")[0]
@@ -445,7 +447,9 @@ def test_installed_shows_where_the_viewer_found_the_command(
     home = Path(os.environ["FOIL_HOME"])
     (home / "harnesses").mkdir()
     (home / "harnesses" / "probe.toml").write_text(
-        'id = "probe"\ncommand = ["probe-cli", "{prompt}"]\nsession_id = "none"\n'
+        'id = "probe"\nstart = ["probe-cli", "{prompt}"]\n'
+        'turn = ["probe-cli", "{session_id}", "{prompt}"]\n'
+        'session_id = "generated"\n'
         "env = []\nmodels = []\n",
         encoding="utf-8",
     )
@@ -464,7 +468,7 @@ def test_an_invalid_roles_file_leaves_the_rest_of_settings(
         page = _page(port, "/settings")
     roles = page.split("<h2>Roles")[1].split("</section>")[0]
     assert 'class="empty err">foil: invalid template</p>' in roles
-    assert "claude --disallowedTools AskUserQuestion --model" in page
+    assert "claude -p {prompt} --disallowedTools AskUserQuestion --session-id" in page
 
 
 def _role_block(page: str, role: str, following: str = "") -> str:
@@ -526,7 +530,8 @@ def test_settings_needs_no_project_and_a_row_with_no_global_file_is_packaged(
     assert not projects.exists() or not any(projects.iterdir())
     (home / "harnesses").mkdir()
     (home / "harnesses" / "grok.toml").write_text(
-        'id = "grok"\ncommand = ["grok", "{prompt}"]\nsession_id = "none"\n'
+        'id = "grok"\nstart = ["grok", "{prompt}"]\nturn = ["grok", "{session_id}", "{prompt}"]\n'
+        'session_id = "generated"\n'
         "env = []\nmodels = []\n",
         encoding="utf-8",
     )
@@ -648,7 +653,8 @@ def test_overrides_show_every_row_and_the_pair_the_next_spawn_takes(
         reviewers = overrides.split("reviewer</span>")[1].split("</tr>")[0]
         cards = re.findall(r'<span class="card(?: next)?">.*?</span>', reviewers)
         assert "next" in cards[marked] and "next" not in cards[1 - marked]
-    reviewer = page.split("reviewer-1</a>")[1].split("</tr>")[0]
+    agents = page.split("<h2>Agents")[1].split("</section>")[0]
+    reviewer = agents.split("reviewer-1</a>")[1].split("</tr>")[0]
     assert re.search(r'next spawn <span class="mono">[a-z]+ / small</span>', reviewer)
 
 
@@ -874,7 +880,7 @@ def test_every_seat_is_listed_with_state_and_branch(
     assert order == sorted(order)
     shown = default.split("<h2>Agents")[1].split("</section>")[0]
     assert ">implementer-2<" not in shown and "1 killed not shown" in shown
-    for name, state in (("lead", "alive"), ("implementer-1", "dead"), ("implementer-2", "killed")):
+    for name, state in (("lead", "idle"), ("implementer-1", "dead"), ("implementer-2", "killed")):
         row = agents.split(f">{name}</a>")[1].split("</tr>")[0]
         assert f'<span class="dot {state}"></span>{state}' in row, name
     assert "foil/implementer-1" in agents and "gpt-5.5" in agents and "no branch" in agents
@@ -1218,7 +1224,7 @@ def test_a_file_name_that_is_not_utf8_is_skipped(
     with _serving(repo) as port:
         page = _page(port, "/fleets/main")
     assert "notes/good.md" in page and "notes/bad" not in page
-    assert '<span class="dot alive"></span>alive' in page
+    assert '<span class="dot idle"></span>idle' in page
 
 
 def test_a_dead_seat_whose_window_remains_shows_its_pane_and_window(
@@ -1272,7 +1278,7 @@ def test_a_board_that_cannot_be_listed_is_one_line_in_each_section(
     with _serving(repo) as port:
         page = _page(port, "/fleets/main")
     assert page.count("foil: refusing symlink") == 2
-    assert '<span class="dot alive"></span>alive' in page
+    assert '<span class="dot idle"></span>idle' in page
 
 
 # Tailnet
@@ -1507,7 +1513,7 @@ def test_the_info_text_the_page_serves_is_the_text_f38_names(
     assert f"`{view.HELP}`" in f38.split("\n")[0]
     assert f"`{view.PROJECTS}`" in f38.split("\n")[0]
     repo = _repo(tmp_path, monkeypatch)
-    _registry(repo, _seat("lead", window="@1"))
+    _registry(repo, _seat("lead", window="@1"), _seat("implementer-1", window="@9"))
     _windows(monkeypatch, {"@1": "lead"})
     with _serving(repo) as port:
         served = _page(port, "/", top=True) + "".join(

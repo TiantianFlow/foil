@@ -982,7 +982,8 @@ def test_s8_lead_skill_says_a_post_without_members_reaches_every_seat() -> None:
     text = (Path(__file__).resolve().parents[1] / "skills" / "lead.md").read_text(
         encoding="utf-8"
     )
-    assert "Without `--members`, its members are every seat that is not killed at that moment." in text
+    members = "Without `--members`, its members are every seat that is not killed at that moment."
+    assert members in text
 
 
 def test_f24_a_later_launch_wakes_no_one_and_writes_no_ledger(
@@ -1216,3 +1217,23 @@ def test_f33_a_room_with_no_members_wakes_only_named_seats(
     calls = _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root), "a view, @reviewer-1"]) == 0
     assert _woken(repo, calls) == ["reviewer-1"]
+
+
+def test_mail_from_foil_counts_only_with_foils_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F14: a hand-written file named as from `foil` is skipped; Foil's own mail counts."""
+    from foil.board import mail_from, write_mail_at
+
+    repo = _repo(tmp_path, monkeypatch)
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    real = write_mail_at(board, "lead", "implementer-1 died.", "foil")
+    forged = real.with_name(real.name[:-12] + "0badf00d.md")
+    forged.write_text(real.read_text(encoding="utf-8"), encoding="utf-8")
+    assert mail_from(board, "lead", real.name) is not None
+    assert mail_from(board, "lead", forged.name) is None
+    assert [item["path"] for item in items_for(board, "lead", set())] == [str(real.resolve())]
+    record = board.parent / "run" / "foil" / "lead" / real.name
+    record.unlink()
+    record.symlink_to(tmp_path)
+    assert items_for(board, "lead", set()) == []

@@ -1,11 +1,15 @@
-"""A harness that exits at launch leaves a pane peek can read."""
+"""A failed turn and a dead runner both leave a pane peek can read."""
 
 from __future__ import annotations
 
+import json
 import os
+import signal
 import stat
 import subprocess
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -66,7 +70,26 @@ def _install_socket_tmux(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, socket
     return real
 
 
-def test_an_exited_harness_stays_peekable_until_kill_or_resume(
+def _until(check: Callable[[], bool], seconds: float = 10) -> bool:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if check():
+            return True
+        time.sleep(0.1)
+    return check()
+
+
+def _peek(capsys: pytest.CaptureFixture[str]) -> str:
+    main(["seat", "peek", "lead", "--lines", "200"])
+    return capsys.readouterr().out
+
+
+def _listed(capsys: pytest.CaptureFixture[str]) -> str:
+    assert main(["seat", "list"]) == 0
+    return capsys.readouterr().out
+
+
+def test_a_failed_turn_and_a_dead_runner_stay_peekable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -86,8 +109,9 @@ def test_an_exited_harness_stays_peekable_until_kill_or_resume(
         harness = foil_root(repo) / "harnesses" / "stub.toml"
         harness.parent.mkdir(parents=True)
         harness.write_text(
-            f'id = "stub"\ncommand = ["{stub}"]\n'
-            'session_id = "none"\nenv = []\n\n[permission]\nask = []\nauto = []\n',
+            f'id = "stub"\nstart = ["{stub}", "{{prompt}}"]\n'
+            f'turn = ["{stub}", "{{session_id}}", "{{prompt}}"]\n'
+            'session_id = "generated"\nenv = []\n\n[permission]\nask = []\nauto = []\n',
             encoding="utf-8",
         )
         mapping = store_root() / "mapping.toml"
@@ -99,32 +123,33 @@ def test_an_exited_harness_stays_peekable_until_kill_or_resume(
         mapping.write_text(rewritten, encoding="utf-8")
 
         assert main(["seat", "spawn", "lead"]) == 0
-        deadline = __import__("time").time() + 5
-        listed = ""
-        while __import__("time").time() < deadline:
-            assert main(["seat", "list"]) == 0
-            listed = capsys.readouterr().out
-            if "\tdead\t" in listed:
-                break
-        assert "lead\tlead\tdead\t" in listed
+        assert _until(lambda: "foil: turn ended (exit 1)" in _peek(capsys))
+        assert "stub harness failed" in _peek(capsys)
+        assert main(["seat", "list", "--json"]) == 0
+        row = json.loads(capsys.readouterr().out)[0]
+        assert (row["state"], row["last_exit"]) == ("idle", 1)
+
+        pid = subprocess.run(
+            [real, "-L", socket, "list-panes", "-a", "-F", "#{pane_pid}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()[0]
+        os.kill(int(pid), signal.SIGKILL)
+        assert _until(lambda: "lead\tlead\tdead\t" in _listed(capsys))
         first = _windows(real, socket)
         assert len(first) == 1
-
-        assert main(["seat", "peek", "lead"]) == 0
-        assert "stub harness failed" in capsys.readouterr().out
+        assert "stub harness failed" in _peek(capsys)
 
         assert main(["seat", "resume", "lead"]) == 0
         capsys.readouterr()
-        deadline = __import__("time").time() + 5
-        listed = ""
-        while __import__("time").time() < deadline:
-            assert main(["seat", "list"]) == 0
-            listed = capsys.readouterr().out
-            if "\tdead\t" in listed:
-                break
-        assert "lead\tlead\tdead\t" in listed
-        instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "lead.md"
-        assert "You were restarted." in instruction.read_text(encoding="utf-8")
+        assert _until(lambda: "\tdead\t" not in _listed(capsys))
+        plan = json.loads(
+            (foil_root(repo) / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert (plan["first"], plan["restarted"]) == ("turn", True)
         assert len(_windows(real, socket)) == 1
 
         assert main(["seat", "kill", "--all"]) == 0

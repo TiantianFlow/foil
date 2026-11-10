@@ -505,7 +505,9 @@ def test_lead_only_adopt_and_legacy_move_rewrite_stored_paths(
     lead_plan = json.loads(
         (old_root / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
     )
-    assert lead_plan["cwd"] == old_checkout
+    old_goal = str((old_root / "worktrees" / "goal-main").resolve())
+    assert lead_plan["cwd"] == old_goal
+    assert old_checkout != old_goal
     moved = tmp_path / "moved" / "project"
     moved.parent.mkdir()
     monkeypatch.chdir(tmp_path)
@@ -517,7 +519,7 @@ def test_lead_only_adopt_and_legacy_move_rewrite_stored_paths(
     plan = json.loads(
         (adopted / "fleets" / "main" / "run" / "plans" / "lead.json").read_text(encoding="utf-8")
     )
-    assert plan["cwd"] == str(moved.resolve())
+    assert plan["cwd"] == str((adopted / "worktrees" / "goal-main").resolve())
     instruction = (adopted / "fleets" / "main" / "run" / "instructions" / "lead.md").read_text(
         encoding="utf-8"
     )

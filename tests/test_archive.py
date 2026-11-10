@@ -578,6 +578,12 @@ def test_native_resume_does_not_repeat_the_old_mail_warning(
         return False
 
     monkeypatch.setattr("foil.lifecycle.TmuxController.matches_window", matches_window)
+    from foil.runner import load_record, save_record
+
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    record = load_record(board, "lead")
+    record["last_exit"] = 0
+    save_record(board, "lead", record)
     assert main(["seat", "resume", "lead"]) == 0
     capsys.readouterr()
     text = instruction.read_text(encoding="utf-8")

@@ -50,12 +50,14 @@ auto = ["--approval-mode", "yolo"]
 
 [[harness]]
 id = "opencode"
-unverified = ["start", "turn", "session-key", "permission-auto"]
+unverified = ["start", "turn", "session-key", "permission-auto", "set-env-question-deny"]
 start = ["opencode", "run", "{permission}", "--format", "json", "--model", "{model}", "{prompt}"]
 turn = ["opencode", "run", "{permission}", "--format", "json", "--session", "{session_id}", "--model", "{model}", "{prompt}"]
 session_id = "output"
 session_key = "sessionID"
 env = []
+# The question tool is off: nobody reads a turn while it runs.
+set_env = { OPENCODE_CONFIG_CONTENT = '{"permission":{"question":"deny"}}' }
 models = ["anthropic/claude-sonnet-4-5", "openai/gpt-5.5"]
 
 [harness.permission]
