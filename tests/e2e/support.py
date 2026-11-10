@@ -93,19 +93,47 @@ def timeout_report(repo: Path) -> str:
     return "\n".join(chunks) if chunks else "no fleet"
 
 
-def wait(
-    repo: Path, predicate: Callable[[], object], timeout: float = 60, what: str = ""
-) -> None:
-    """Poll until the predicate holds. A timeout says what was awaited and shows the fleet."""
+def states(repo: Path, fleet: str = "main") -> dict[str, str]:
+    """Each seat's state as `seat list` gives it: alive, dead or killed."""
 
+    return {row["name"]: row["state"] for row in seat_rows(repo, load_registry(repo, fleet))}
+
+
+def wait(
+    repo: Path,
+    predicate: Callable[[], object],
+    timeout: float = 60,
+    what: str = "",
+    *,
+    dead_ok: bool = False,
+) -> None:
+    """Poll until the predicate holds. A failure says what was awaited and shows the fleet.
+
+    A seat whose process exited ends the wait at once, unless the scenario
+    expects that: nothing more will come from it.
+    """
+
+    label = f" waiting for {what}" if what else ""
     deadline = time.monotonic() + timeout
+    checked = 0.0
     while True:
         if predicate():
             return
-        if time.monotonic() >= deadline:
+        now = time.monotonic()
+        if now >= deadline:
             break
+        if not dead_ok and now - checked >= 0.5:
+            checked = now
+            dead = sorted(
+                name
+                for fleet in fleets(repo)
+                for name, state in states(repo, fleet).items()
+                if state == "dead"
+            )
+            if dead and not predicate():
+                names = ", ".join(dead)
+                raise AssertionError(f"{names} died{label}\n{timeout_report(repo)}")
         time.sleep(0.1)
-    label = f" waiting for {what}" if what else ""
     raise AssertionError(f"timed out after {timeout:g}s{label}\n{timeout_report(repo)}")
 
 

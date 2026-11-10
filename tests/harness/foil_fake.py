@@ -42,7 +42,8 @@ had is the launch "lost": the double carries on with nothing remembered.
 With `"strict_resume": true` in the script it ends with an error there,
 as a real CLI does for a session it never saved.
 
-A shell action sees FAKE_BOARD, FAKE_LAUNCH, FAKE_SESSION and FAKE_MAIL.
+A shell action sees FAKE_BOARD, FAKE_LAUNCH, FAKE_SESSION and FAKE_MAIL,
+and what a stand-in read from its command line, such as FAKE_MODEL.
 """
 
 from __future__ import annotations
@@ -197,6 +198,7 @@ class Fake:
                 "FAKE_LAUNCH": self.launch,
                 "FAKE_SESSION": self.session,
                 "FAKE_MAIL": mail,
+                **{f"FAKE_{key.upper()}": value for key, value in self.facts.items()},
             }
             result = subprocess.run(
                 action["sh"],
