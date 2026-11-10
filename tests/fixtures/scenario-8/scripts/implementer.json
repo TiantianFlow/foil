@@ -1,0 +1,10 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "report your foil"},
+      "do": [
+        {"sh": "foil --version > \"$FAKE_BOARD/notes/$FOIL_SEAT_ID-foil.txt\""}
+      ]
+    }
+  ]
+}
