@@ -593,8 +593,9 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
         )
     )
     session = load_registry(repo)["seats"]["seat-fake"]["session_id"]
-    assert fake_plan["start"] == ["foil-fake", "--session", session, "{prompt}"]
-    assert fake_plan["turn"] == ["foil-fake", "--resume", session, "{prompt}"]
+    assert fake_plan["session_id"] == session
+    assert fake_plan["start"] == ["foil-fake", "--session", "{session_id}", "{prompt}"]
+    assert fake_plan["turn"] == ["foil-fake", "--resume", "{session_id}", "{prompt}"]
     assert "only the goal" not in json.dumps(fake_plan)
 
 

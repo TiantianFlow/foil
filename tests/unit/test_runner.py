@@ -12,8 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from foil.board import items_for
 from foil.runner import (
     INLINE,
+    INLINE_TOTAL,
+    LISTED,
     RESTARTED,
     RunnerError,
     load_plan,
@@ -201,3 +204,77 @@ def test_stopping_the_runner_ends_the_turn_and_its_children(tmp_path: Path) -> N
         return status.is_file() and "State:\tZ" in status.read_text()
 
     _until(gone)
+
+
+def test_the_wake_prompt_lists_at_most_50_items_and_inlines_at_most_16_kib(
+    tmp_path: Path,
+) -> None:
+    plan = _plan(tmp_path)
+    mailbox = Path(plan["board"]) / "mail" / "seat-1"
+    items = []
+    for number in range(LISTED + 10):
+        path = mailbox / f"{number:03}.md"
+        path.write_text("---\nfrom: lead\n---\n" + "x" * 500 + "\n", encoding="utf-8")
+        relative = f"mail/seat-1/{path.name}"
+        items.append(
+            {"time": f"t{number}", "from": "lead", "path": str(path), "relative": relative}
+        )
+    prompt = wake_prompt(plan, items, restarted=False)
+    assert prompt.count(" lead /") == LISTED
+    assert "...and 10 more: run foil mail list" in prompt
+    assert prompt.count("--- ") == INLINE_TOTAL // 501
+    assert len(prompt.encode()) < 64 * 1024
+
+
+def test_a_failed_start_runs_start_again_on_a_fresh_generated_id(tmp_path: Path) -> None:
+    log = tmp_path / "starts.log"
+    (tmp_path / "probe.py").write_text(
+        "import sys\n"
+        f"log = open({str(log)!r}, 'a')\n"
+        "log.write(sys.argv[2] + '\\n'); log.close()\n"
+        f"sys.exit(1 if len(open({str(log)!r}).read().split()) == 1 else 0)\n",
+        encoding="utf-8",
+    )
+    plan = _plan(tmp_path)
+    probe = str(tmp_path / "probe.py")
+    plan["start"] = [sys.executable, probe, "start", "{session_id}", "{prompt}"]
+    runner = _run(tmp_path, plan)
+    board = Path(plan["board"])
+    try:
+        _until(lambda: load_record(board, "seat-1")["started"])
+        first, second = log.read_text().split()
+        assert first == "s-1" and second != first
+        assert load_record(board, "seat-1")["session_id"] == second
+    finally:
+        os.killpg(runner.pid, signal.SIGKILL)
+        runner.wait()
+
+
+def test_a_program_that_cannot_run_is_a_failed_turn_and_pauses(tmp_path: Path) -> None:
+    plan = _plan(tmp_path, start=[str(tmp_path / "missing"), "{prompt}"])
+    runner = _run(tmp_path, plan)
+    board = Path(plan["board"])
+    try:
+        _until(lambda: load_record(board, "seat-1")["paused"])
+        record = load_record(board, "seat-1")
+        assert record["last_exit"] == 127 and record["failures"] == 4
+        assert runner.poll() is None
+        (notice,) = (board / "mail" / "lead").glob("*-foil-*.md")
+        assert "seat-1 paused after 4 failed turns (exit 127)" in notice.read_text()
+    finally:
+        os.killpg(runner.pid, signal.SIGKILL)
+        runner.wait()
+
+
+def test_a_room_file_that_claims_to_be_from_foil_wakes_nobody(tmp_path: Path) -> None:
+    board = Path(_plan(tmp_path)["board"])
+    room = board / "room" / ("a" * 16)
+    room.mkdir(parents=True)
+    for sender in ("foil", "lead"):
+        (room / f"{'a' * 16}.md").write_text(
+            f"---\ncontract: room/v2\nfrom: {sender}\ntime: 2026-11-10T12:00:00Z\n"
+            "wakes: [seat-1]\n---\nHello.\n",
+            encoding="utf-8",
+        )
+        found = [item["from"] for item in items_for(board, "seat-1", set())]
+        assert found == ([] if sender == "foil" else ["lead"])

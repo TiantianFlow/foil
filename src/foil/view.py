@@ -1055,7 +1055,7 @@ def _status(root: Path, fleet: str, files: list[tuple[str, int, float]], here: s
     decisions = (fields or {}).get("decisions")
     listed = ""
     if isinstance(decisions, list) and decisions:
-        listed = "<ul>" + "".join(f"<li>{escape(item)}</li>" for item in decisions) + "</ul>"
+        listed = "<ul>" + "".join(f"<li>{escape(str(item))}</li>" for item in decisions) + "</ul>"
     return _section(
         "status.md", f'{listed}<pre class="wrap">{shown}</pre>{more}', meta=meta, anchor="status"
     )

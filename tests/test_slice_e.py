@@ -180,7 +180,7 @@ def test_worker_instruction_and_resume_refreshes_lessons(
     assert "FOIL_HOME" in plan["env"]
     assert plan["restarted"] is True
     assert "--resume" in plan["turn"]
-    assert seat["session_id"] in plan["start"]
+    assert plan["session_id"] == seat["session_id"]
     assert "You were restarted." in refreshed
 
 
@@ -190,6 +190,7 @@ def _turn_ended(repo: Path, seat: str, session: str = "") -> None:
     board = foil_root(repo) / "fleets" / "main" / "board"
     record = load_record(board, seat)
     record["last_exit"] = 0
+    record["started"] = True
     if session:
         record["session_id"] = session
     save_record(board, seat, record)
@@ -203,7 +204,7 @@ def _plan_of(repo: Path, seat: str) -> dict:
 def test_resume_continues_a_session_only_after_a_turn_ended(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """F9: turn on the recorded session once a turn ended, otherwise start again."""
+    """F9: turn on the recorded session once it started, otherwise start a fresh one."""
 
     repo = _repo(tmp_path, monkeypatch)
     _commit(repo)
@@ -228,10 +229,10 @@ def test_resume_continues_a_session_only_after_a_turn_ended(
     assert coder["session_id"] == "thread-7"
     assert load_registry(repo)["seats"]["coder"]["session_id"] == "thread-7"
     assert coder["turn"][:2] == ["codex", "exec"]
-    assert "thread-7" in coder["turn"]
+    assert "{session_id}" in coder["turn"]
     assert reader["first"] == "start"
     assert reader["start"][0] == "gemini"
-    assert reader_id in reader["start"]
+    assert reader["session_id"] not in ("", reader_id)
     assert "yolo" in reader["start"]
     reader_text = (
         foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "reader.md"
@@ -471,10 +472,12 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     )
     assert seat["harness"] == "claude"
     assert seat["model"] == "sonnet"
-    assert seat["session_id"] == previous
+    # No turn on the first session ended, so it may be half made: start a fresh one.
+    assert seat["session_id"] != previous
+    assert plan["session_id"] == seat["session_id"]
     assert plan["start"][0] == "claude"
     assert plan["first"] == "start"
-    assert previous in plan["start"] and previous in plan["turn"]
+    assert "{session_id}" in plan["start"] and "{session_id}" in plan["turn"]
     assert "--resume" in plan["turn"]
     assert "gemini" not in plan["start"] + plan["turn"]
 

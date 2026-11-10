@@ -583,6 +583,7 @@ def test_native_resume_does_not_repeat_the_old_mail_warning(
     board = foil_root(repo) / "fleets" / "main" / "board"
     record = load_record(board, "lead")
     record["last_exit"] = 0
+    record["started"] = True
     save_record(board, "lead", record)
     assert main(["seat", "resume", "lead"]) == 0
     capsys.readouterr()

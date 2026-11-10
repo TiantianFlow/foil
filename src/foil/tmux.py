@@ -26,11 +26,6 @@ _PROBE_FORMAT = (
 _IDENTITY_FORMAT = "#{session_id}\t#{window_id}\t#{window_name}"
 
 
-# Enter inside a fast burst stays in the harness input. Codex keeps that
-# burst open for 120ms. The pause starts after the line has been written,
-# and Enter is sent once.
-
-
 _budget = threading.local()
 
 

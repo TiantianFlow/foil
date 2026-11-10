@@ -206,6 +206,10 @@ def main() -> int:
         print(json.dumps({"type": "session", key: session}), flush=True)
     sessions_path = fake / f"{seat}.sessions"
     known = set(sessions_path.read_text().split()) if sessions_path.is_file() else set()
+    if first and session in known:
+        _log(log_path, f"session in use {session}")
+        print(f"foil-fake: session {session} is already in use", file=sys.stderr)
+        return 9
     if first:
         known.add(session)
         sessions_path.write_text("\n".join(sorted(known)) + "\n")

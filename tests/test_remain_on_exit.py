@@ -149,7 +149,7 @@ def test_a_failed_turn_and_a_dead_runner_stay_peekable(
                 encoding="utf-8"
             )
         )
-        assert (plan["first"], plan["restarted"]) == ("turn", True)
+        assert (plan["first"], plan["restarted"]) == ("start", True)
         assert len(_windows(real, socket)) == 1
 
         assert main(["seat", "kill", "--all"]) == 0

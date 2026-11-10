@@ -32,7 +32,7 @@ Notable changes to Foil, newest first.
 - The lead skill says nobody reads its pane: a question for the human goes in `status.md` `questions`, with `state: blocked` when the goal waits on it, and a `foil send user` line points at it. The lead and the workers do not use their harness's own prompt for asking the person at the keyboard. (#91)
 - The built-in `claude` preset launches and resumes with `--disallowedTools AskUserQuestion`, and the `opencode` preset denies its `question` tool. (#91)
 - `foil mail list` lists only files whose name `foil send` could have written, and takes the time and the sender from that name, not from the file's front matter. (#92)
-- Mail from `foil` counts only when Foil wrote its record under `run/foil/`, so a file named as from `foil` on the board cannot speak for Foil. (#92)
+- Mail from `foil` counts only when Foil wrote its record under `run/foil/`, and a room file from `foil` wakes nobody, so a file written on the board cannot speak for Foil. (#92)
 
 ### Fixed
 

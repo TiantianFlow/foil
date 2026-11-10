@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,9 @@ MAX_PLAN_BYTES = 256 * 1024
 POLL = 1.0
 COALESCE = 1.0
 INLINE = 600
+LISTED = 50
+INLINE_TOTAL = 16 * 1024
+CANNOT_RUN = 127
 FIRST_INLINE = 64 * 1024
 LEFTOVER_GRACE = 2.0
 RESTARTED = "You were restarted. Check before you repeat a merge, push, post or send."
@@ -115,6 +119,7 @@ def empty_record() -> dict[str, Any]:
         "turn_started": None,
         "last_exit": None,
         "failures": 0,
+        "started": False,
         "paused": False,
         "pgid": 0,
     }
@@ -159,17 +164,26 @@ def _body(path: Path) -> str | None:
 
 def wake_prompt(plan: dict[str, Any], items: list[dict[str, str]], *, restarted: bool) -> str:
     lines = [RESTARTED] if restarted else []
+    listed = items[:LISTED]
     if items:
         lines.append(f"New for {plan['seat']} ({len(items)}):")
-        lines += [f"{item['time']} {item['from']} {item['path']}" for item in items]
+        lines += [f"{item['time']} {item['from']} {item['path']}" for item in listed]
+        if len(items) > len(listed):
+            lines.append(
+                f"...and {len(items) - len(listed)} more: run foil mail list, "
+                "and foil board list 'room/*/*.md' for posts."
+            )
     else:
         lines.append(f"Nothing new for {plan['seat']}.")
     inlined = set()
-    for item in items:
+    budget = INLINE_TOTAL
+    for item in listed:
         if not item["relative"].startswith("mail/"):
             continue
         body = _body(Path(item["path"]))
-        if body is not None and len(body.encode()) <= INLINE:
+        size = len(body.encode()) if body is not None else INLINE + 1
+        if size <= INLINE and size <= budget:
+            budget -= size
             inlined.add(item["path"])
             lines += [f"--- {item['path']}", body.rstrip("\n")]
     lines.append(
@@ -208,7 +222,11 @@ def _wrote(board: Path, seat: str, since: float) -> bool:
             return True
     for path in board.glob("room/*/*.md"):
         if fresh(path):
-            fields, _ = split_front_matter(path.read_text(encoding="utf-8", errors="replace"))
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            fields, _ = split_front_matter(text)
             if fields and fields.get("from") == seat:
                 return True
     return any(fresh(path) for path in board.glob("results/**/*"))
@@ -238,9 +256,8 @@ class Runner:
     def stop(self, *_args: Any) -> None:
         """The window is closing: end the turn's process group, then exit."""
 
-        if self.child is not None and self.child.poll() is None:
-            with contextlib.suppress(OSError):
-                os.killpg(self.child.pid, signal.SIGTERM)
+        if self.child is not None:
+            self._end_group(self.child.pid)
         raise SystemExit(0)
 
     def _end_group(self, pgid: int) -> None:
@@ -265,14 +282,19 @@ class Runner:
         argv = [values.get(token, token) for token in self.plan[kind]]
         learn = bool(self.plan["session_key"]) and not session
         print(f"foil: turn started ({kind})", flush=True)
-        child = subprocess.Popen(
-            argv,
-            cwd=self.plan["cwd"],
-            env=self.environment,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE if learn else None,
-            start_new_session=True,
-        )
+        try:
+            child = subprocess.Popen(
+                argv,
+                cwd=self.plan["cwd"],
+                env=self.environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE if learn else None,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            print(f"foil: could not run {argv[0]}: {exc.strerror or exc}", flush=True)
+            print(f"foil: turn ended (exit {CANNOT_RUN})", flush=True)
+            return CANNOT_RUN
         self.child = child
         self.record["pgid"] = child.pid
         self.save()
@@ -310,6 +332,7 @@ class Runner:
                 value = line.get(key) if isinstance(line, dict) else None
                 if isinstance(value, str) and SAFE_ID.fullmatch(value):
                     self.record["session_id"] = value
+                    self.record["started"] = True
 
     def _new(self) -> list[dict[str, str]]:
         skip = set(self.record["delivered"]) | set(self.record["inflight"])
@@ -376,8 +399,10 @@ class Runner:
                 kind = "start"
             if kind == "start":
                 prompt = first_prompt(self.plan)
-                if batch or restarted:
-                    prompt += "\n" + wake_prompt(self.plan, batch, restarted=restarted)
+                # The instruction file says it already when the plan starts with start.
+                said = restarted and not (self.plan["first"] == "start" and first == "start")
+                if batch or said:
+                    prompt += "\n" + wake_prompt(self.plan, batch, restarted=said)
             else:
                 prompt = wake_prompt(self.plan, batch, restarted=restarted)
             self.record["inflight"] = [item["relative"] for item in batch]
@@ -387,6 +412,8 @@ class Runner:
             code = self.turn(kind, prompt)
             self.record["turn_started"] = None
             self.record["last_exit"] = code
+            if code == 0:
+                self.record["started"] = True
             if code in (0, -1):
                 self.record["delivered"] = sorted(
                     set(self.record["delivered"]) | set(self.record["inflight"])
@@ -398,8 +425,10 @@ class Runner:
                 self._after(code, started)
                 continue
             self.record["failures"] += 1
-            if first == "start" and self.plan["session_key"] and self.record["session_id"]:
+            if self.record["started"]:
                 first = "turn"
+            elif kind == "start" and not self.plan["session_key"] and self.plan["session_id"]:
+                self.record["session_id"] = str(uuid.uuid4())
             waits = self.plan["retry"]
             if self.record["failures"] > len(waits):
                 self.record["paused"] = True

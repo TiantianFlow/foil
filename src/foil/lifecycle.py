@@ -761,7 +761,7 @@ def _write_plan(
         kind: expand_argv(
             preset,
             model=model or None,
-            session_id=session_id or None,
+            session_id=None,
             permission=template["permission"],
             turn=kind == "turn",
         )
@@ -1169,10 +1169,11 @@ def _restart(root: Path, registry: dict, name: str) -> None:
     turns = load_record(_board(root), name)
     # The runner learns an output preset's id; the registry has a generated one.
     record["session_id"] = turns["session_id"] or record["session_id"]
-    if not record["session_id"] and preset["session_id"] == "generated":
+    started = bool(record["session_id"]) and turns["started"]
+    # A start that never finished may have half-made its generated session.
+    if not started and preset["session_id"] == "generated":
         record["session_id"] = str(uuid.uuid4())
-    # A generated id names no session until a turn on it has ended.
-    first = "turn" if record["session_id"] and turns["last_exit"] is not None else "start"
+    first = "turn" if started else "start"
     turns.update({"turn_started": None, "paused": False, "failures": 0, "pgid": 0})
     turns["session_id"] = record["session_id"]
     branch = record.get("branch", "") if name == "lead" else ""
@@ -1293,7 +1294,6 @@ def renew_seat(root: Path, name: str) -> None:
             restarted=False,
             instruction=instruction,
         )
-        write_bytes(record_path(_board(root), name, ".renew"), json.dumps(present).encode())
 
         def apply(fresh: dict) -> None:
             current = fresh["seats"].get(name)
@@ -1302,6 +1302,7 @@ def renew_seat(root: Path, name: str) -> None:
             current.update({key: record[key] for key in ("harness", "model", "session_id")})
 
         update_registry(root, apply)
+        write_bytes(record_path(_board(root), name, ".renew"), json.dumps(present).encode())
 
     def rotate(fresh: dict) -> None:
         fresh["rotation"][role] = {

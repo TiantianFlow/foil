@@ -106,7 +106,7 @@ def items_for(board: Path, name: str, skip: set[str]) -> list[dict[str, str]]:
             if name not in wakes:
                 continue
             sender, when = str(fields.get("from", "")), str(fields.get("time", ""))
-            if not SAFE_ID.fullmatch(sender) or not _TIME.match(when):
+            if sender == "foil" or not SAFE_ID.fullmatch(sender) or not _TIME.match(when):
                 continue
         items.append(
             {"time": when, "from": sender, "path": str(path.resolve()), "relative": relative}
