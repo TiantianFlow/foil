@@ -346,7 +346,7 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
 
 
 def _brief(head: list[str], items: list[dict[str, str]], tail: list[str]) -> str:
-    """The brief with as many item lines as fit under BRIEF_BYTES; head and tail always print."""
+    """The brief, with its newline, fitting as many item lines as stay under BRIEF_BYTES."""
 
     if not items:
         return "\n".join([*head, "New for lead: none.", *tail])
@@ -355,7 +355,7 @@ def _brief(head: list[str], items: list[dict[str, str]], tail: list[str]) -> str
         if shown < len(items):
             middle.append(f"... and {len(items) - shown} more. Run foil mail list.")
         text = "\n".join([*head, *middle, *tail])
-        if len(text.encode()) < BRIEF_BYTES:
+        if len(text.encode()) + 1 < BRIEF_BYTES:
             break
     return text
 
