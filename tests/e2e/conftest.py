@@ -1,8 +1,10 @@
-"""Put the fake harness on PATH for operator scenarios."""
+"""Put the fake harness, and a `foil` for the running interpreter, on PATH."""
 
 from __future__ import annotations
 
 import os
+import shlex
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,4 +19,8 @@ def _foil_fake_on_path(
     bindir = tmp_path_factory.mktemp("foil-fake")
     binary = bindir / "foil-fake"
     binary.symlink_to(_FAKE)
+    # A seat runs `foil` from PATH; this one is the checkout the test process imports.
+    shim = bindir / "foil"
+    shim.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} -m foil "$@"\n')
+    shim.chmod(0o755)
     monkeypatch.setenv("PATH", os.pathsep.join((str(bindir), os.environ.get("PATH", ""))))

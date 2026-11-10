@@ -19,13 +19,13 @@ You are the human's own agent session, and you joined the fleet as its lead with
 ## Setup
 
 1. Prerequisites are Python, Git, tmux, and at least one harness CLI that is already logged in. Foil never handles that login.
-2. Run `foil` outside your harness sandbox and without a prompt, and let your file tools write the project folder that `foil init` prints as `Project folder:`. The board is in that folder, outside the repository, and you write `board/status.md` and `board/handoffs/lead.md` there. This is a one-time setting the human approves. These rules were read from each harness's documentation and not tested on every version:
+2. Run `foil` outside your harness sandbox and without a prompt, and let your file tools write the fleet's board, `<project folder>/fleets/<fleet>/board`, and no other folder in the store. `<project folder>` is what `foil init` prints as `Project folder:`, `<fleet>` is `main` unless `FOIL_FLEET` names another, and `foil seat join lead` prints the full path as `Board:`. The board is outside the repository. By hand you write only `board/status.md` and `board/handoffs/lead.md`; tasks, mail, rooms, and memory go through `foil` commands. Do not allow the project folder itself: its harness, role, and mapping files are above the board. This is a one-time setting the human approves. These rules were read from each harness's documentation and not tested on every version:
 
 | Harness | Setting |
 |---|---|
-| Codex | `prefix_rule(pattern=["foil"], decision="allow")` in a file under `~/.codex/rules/`, and the project folder in `writable_roots` under `[sandbox_workspace_write]` in `~/.codex/config.toml` |
-| Claude Code | `"permissions": {"allow": ["Bash(foil:*)"], "additionalDirectories": ["<project folder>"]}` in `~/.claude/settings.json`, and `"sandbox": {"excludedCommands": ["foil"]}` when its sandbox is on |
-| Grok | `{ action = "allow", tool = "bash", pattern = "foil *" }` in its permission rules, and the project folder among the paths its file tools may write |
+| Codex | `prefix_rule(pattern=["foil"], decision="allow")` in a file under `~/.codex/rules/`, and the board folder in `writable_roots` under `[sandbox_workspace_write]` in `~/.codex/config.toml` |
+| Claude Code | `"permissions": {"allow": ["Bash(foil:*)"], "additionalDirectories": ["<project folder>/fleets/<fleet>/board"]}` in `~/.claude/settings.json`, and `"sandbox": {"excludedCommands": ["foil"]}` when its sandbox is on |
+| Grok | `{ action = "allow", tool = "bash", pattern = "foil *" }` in its permission rules, and the board folder as the only store path its file tools may write |
 
 Do not allow `tmux` the same way. An allowed `tmux` lets any session of that harness type any command into a new window outside the sandbox. The folder-trust keystroke in Dialogs stays under your harness's approval prompt, and the human approves it. The `foil` rule grants every `foil` command. `foil mail wait --wake` runs only the wake command of a global or packaged preset. A spawn runs the launch command of a project harness file, so never write `harnesses.toml` or `harnesses/` in the project folder; ask the human to change a harness.
 
@@ -53,7 +53,7 @@ Read the whole report before you staff the fleet. It lists every installed harne
 foil seat join lead
 ```
 
-7. Before your first spawn, write the plan to `board/status.md` with your file tool. If your harness asks for approval or refuses, the folder is not allowed yet: fix the setting in step 2 before you spawn, because `foil seat leave` needs `board/handoffs/lead.md` written the same way.
+7. Before your first spawn, write the plan to `board/status.md` with your file tool. If your harness asks for approval or refuses, the board folder is not allowed yet: fix the setting in step 2 before you spawn, because `foil seat leave` needs `board/handoffs/lead.md` written the same way.
 
 ## Roster
 

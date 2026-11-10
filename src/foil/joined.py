@@ -16,7 +16,6 @@ from foil.board_ops import split_front_matter
 from foil.errors import FoilError
 from foil.lifecycle import _state, _write_instruction
 from foil.presets import load_preset, load_template
-from foil.project import foil_root
 from foil.store import (
     SAFE_ID,
     SCHEMA_VERSION,
@@ -307,7 +306,7 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
         record["seen"] += [item["relative"] for item in items]
         _save(root, "lead", record)
     registry = load_registry(root)
-    project_root = foil_root(root).resolve()
+    board = (fleet_dir(root) / "board").resolve()
     lines = [
         f"You are seat lead in fleet {registry['fleet_id']} ({root.resolve()}).",
         f"Read first: {instruction}",
@@ -321,9 +320,8 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
         lines.append("New for lead: none.")
     lines.append(f"Hear from the fleet: {_route(root, harness, session)}")
     lines.append(
-        f"Project folder: {project_root}. Before your first spawn, write board/status.md "
-        "there with your file tool. If your harness asks or refuses, allow that folder "
-        "before you spawn."
+        f"Board: {board}. Before your first spawn, write status.md there with your file "
+        "tool. If your harness asks or refuses, allow that folder alone before you spawn."
     )
     if _dirty(root):
         lines.append(

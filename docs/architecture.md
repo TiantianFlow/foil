@@ -193,7 +193,7 @@ Foil stores only a session id per seat, in `fleets/<id>/run/registry.json`. Each
 | opencode | `none` | `opencode . --continue` | Latest session for this directory | The argv is the preset. Whether "latest" is the exact cwd or the whole repository is unverified |
 | gemini | `none` | `gemini --resume` | Neither an id nor a directory flag | The argv is the preset. It always starts fresh. The preset marks its flags unverified |
 
-A preset's optional `wake` argv is how `foil mail wait --wake` reaches a joined lead's session from outside it. Only `codex` has one: `codex queue --thread {session_id} --message {text} --resume`, unverified. `joined.py` reads it with `load_preset(..., global_only=True)`, so a project harness file, which the joined lead's file tools may write, cannot change what runs, and it runs the argv without a shell.
+A preset's optional `wake` argv is how `foil mail wait --wake` reaches a joined lead's session from outside it. Only `codex` has one: `codex queue --thread {session_id} --message {text} --resume`, unverified. `joined.py` reads it with `load_preset(..., global_only=True)`, so a project harness file cannot change what runs, even where a joined lead's file tools could write it, and it runs the argv without a shell.
 
 An explicit id stays unambiguous when seats share a working directory. `--continue` and `--last` mean the latest session for this directory, so Foil refuses that native resume for a seat with no worktree and starts it fresh in the project directory. Trust is path-keyed too. A seat worktree lives in the store, outside the repository, so it does not inherit the repository's trust. Each seat label needs folder trust once per harness.
 

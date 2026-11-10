@@ -249,7 +249,7 @@ def load_preset(toplevel: Path, harness_id: str, *, global_only: bool = False) -
         raise FoilError(f"foil: unknown harness '{shown(harness_id)}'")
     # File beats list inside one layer. A higher list beats a lower file.
     # The init check and the wake command read the global layer and the package, not a
-    # project file: a joined lead's file tools may write the project folder.
+    # project file, so a file in the project folder cannot change what runs.
     layers = (store_root(),) if global_only or _init_check.get() else _layer_dirs(toplevel)
     for base in reversed(layers):
         found = _preset_on(base, harness_id)

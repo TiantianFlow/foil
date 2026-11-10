@@ -20,6 +20,7 @@ from tests.e2e.test_scenarios import (
     _live_failure_panes,
     _prepare,
     _set_auto,
+    _status,
     _wait,
 )
 
@@ -39,7 +40,13 @@ _TASK_1 = (
     "Spawn implementer-1 to run sh fix.sh, then reviewer-1 to run sh review.sh. "
     "Merge foil/implementer-1 and write board/status.md containing the line state: done."
 )
-_TASK_4 = (
+_TASK_4A = (
+    "ask the human. Follow TASK.md. "
+    "Write board/status.md listing the question: Which color should the status use? "
+    "Then run foil send user with one line that says the question is in board/status.md. "
+    "After mail that says use blue, write board/status.md containing the line: The answer is blue."
+)
+_TASK_4B = (
     "pick a color. Follow TASK.md. Write board/results/t1.md containing the line "
     "The color is blue. Then run foil send lead with one line that says the result is ready."
 )
@@ -117,18 +124,48 @@ def test_scenario_3_live(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
         _close(repo)
 
 
-def test_scenario_4_live(
+def test_scenario_4a_live(
     tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     for variable in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "GROK_SESSION_ID"):
         monkeypatch.delenv(variable, raising=False)
-    repo = _prepare(tmp_path, "scenario-4", monkeypatch, fake=False)
+    repo = _prepare(tmp_path, "scenario-4a", monkeypatch, fake=False)
+    _set_auto(repo)
+    try:
+        with _live_failure_panes(repo):
+            assert main(["seat", "spawn", "lead", "--task", _TASK_4A]) == 0
+            capsys.readouterr()
+            assert main(["mail", "wait", "--timeout", str(int(_TIMEOUT))]) == 0
+            assert " lead " in capsys.readouterr().out
+            assert "Which color" in _status(repo)
+            assert main(["send", "lead", "use blue"]) == 0
+            _wait(repo, lambda: "The answer is blue." in _status(repo), _TIMEOUT)
+            window = load_registry(repo)["seats"]["lead"]["window_id"]
+            captured = subprocess.run(
+                ["tmux", "capture-pane", "-p", "-t", window, "-S", "-40"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            capsys.readouterr()
+            assert main(["seat", "peek", "lead"]) == 0
+            assert capsys.readouterr().out == captured.stdout
+    finally:
+        _close(repo)
+
+
+def test_scenario_4b_live(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for variable in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "GROK_SESSION_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    repo = _prepare(tmp_path, "scenario-4b", monkeypatch, fake=False)
     _set_auto(repo)
     board = foil_root(repo) / "fleets" / "main" / "board"
     try:
         with _live_failure_panes(repo):
             assert main(["seat", "join", "lead"]) == 0
-            assert main(["seat", "spawn", "implementer", "--task", _TASK_4]) == 0
+            assert main(["seat", "spawn", "implementer", "--task", _TASK_4B]) == 0
             capsys.readouterr()
             assert main(["mail", "wait", "--timeout", str(int(_TIMEOUT))]) == 0
             assert " implementer-1 " in capsys.readouterr().out

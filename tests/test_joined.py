@@ -398,11 +398,13 @@ def test_other_commands_end_with_the_new_items_line(
     assert capsys.readouterr().err == ""
 
 
-def test_the_brief_names_the_project_folder_and_the_recorded_codex_session(
+def test_the_brief_names_the_board_and_the_recorded_codex_session(
     repo: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     brief = _join(repo, capsys, "--harness", "codex", "--session", "t-9")
-    assert f"Project folder: {foil_root(repo).resolve()}." in brief
+    assert f"Board: {_board(repo).resolve()}. Before your first spawn" in brief
+    assert "Project folder" not in brief
+    assert "allow that folder alone" in brief
     assert "Run `foil mail wait --wake` in a background terminal." in brief
     assert "--timeout 0` and act on it, then re-arm" in brief
     brief = _join(repo, capsys, "--take", "--harness", "codex", "--session", "")
