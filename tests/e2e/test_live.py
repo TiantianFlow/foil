@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
 
+from foil import __version__
 from foil.cli import main
 from foil.project import foil_root
 from foil.store import load_registry
@@ -48,7 +50,8 @@ _TASK_4A = (
 )
 _TASK_4B = (
     "pick a color. Follow TASK.md. Write board/results/t1.md containing the line "
-    "The color is blue. Then run foil send lead with one line that says the result is ready."
+    "The color is blue. Then run foil send lead with one line that says the result is ready "
+    "and includes the output of foil --version."
 )
 _TASK_5 = (
     "staff a worker. Follow TASK.md. "
@@ -164,13 +167,24 @@ def test_scenario_4b_live(
     board = foil_root(repo) / "fleets" / "main" / "board"
     try:
         with _live_failure_panes(repo):
+            monkeypatch.setattr("foil.joined.DEAD_EVERY", 0)
             assert main(["seat", "join", "lead"]) == 0
             assert main(["seat", "spawn", "implementer", "--task", _TASK_4B]) == 0
             capsys.readouterr()
             assert main(["mail", "wait", "--timeout", str(int(_TIMEOUT))]) == 0
-            assert " implementer-1 " in capsys.readouterr().out
+            waited = capsys.readouterr().out
+            assert " implementer-1 " in waited
+            mailed = Path(waited.splitlines()[-1].split()[-1]).read_text(encoding="utf-8")
+            assert f"foil {__version__}" in mailed
             result = board / "results" / "t1.md"
             assert "The color is blue." in result.read_text(encoding="utf-8")
+            assert main(["mail", "wait", "--timeout", "0"]) == 0
+            capsys.readouterr()
+            window = load_registry(repo)["seats"]["implementer-1"]["window_id"]
+            subprocess.run(["tmux", "kill-window", "-t", window], check=True)
+            assert main(["mail", "wait", "--timeout", "30"]) == 0
+            died = capsys.readouterr().out.splitlines()
+            assert len(died) == 1 and " foil " in died[0]
             (board / "handoffs").mkdir(parents=True, exist_ok=True)
             (board / "handoffs" / "lead.md").write_text("t1 is done.\n", encoding="utf-8")
             assert main(["seat", "leave"]) == 0

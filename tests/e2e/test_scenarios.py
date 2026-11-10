@@ -368,6 +368,8 @@ def test_scenario_4b_joined_lead_waits_for_a_worker_and_hands_off(
     board = foil_root(repo) / "fleets" / "main" / "board"
     try:
         _scripts(repo, "scenario-4b", {"implementer-1": "implementer.json"})
+        # Every wait checks seats, so a live worker reported dead fails the first wait.
+        monkeypatch.setattr("foil.joined.DEAD_EVERY", 0)
         capsys.readouterr()
         assert main(["seat", "join", "lead"]) == 0
         brief = capsys.readouterr().out
@@ -391,7 +393,6 @@ def test_scenario_4b_joined_lead_waits_for_a_worker_and_hands_off(
 
         window = load_registry(repo)["seats"]["implementer-1"]["window_id"]
         subprocess.run(["tmux", "kill-window", "-t", window], check=True)
-        monkeypatch.setattr("foil.joined.DEAD_EVERY", 0)
         assert main(["mail", "wait", "--timeout", "30"]) == 0
         died = capsys.readouterr().out.splitlines()
         assert len(died) == 1 and " foil " in died[0]
