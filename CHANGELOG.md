@@ -4,6 +4,18 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-11
+
+`foil --version` prints 0.7.0.
+
+### Known limitations
+
+- This release did not run the live e2e tier against any harness CLI. Built-in presets other than `fake` are marked unverified, and `docs/live-runs.md` has no rows. A wrong `start` or `turn` flag exits 127, and after three failed turns the seat is `paused`.
+- If a seat's first turn hits `turn_timeout` before a session exists, the runner retries immediately, with no backoff, and does not pause. The default timeout is four hours; a role may set it as low as one second.
+- A failed spawn can leave its worktree and branch behind. (#98)
+- Packaged Python is 9380 lines, above the N4 2500-line target.
+- A mid-goal upgrade from 0.6.x is not supported: the runner, plans, and presets differ. Kill every seat with the old `foil` (`foil seat kill --all`) before replacing the command on `PATH`. Then install 0.7.0, run `foil init`, and `foil seat join lead`. Do not resume a 0.6.x seat.
+
 ### Breaking
 
 - **The operator is gone. Your own agent joins the fleet as its lead.** `foil seat join lead` makes the calling session the `lead` seat, with no window, and prints a short brief that names its instruction file and the fleet's board folder, the only folder in the store its file tools may write without a prompt. That file holds the lead skill in its joined form, without the launched lead's paragraphs, and the `joined` skill without its setup sections. The joined lead re-reads it after its harness compacts the conversation, not on every wake. The `operator` skill, its `Skill:` line in the `init` report, and the relay between you, an operator, and a launched lead are removed. The `init` pointer line is now `Run foil seat join lead, then read the file it names. My goal: <goal>.` A lead Foil launches in tmux still works, for running without an agent session. (#92)
@@ -502,6 +514,7 @@ with mail and status kept in files on disk.
   CLI's own session, then a fresh start), plus `doctor`, `dispatch`,
   `set-state`, and `catalog-list`/`catalog-map` for local persona files.
 
+[0.7.0]: https://github.com/TiantianFlow/foil/releases/tag/v0.7.0
 [0.6.3]: https://github.com/TiantianFlow/foil/releases/tag/v0.6.3
 [0.6.2]: https://github.com/TiantianFlow/foil/releases/tag/v0.6.2
 [0.6.1]: https://github.com/TiantianFlow/foil/releases/tag/v0.6.1
