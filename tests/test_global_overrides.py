@@ -99,6 +99,28 @@ def test_an_unsafe_fleet_id_is_refused(
     assert capsys.readouterr().err == "foil: invalid fleet '../side'\n"
 
 
+def test_fleet_ids_with_dots_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """F20: fleet ids must be unique tmux suffixes and valid goal-branch names."""
+    _repo(tmp_path, monkeypatch)
+    for fleet in ("a.b", "a..b", "a.lock"):
+        monkeypatch.setenv("FOIL_FLEET", fleet)
+        assert main(["seat", "list"]) == 1
+        assert capsys.readouterr().err == f"foil: invalid fleet '{fleet}'\n"
+    monkeypatch.delenv("FOIL_FLEET", raising=False)
+
+
+def test_distinct_fleet_ids_keep_distinct_tmux_sessions(tmp_path: Path) -> None:
+    from foil.lifecycle import _session_name
+
+    repo = tmp_path / "project"
+    repo.mkdir()
+    assert _session_name(repo, "a-b") != _session_name(repo, "a_b")
+    assert _session_name(repo, "a-b").endswith("-a-b")
+    assert _session_name(repo, "main") == _session_name(repo)
+
+
 def test_resume_keeps_the_recorded_model_when_fleet_memory_changes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

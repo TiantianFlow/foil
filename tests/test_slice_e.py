@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 from pathlib import Path
@@ -577,3 +578,53 @@ def test_two_renews_take_distinct_harness_entries(
     seats = load_registry(repo)["seats"]
     assert seats["w1"]["model"] != seats["w2"]["model"]
     assert {seats["w1"]["model"], seats["w2"]["model"]} <= {"a", "b", "c"}
+
+
+def test_resume_after_a_partial_renew_starts_the_new_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F44/F9: a crash after renew's registry write cannot resume the old session."""
+    import foil.lifecycle as life
+    from foil.lifecycle import renew_seat
+    from foil.runner import empty_record, load_record, save_record
+    from tests.test_spawn import _add_role, _set_entries
+
+    repo = _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    _add_role(repo, "worker", "claude")
+    _set_entries(repo, "worker", [("claude", "old"), ("gemini", "new")])
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "worker", "--name", "worker"]) == 0
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    (board / "handoffs").mkdir(parents=True, exist_ok=True)
+    (board / "handoffs" / "worker.md").write_text("hand off\n", encoding="utf-8")
+    before = dict(load_registry(repo)["seats"]["worker"])
+    old = empty_record()
+    old["session_id"] = before["session_id"]
+    old["started"] = True
+    old["last_exit"] = 0
+    save_record(board, "worker", old)
+
+    real_write = life._write_instruction
+
+    def crash(*args: object, **kwargs: object) -> None:
+        monkeypatch.setattr(life, "_write_instruction", real_write)
+        raise RuntimeError("crash after turns reset")
+
+    # Alive or dead renew both reset turns before plan/instruction; crash either path.
+    monkeypatch.setattr(life, "_write_instruction", crash)
+    with contextlib.suppress(RuntimeError):
+        renew_seat(repo, "worker")
+    seat = load_registry(repo)["seats"]["worker"]
+    turns = load_record(board, "worker")
+    assert (seat["harness"], seat["model"]) == ("gemini", "new")
+    assert seat["session_id"] and seat["session_id"] != before["session_id"]
+    assert turns["session_id"] == seat["session_id"] and turns["started"] is False
+
+    _alive(monkeypatch, set())
+    calls.clear()
+    assert main(["seat", "resume", "worker"]) == 0
+    plan = _plan_of(repo, "worker")
+    assert plan["first"] == "start"
+    assert plan["session_id"] == load_registry(repo)["seats"]["worker"]["session_id"]
+    assert plan["start"][0] == "gemini"

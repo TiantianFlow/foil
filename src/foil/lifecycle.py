@@ -412,8 +412,8 @@ def _session_name(toplevel: Path, fleet: str | None = None) -> str:
     fleet = fleet or fleet_id()
     if fleet == "main":
         return base
-    extra = re.sub(r"[^A-Za-z0-9]+", "-", fleet).strip("-")[:32] or "fleet"
-    return f"{base}-{extra}"
+    # Raw fleet id, so a-b and a_b stay distinct (F20).
+    return f"{base}-{fleet}"
 
 
 _LEAD_COMMANDS = """foil seat spawn TEMPLATE [--name NAME] [--task TEXT]
@@ -1167,14 +1167,33 @@ def _restart(root: Path, registry: dict, name: str) -> None:
     record = dict(registry["seats"][name])
     preset = load_preset(root, record["harness"])
     turns = load_record(_board(root), name)
-    # The runner learns an output preset's id; the registry has a generated one.
-    record["session_id"] = turns["session_id"] or record["session_id"]
-    started = bool(record["session_id"]) and turns["started"]
-    # A start that never finished may have half-made its generated session.
+    reserved = record.get("session_id") or ""
+    turns_id = turns["session_id"] or ""
+    # F9: turn only when started and the id still matches the seat (or the seat has none).
+    if turns["started"] and (not reserved or not turns_id or reserved == turns_id):
+        record["session_id"] = turns_id or reserved
+        started = bool(record["session_id"])
+    elif reserved and turns_id and reserved != turns_id:
+        # Renew moved the seat before the runner adopted it; start on the new id.
+        record["session_id"] = reserved
+        started = False
+    else:
+        # Output presets learn their id in turns; generated spawns may still be unused.
+        record["session_id"] = turns_id or reserved
+        started = False
     if not started and preset["session_id"] == "generated":
-        record["session_id"] = str(uuid.uuid4())
+        if reserved and turns_id == reserved:
+            # F44 already reset turns onto this unused generated id.
+            record["session_id"] = reserved
+        elif reserved and turns_id and reserved != turns_id:
+            record["session_id"] = reserved
+        else:
+            # A start that never finished may have half-made its generated session.
+            record["session_id"] = str(uuid.uuid4())
     first = "turn" if started else "start"
-    turns.update({"turn_started": None, "paused": False, "failures": 0, "pgid": 0})
+    turns.update(
+        {"turn_started": None, "paused": False, "failures": 0, "pgid": 0, "started": started}
+    )
     turns["session_id"] = record["session_id"]
     branch = record.get("branch", "") if name == "lead" else ""
     _relaunch(
@@ -1291,10 +1310,13 @@ def renew_seat(root: Path, name: str) -> None:
         print(warning, file=sys.stderr)
     present = _present(root, name)
     branch = record.get("branch", "") if name == "lead" else ""
+    turns = load_record(_board(root), name)
+    fresh = empty_record()
+    fresh["delivered"] = sorted({*turns["delivered"], *turns["inflight"], *present})
+    fresh["session_id"] = str(reserved["session_id"])
+    # Before plan/.renew/relaunch, so a crash cannot resume the new harness on the old session.
+    save_record(_board(root), name, fresh)
     if state == "dead":
-        turns = load_record(_board(root), name)
-        fresh = empty_record()
-        fresh["delivered"] = sorted({*turns["delivered"], *turns["inflight"], *present})
         _relaunch(
             root, registry, name, record, preset, fresh,
             first="start", restarted=False, handoff=handoff, branch=branch,

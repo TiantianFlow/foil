@@ -32,6 +32,8 @@ SEAT_FIELDS = (
     "session_id",
 )
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+# Fleet ids also name tmux suffixes and git branches: no '.' (F20).
+FLEET_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
 RESERVED = ("user", "foil")
 
 
@@ -78,7 +80,7 @@ def fleet_id() -> str:
     """The fleet these commands talk to. Unset means ``main``."""
 
     raw = os.environ.get("FOIL_FLEET", "").strip() or "main"
-    if not SAFE_ID.fullmatch(raw):
+    if not FLEET_ID.fullmatch(raw):
         raise FoilError(f"foil: invalid fleet '{shown(raw)}'")
     return raw
 
@@ -92,7 +94,7 @@ def fleet_ids(toplevel: Path) -> list[str]:
     return sorted(
         path.name
         for path in directory.iterdir()
-        if SAFE_ID.fullmatch(path.name)
+        if FLEET_ID.fullmatch(path.name)
         and not path.is_symlink()
         and (path / "run" / "registry.json").is_file()
     )
