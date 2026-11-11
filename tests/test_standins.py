@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from foil.presets import expand_argv, load_preset
-from tests.harness.standin import NAMES, Flag, Refused, options, parse
+from tests.harness.standin import NAMES, Flag, Refused, options, parse, queued
 
 SESSION = "6f1f2a0e-3f0b-4c57-9d53-0c7d7c1f5a11"
 PROMPT = "Written by foil.\nYou are seat `lead`.\nRe-read `/x/run/instructions/lead.md`.\n"
@@ -131,3 +131,30 @@ def test_options_reads_attached_optional_and_repeated_values() -> None:
     )
     assert found == {"--one": ["a"], "--maybe": ["d"], "--many": ["b", "c"]}
     assert words == ["word", "-"]
+
+
+def test_a_packaged_wake_command_queues_a_message_for_the_session(tmp_path: Path) -> None:
+    woken = {name for name in NAMES if load_preset(tmp_path, name).get("wake")}
+    # Every preset with a wake needs a stand-in that reads it. Today that is codex.
+    assert woken == {"codex"}
+    values = {"{session_id}": "thread-1", "{text}": "foil: 1 new: implementer-1 /a/mail.md"}
+    argv = [values.get(token, token) for token in load_preset(tmp_path, "codex")["wake"]]
+    assert argv[:2] == ["codex", "queue"]
+    assert queued(argv[2:]) == {
+        "thread": "thread-1",
+        "message": "foil: 1 new: implementer-1 /a/mail.md",
+    }
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--thread", "t", "--message", "m", "--urgent"],
+        ["--thread", "t"],
+        ["--message", "m", "--resume"],
+        ["--thread", "t", "--message", "m", "extra"],
+    ],
+)
+def test_the_wake_command_refuses_what_it_cannot_read(argv: list[str]) -> None:
+    with pytest.raises(Refused):
+        queued(argv)

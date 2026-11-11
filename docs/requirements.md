@@ -526,13 +526,14 @@ the test plays the human's agent):
 | 13 | Merge conflict: two implementers change the same line. | The seat whose branch came second is asked to resolve it and does; both branches are merged; the tests pass. |
 | 14 | Two fleets: a second fleet chosen by `FOIL_FLEET` runs beside the default one in the same project. | Each seat is told its own fleet and a seat's spawn stays in it; mail, `seat list`, and `seat kill --all` reach the chosen fleet only. |
 | 15 | A scoped room: the lead opens a room with `--members`, adds a member, and closes it. | Each post wakes exactly the seats section 6 says; a decline wakes nobody; a reply to the closed room is refused and writes no file. |
+| 16 | Joined lead on real code: the human's agent, a process of its own, joins as the lead with a harness that has a wake command, spawns an implementer and a reviewer, leaves `foil mail wait --wake` running in the background each time, merges the reviewed branch into the human's checkout, writes a handoff, and leaves; a lead is then launched from the handoff. | Each wait ends by itself and prints the new mail; the wake command ran once per wait with the joined session and each item's sender and path; a command run before `foil mail wait --timeout 0` ends with the new-items line; the tests pass in the human's checkout; after the leave, the launched lead's mail comes back from a wait on the human's mailbox. |
 
 **Around the scenarios:**
 
 - A mocked seat runs the Foil under test. The scenarios put a `foil` command for the checkout first on the seats' `PATH`, so an installed Foil is never the one a seat runs.
-- Each packaged CLI preset has a stand-in that reads the command line as that CLI does and refuses what it would refuse: an unknown flag, a value a flag does not take, a prompt taken as a flag's value, a resume with nothing to resume. Past its command line, a stand-in behaves as the fake does.
+- Each packaged CLI preset has a stand-in that reads the command line as that CLI does and refuses what it would refuse: an unknown flag, a value a flag does not take, a prompt taken as a flag's value, a resume with nothing to resume. Past its command line, a stand-in behaves as the fake does. The stand-in for a CLI whose preset has a wake command reads that command the same way and keeps what it was given.
 - A caller outside the fleet is played by a scripted process with no seat identity where a scenario depends on that: it runs `foil` commands, some in the background, and the scenario asserts on its transcript.
-- Every command an instruction file names is run as the seat that file was written for, a launched lead and a worker. Each must be a command the parser takes and that caller may run, and each one the file says is refused must be refused.
+- Every command an instruction file names is run as the seat that file was written for: a launched lead, a worker, and a joined lead. Each must be a command the parser takes and that caller may run, and each one the file says is refused must be refused.
 - A wait that times out shows every fleet's seat list, every pane that is left, and every double's log. A wait ends at once when a seat dies that the scenario did not expect to die.
 
 **Standing checks:** the command surface matches section 6 exactly; the

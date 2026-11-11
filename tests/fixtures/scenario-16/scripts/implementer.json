@@ -1,0 +1,15 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "fix the failing test"},
+      "do": [
+        {"wait": 0.5},
+        {"sh": "python3 -c 'from pathlib import Path; p = Path(\"calc.py\"); p.write_text(p.read_text().replace(\"left - right\", \"left + right\"))'"},
+        {"sh": "git add calc.py && git commit --quiet -m 'add adds'"},
+        {"send": "lead", "text": "fixed on foil/implementer-1"},
+        {"wait": 0.5},
+        {"send": "lead", "text": "the change is one line in calc.py"}
+      ]
+    }
+  ]
+}

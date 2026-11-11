@@ -273,6 +273,35 @@ def grok(argv: list[str], environment: dict[str, str]) -> Launch:
     return Launch(_prompt(words, needed=True), _one(found, "--session-id"), "", facts)
 
 
+def queued(argv: list[str]) -> dict[str, str]:
+    """`codex queue --thread ID --message TEXT [--resume]`: a message for a session."""
+
+    found, words = options(
+        argv, {"--thread": Flag("one"), "--message": Flag("one"), "--resume": Flag()}
+    )
+    if words:
+        raise Refused(f"unexpected argument '{words[0]}'")
+    thread, message = _one(found, "--thread"), _one(found, "--message")
+    if not thread or not message:
+        raise Refused("queue needs --thread and --message")
+    return {"thread": thread, "message": message}
+
+
+def _queue(argv: list[str]) -> int:
+    """Take a wake. `STANDIN_WAKES` names the file that keeps what was queued."""
+
+    try:
+        taken = queued(argv)
+    except Refused as exc:
+        print(f"codex: {exc}", file=sys.stderr)
+        return 2
+    kept = os.environ.get("STANDIN_WAKES", "")
+    if kept:
+        with Path(kept).open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(taken) + "\n")
+    return 0
+
+
 GRAMMARS = {"claude": claude, "codex": codex, "gemini": gemini, "opencode": opencode, "grok": grok}
 
 
@@ -295,6 +324,8 @@ def main() -> int:
     if sys.argv[1:] == ["--version"]:
         print(f"{name} {VERSION}")
         return 0
+    if name == "codex" and sys.argv[1:2] == ["queue"]:
+        return _queue(sys.argv[2:])
     seat = foil_fake.seat_id(name)
     try:
         launch = parse(name, sys.argv[1:])
