@@ -1,4 +1,4 @@
-"""Scenarios 11 and 12, and a startup dialog: seats that crash, hang, or wait.
+"""Scenarios 10 and 11, and a startup dialog: seats that crash, hang, or wait.
 
 The repository is scenario 1's: one failing test that one line fixes.
 """
@@ -28,12 +28,12 @@ def _running(pid: int) -> bool:
     return True
 
 
-def test_scenario_11_a_seat_that_crashed_mid_task_is_resumed_with_its_session(
+def test_scenario_10_a_seat_that_crashed_mid_task_is_resumed_with_its_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _prepare(tmp_path, "scenario-1", monkeypatch)
     try:
-        scripts(repo, "scenario-11", {"lead": "lead.json", "implementer-1": "implementer.json"})
+        scripts(repo, "scenario-10", {"lead": "lead.json", "implementer-1": "implementer.json"})
         assert main(["seat", "spawn", "lead", "--task", "make the tests pass"]) == 0
         wait(
             repo,
@@ -64,12 +64,12 @@ def test_scenario_11_a_seat_that_crashed_mid_task_is_resumed_with_its_session(
         close(repo)
 
 
-def test_scenario_12_a_worker_that_hangs_in_silence_is_replaced(
+def test_scenario_11_a_worker_that_hangs_in_silence_is_replaced(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _prepare(tmp_path, "scenario-1", monkeypatch)
     try:
-        scripts(repo, "scenario-12", {"lead": "lead.json", "implementer-1": "implementer.json"})
+        scripts(repo, "scenario-11", {"lead": "lead.json", "implementer-1": "implementer.json"})
         assert main(["seat", "spawn", "lead", "--task", "make the tests pass"]) == 0
         question = board(repo) / "mail" / "user"
         wait(repo, lambda: list(question.glob("*.md")), timeout=30, what="the lead's question")

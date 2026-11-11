@@ -1,4 +1,4 @@
-"""Scenario 10: each packaged preset launches and resumes a stand-in for its CLI.
+"""Scenario 9: each packaged preset launches and resumes a stand-in for its CLI.
 
 The other scenarios point every role at the fake. Here the roster keeps a
 real harness id, so the launch runs that preset's argv, its permission
@@ -35,20 +35,20 @@ AFTER_RESUME = {
 
 
 @pytest.mark.parametrize("harness", standin.NAMES)
-def test_scenario_10_a_real_preset_launches_and_resumes_its_cli(
+def test_scenario_9_a_real_preset_launches_and_resumes_its_cli(
     harness: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     clis = tmp_path / "clis"
     standin.install(clis)
     monkeypatch.setenv("PATH", os.pathsep.join((str(clis), os.environ["PATH"])))
     monkeypatch.delenv("FOIL_E2E_HARNESS", raising=False)
-    repo = _prepare(tmp_path, "scenario-10", monkeypatch, fake=False)
+    repo = _prepare(tmp_path, "scenario-9", monkeypatch, fake=False)
     model = load_preset(repo, harness)["models"][0]
     try:
         for role in ("lead", "implementer"):
             assert main(["roster", "update", role, f"harness={harness}/{model}"]) == 0
         assert main(["roster", "update", "implementer", "permission=ask"]) == 0
-        scripts(repo, "scenario-10", {"lead": "lead.json", "implementer-1": "implementer.json"})
+        scripts(repo, "scenario-9", {"lead": "lead.json", "implementer-1": "implementer.json"})
         assert main(["seat", "spawn", "lead", "--task", "staff one worker"]) == 0
         wait(repo, lambda: "state: done" in _status(repo), what="the worker's report")
         wait(

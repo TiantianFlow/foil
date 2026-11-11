@@ -1,34 +1,59 @@
 {
   "steps": [
     {
-      "when": {"mail_contains": "make the tests pass"},
+      "when": {
+        "mail_contains": "make the tests pass"
+      },
       "do": [
-        {"sh": "foil seat spawn implementer --task 'fix the failing test'"}
+        {
+          "sh": "foil seat spawn implementer --task 'fix the failing test'"
+        }
       ]
     },
     {
-      "when": {"quiet_for": 2},
+      "when": {
+        "mail_contains": "fixed on foil/implementer-1"
+      },
       "do": [
-        {"sh": "foil seat peek implementer-1 > \"$FAKE_BOARD/notes/peek.txt\""},
+        {
+          "sh": "foil seat spawn reviewer --task 'review the fix'"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "rejected"
+      },
+      "do": [
+        {
+          "send": "implementer-1",
+          "text": "rework: the review rejected it, see board/results/review.md"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "reworked on foil/implementer-1"
+      },
+      "do": [
+        {
+          "send": "reviewer-1",
+          "text": "review again"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "approved"
+      },
+      "do": [
+        {
+          "sh": "git merge --no-edit -m 'merge the fix' foil/implementer-1"
+        },
         {
           "write": "board/status.md",
-          "text": "---\ncontract: status/v1\nstate: blocked\nupdated: 2026-11-10T00:00:01Z\nquestions:\n  - implementer-1 has sent nothing and its pane shows no work. Replace it?\n---\n\nWaiting for the human.\n"
-        },
-        {"send": "user", "text": "question in board/status.md: implementer-1 is silent"}
-      ]
-    },
-    {
-      "when": {"mail_contains": "replace it"},
-      "do": [
-        {"sh": "foil seat kill implementer-1 && foil seat archive implementer-1"},
-        {"sh": "foil seat spawn implementer --name implementer-1 --task 'take over the fix'"}
-      ]
-    },
-    {
-      "when": {"mail_contains": "fixed on foil/"},
-      "do": [
-        {"sh": "git merge --no-edit -m 'merge the fix' \"$(sed -n 's/^fixed on //p' \"$FAKE_MAIL\")\""},
-        {"write": "board/status.md", "text": "---\ncontract: status/v1\nstate: done\nupdated: 2026-11-10T00:00:02Z\nquestions: []\n---\n\nThe tests pass.\n"}
+          "text": "---\ncontract: status/v1\nstate: done\nupdated: 2026-11-10T00:00:03Z\nquestions: []\n---\n\nThe tests pass.\n"
+        }
       ]
     }
   ]

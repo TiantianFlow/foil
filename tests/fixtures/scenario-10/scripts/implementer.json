@@ -1,16 +1,17 @@
 {
   "steps": [
     {
-      "when": {"mail_contains": "report in"},
+      "when": {"mail_contains": "fix the failing test", "launch": "first"},
       "do": [
-        {"sh": "git commit --quiet --allow-empty -m 'report in'"},
-        {"send": "lead", "text": "reporting in"}
+        {"sh": "python3 -c 'from pathlib import Path; p = Path(\"calc.py\"); p.write_text(p.read_text().replace(\"left - right\", \"left + right\"))'"},
+        {"exit": 3}
       ]
     },
     {
-      "when": {"mail_contains": "still there"},
+      "when": {"mail_contains": "fix the failing test", "launch": "resume"},
       "do": [
-        {"sh": "echo \"$FAKE_LAUNCH\" > \"$FAKE_BOARD/notes/$FOIL_SEAT_ID-after.txt\""}
+        {"sh": "git add calc.py && git commit --quiet -m 'fix add'"},
+        {"send": "lead", "text": "fixed on foil/implementer-1"}
       ]
     }
   ]

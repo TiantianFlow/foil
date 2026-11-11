@@ -1,3 +1,3 @@
 # Scenario 15
 
-One project, two fleets. A committed file lets each fleet's implementer get a worktree.
+The lead opens a room for one worker, adds a second, and closes it. A committed file lets the implementer get a worktree.

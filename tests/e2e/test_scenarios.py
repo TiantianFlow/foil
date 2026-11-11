@@ -317,39 +317,6 @@ def test_restart_peek_and_nudge_stay_on_the_same_seat(
         _close(repo)
 
 
-def test_scenario_4a_launched_lead_asks_the_human(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    for variable in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "GROK_SESSION_ID"):
-        monkeypatch.delenv(variable, raising=False)
-    repo = _prepare(tmp_path, "scenario-4a", monkeypatch)
-    board = foil_root(repo) / "fleets" / "main" / "board"
-    try:
-        _scripts(repo, "scenario-4a", {"lead": "lead.json"})
-        assert main(["seat", "spawn", "lead", "--task", "ask the human"]) == 0
-        capsys.readouterr()
-        assert main(["mail", "wait", "--timeout", "90"]) == 0
-        waited = capsys.readouterr().out
-        assert " lead " in waited
-        assert str((board / "mail" / "user").resolve()) in waited
-        assert "Which color" in _status(repo)
-        assert main(["send", "lead", "use blue"]) == 0
-        _wait(repo, lambda: "The answer is blue." in _status(repo))
-        window = load_registry(repo)["seats"]["lead"]["window_id"]
-        captured = subprocess.run(
-            ["tmux", "capture-pane", "-p", "-t", window, "-S", "-40"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        capsys.readouterr()
-        assert main(["seat", "peek", "lead"]) == 0
-        assert capsys.readouterr().out == captured.stdout
-        assert "foil-fake lead ready" in captured.stdout
-    finally:
-        _close(repo)
-
-
 def test_scenario_4b_joined_lead_waits_for_a_worker_and_hands_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

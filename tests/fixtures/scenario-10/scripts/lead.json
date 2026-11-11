@@ -1,21 +1,16 @@
 {
   "steps": [
     {
-      "when": {"mail_contains": "staff one worker"},
+      "when": {"mail_contains": "make the tests pass"},
       "do": [
-        {"sh": "foil seat spawn implementer --task 'report in'"}
+        {"sh": "foil seat spawn implementer --task 'fix the failing test'"}
       ]
     },
     {
-      "when": {"mail_contains": "reporting in"},
+      "when": {"mail_contains": "fixed on foil/implementer-1"},
       "do": [
-        {"write": "board/status.md", "text": "---\ncontract: status/v1\nstate: done\nupdated: 2026-11-10T00:00:00Z\nquestions: []\n---\n\nThe worker reported in.\n"}
-      ]
-    },
-    {
-      "when": {"mail_contains": "still there"},
-      "do": [
-        {"sh": "echo \"$FAKE_LAUNCH\" > \"$FAKE_BOARD/notes/$FOIL_SEAT_ID-after.txt\""}
+        {"sh": "git merge --no-edit -m 'merge the fix' foil/implementer-1"},
+        {"write": "board/status.md", "text": "---\ncontract: status/v1\nstate: done\nupdated: 2026-11-10T00:00:02Z\nquestions: []\n---\n\nThe tests pass.\n"}
       ]
     }
   ]

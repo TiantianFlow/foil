@@ -2,57 +2,27 @@
   "steps": [
     {
       "when": {
-        "mail_contains": "make the tests pass"
+        "mail_contains": "two changes to add"
       },
       "do": [
         {
-          "sh": "foil seat spawn implementer --task 'fix the failing test'"
-        }
-      ]
-    },
-    {
-      "when": {
-        "mail_contains": "fixed on foil/implementer-1"
-      },
-      "do": [
-        {
-          "sh": "foil seat spawn reviewer --task 'review the fix'"
-        }
-      ]
-    },
-    {
-      "when": {
-        "mail_contains": "rejected"
-      },
-      "do": [
-        {
-          "send": "implementer-1",
-          "text": "rework: the review rejected it, see board/results/review.md"
-        }
-      ]
-    },
-    {
-      "when": {
-        "mail_contains": "reworked on foil/implementer-1"
-      },
-      "do": [
-        {
-          "send": "reviewer-1",
-          "text": "review again"
-        }
-      ]
-    },
-    {
-      "when": {
-        "mail_contains": "approved"
-      },
-      "do": [
-        {
-          "sh": "git merge --no-edit -m 'merge the fix' foil/implementer-1"
+          "sh": "foil seat spawn implementer --task 'make add right'"
         },
         {
-          "write": "board/status.md",
-          "text": "---\ncontract: status/v1\nstate: done\nupdated: 2026-11-10T00:00:03Z\nquestions: []\n---\n\nThe tests pass.\n"
+          "sh": "foil seat spawn implementer --task 'name the arguments a and b'"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": " on foil/implementer-"
+      },
+      "do": [
+        {
+          "sh": "branch=$(sed -n 's/^.* on //p' \"$FAKE_MAIL\"); if git merge --no-edit -m \"merge $branch\" \"$branch\"; then echo \"$branch\" >> \"$FAKE_BOARD/notes/merged.txt\"; else git merge --abort; foil send \"${branch#foil/}\" \"conflict: merge $(git branch --show-current) into your branch\"; fi"
+        },
+        {
+          "sh": "if [ \"$(wc -l < \"$FAKE_BOARD/notes/merged.txt\")\" -eq 2 ]; then printf '%s\\n' '---' 'contract: status/v1' 'state: done' 'updated: 2026-11-10T00:00:04Z' 'questions: []' '---' '' 'Both branches are merged.' > \"$FAKE_BOARD/status.md\"; fi"
         }
       ]
     }

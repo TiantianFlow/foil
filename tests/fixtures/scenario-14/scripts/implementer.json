@@ -1,0 +1,17 @@
+{
+  "steps": [
+    {
+      "when": {
+        "mail_contains": "say where you are"
+      },
+      "do": [
+        {
+          "sh": "echo \"$FOIL_FLEET\" > \"$FAKE_BOARD/notes/$FOIL_SEAT_ID.txt\""
+        },
+        {
+          "sh": "pwd > \"$FAKE_BOARD/notes/$FOIL_SEAT_ID-cwd.txt\""
+        }
+      ]
+    }
+  ]
+}

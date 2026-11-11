@@ -2,24 +2,34 @@
   "steps": [
     {
       "when": {
-        "mail_contains": "staff the fleet"
+        "mail_contains": "settle the format"
       },
       "do": [
         {
-          "sh": "echo \"$FOIL_FLEET\" > \"$FAKE_BOARD/notes/$FOIL_SEAT_ID.txt\""
+          "sh": "foil seat spawn implementer && foil seat spawn reviewer"
         },
         {
-          "sh": "foil seat spawn implementer --task 'say where you are'"
+          "sh": "foil post --members implementer-1 'Which format do results use?'"
         }
       ]
     },
     {
       "when": {
-        "mail_contains": "only for this fleet"
+        "mail_contains": "results use json"
       },
       "do": [
         {
-          "sh": "echo heard >> \"$FAKE_BOARD/notes/heard.txt\""
+          "sh": "foil post --re \"$FAKE_MAIL\" --members implementer-1,reviewer-1 'reviewer-1 joins to check the choice'"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "nothing to add"
+      },
+      "do": [
+        {
+          "sh": "for d in \"$FAKE_BOARD\"/room/*; do root=\"$d/$(basename \"$d\").md\"; done; foil post --re \"$root\" --close 'Settled: json. @implementer-1 uses it from here.'"
         }
       ]
     }

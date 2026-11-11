@@ -1,4 +1,4 @@
-"""The human's own agent as a real process: scenario 9, and two callers at once."""
+"""The human's own agent as a real process: scenario 4a, and two callers at once."""
 
 from __future__ import annotations
 
@@ -30,31 +30,30 @@ from tests.e2e.test_scenarios import _git, _no_windows, _panes, _prepare, _statu
 pytestmark = pytest.mark.e2e
 
 
-def test_scenario_9_a_launched_lead_asks_the_human(
+def test_scenario_4a_a_launched_lead_asks_the_human(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = _prepare(tmp_path, "scenario-9", monkeypatch)
+    repo = _prepare(tmp_path, "scenario-4a", monkeypatch)
     try:
-        scripts(repo, "scenario-9", {"lead": "lead.json"})
-        steps = json.loads((FIXTURES / "scenario-9" / "scripts" / "human.json").read_text("utf-8"))
+        scripts(repo, "scenario-4a", {"lead": "lead.json"})
+        steps = json.loads((FIXTURES / "scenario-4a" / "scripts" / "human.json").read_text("utf-8"))
         ran = outside_agent(repo, tmp_path, "human", steps["steps"]).finish()
-        printed = [entry["out"] for entry in ran if entry["kind"] == "run"]
+        by_kind = {kind: [e["out"] for e in ran if e["kind"] == kind] for kind in ("run", "await")}
 
+        # The wait ran in the background and ended by itself when the lead's mail came.
+        (waited,) = by_kind["await"]
+        mailbox = str((board(repo) / "mail" / "user").resolve())
+        assert len(waited.splitlines()) == 1 and " lead " in waited and mailbox in waited
         # What the human's agent read, in the order it read it.
-        _spawned, _first, question, blocked, _sent, _later, answer, done, peeked = printed
-        assert question == "question in board/status.md: which color\n"
+        _spawned, question, blocked, _sent, peeked = by_kind["run"]
+        assert question.rstrip().endswith("question in board/status.md")
         assert "state: blocked" in blocked and "Which color should the status use?" in blocked
-        assert answer == "done: the status uses blue\n"
-        assert "state: done" in done and "The answer is blue." in done
 
         # What is on the board afterwards.
         assert "The answer is blue." in _status(repo)
-        assert mail(repo, "user") == [
-            ("lead", "done: the status uses blue"),
-            ("lead", "question in board/status.md: which color"),
-        ]
+        assert mail(repo, "user") == [("lead", "question in board/status.md")]
         # The agent's process had no seat identity, so its mail is the human's.
-        assert mail(repo, "lead") == [("user", "pick a color"), ("user", "use blue")]
+        assert mail(repo, "lead") == [("user", "ask the human"), ("user", "use blue")]
 
         # The peek is the raw pane, and mail to the human was typed into no pane.
         registry = load_registry(repo)
@@ -68,7 +67,6 @@ def test_scenario_9_a_launched_lead_asks_the_human(
         assert peeked == captured.stdout
         assert "foil-fake lead ready" in peeked
         session = str(registry["tmux_session"])
-        mailbox = str((board(repo) / "mail" / "user").resolve())
         assert all(mailbox not in text for text in _panes(session).values())
         assert main(["seat", "kill", "--all"]) == 0
         _no_windows(session)

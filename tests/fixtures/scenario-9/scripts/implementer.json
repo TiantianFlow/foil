@@ -1,0 +1,17 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "report in"},
+      "do": [
+        {"sh": "git commit --quiet --allow-empty -m 'report in'"},
+        {"send": "lead", "text": "reporting in"}
+      ]
+    },
+    {
+      "when": {"mail_contains": "still there"},
+      "do": [
+        {"sh": "echo \"$FAKE_LAUNCH\" > \"$FAKE_BOARD/notes/$FOIL_SEAT_ID-after.txt\""}
+      ]
+    }
+  ]
+}

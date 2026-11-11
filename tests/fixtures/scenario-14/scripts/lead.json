@@ -2,27 +2,24 @@
   "steps": [
     {
       "when": {
-        "mail_contains": "two changes to add"
+        "mail_contains": "staff the fleet"
       },
       "do": [
         {
-          "sh": "foil seat spawn implementer --task 'make add right'"
+          "sh": "echo \"$FOIL_FLEET\" > \"$FAKE_BOARD/notes/$FOIL_SEAT_ID.txt\""
         },
         {
-          "sh": "foil seat spawn implementer --task 'name the arguments a and b'"
+          "sh": "foil seat spawn implementer --task 'say where you are'"
         }
       ]
     },
     {
       "when": {
-        "mail_contains": " on foil/implementer-"
+        "mail_contains": "only for this fleet"
       },
       "do": [
         {
-          "sh": "branch=$(sed -n 's/^.* on //p' \"$FAKE_MAIL\"); if git merge --no-edit -m \"merge $branch\" \"$branch\"; then echo \"$branch\" >> \"$FAKE_BOARD/notes/merged.txt\"; else git merge --abort; foil send \"${branch#foil/}\" \"conflict: merge $(git branch --show-current) into your branch\"; fi"
-        },
-        {
-          "sh": "if [ \"$(wc -l < \"$FAKE_BOARD/notes/merged.txt\")\" -eq 2 ]; then printf '%s\\n' '---' 'contract: status/v1' 'state: done' 'updated: 2026-11-10T00:00:04Z' 'questions: []' '---' '' 'Both branches are merged.' > \"$FAKE_BOARD/status.md\"; fi"
+          "sh": "echo heard >> \"$FAKE_BOARD/notes/heard.txt\""
         }
       ]
     }

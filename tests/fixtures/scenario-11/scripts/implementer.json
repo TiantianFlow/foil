@@ -1,17 +1,20 @@
 {
+  "start": [
+    {"wait": 0.5}
+  ],
   "steps": [
     {
       "when": {"mail_contains": "fix the failing test", "launch": "first"},
       "do": [
-        {"sh": "python3 -c 'from pathlib import Path; p = Path(\"calc.py\"); p.write_text(p.read_text().replace(\"left - right\", \"left + right\"))'"},
-        {"exit": 3}
+        {"hang": true}
       ]
     },
     {
-      "when": {"mail_contains": "fix the failing test", "launch": "resume"},
+      "when": {"mail_contains": "take over the fix"},
       "do": [
+        {"sh": "python3 -c 'from pathlib import Path; p = Path(\"calc.py\"); p.write_text(p.read_text().replace(\"left - right\", \"left + right\"))'"},
         {"sh": "git add calc.py && git commit --quiet -m 'fix add'"},
-        {"send": "lead", "text": "fixed on foil/implementer-1"}
+        {"sh": "foil send lead \"fixed on $(git branch --show-current)\""}
       ]
     }
   ]

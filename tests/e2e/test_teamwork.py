@@ -1,6 +1,6 @@
-"""Scenarios 13 to 16: rework after a review, a merge conflict, two fleets, a scoped room.
+"""Scenarios 12 to 15: rework after a review, a merge conflict, two fleets, a scoped room.
 
-Scenarios 13 and 14 use scenario 1's repository: one failing test that one line fixes.
+Scenarios 12 and 13 use scenario 1's repository: one failing test that one line fixes.
 """
 
 from __future__ import annotations
@@ -25,14 +25,14 @@ def _note(repo: Path, name: str, fleet: str = "main") -> str:
     return path.read_text(encoding="utf-8") if path.is_file() else ""
 
 
-def test_scenario_13_a_rejected_fix_is_reworked_and_reviewed_again(
+def test_scenario_12_a_rejected_fix_is_reworked_and_reviewed_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _prepare(tmp_path, "scenario-1", monkeypatch)
     try:
         scripts(
             repo,
-            "scenario-13",
+            "scenario-12",
             {
                 "lead": "lead.json",
                 "implementer-1": "implementer.json",
@@ -66,14 +66,14 @@ def test_scenario_13_a_rejected_fix_is_reworked_and_reviewed_again(
         close(repo)
 
 
-def test_scenario_14_two_implementers_change_one_line_and_one_resolves_the_conflict(
+def test_scenario_13_two_implementers_change_one_line_and_one_resolves_the_conflict(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _prepare(tmp_path, "scenario-1", monkeypatch)
     try:
         scripts(
             repo,
-            "scenario-14",
+            "scenario-13",
             {
                 "lead": "lead.json",
                 "implementer-1": "implementer-1.json",
@@ -125,16 +125,16 @@ def test_scenario_14_two_implementers_change_one_line_and_one_resolves_the_confl
         close(repo)
 
 
-def test_scenario_15_a_second_fleet_runs_beside_the_first(
+def test_scenario_14_a_second_fleet_runs_beside_the_first(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = _prepare(tmp_path, "scenario-15", monkeypatch)
+    repo = _prepare(tmp_path, "scenario-14", monkeypatch)
     both = ("main", "review")
     try:
         for fleet in both:
             scripts(
                 repo,
-                "scenario-15",
+                "scenario-14",
                 {"lead": "lead.json", "implementer-1": "implementer.json"},
                 fleet,
             )
@@ -210,14 +210,14 @@ def _room(repo: Path) -> list[tuple[str, dict, str]]:
     return found
 
 
-def test_scenario_16_the_lead_scopes_a_room_and_closes_it(
+def test_scenario_15_the_lead_scopes_a_room_and_closes_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    repo = _prepare(tmp_path, "scenario-16", monkeypatch)
+    repo = _prepare(tmp_path, "scenario-15", monkeypatch)
     try:
         scripts(
             repo,
-            "scenario-16",
+            "scenario-15",
             {
                 "lead": "lead.json",
                 "implementer-1": "implementer.json",
