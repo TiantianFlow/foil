@@ -57,7 +57,11 @@ def mail_from(board: Path, mailbox: str, name: str) -> tuple[str, str] | None:
     if record.is_symlink() or not record.is_file() or path.is_symlink() or not path.is_file():
         return None
     try:
-        expected = record.read_text(encoding="ascii").strip()
+        size_text, expected = record.read_text(encoding="ascii").split()
+        size = int(size_text)
+        info = path.stat()
+        if info.st_size != size:
+            return None
         digest = hashlib.sha256()
         with path.open("rb") as handle:
             while True:
@@ -65,7 +69,7 @@ def mail_from(board: Path, mailbox: str, name: str) -> tuple[str, str] | None:
                 if not chunk:
                     break
                 digest.update(chunk)
-    except (OSError, UnicodeDecodeError):
+    except (OSError, UnicodeDecodeError, ValueError):
         return None
     if expected != digest.hexdigest():
         return None
@@ -175,7 +179,9 @@ def write_mail_at(board: Path, to: str, text: str, sender: str) -> Path:
             # Before the mail, so the mail never counts without it.
             record = _foil_record(board, to, path.name)
             private_dir(record.parent)
-            digest = (hashlib.sha256(payload).hexdigest() + "\n").encode("ascii")
+            digest = (
+                f"{len(payload)} {hashlib.sha256(payload).hexdigest()}\n"
+            ).encode("ascii")
             try:
                 create_exclusive(record, digest)
             except FileExistsError:

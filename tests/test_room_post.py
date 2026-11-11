@@ -1239,6 +1239,13 @@ def test_mail_from_foil_counts_only_with_foils_record(
     )
     assert mail_from(board, "lead", real.name) is None
     assert items_for(board, "lead", set()) == []
+    # A huge replacement is refused on size before any digest read.
+    import os
+
+    real.write_bytes(b"x")
+    os.truncate(real, 2 * 1024 * 1024)
+    assert real.stat().st_size == 2 * 1024 * 1024
+    assert mail_from(board, "lead", real.name) is None
     record = board.parent / "run" / "foil" / "lead" / real.name
     record.unlink()
     record.symlink_to(tmp_path)
