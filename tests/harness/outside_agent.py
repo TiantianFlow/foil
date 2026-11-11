@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -152,6 +153,7 @@ class Agent:
         for process, _argv, _out, _err in self.running.values():
             process.kill()
             process.wait()
+        shutil.rmtree(self.scratch, ignore_errors=True)
 
 
 def main() -> int:

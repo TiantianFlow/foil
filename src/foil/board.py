@@ -66,7 +66,7 @@ def nudge(
         # together (N6). The lock is in the run folder of the fleet that holds the file.
         with exclusive_lock(mail_path.parents[3] / "run" / f"nudge-{seat}.lock"):
             return controller.nudge(window_id, f"{sender} {mail_path}")
-    except (TmuxError, OSError):
+    except (TmuxError, OSError, FoilError):
         return False
 
 

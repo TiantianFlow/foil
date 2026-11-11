@@ -16,7 +16,16 @@ import pytest
 
 from foil.cli import main
 from foil.store import load_registry
-from tests.e2e.support import board, close, fleet_dir, launches, scripts, states, wait
+from tests.e2e.support import (
+    KnownBug,
+    board,
+    close,
+    fleet_dir,
+    launches,
+    scripts,
+    states,
+    wait,
+)
 from tests.e2e.test_scenarios import _finish_scenario_1, _git, _no_windows, _prepare, _status
 
 pytestmark = pytest.mark.e2e
@@ -161,6 +170,7 @@ def test_a_seat_at_a_startup_dialog_gets_its_task_once_the_dialog_is_answered(
 
 @pytest.mark.xfail(
     strict=True,
+    raises=KnownBug,
     reason=(
         "When the last session ends, the tmux server ends, and the next server numbers "
         "its windows from the start. A killed seat whose stored window id now belongs "
@@ -187,7 +197,10 @@ def test_a_killed_seat_is_archived_after_tmux_gives_its_window_id_to_another_sea
         assert seats["reviewer-1"]["window_id"] == old, "tmux did not give the id out again"
         capsys.readouterr()
         code = main(["seat", "archive", "implementer-1"])
-        assert (code, capsys.readouterr().err) == (0, "")
+        err = capsys.readouterr().err
+        if code == 1 and "still running" in err:
+            raise KnownBug(err)
+        assert (code, err) == (0, "")
     finally:
         close(repo)
         subprocess.run(["tmux", "kill-server"], check=False, capture_output=True)

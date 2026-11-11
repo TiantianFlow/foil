@@ -21,6 +21,10 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 _OUTSIDE_AGENT = Path(__file__).resolve().parents[1] / "harness" / "outside_agent.py"
 
 
+class KnownBug(Exception):
+    """The outcome a strict xfail names. Anything else a test raises is a real failure."""
+
+
 def fleet_dir(repo: Path, fleet: str = "main") -> Path:
     return foil_root(repo) / "fleets" / fleet
 

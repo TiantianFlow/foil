@@ -14,6 +14,7 @@ from foil.cli import main
 from foil.store import load_registry
 from tests.e2e.support import (
     FIXTURES,
+    KnownBug,
     board,
     close,
     fleet_dir,
@@ -166,10 +167,10 @@ def test_two_nudges_at_once_reach_the_seat_as_two_lines(
 
 @pytest.mark.xfail(
     strict=True,
+    raises=KnownBug,
     reason=(
         "A spawn that fails after it made the seat's worktree removes the window and the "
-        "task mail, and leaves the worktree and its branch with no seat. The same is left "
-        "when two callers spawn one role at once and the second finds the name taken."
+        "task mail, and leaves the worktree and its branch with no seat."
     ),
 )
 def test_a_spawn_that_cannot_launch_leaves_no_worktree(
@@ -188,6 +189,8 @@ def test_a_spawn_that_cannot_launch_leaves_no_worktree(
         assert "implementer-1" not in load_registry(repo)["seats"]
         assert not list((board(repo) / "mail").glob("implementer-1/*.md"))
         listed = _git(repo, "worktree", "list", "--porcelain").stdout
+        if "worktrees/implementer-1" in listed:
+            raise KnownBug(listed)
         assert listed.count("worktree ") == 1, listed
         assert _git(repo, "branch", "--list", "foil/*").stdout == ""
     finally:

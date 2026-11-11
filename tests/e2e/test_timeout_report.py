@@ -36,7 +36,13 @@ def test_a_timeout_shows_the_seat_list_and_every_pane(
         assert main(["seat", "spawn", "lead"]) == 0
         assert main(["seat", "spawn", "implementer"]) == 0
         wait(repo, lambda: _state(repo, "implementer-1") == "dead", what="the worker to exit")
-        wait(repo, lambda: "foil-fake lead ready" in timeout_report(repo), what="the lead")
+        # The worker is dead on purpose, so this wait must not stop for it.
+        wait(
+            repo,
+            lambda: "foil-fake lead ready" in timeout_report(repo),
+            dead_ok=True,
+            what="the lead",
+        )
         for failing in (_wait, wait):
             with pytest.raises(AssertionError, match="timed out") as caught:
                 failing(repo, lambda: False, 0)
