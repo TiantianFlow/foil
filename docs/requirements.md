@@ -566,7 +566,7 @@ the test plays the human's agent):
 | 1 | Happy path: the fixture has one failing test. The test runs `init` and `seat spawn lead --task "make the tests pass"`. The lead spawns an implementer and a reviewer; the implementer commits a fix on its branch; the reviewer runs the tests there and approves; the lead merges it on its goal branch and sets `status.md` to done. Every seat's `PATH` lacks the test interpreter's directory. | Tests pass on the merged result; the branch is merged into `foil/goal-main`; `status.md` says done; `seat kill --all` leaves no Foil windows. |
 | 2 | Authority: a worker tries `seat spawn` and `seat kill lead`. | Both fail; the fleet is unchanged. |
 | 3 | Crash: kill the tmux server mid-scenario, then `seat resume`. | Scenario 1's outcome is still reached. |
-| 4a | Launched lead asks the human: the test spawns the lead; the lead writes a question in `status.md` and mails `user`; the test waits with `foil mail wait`, then answers with `foil send lead`. | The wait returns the lead's mail; the lead's final status reflects the answer; `seat peek lead` shows raw pane text. |
+| 4a | Launched lead asks the human: the human's agent, a process of its own outside the fleet, spawns the lead and leaves `foil mail wait` running in the background; the lead writes a question in `status.md` and mails `user`; the agent reads that mail and answers with `foil send lead`. | The wait ends by itself and prints the lead's mail; the lead's final status reflects the answer; `user` holds the lead's mail and no pane was typed into for it; `seat peek lead` shows raw pane text. |
 | 4b | Joined lead: the test joins as the lead, spawns a worker, waits with `foil mail wait`, kills the worker's window and waits again, leaves with a handoff, and joins again. | The worker's result mail comes back from the wait and carries the `foil --version` the seat ran, which is the version under test; the second wait returns one `died` mail from `foil` for the worker; nothing is typed for the lead; `seat list` shows the lead `joined` and then `killed`; the second join lists only mail that arrived after the leave. |
 | 5 | Memory: a worker proposes a lesson and fails to accept it; the lead accepts it. | A seat spawned afterwards has the lesson in its instruction file; `memory list` shows it accepted. |
 | 6 | Errors: send to an unknown seat, spawn a missing template, run outside a git repository. | Each gives a one-line error and a non-zero exit, with no traceback. |
@@ -580,6 +580,15 @@ the test plays the human's agent):
 | 15 | Forged mail: a file written by hand into a mailbox with `foil` as its sender. | `mail list`, `mail wait`, and the runner skip it; Foil's own `died` mail still counts. |
 | 16 | Stand-ins: one seat per built-in preset runs two turns. | Each second turn runs that preset's `turn` argv on the session id of its first. |
 
+**Around the scenarios:**
+
+- A mocked seat runs the Foil under test. The scenarios put a `foil` command for the checkout first on the seats' `PATH`, so an installed Foil is never the one a seat runs.
+- Each packaged CLI preset has a stand-in that reads the command line as that CLI does and refuses what it would refuse: an unknown flag, a value a flag does not take, a prompt taken as a flag's value, a resume with nothing to resume. Past its command line, a stand-in behaves as the fake does. The stand-in for a CLI whose preset has a wake command reads that command the same way and keeps what it was given.
+- A caller outside the fleet is played by a scripted process with no seat identity where a scenario depends on that: it runs `foil` commands, some in the background, and the scenario asserts on its transcript.
+- Every command an instruction file names is run as the seat that file was written for: a launched lead, a worker, and a joined lead. Each must be a command the parser takes and that caller may run, and each one the file says is refused must be refused.
+- The dead-seat check's 30 seconds are tested at their real value: the test moves the recorded time of the last check to 25 and then 31 seconds ago, and does not change the interval.
+- A wait that times out shows every fleet's seat list, every pane that is left, and every double's log. A wait ends at once when a seat dies that the scenario did not expect to die.
+
 **Standing checks:** the command surface matches section 6 exactly; the
 package source size is reported against the N4 target; tmux window identity, atomic
 writes, public-safety checks (N9), and the documentation index check (D8)
@@ -590,7 +599,10 @@ place of `fake`, judged by the same assertions, and a two-turn check per
 preset that its `start` and `turn` argv and session round trip work on
 the real CLI. It needs authenticated CLIs, so it's opt-in and excluded
 from the default test run. A preset part that has not passed it is
-named in `unverified`.
+named in `unverified`. Each live test that runs writes one row per
+harness in docs/live-runs.md: the harness, the version its CLI prints,
+the scenario, the result, the date, and the Foil version. A later run
+replaces the row for the same harness and scenario.
 
 ## 11. Out of scope
 

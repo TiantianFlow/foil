@@ -1,0 +1,12 @@
+{
+  "steps": [
+    {"run": ["foil", "seat", "spawn", "lead", "--task", "ask the human"]},
+    {"start": "wait", "run": ["foil", "mail", "wait", "--timeout", "60"]},
+    {"await": "wait", "capture": {"question": " lead (\\S+)"}},
+    {"run": ["foil", "mail", "read", "{question}"]},
+    {"run": ["foil", "board", "read", "status.md"]},
+    {"run": ["foil", "send", "lead", "use blue"]},
+    {"until": ["foil", "board", "read", "status.md"], "contains": "The answer is blue."},
+    {"run": ["foil", "seat", "peek", "lead"]}
+  ]
+}
