@@ -23,6 +23,9 @@ import json
 import os
 import re
 import shlex
+import signal
+import socket
+import subprocess
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -39,17 +42,41 @@ from tests.e2e.test_scenarios import _prepare
 pytestmark = pytest.mark.e2e
 
 # kind of seat -> the seat that plays it, and a seat it writes to.
-KINDS = {"lead": ("lead", "implementer-1"), "worker": ("implementer-1", "lead")}
+KINDS = {
+    "lead": ("lead", "implementer-1"),
+    "worker": ("implementer-1", "lead"),
+    # The human's own agent after `foil seat join lead`: the lead seat with no pane.
+    "joined": ("lead", "implementer-1"),
+}
 # Commands a file names only to say the seat may not run them.
 REFUSED = {
     "lead": {"foil seat kill --all": "foil: not allowed\n", "foil init": "foil: not allowed\n"},
     "worker": {},
+    "joined": {"foil send user": "foil: a joined lead asks in its own chat\n"},
 }
+# What a command outside the fleet adds on stderr while the joined lead has new mail.
+_NEW = re.compile(r"foil: \d+ new for lead\. Run foil mail wait --timeout 0\.\n")
+# The join names a harness whose preset has a wake command, and the session it wakes.
+JOIN = ("seat", "join", "lead", "--harness", "codex", "--session", "session-1")
 _SPAN = re.compile(r"`(foil [^`\n]+)`")
 _OPTIONAL = re.compile(r"\s*\[([^\]]+)\]")
 _REQUIRED = re.compile(r"the following arguments are required: (.+)")
 _VALUE = re.compile(r"argument (--[a-z]+): expected one argument")
 _GROUPS = ("seat", "mail", "board", "memory", "roster")
+
+
+# A command that waits is staged so that it ends at once. One that still waits is a failure.
+_PATIENCE = 20
+
+
+def _too_long(_signal: int, _frame: object) -> None:
+    raise TimeoutError
+
+
+def _interrupt(_signal: int, _frame: object) -> None:
+    """`foil view` serves until it is stopped. This is the Ctrl-C that stops it."""
+
+    raise KeyboardInterrupt
 
 
 def mentions(text: str) -> list[str]:
@@ -93,21 +120,28 @@ class Fleet:
     repo: Path
     seat: str
     peer: str
+    joined: bool = False
     count: int = 0
     failures: list[str] = field(default_factory=list)
 
     def outside(self, *argv: str) -> str:
         """Run as the caller outside the fleet, which sets the stage for each command."""
 
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            assert main(list(argv)) == 0, argv
+        out, error = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(error):
+            code = main(list(argv))
+        assert code == 0, f"foil {shlex.join(argv)}: {error.getvalue()}{self.failures}"
         return out.getvalue()
 
     @contextlib.contextmanager
-    def as_seat(self) -> Iterator[None]:
+    def as_seat(self, seat: str | None = None) -> Iterator[None]:
+        if self.joined and seat is None:
+            # A joined lead has no launch plan. It is the caller outside the fleet.
+            yield
+            return
+        name = seat or self.seat
         plan = json.loads(
-            (fleet_dir(self.repo) / "run" / "plans" / f"{self.seat}.json").read_text("utf-8")
+            (fleet_dir(self.repo) / "run" / "plans" / f"{name}.json").read_text("utf-8")
         )
         saved, here = dict(os.environ), Path.cwd()
         os.environ.update(plan["env"])
@@ -129,7 +163,15 @@ class Fleet:
                 contextlib.redirect_stdout(io.StringIO()),
                 contextlib.redirect_stderr(error),
             ):
-                code = main(argv)
+                serves = argv[0] == "view"
+                signal.signal(signal.SIGALRM, _interrupt if serves else _too_long)
+                signal.alarm(1 if serves else _PATIENCE)
+                try:
+                    code = main(argv)
+                except TimeoutError:
+                    return 1, f"still running after {_PATIENCE} seconds"
+                finally:
+                    signal.alarm(0)
         finally:
             sys.stdin = stdin
         return code, error.getvalue()
@@ -150,6 +192,12 @@ class Fleet:
         box = board(self.repo) / "mail" / self.seat
         return str(sorted(box.glob("*.md"))[0].resolve())
 
+    def worker_mail(self) -> None:
+        """New mail for the lead, sent by the worker as itself."""
+
+        with self.as_seat(self.peer), contextlib.redirect_stdout(io.StringIO()):
+            assert main(["send", "lead", f"result {self._fresh()}"]) == 0
+
     def _lesson(self, *, accepted: bool) -> str:
         lesson = self.outside("memory", "add", f"lesson {self._fresh()}").strip()
         if accepted:
@@ -167,8 +215,22 @@ class Fleet:
             return self._room()
         if before == "--replaces":
             return self._lesson(accepted=True)
-        if before == "--lines":
+        if before in {"--lines", "--timeout"}:
             return "5"
+        if before == "--port":
+            with socket.socket() as free:
+                free.bind(("127.0.0.1", 0))
+                return str(free.getsockname()[1])
+        if before == "--from":
+            source = self.repo.parent / "role.toml"
+            source.write_text(
+                'harness = "fake"\npersona = "personas/researcher.md"\nworktree = false\n',
+                encoding="utf-8",
+            )
+            return str(source)
+        if command in {"roster add", "roster remove"} and name == "ROLE":
+            # A role no seat has, with a packaged persona, so it can come and go.
+            return "researcher"
         if before == "--members" or name in {"NAME", "NAMES"}:
             return self.peer if command == "seat peek" else "spare"
         if name == "ID":
@@ -220,6 +282,16 @@ class Fleet:
                 line.append("text")
         return line
 
+    def _role(self, argv: list[str], *, present: bool) -> None:
+        """Leave the role the command names on the layer it names, or on neither."""
+
+        role = next(item for item in argv[2:] if not item.startswith("-") and "/" not in item)
+        for layer in ([], ["--project"]):
+            with contextlib.redirect_stderr(io.StringIO()):
+                main(["roster", "remove", role, *layer])
+        if present:
+            self.outside("roster", "add", role, *(["--project"] if "--project" in argv else []))
+
     def _need(self, name: str, *, killed: bool = False) -> None:
         if name in {"user", self.seat, "lead"}:
             return
@@ -242,6 +314,10 @@ class Fleet:
             self._need(parsed.NAME, killed=True)
         elif command in {"seat kill", "seat resume", "seat peek"} and parsed.NAME:
             self._need(parsed.NAME)
+        elif command == "seat spawn" and parsed.TEMPLATE == "lead" and self.joined:
+            # A launched lead takes the seat from a handoff, after the joined one left.
+            self.stage(["seat", "leave"])
+            self.outside("seat", "leave")
         elif command == "seat spawn" and parsed.name:
             record = load_registry(self.repo)["seats"].get(parsed.name)
             if record is not None:
@@ -249,6 +325,19 @@ class Fleet:
                 self.outside("seat", "archive", parsed.name)
         elif command == "send":
             self._need(parsed.TO)
+        elif command in {"roster add", "roster remove"}:
+            self._role(argv, present=command == "roster remove")
+        elif command == "seat join":
+            # A session joins a lead seat that the one before it left.
+            self.stage(["seat", "leave"])
+            self.outside("seat", "leave")
+        elif command == "mail wait":
+            # With something new the wait prints it and ends, whatever its timeout.
+            self.worker_mail()
+        elif command == "seat leave":
+            handoff = board(self.repo) / "handoffs" / "lead.md"
+            handoff.parent.mkdir(parents=True, exist_ok=True)
+            handoff.write_text(f"handoff {self._fresh()}\n", encoding="utf-8")
         elif command == "post" and parsed.members:
             for name in parsed.members.split(","):
                 self._need(name)
@@ -264,10 +353,18 @@ class Fleet:
             code, error = self.run(line)
             shown = f"`{mention}` ran as `foil {shlex.join(line)}`: exit {code}: {error.strip()}"
             if mention in refused:
-                if (code, error) != (1, refused[mention]):
+                if (code, _NEW.sub("", error)) != (1, refused[mention]):
                     self.failures.append(f"{shown}, and the file says it is not allowed")
             elif code != 0:
                 self.failures.append(shown)
+            elif line[:2] == ["seat", "leave"]:
+                # The rest of the file is checked as the joined lead too.
+                self.outside(*JOIN)
+            elif line[:2] == ["seat", "join"]:
+                self.outside(*JOIN, "--take")
+            elif line[:3] == ["seat", "spawn", "lead"] and self.joined:
+                self.outside("seat", "kill", "lead")
+                self.outside(*JOIN)
 
 
 @pytest.mark.parametrize("kind", sorted(KINDS))
@@ -278,8 +375,17 @@ def test_every_command_in_an_instruction_file_runs_for_that_seat(
     # This test is about who may run what. The pause before Enter is not part of it.
     monkeypatch.setattr(foil.tmux, "NUDGE_ENTER_DELAY", 0)
     repo = _prepare(tmp_path, "scenario-2", monkeypatch)
+    # `seat kill --all` can end the last session, and with it the tmux server. The next
+    # server numbers its windows from the start again, and a killed seat whose stored id
+    # is taken that way cannot be archived (the last test in test_faults.py). A
+    # session of the test's own keeps one server for the whole run.
+    keep = f"keep-{kind}-{os.getpid()}"
+    subprocess.run(["tmux", "new-session", "-d", "-s", keep], check=True)
     try:
-        assert main(["seat", "spawn", "lead", "--task", "the goal"]) == 0
+        if kind == "joined":
+            assert main(list(JOIN)) == 0
+        else:
+            assert main(["seat", "spawn", "lead", "--task", "the goal"]) == 0
         assert main(["seat", "spawn", "implementer", "--task", "board/tasks/t1.md"]) == 0
         for name in ("status.md", "tasks/t1.md"):
             (board(repo) / name).parent.mkdir(parents=True, exist_ok=True)
@@ -289,9 +395,12 @@ def test_every_command_in_an_instruction_file_runs_for_that_seat(
         assert len(named) > 20, named
         refused = REFUSED[kind]
         assert set(refused) <= set(named), "REFUSED names a command the file no longer has"
-        fleet = Fleet(repo, seat, peer)
+        fleet = Fleet(repo, seat, peer, joined=kind == "joined")
+        if fleet.joined:
+            fleet.worker_mail()
         for mention in named:
             fleet.check(mention, refused)
         assert not fleet.failures, "\n".join(fleet.failures)
     finally:
         close(repo)
+        subprocess.run(["tmux", "kill-session", "-t", f"={keep}"], check=False)

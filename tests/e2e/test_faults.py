@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -155,3 +157,38 @@ def test_a_seat_at_a_startup_dialog_gets_its_task_once_the_dialog_is_answered(
         assert states(repo) == {"lead": "alive"}
     finally:
         close(repo)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "When the last session ends, the tmux server ends, and the next server numbers "
+        "its windows from the start. A killed seat whose stored window id now belongs "
+        "to another seat is refused by `seat archive` as still running, so its name "
+        "stays taken for as long as that other window lives."
+    ),
+)
+def test_a_killed_seat_is_archived_after_tmux_gives_its_window_id_to_another_seat(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A tmux server of this test's own, so nothing else keeps it alive or takes its ids.
+    sockets = Path(tempfile.mkdtemp(prefix="foil-tmux-"))
+    monkeypatch.setenv("TMUX_TMPDIR", str(sockets))
+    monkeypatch.delenv("TMUX", raising=False)
+    repo = _prepare(tmp_path, "scenario-2", monkeypatch)
+    try:
+        assert main(["seat", "spawn", "lead"]) == 0
+        assert main(["seat", "spawn", "implementer"]) == 0
+        old = load_registry(repo)["seats"]["implementer-1"]["window_id"]
+        assert main(["seat", "kill", "--all"]) == 0
+        assert main(["seat", "spawn", "lead"]) == 0
+        assert main(["seat", "spawn", "reviewer"]) == 0
+        seats = load_registry(repo)["seats"]
+        assert seats["reviewer-1"]["window_id"] == old, "tmux did not give the id out again"
+        capsys.readouterr()
+        code = main(["seat", "archive", "implementer-1"])
+        assert (code, capsys.readouterr().err) == (0, "")
+    finally:
+        close(repo)
+        subprocess.run(["tmux", "kill-server"], check=False, capture_output=True)
+        shutil.rmtree(sockets, ignore_errors=True)
