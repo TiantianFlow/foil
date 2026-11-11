@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import foil_fake  # noqa: E402
 
+VERSION = "0.0.0 (stand-in)"
 NAMES = ("claude", "codex", "gemini", "opencode", "grok")
 
 
@@ -291,6 +292,9 @@ def install(bindir: Path) -> None:
 
 def main() -> int:
     name = Path(sys.argv[0]).name
+    if sys.argv[1:] == ["--version"]:
+        print(f"{name} {VERSION}")
+        return 0
     seat = foil_fake.seat_id(name)
     try:
         launch = parse(name, sys.argv[1:])

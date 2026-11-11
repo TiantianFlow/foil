@@ -523,7 +523,11 @@ pass.
 
 **Live tier (optional):** the same scenarios with real harness CLIs in
 place of `fake`, judged by the same assertions. It needs authenticated
-CLIs, so it's opt-in and excluded from the default test run.
+CLIs, so it's opt-in and excluded from the default test run. Each live
+test that runs writes one row per harness in docs/live-runs.md: the
+harness, the version its CLI prints, the scenario, the result, the date,
+and the Foil version. A later run replaces the row for the same harness
+and scenario.
 
 ## 11. Out of scope
 
