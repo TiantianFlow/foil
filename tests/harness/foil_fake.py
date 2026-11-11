@@ -39,8 +39,6 @@ back a session it had, and "fresh" when it ran before and gets a new one.
 `--session ID` starts a session and `--resume ID` continues one. Starting
 an id that is already in use is an error. Resuming an id this seat never
 had is the launch "lost": the double carries on with nothing remembered.
-With `"strict_resume": true` in the script it ends with an error there,
-as a real CLI does for a session it never saved.
 
 A shell action sees FAKE_BOARD, FAKE_LAUNCH, FAKE_SESSION and FAKE_MAIL,
 and what a stand-in read from its command line, such as FAKE_MODEL.
@@ -123,7 +121,13 @@ class Sessions:
         return found[-1] if found else ""
 
     def record(self, session: str, launch: str, facts: dict[str, str]) -> None:
-        entry = {"session": session, "launch": launch, "cwd": str(Path.cwd()), **facts}
+        entry = {
+            "session": session,
+            "launch": launch,
+            "cwd": str(Path.cwd()),
+            "pid": os.getpid(),
+            **facts,
+        }
         _append(self.path, json.dumps(entry, sort_keys=True))
 
 
@@ -387,8 +391,6 @@ def main() -> int:
     if args.resume is not None:
         session, launch = args.resume, "resume"
         if not sessions.known(session):
-            if script(fleet, seat).get("strict_resume") is True:
-                refuse("foil-fake", seat, fleet, f"no session '{session}' to resume")
             launch = "lost"
     else:
         if args.session and sessions.known(args.session):
