@@ -357,3 +357,31 @@ def test_a_large_board_file_is_not_fully_read_when_scanning(tmp_path: Path) -> N
     assert len(found) == 1
     prompt = wake_prompt(plan, found, restarted=False)
     assert f"--- {mail}" not in prompt
+
+
+def test_delivered_paths_are_compacted_before_the_record_limit(tmp_path: Path) -> None:
+    """A full board cannot push the runner record past its 1 MiB cap (N7)."""
+    from foil.runner import empty_record, prune_delivered
+    from foil.store import MAX_BYTES
+
+    board = tmp_path / "board"
+    mailbox = board / "mail" / "seat-1"
+    mailbox.mkdir(parents=True)
+    record = empty_record()
+    # Many short existing paths: absent-prune keeps them; size-prune must drop the oldest.
+    # Long paths so a few thousand exceed the 1 MiB record cap.
+    pad = "n" * 120
+    for number in range(12000):
+        name = f"{number:05}-{pad}.md"
+        relative = f"mail/seat-1/{name}"
+        (mailbox / name).write_text("x\n", encoding="utf-8")
+        record["delivered"].append(relative)
+    before = len(record["delivered"])
+    prune_delivered(board, record)
+    encoded = (
+        __import__("json").dumps(record, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        + "\n"
+    ).encode()
+    assert len(encoded) <= MAX_BYTES - 64 * 1024
+    assert 0 < len(record["delivered"]) < before
+    assert not record["delivered"][0].startswith("mail/seat-1/00000-")

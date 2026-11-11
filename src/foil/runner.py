@@ -19,7 +19,7 @@ from typing import Any
 from foil.board import items_for, write_mail_at
 from foil.board_ops import body_for_inline, front_fields
 from foil.errors import FoilError
-from foil.store import SAFE_ID, SCHEMA_VERSION, read_json, write_json
+from foil.store import MAX_BYTES, SAFE_ID, SCHEMA_VERSION, read_json, write_json
 
 MAX_PLAN_BYTES = 256 * 1024
 POLL = 1.0
@@ -148,14 +148,8 @@ def load_record(board: Path, seat: str) -> dict[str, Any]:
     return record
 
 
-def save_record(board: Path, seat: str, record: dict[str, Any]) -> None:
-    path = record_path(board, seat)
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    write_json(path, record)
-
-
 def prune_delivered(board: Path, record: dict[str, Any]) -> None:
-    """Drop delivered paths whose files are gone, so the record cannot grow without bound."""
+    """Drop gone delivered paths, then the oldest if the record would exceed its size limit."""
 
     kept: list[str] = []
     for relative in record["delivered"]:
@@ -165,7 +159,24 @@ def prune_delivered(board: Path, record: dict[str, Any]) -> None:
                 kept.append(relative)
         except OSError:
             continue
-    record["delivered"] = kept
+    record["delivered"] = sorted(kept)
+    # Leave headroom for inflight and the other fields (N7's 1 MiB record cap).
+    limit = MAX_BYTES - 64 * 1024
+    while record["delivered"]:
+        encoded = (
+            json.dumps(record, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+        ).encode()
+        if len(encoded) <= limit:
+            return
+        drop = max(1, len(record["delivered"]) // 8)
+        record["delivered"] = record["delivered"][drop:]
+
+
+def save_record(board: Path, seat: str, record: dict[str, Any]) -> None:
+    prune_delivered(board, record)
+    path = record_path(board, seat)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    write_json(path, record)
 
 
 def wake_prompt(plan: dict[str, Any], items: list[dict[str, str]], *, restarted: bool) -> str:
@@ -253,7 +264,6 @@ class Runner:
 
     def save(self) -> None:
         with self._lock:
-            prune_delivered(self.board, self.record)
             save_record(self.board, self.seat, self.record)
 
     def mail(self, to: str, text: str) -> None:
@@ -342,7 +352,6 @@ class Runner:
                         continue
                     self.record["session_id"] = value
                     self.record["started"] = True
-                    prune_delivered(self.board, self.record)
                     save_record(self.board, self.seat, self.record)
 
     def _new(self) -> list[dict[str, str]]:

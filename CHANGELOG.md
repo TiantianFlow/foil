@@ -39,6 +39,7 @@ Notable changes to Foil, newest first.
 - An `output` preset's learned session id is written to the runner record as soon as it appears, so a crash mid-turn no longer loses it. (#92)
 - `foil seat renew` reserves the next harness and updates the seat in one registry write, and refuses a seat that is killed or changed under that lock. (#92)
 - A first turn that hits `turn_timeout` before its session exists keeps its items and runs `start` again on a fresh generated id. (#92)
+- The runner record drops absent delivered paths on save, and the oldest ones if it would otherwise exceed its size limit, so a long-lived seat cannot die on a 1 MiB write. (#92)
 - `foil post --members NAMES` now also wakes the `@name` seats in the text when it opens a room. (#92)
 - A task given with `foil seat spawn --task` is given again when the seat's runner stops during its first turn. (#92)
 

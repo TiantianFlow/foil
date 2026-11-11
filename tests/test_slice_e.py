@@ -553,3 +553,27 @@ def test_renew_refuses_a_seat_killed_during_the_commit(
     except FoilError as exc:
         assert "killed" in str(exc)
     assert load_registry(repo)["seats"]["worker"]["session_id"] == before
+
+
+def test_two_renews_take_distinct_harness_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F3/F44: each renew consumes one rotation step under the registry lock."""
+    from tests.test_spawn import _add_role, _set_entries
+
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    _add_role(repo, "worker", "claude")
+    _set_entries(repo, "worker", [("claude", "a"), ("claude", "b"), ("claude", "c")])
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "worker", "--name", "w1"]) == 0
+    assert main(["seat", "spawn", "worker", "--name", "w2"]) == 0
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    (board / "handoffs").mkdir(parents=True, exist_ok=True)
+    (board / "handoffs" / "w1.md").write_text("one\n", encoding="utf-8")
+    (board / "handoffs" / "w2.md").write_text("two\n", encoding="utf-8")
+    assert main(["seat", "renew", "w1"]) == 0
+    assert main(["seat", "renew", "w2"]) == 0
+    seats = load_registry(repo)["seats"]
+    assert seats["w1"]["model"] != seats["w2"]["model"]
+    assert {seats["w1"]["model"], seats["w2"]["model"]} <= {"a", "b", "c"}

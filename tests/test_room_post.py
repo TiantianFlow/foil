@@ -1250,3 +1250,21 @@ def test_mail_from_foil_counts_only_with_foils_record(
     record.unlink()
     record.symlink_to(tmp_path)
     assert items_for(board, "lead", set()) == []
+
+
+def test_a_stale_foil_marker_without_mail_counts_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F14: a marker left after a failed mail write wakes nobody."""
+    from foil.board import _foil_record, mail_from
+    from foil.store import create_exclusive, private_dir
+
+    repo = _repo(tmp_path, monkeypatch)
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    name = "20261111T120000Z-foil-deadbeef.md"
+    record = _foil_record(board, "lead", name)
+    private_dir(record.parent)
+    digest = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    create_exclusive(record, f"12 {digest}\n".encode())
+    assert mail_from(board, "lead", name) is None
+    assert items_for(board, "lead", set()) == []
