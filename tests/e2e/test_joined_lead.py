@@ -1,5 +1,7 @@
 """Scenario 16: the human's agent joins as the lead, as a process of its own.
 
+The last test is the dead-seat check's interval, by the real clock's numbers.
+
 The repository is scenario 1's: one failing test that one line fixes. The
 agent's harness is `codex`, the preset with a wake command, and a stand-in
 for that CLI keeps each wake it is given.
@@ -11,13 +13,24 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
 from foil.cli import main
 from foil.store import load_registry
-from tests.e2e.support import FIXTURES, board, close, mail, outside_agent, scripts, states
+from tests.e2e.support import (
+    FIXTURES,
+    board,
+    close,
+    fleet_dir,
+    mail,
+    outside_agent,
+    scripts,
+    states,
+    wait,
+)
 from tests.e2e.test_scenarios import _git, _no_windows, _prepare
 from tests.harness import standin
 
@@ -111,5 +124,50 @@ def test_scenario_16_a_joined_lead_merges_reviewed_work_and_hands_off(
         session = str(load_registry(repo)["tmux_session"])
         assert main(["seat", "kill", "--all"]) == 0
         _no_windows(session)
+    finally:
+        close(repo)
+
+
+def test_a_dead_seat_is_reported_once_the_last_check_is_thirty_seconds_old(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _prepare(tmp_path, "scenario-2", monkeypatch)
+    record = fleet_dir(repo) / "run" / "seats" / "lead.json"
+
+    def last_check_was(seconds: float) -> None:
+        """Move the time of the last check back. The interval itself is not patched."""
+
+        kept = json.loads(record.read_text(encoding="utf-8"))
+        kept["checked"] = time.time() - seconds
+        record.write_text(json.dumps(kept), encoding="utf-8")
+
+    def waited() -> str:
+        capsys.readouterr()
+        assert main(["mail", "wait", "--timeout", "0"]) == 0
+        return capsys.readouterr().out
+
+    try:
+        assert main(["seat", "join", "lead"]) == 0
+        assert main(["seat", "spawn", "implementer"]) == 0
+        assert waited() == "no new mail\n"
+        window = load_registry(repo)["seats"]["implementer-1"]["window_id"]
+        subprocess.run(["tmux", "kill-window", "-t", window], check=True)
+        wait(repo, lambda: states(repo)["implementer-1"] == "dead", timeout=10, dead_ok=True)
+
+        # A check 25 seconds ago is recent enough: the seat is dead and nothing says so yet.
+        last_check_was(25)
+        assert waited() == "no new mail\n"
+        # At 31 seconds any command outside the fleet checks again, and the wait has the mail.
+        last_check_was(31)
+        capsys.readouterr()
+        assert main(["seat", "list"]) == 0
+        assert capsys.readouterr().err == "foil: 1 new for lead. Run foil mail wait --timeout 0.\n"
+        (line,) = waited().splitlines()
+        assert line.split()[1] == "foil"
+        died = Path(line.split()[-1]).read_text(encoding="utf-8")
+        assert "implementer-1 died. See foil seat peek implementer-1 --lines 200." in died
+        # The same death is not reported twice.
+        last_check_was(31)
+        assert waited() == "no new mail\n"
     finally:
         close(repo)

@@ -534,6 +534,7 @@ the test plays the human's agent):
 - Each packaged CLI preset has a stand-in that reads the command line as that CLI does and refuses what it would refuse: an unknown flag, a value a flag does not take, a prompt taken as a flag's value, a resume with nothing to resume. Past its command line, a stand-in behaves as the fake does. The stand-in for a CLI whose preset has a wake command reads that command the same way and keeps what it was given.
 - A caller outside the fleet is played by a scripted process with no seat identity where a scenario depends on that: it runs `foil` commands, some in the background, and the scenario asserts on its transcript.
 - Every command an instruction file names is run as the seat that file was written for: a launched lead, a worker, and a joined lead. Each must be a command the parser takes and that caller may run, and each one the file says is refused must be refused.
+- The dead-seat check's 30 seconds are tested at their real value: the test moves the recorded time of the last check to 25 and then 31 seconds ago, and does not change the interval.
 - A wait that times out shows every fleet's seat list, every pane that is left, and every double's log. A wait ends at once when a seat dies that the scenario did not expect to die.
 
 **Standing checks:** the command surface matches section 6 exactly; the
