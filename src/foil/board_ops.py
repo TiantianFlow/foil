@@ -69,6 +69,54 @@ def split_front_matter(text: str) -> tuple[dict[str, str | list[str]] | None, st
     return fields, body[1:] if body.startswith("\n") else body
 
 
+FRONT_SCAN = 8 * 1024
+
+
+def front_fields(path: Path) -> dict[str, str | list[str]] | None:
+    """Front matter from the first FRONT_SCAN bytes of ``path``, or None when it does not close."""
+
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(FRONT_SCAN)
+        text = head.decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    fields, _ = split_front_matter(text)
+    return fields
+
+
+def body_for_inline(path: Path, limit: int) -> str | None:
+    """The body when it is at most ``limit`` bytes, else None. Reads at most limit+1 body bytes."""
+
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(FRONT_SCAN)
+        text = head.decode("utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    lines = text.split("\n")
+    if not lines or lines[0] != "---" or "---" not in lines[1:]:
+        return None
+    end = lines.index("---", 1)
+    prefix = "\n".join(lines[: end + 1]) + "\n"
+    try:
+        offset = len(prefix.encode("utf-8"))
+        with path.open("rb") as handle:
+            handle.seek(offset)
+            # Mail bodies start with a blank line after the closing ---.
+            chunk = handle.read(limit + 2)
+    except OSError:
+        return None
+    if chunk.startswith(b"\n"):
+        chunk = chunk[1:]
+    if len(chunk) > limit:
+        return None
+    try:
+        return chunk.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
 def inside(path_text: str, root: Path) -> Path:
     given = Path(path_text)
     if ".." in given.parts:

@@ -32,10 +32,13 @@ Notable changes to Foil, newest first.
 - The lead skill says nobody reads its pane: a question for the human goes in `status.md` `questions`, with `state: blocked` when the goal waits on it, and a `foil send user` line points at it. The lead and the workers do not use their harness's own prompt for asking the person at the keyboard. (#91)
 - The built-in `claude` preset launches and resumes with `--disallowedTools AskUserQuestion`, and the `opencode` preset denies its `question` tool. (#91)
 - `foil mail list` lists only files whose name `foil send` could have written, and takes the time and the sender from that name, not from the file's front matter. (#92)
-- Mail from `foil` counts only when Foil wrote its record under `run/foil/`, and a room file from `foil` wakes nobody, so a file written on the board cannot speak for Foil. (#92)
+- Mail from `foil` counts only when Foil wrote a matching SHA-256 digest under `run/foil/`, and a room file from `foil` wakes nobody, so a file written or replaced on the board cannot speak for Foil. (#92)
 
 ### Fixed
 
+- An `output` preset's learned session id is written to the runner record as soon as it appears, so a crash mid-turn no longer loses it. (#92)
+- `foil seat renew` reserves the next harness and updates the seat in one registry write, and refuses a seat that is killed or changed under that lock. (#92)
+- A first turn that hits `turn_timeout` before its session exists keeps its items and runs `start` again on a fresh generated id. (#92)
 - `foil post --members NAMES` now also wakes the `@name` seats in the text when it opens a room. (#92)
 - A task given with `foil seat spawn --task` is given again when the seat's runner stops during its first turn. (#92)
 

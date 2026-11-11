@@ -519,3 +519,37 @@ def test_resume_names_a_broken_seat_and_continues(
     )
     assert main(["seat", "resume", "implementer-1"]) == 1
     assert capsys.readouterr().err == "foil: persona file not found: personas/missing.md\n"
+
+
+def test_renew_refuses_a_seat_killed_during_the_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F44: renew re-checks killed under the registry lock."""
+    import foil.lifecycle as life
+    from foil.errors import FoilError
+    from foil.lifecycle import renew_seat
+
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "reviewer", "--name", "worker"]) == 0
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    (board / "handoffs").mkdir(parents=True, exist_ok=True)
+    (board / "handoffs" / "worker.md").write_text("done so far\n", encoding="utf-8")
+    before = load_registry(repo)["seats"]["worker"]["session_id"]
+    original = life.update_registry
+
+    def race(root, mutate):
+        def killing(fresh):
+            fresh["seats"]["worker"]["state"] = "killed"
+            mutate(fresh)
+
+        return original(root, killing)
+
+    monkeypatch.setattr(life, "update_registry", race)
+    try:
+        renew_seat(repo, "worker")
+        raise AssertionError("renew should refuse")
+    except FoilError as exc:
+        assert "killed" in str(exc)
+    assert load_registry(repo)["seats"]["worker"]["session_id"] == before

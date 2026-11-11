@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from foil.board import items_for, write_mail_at
-from foil.board_ops import split_front_matter
+from foil.board_ops import body_for_inline, front_fields
 from foil.errors import FoilError
 from foil.store import SAFE_ID, SCHEMA_VERSION, read_json, write_json
 
@@ -154,12 +154,18 @@ def save_record(board: Path, seat: str, record: dict[str, Any]) -> None:
     write_json(path, record)
 
 
-def _body(path: Path) -> str | None:
-    try:
-        _fields, body = split_front_matter(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError):
-        return None
-    return body
+def prune_delivered(board: Path, record: dict[str, Any]) -> None:
+    """Drop delivered paths whose files are gone, so the record cannot grow without bound."""
+
+    kept: list[str] = []
+    for relative in record["delivered"]:
+        path = board / relative
+        try:
+            if not path.is_symlink() and path.is_file():
+                kept.append(relative)
+        except OSError:
+            continue
+    record["delivered"] = kept
 
 
 def wake_prompt(plan: dict[str, Any], items: list[dict[str, str]], *, restarted: bool) -> str:
@@ -180,12 +186,14 @@ def wake_prompt(plan: dict[str, Any], items: list[dict[str, str]], *, restarted:
     for item in listed:
         if not item["relative"].startswith("mail/"):
             continue
-        body = _body(Path(item["path"]))
-        size = len(body.encode()) if body is not None else INLINE + 1
-        if size <= INLINE and size <= budget:
-            budget -= size
-            inlined.add(item["path"])
-            lines += [f"--- {item['path']}", body.rstrip("\n")]
+        limit = min(INLINE, budget)
+        body = body_for_inline(Path(item["path"]), limit)
+        if body is None:
+            continue
+        size = len(body.encode())
+        budget -= size
+        inlined.add(item["path"])
+        lines += [f"--- {item['path']}", body.rstrip("\n")]
     lines.append(
         f"Re-read {plan['instruction']} before you act."
         + (
@@ -222,11 +230,7 @@ def _wrote(board: Path, seat: str, since: float) -> bool:
             return True
     for path in board.glob("room/*/*.md"):
         if fresh(path):
-            try:
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            fields, _ = split_front_matter(text)
+            fields = front_fields(path)
             if fields and fields.get("from") == seat:
                 return True
     return any(fresh(path) for path in board.glob("results/**/*"))
@@ -245,9 +249,12 @@ class Runner:
             if value is not None and "\x00" not in value:
                 self.environment[name] = value
         self.child: subprocess.Popen | None = None
+        self._lock = threading.Lock()
 
     def save(self) -> None:
-        save_record(self.board, self.seat, self.record)
+        with self._lock:
+            prune_delivered(self.board, self.record)
+            save_record(self.board, self.seat, self.record)
 
     def mail(self, to: str, text: str) -> None:
         with contextlib.suppress(FoilError, OSError):
@@ -325,14 +332,18 @@ class Runner:
         for raw in child.stdout:
             out.write(raw)
             out.flush()
-            if self.record["session_id"]:
-                continue
             with contextlib.suppress(ValueError):
                 line = json.loads(raw)
                 value = line.get(key) if isinstance(line, dict) else None
-                if isinstance(value, str) and SAFE_ID.fullmatch(value):
+                if not (isinstance(value, str) and SAFE_ID.fullmatch(value)):
+                    continue
+                with self._lock:
+                    if self.record["session_id"]:
+                        continue
                     self.record["session_id"] = value
                     self.record["started"] = True
+                    prune_delivered(self.board, self.record)
+                    save_record(self.board, self.seat, self.record)
 
     def _new(self) -> list[dict[str, str]]:
         skip = set(self.record["delivered"]) | set(self.record["inflight"])
@@ -414,7 +425,7 @@ class Runner:
             self.record["last_exit"] = code
             if code == 0:
                 self.record["started"] = True
-            if code in (0, -1):
+            if code == 0 or (code == -1 and self.record["started"]):
                 self.record["delivered"] = sorted(
                     set(self.record["delivered"]) | set(self.record["inflight"])
                 )
@@ -424,11 +435,25 @@ class Runner:
                 self.save()
                 self._after(code, started)
                 continue
+            if code == -1:
+                # Session never started: keep the batch and try start again.
+                self.record["failures"] = 0
+                first = "start"
+                if not self.plan["session_key"] and self.plan["session_id"]:
+                    self.record["session_id"] = str(uuid.uuid4())
+                self.save()
+                self._after(code, started)
+                continue
             self.record["failures"] += 1
             if self.record["started"]:
                 first = "turn"
-            elif kind == "start" and not self.plan["session_key"] and self.plan["session_id"]:
+            elif (
+                not self.record["started"]
+                and not self.plan["session_key"]
+                and self.plan["session_id"]
+            ):
                 self.record["session_id"] = str(uuid.uuid4())
+                first = "start"
             waits = self.plan["retry"]
             if self.record["failures"] > len(waits):
                 self.record["paused"] = True

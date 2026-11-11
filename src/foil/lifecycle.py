@@ -1254,19 +1254,41 @@ def renew_seat(root: Path, name: str) -> None:
     persona_text(loaded)
     role = loaded["name"]
     key = rotation_key(root, role, loaded["harness"])
-    count = rotation_index(registry, role, key)
-    chosen = spawn_entry(root, role, loaded["harness"], count)
-    preset = load_preset(root, chosen["id"])
-    warning = model_warning(preset, chosen["model"])
+    window = record.get("window_id") or ""
+    session = record.get("session_id") or ""
+    reserved: dict[str, object] = {}
+
+    def apply(fresh: dict) -> None:
+        current = fresh["seats"].get(name)
+        if current is None:
+            raise FoilError(f"foil: unknown seat '{shown(name)}'")
+        if current.get("state") == "joined":
+            raise FoilError(JOINED)
+        if current.get("state") == "killed":
+            raise FoilError(f"foil: seat '{shown(name)}' is killed")
+        if (current.get("window_id") or "") != window or (
+            current.get("session_id") or ""
+        ) != session:
+            raise FoilError(f"foil: seat '{shown(name)}' changed")
+        count = rotation_index(fresh, role, key)
+        chosen = spawn_entry(root, role, loaded["harness"], count)
+        preset = load_preset(root, chosen["id"])
+        native = str(uuid.uuid4()) if preset["session_id"] == "generated" else ""
+        current.update({"harness": chosen["id"], "model": chosen["model"], "session_id": native})
+        fresh["rotation"][role] = {
+            "list": key,
+            "next": max(count, rotation_index(fresh, role, key)) + 1,
+        }
+        reserved.update(chosen=chosen, preset=preset, session_id=native, seat=dict(current))
+
+    update_registry(root, apply)
+    chosen = reserved["chosen"]
+    preset = reserved["preset"]
+    record = reserved["seat"]
+    assert isinstance(chosen, dict) and isinstance(preset, dict) and isinstance(record, dict)
+    warning = model_warning(preset, str(chosen["model"]))
     if warning:
         print(warning, file=sys.stderr)
-    record.update(
-        {
-            "harness": chosen["id"],
-            "model": chosen["model"],
-            "session_id": str(uuid.uuid4()) if preset["session_id"] == "generated" else "",
-        }
-    )
     present = _present(root, name)
     branch = record.get("branch", "") if name == "lead" else ""
     if state == "dead":
@@ -1288,29 +1310,13 @@ def renew_seat(root: Path, name: str) -> None:
             loaded,
             preset,
             worktree=record["worktree"],
-            session_id=record["session_id"],
+            session_id=str(reserved["session_id"]),
             model=record["model"],
             first="start",
             restarted=False,
             instruction=instruction,
         )
-
-        def apply(fresh: dict) -> None:
-            current = fresh["seats"].get(name)
-            if current is None or current.get("window_id") != record.get("window_id"):
-                raise FoilError(f"foil: seat '{shown(name)}' changed")
-            current.update({key: record[key] for key in ("harness", "model", "session_id")})
-
-        update_registry(root, apply)
         write_bytes(record_path(_board(root), name, ".renew"), json.dumps(present).encode())
-
-    def rotate(fresh: dict) -> None:
-        fresh["rotation"][role] = {
-            "list": key,
-            "next": max(rotation_index(fresh, role, key), count) + 1,
-        }
-
-    update_registry(root, rotate)
     print(f"renewed seat '{name}' on {entry_label(chosen)}")
 
 

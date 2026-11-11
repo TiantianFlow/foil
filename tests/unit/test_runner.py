@@ -278,3 +278,82 @@ def test_a_room_file_that_claims_to_be_from_foil_wakes_nobody(tmp_path: Path) ->
         )
         found = [item["from"] for item in items_for(board, "seat-1", set())]
         assert found == ([] if sender == "foil" else ["lead"])
+
+
+def test_an_output_session_id_is_saved_before_the_turn_ends(tmp_path: Path) -> None:
+    """An output preset's id is durable even if the runner dies mid-turn."""
+
+    (tmp_path / "probe.py").write_text(
+        "import json, sys, time\n"
+        "print(json.dumps({'thread_id': 'learned-1'}), flush=True)\n"
+        "time.sleep(600)\n",
+        encoding="utf-8",
+    )
+    plan = _plan(
+        tmp_path,
+        start=[sys.executable, str(tmp_path / "probe.py"), "{prompt}"],
+        turn=[sys.executable, str(tmp_path / "probe.py"), "{session_id}", "{prompt}"],
+        session_key="thread_id",
+        session_id="",
+        retry=[30],
+    )
+    board = Path(plan["board"])
+    runner = _run(tmp_path, plan)
+    try:
+        _until(lambda: load_record(board, "seat-1")["session_id"] == "learned-1")
+        assert load_record(board, "seat-1")["started"] is True
+        os.killpg(runner.pid, signal.SIGKILL)
+        runner.wait(timeout=20)
+        record = load_record(board, "seat-1")
+        assert record["session_id"] == "learned-1" and record["started"] is True
+    finally:
+        if runner.poll() is None:
+            os.killpg(runner.pid, signal.SIGKILL)
+            runner.wait()
+
+
+def test_a_timeout_before_the_session_starts_keeps_the_batch(tmp_path: Path) -> None:
+    from foil.board import write_mail_at
+    from foil.runner import empty_record, save_record
+
+    plan = _plan(tmp_path, turn_timeout=1, retry=[30], first="start")
+    board = Path(plan["board"])
+    mailed = write_mail_at(board, "seat-1", "task", "lead")
+    relative = mailed.relative_to(board).as_posix()
+    (tmp_path / "probe.py").write_text("import time\ntime.sleep(600)\n", encoding="utf-8")
+    seeded = empty_record()
+    seeded["session_id"] = "s-1"
+    seeded["inflight"] = [relative]
+    save_record(board, "seat-1", seeded)
+    runner = _run(tmp_path, plan)
+    try:
+        _until(lambda: load_record(board, "seat-1")["last_exit"] == -1)
+        record = load_record(board, "seat-1")
+        assert record["inflight"] == [relative]
+        assert record["delivered"] == []
+        assert record["started"] is False
+        assert record["session_id"] != "s-1"  # fresh generated id for the retry
+        notice = list((board / "mail" / "lead").glob("*-foil-*.md"))
+        assert notice and "turn_timeout" in notice[0].read_text()
+    finally:
+        os.killpg(runner.pid, signal.SIGKILL)
+        runner.wait()
+
+
+def test_a_large_board_file_is_not_fully_read_when_scanning(tmp_path: Path) -> None:
+    from foil.board import items_for
+    from foil.board_ops import FRONT_SCAN, body_for_inline, front_fields
+
+    plan = _plan(tmp_path)
+    board = Path(plan["board"])
+    mail = board / "mail" / "seat-1" / "20260101T000000Z-lead-deadbeef.md"
+    header = (
+        "---\ncontract: mail/v1\nfrom: lead\nto: seat-1\ntime: 2026-01-01T00:00:00Z\n---\n\n"
+    )
+    mail.write_bytes(header.encode() + b"x" * (FRONT_SCAN * 2))
+    assert front_fields(mail) is not None
+    assert body_for_inline(mail, INLINE) is None
+    found = items_for(board, "seat-1", set())
+    assert len(found) == 1
+    prompt = wake_prompt(plan, found, restarted=False)
+    assert f"--- {mail}" not in prompt

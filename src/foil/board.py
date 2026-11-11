@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import secrets
@@ -9,7 +10,7 @@ import stat
 from datetime import UTC, datetime
 from pathlib import Path
 
-from foil.board_ops import split_front_matter
+from foil.board_ops import front_fields, split_front_matter
 from foil.errors import FoilError, shown
 from foil.store import (
     SAFE_ID,
@@ -46,13 +47,27 @@ def _foil_record(board: Path, mailbox: str, name: str) -> Path:
 
 
 def mail_from(board: Path, mailbox: str, name: str) -> tuple[str, str] | None:
-    """``mail_name``, except that mail from ``foil`` needs Foil's record under ``run/`` (F14)."""
+    """``mail_name``, except that mail from ``foil`` needs Foil's digest under ``run/`` (F14)."""
 
     named = mail_name(name)
     if named is None or named[1] != "foil":
         return named
     record = _foil_record(board, mailbox, name)
-    if record.is_symlink() or not record.is_file():
+    path = board / "mail" / mailbox / name
+    if record.is_symlink() or not record.is_file() or path.is_symlink() or not path.is_file():
+        return None
+    try:
+        expected = record.read_text(encoding="ascii").strip()
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(65536)
+                if not chunk:
+                    break
+                digest.update(chunk)
+    except (OSError, UnicodeDecodeError):
+        return None
+    if expected != digest.hexdigest():
         return None
     return named
 
@@ -89,10 +104,7 @@ def items_for(board: Path, name: str, skip: set[str]) -> list[dict[str, str]]:
             continue
         if mail and mail_from(board, name, path.name) is None:
             continue
-        try:
-            fields, _ = split_front_matter(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError):
-            continue
+        fields = front_fields(path)
         if fields is None:
             continue
         if mail:
@@ -158,17 +170,21 @@ def write_mail_at(board: Path, to: str, text: str, sender: str) -> Path:
         path = directory / f"{token}-{sender}-{secrets.token_hex(4)}.md"
         if path.exists() or path.is_symlink():
             continue
+        record = None
         if sender == "foil":
             # Before the mail, so the mail never counts without it.
             record = _foil_record(board, to, path.name)
             private_dir(record.parent)
+            digest = (hashlib.sha256(payload).hexdigest() + "\n").encode("ascii")
             try:
-                create_exclusive(record, b"")
+                create_exclusive(record, digest)
             except FileExistsError:
                 continue
         try:
             create_exclusive(path, payload)
         except FileExistsError:
+            if record is not None:
+                record.unlink(missing_ok=True)
             continue
         return path
     raise FoilError("foil: could not write mail")

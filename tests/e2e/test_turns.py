@@ -216,12 +216,15 @@ def test_scenario_10_faults_retry_pause_timeout_leftovers_and_silence(
             repo, "reviewer-1"
         )[4]["prompt"]
 
-        # Hangs past turn_timeout: ended, mailed, not retried.
+        # Hangs past turn_timeout before the session starts: mailed, batch kept, start again.
         timed = "implementer-2's turn passed turn_timeout and was stopped."
-        _wait(repo, lambda: len(_mails(repo, "lead", timed)) == 1, timeout=30)
-        _settled(repo, capsys)
-        assert len(_turns(repo, "implementer-2")) == 1
-        assert _rows(capsys)["implementer-2"]["last_exit"] == -1
+        _wait(repo, lambda: len(_mails(repo, "lead", timed)) >= 1, timeout=30)
+        _wait(repo, lambda: len(_turns(repo, "implementer-2")) >= 2, timeout=30)
+        first, second = _turns(repo, "implementer-2")[:2]
+        assert first["first"] and second["first"]
+        assert first["session"] != second["session"]
+        task2 = next((_board(repo) / "mail" / "implementer-2").glob("*.md"))
+        assert str(task2) in first["prompt"] and str(task2) in second["prompt"]
 
         # Leaves a child and reports nothing: the child is ended, and one mail says so.
         silent = "implementer-3 ended a turn without mail, a post, or a result."
@@ -362,27 +365,60 @@ def test_scenario_14_two_fleets_integrate_on_their_own_goal_branches(
     sessions = []
     try:
         for fleet in ("alpha", "beta"):
-            work = {
-                "steps": [
-                    {
-                        "when": {"mail_contains": f"{fleet} goal"},
-                        "do": [
-                            {"sh": f"git commit --allow-empty -m '{fleet} work'"},
-                            {"send": "user", "text": f"{fleet} is done"},
-                        ],
-                    }
-                ]
-            }
+            worker = f"{fleet}-1"
+            _script(
+                repo,
+                "lead",
+                {
+                    "steps": [
+                        {
+                            "when": {"mail_contains": f"{fleet} goal"},
+                            "do": [
+                                {
+                                    "sh": (
+                                        f"foil seat list | grep -q {worker} || "
+                                        "foil seat spawn implementer "
+                                        f"--name {worker} --task '{fleet} work'"
+                                    )
+                                }
+                            ],
+                        },
+                        {
+                            "when": {"mail_contains": f"{fleet} done"},
+                            "do": [
+                                {
+                                    "sh": (
+                                        f"git merge --no-edit -m 'merge {fleet} work' "
+                                        f"foil/{worker}"
+                                    )
+                                },
+                                {"send": "user", "text": f"{fleet} is done"},
+                            ],
+                        },
+                    ]
+                },
+                fleet,
+            )
+            _script(
+                repo,
+                worker,
+                {
+                    "steps": [
+                        {
+                            "when": {"mail_contains": f"{fleet} work"},
+                            "do": [
+                                {"sh": f"git commit --allow-empty -m '{fleet} work'"},
+                                {"send": "lead", "text": f"{fleet} done"},
+                            ],
+                        }
+                    ]
+                },
+                fleet,
+            )
             monkeypatch.setenv("FOIL_FLEET", fleet)
             note = _out(capsys, "seat", "spawn", "lead", "--task", f"{fleet} goal")
             assert f"foil/goal-{fleet}" in note and "foil mail wait --all-fleets" in note
-            _script(repo, "lead", work, fleet)
             sessions.append(str(load_registry(repo)["tmux_session"]))
-        monkeypatch.delenv("FOIL_FLEET")
-        # The task mail is in flight before the script lands; a resend reaches it either way.
-        for fleet in ("alpha", "beta"):
-            monkeypatch.setenv("FOIL_FLEET", fleet)
-            assert main(["send", "lead", f"{fleet} goal again"]) == 0
         monkeypatch.delenv("FOIL_FLEET")
 
         def both() -> bool:
@@ -392,11 +428,11 @@ def test_scenario_14_two_fleets_integrate_on_their_own_goal_branches(
         def committed() -> bool:
             return all(
                 f"{fleet} work"
-                in _git(repo, "log", "-1", "--format=%s", f"foil/goal-{fleet}").stdout
+                in _git(repo, "log", "--format=%s", f"foil/goal-{fleet}").stdout
                 for fleet in ("alpha", "beta")
             )
 
-        _wait(repo, committed)
+        _wait(repo, committed, timeout=120)
         _wait(repo, lambda: all(
             (_board(repo, fleet) / "mail" / "user").is_dir() for fleet in ("alpha", "beta")
         ))
@@ -506,4 +542,3 @@ def test_scenario_16_stand_ins_run_each_preset_turn_on_its_first_session(
             assert recorded == first["session"], harness
     finally:
         _close(repo)
-

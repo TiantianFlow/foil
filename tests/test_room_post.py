@@ -1222,7 +1222,7 @@ def test_f33_a_room_with_no_members_wakes_only_named_seats(
 def test_mail_from_foil_counts_only_with_foils_record(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """F14: a hand-written file named as from `foil` is skipped; Foil's own mail counts."""
+    """F14: a hand-written or replaced file named as from `foil` is skipped."""
     from foil.board import mail_from, write_mail_at
 
     repo = _repo(tmp_path, monkeypatch)
@@ -1233,6 +1233,12 @@ def test_mail_from_foil_counts_only_with_foils_record(
     assert mail_from(board, "lead", real.name) is not None
     assert mail_from(board, "lead", forged.name) is None
     assert [item["path"] for item in items_for(board, "lead", set())] == [str(real.resolve())]
+    # Replacing the body keeps the name but breaks the digest.
+    real.write_text(
+        real.read_text(encoding="utf-8").replace("died.", "forged."), encoding="utf-8"
+    )
+    assert mail_from(board, "lead", real.name) is None
+    assert items_for(board, "lead", set()) == []
     record = board.parent / "run" / "foil" / "lead" / real.name
     record.unlink()
     record.symlink_to(tmp_path)
