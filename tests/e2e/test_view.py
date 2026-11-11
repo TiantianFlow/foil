@@ -12,6 +12,7 @@ import signal
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,19 @@ def _states(port: int) -> dict[str, str]:
     return found
 
 
+def _settled(repo: Path, port: int) -> None:
+    """Every seat idle for three polls in a row: no turn running or about to start."""
+
+    def idle() -> bool:
+        for _ in range(3):
+            if _states(port) != dict.fromkeys(SEATS, "idle"):
+                return False
+            time.sleep(1)
+        return True
+
+    _wait(repo, idle)
+
+
 def _fleet_files(repo: Path) -> dict[str, bytes]:
     """The registry and every board file, by path."""
 
@@ -103,7 +117,7 @@ def test_the_viewer_follows_a_fleet_from_start_to_teardown(
         capsys.readouterr()
         registry = load_registry(repo)
         session = str(registry["tmux_session"])
-        assert _states(port) == dict.fromkeys(SEATS, "alive")
+        _settled(repo, port)
         fleet = _page(port, "/fleets/main")
         assert f"<code>tmux attach -t &#x27;={session}&#x27;</code>" in fleet
         assert "foil/implementer-1" in fleet
@@ -120,8 +134,8 @@ def test_the_viewer_follows_a_fleet_from_start_to_teardown(
             f"tmux attach -t '={session}' \\; select-window -t {window}"
         )
         pane = _page(port, "/fleets/main/seats/implementer-1")
-        assert "foil-fake implementer-1 ready" in pane.replace("\n", "")
-        assert "foil-fake implementer-1 ready" in _peek(capsys, "implementer-1").replace("\n", "")
+        assert "foil-fake implementer-1 turn 0" in pane.replace("\n", "")
+        assert "foil-fake implementer-1 turn 0" in _peek(capsys, "implementer-1").replace("\n", "")
         assert "<td>3</td><td>0</td><td>0</td>" in _page(port, "/")
 
         # Crashed: the session is gone, every seat reads dead, and nothing is attached.
@@ -132,7 +146,7 @@ def test_the_viewer_follows_a_fleet_from_start_to_teardown(
 
         # Resumed: alive again, with the new window ids.
         assert main(["seat", "resume"]) == 0
-        _wait(repo, lambda: _states(port) == dict.fromkeys(SEATS, "alive"))
+        _settled(repo, port)
         window = load_registry(repo)["seats"]["lead"]["window_id"]
         assert _attach(port, "lead").endswith(f"select-window -t {window}")
 
@@ -152,7 +166,7 @@ def test_the_viewer_follows_a_fleet_from_start_to_teardown(
         os.kill(int(pid), signal.SIGKILL)
         _wait(repo, lambda: _states(port)["reviewer-1"] == "dead")
         assert _attach(port, "reviewer-1").endswith(f"select-window -t {target}")
-        assert "foil-fake reviewer-1 ready" in _page(port, "/fleets/main/seats/reviewer-1").replace(
+        assert "foil-fake reviewer-1 turn " in _page(port, "/fleets/main/seats/reviewer-1").replace(
             "\n", ""
         )
 

@@ -22,7 +22,6 @@ from foil.board_ops import split_front_matter
 from foil.cli import main
 from foil.project import foil_root, store_root
 from foil.store import load_registry
-from tests.e2e.support import timeout_report
 
 pytestmark = pytest.mark.e2e
 
@@ -83,13 +82,23 @@ def _scripts(repo: Path, fixture: str, seats: dict[str, str]) -> None:
         shutil.copy(source / name, dest / f"{seat}.json")
 
 
+def _logs(repo: Path) -> str:
+    directory = foil_root(repo) / "fleets" / "main" / "run" / "fake"
+    if not directory.is_dir():
+        return ""
+    chunks = []
+    for path in sorted(directory.glob("*.log")):
+        chunks.append(f"----- {path.name}\n{path.read_text(encoding='utf-8')}")
+    return "\n".join(chunks)
+
+
 def _wait(repo: Path, predicate, timeout: float = 90) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
             return
         time.sleep(0.2)
-    raise AssertionError(f"timed out\n{timeout_report(repo)}")
+    raise AssertionError(f"timed out\n{_logs(repo)}")
 
 
 def _set_auto(repo: Path) -> None:
@@ -177,11 +186,14 @@ def _no_windows(session: str) -> None:
 def _finish_scenario_1(repo: Path, timeout: float = 90) -> None:
     _wait(repo, lambda: "state: done" in _status(repo), timeout)
     assert "done" in _status(repo)
-    merged = _git(repo, "merge-base", "--is-ancestor", "foil/implementer-1", "HEAD")
+    lead = load_registry(repo)["seats"]["lead"]
+    assert lead["branch"] == "foil/goal-main"
+    merged = _git(repo, "merge-base", "--is-ancestor", "foil/implementer-1", "foil/goal-main")
     assert merged.returncode == 0
+    assert _git(repo, "merge-base", "--is-ancestor", "foil/goal-main", "HEAD").returncode != 0
     checked = subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "--noconftest", "check_calc.py"],
-        cwd=repo,
+        cwd=lead["worktree"],
         check=False,
         capture_output=True,
         text=True,
@@ -264,7 +276,7 @@ def test_scenario_3_resumes_after_the_session_dies(
         _close(repo)
 
 
-def test_restart_peek_and_nudge_stay_on_the_same_seat(
+def test_restart_peek_and_mail_stay_on_the_same_seat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _prepare(tmp_path, "scenario-2", monkeypatch)
@@ -297,8 +309,8 @@ def test_restart_peek_and_nudge_stay_on_the_same_seat(
         _wait(
             repo,
             lambda: (
-                "foil-fake lead ready" in pane("lead")
-                and "foil-fake implementer-1 ready" in pane("implementer-1")
+                "foil-fake lead turn" in pane("lead")
+                and "foil-fake implementer-1 turn" in pane("implementer-1")
             ),
         )
         assert main(["send", "lead", "ping the lead"]) == 0
@@ -307,12 +319,45 @@ def test_restart_peek_and_nudge_stay_on_the_same_seat(
         _wait(repo, lambda: path in pane("lead"))
         lead = pane("lead")
         worker = pane("implementer-1")
-        assert "foil-fake lead ready" in lead
+        assert "foil-fake lead turn" in lead
         assert path in lead
-        assert "foil-fake implementer-1 ready" not in lead
-        assert "foil-fake implementer-1 ready" in worker
-        assert "foil-fake lead ready" not in worker
+        assert "foil-fake implementer-1" not in lead
+        assert "foil-fake implementer-1 turn" in worker
+        assert "foil-fake lead" not in worker
         assert path not in worker
+    finally:
+        _close(repo)
+
+
+def test_scenario_4a_launched_lead_asks_the_human(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    for variable in ("CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID", "GROK_SESSION_ID"):
+        monkeypatch.delenv(variable, raising=False)
+    repo = _prepare(tmp_path, "scenario-4a", monkeypatch)
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    try:
+        _scripts(repo, "scenario-4a", {"lead": "lead.json"})
+        assert main(["seat", "spawn", "lead", "--task", "ask the human"]) == 0
+        capsys.readouterr()
+        assert main(["mail", "wait", "--timeout", "90"]) == 0
+        waited = capsys.readouterr().out
+        assert " lead " in waited
+        assert str((board / "mail" / "user").resolve()) in waited
+        assert "Which color" in _status(repo)
+        assert main(["send", "lead", "use blue"]) == 0
+        _wait(repo, lambda: "The answer is blue." in _status(repo))
+        window = load_registry(repo)["seats"]["lead"]["window_id"]
+        captured = subprocess.run(
+            ["tmux", "capture-pane", "-p", "-t", window, "-S", "-40"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        capsys.readouterr()
+        assert main(["seat", "peek", "lead"]) == 0
+        assert capsys.readouterr().out == captured.stdout
+        assert "foil-fake lead turn 0" in captured.stdout
     finally:
         _close(repo)
 
@@ -423,65 +468,6 @@ def _panes(session: str) -> dict[str, str]:
     return panes
 
 
-def test_busy_fake_handles_both_nudges(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    repo = _prepare(tmp_path, "scenario-2", monkeypatch)
-
-    def pane(name: str) -> str:
-        if main(["seat", "peek", name]) != 0:
-            capsys.readouterr()
-            return ""
-        return capsys.readouterr().out
-
-    try:
-        fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
-        fake.mkdir(parents=True, exist_ok=True)
-        (fake / "lead.json").write_text(
-            """{
-  "steps": [
-    {"when": {"mail_contains": "nudge-one"}, "do": [
-      {"write": "board/notes/busy.txt", "text": "started"},
-      {"wait": 2},
-      {"write": "board/notes/one.txt", "text": "handled"}
-    ]},
-    {"when": {"mail_contains": "nudge-two"}, "do": [
-      {"write": "board/notes/two.txt", "text": "handled"}
-    ]}
-  ]
-}
-""",
-            encoding="utf-8",
-        )
-        assert main(["seat", "spawn", "lead"]) == 0
-        _wait(repo, lambda: "foil-fake lead ready" in pane("lead"))
-        window = load_registry(repo)["seats"]["lead"]["window_id"]
-        subprocess.run(
-            ["tmux", "resize-window", "-t", window, "-x", "400"],
-            check=False,
-            capture_output=True,
-        )
-        assert main(["send", "lead", "nudge-one"]) == 0
-        notes = foil_root(repo) / "fleets" / "main" / "board" / "notes"
-        _wait(repo, (notes / "busy.txt").is_file)
-        assert not (notes / "one.txt").exists()
-        assert main(["send", "lead", "nudge-two"]) == 0
-        second = next(
-            path
-            for path in (foil_root(repo) / "fleets" / "main" / "board" / "mail" / "lead").glob(
-                "*.md"
-            )
-            if "nudge-two" in path.read_text(encoding="utf-8")
-        )
-        assert str(second.resolve()) in pane("lead")
-        assert not (notes / "one.txt").exists()
-        _wait(repo, lambda: (notes / "one.txt").is_file() and (notes / "two.txt").is_file())
-        assert (notes / "one.txt").read_text(encoding="utf-8") == "handled"
-        assert (notes / "two.txt").read_text(encoding="utf-8") == "handled"
-    finally:
-        _close(repo)
-
-
 def test_send_to_a_killed_seat_types_into_no_window(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -504,6 +490,28 @@ def test_send_to_a_killed_seat_types_into_no_window(
         assert all(str(written.resolve()) not in text for text in after.values())
     finally:
         _close(repo)
+
+
+def settled(repo: Path) -> None:
+    """Every launched seat idle for three checks in a row, a second apart."""
+
+    def idle() -> bool:
+        for _ in range(3):
+            previous = Path.cwd()
+            os.chdir(repo)
+            try:
+                listed = io.StringIO()
+                with contextlib.redirect_stdout(listed):
+                    main(["seat", "list", "--json"])
+            finally:
+                os.chdir(previous)
+            states = {row["state"] for row in json.loads(listed.getvalue())}
+            if states - {"idle", "killed"}:
+                return False
+            time.sleep(1)
+        return True
+
+    _wait(repo, idle)
 
 
 def test_ordinary_answer_stays_with_the_lead_and_post_reaches_every_seat(
@@ -577,19 +585,19 @@ def test_ordinary_answer_stays_with_the_lead_and_post_reaches_every_seat(
         _wait(
             repo,
             lambda: (
-                "foil-fake lead ready" in pane("lead")
-                and "foil-fake implementer-1 ready" in pane("implementer-1")
-                and "foil-fake reviewer-1 ready" in pane("reviewer-1")
+                "foil-fake lead turn 0" in pane("lead")
+                and "foil-fake implementer-1 turn 0" in pane("implementer-1")
+                and "foil-fake reviewer-1 turn 0" in pane("reviewer-1")
             ),
         )
 
         assert main(["send", "lead", "ordinary-answer"]) == 0
         mailbox = foil_root(repo) / "fleets" / "main" / "board" / "mail" / "lead"
-        written = list(mailbox.glob("*.md"))
+        # A worker's first turn without a task ends with no report, and Foil mails that.
+        written = [path for path in mailbox.glob("*.md") if "-user-" in path.name]
         assert len(written) == 1
         mail_path = str(written[0].resolve())
-        _wait(repo, lambda: f"user {mail_path}" in pane("lead"))
-        assert f"user {mail_path}" in pane("lead")
+        _wait(repo, lambda: f"mail {mail_path}" in pane("lead"))
         assert mail_path not in pane("implementer-1")
         assert mail_path not in pane("reviewer-1")
         assert room_files() == []
@@ -606,15 +614,13 @@ def test_ordinary_answer_stays_with_the_lead_and_post_reaches_every_seat(
         assert fields is not None
         assert fields["from"] == "user"
         assert "room-marker" in body
-        assert fields["nudged"] == ["implementer-1", "lead", "reviewer-1"]
+        assert fields["wakes"] == ["implementer-1", "lead", "reviewer-1"]
         room_path = str(root.resolve())
-        nudge = f"user {room_path}"
+        woken = f"mail {room_path}"
         seats = ("lead", "implementer-1", "reviewer-1")
-        _wait(repo, lambda: all(nudge in pane(name) for name in seats))
+        _wait(repo, lambda: all(woken in pane(name) for name in seats))
         for name in seats:
-            text = pane(name)
-            assert nudge in text
-            assert "room-marker" not in text
+            assert "room-marker" not in pane(name)
         _wait(
             repo,
             lambda: note_names()
@@ -627,6 +633,7 @@ def test_ordinary_answer_stays_with_the_lead_and_post_reaches_every_seat(
         )
 
         session = str(load_registry(repo)["tmux_session"])
+        settled(repo)
         before = _panes(session)
         notes_before = note_names()
         parent = root.read_bytes()
@@ -638,7 +645,8 @@ def test_ordinary_answer_stays_with_the_lead_and_post_reaches_every_seat(
         fields, body = split_front_matter(child.read_text(encoding="utf-8"))
         assert fields is not None
         assert body == "decline\n"
-        assert fields["nudged"] == []
+        assert fields["wakes"] == []
+        time.sleep(3)
         assert root.read_bytes() == parent
         assert _panes(session) == before
         assert note_names() == notes_before
@@ -727,7 +735,7 @@ def test_operator_uses_the_installed_foil_command(tmp_path: Path) -> None:
         assert note.read_text(encoding="utf-8") == "pong\n"
         listed = foil("seat", "list")
         assert listed.returncode == 0, listed.stderr
-        assert "lead\tlead\talive\t" in listed.stdout
+        assert re.search(r"lead\tlead\t(working|idle)\t", listed.stdout)
         session = str(load_registry(repo)["tmux_session"])
         assert foil("seat", "kill", "--all").returncode == 0
         _no_windows(session)
@@ -1104,10 +1112,10 @@ def test_unattended_templates_and_peek_on_timeout(
         ready = ""
         while time.monotonic() < deadline:
             ready = _peek_report(repo)
-            if "foil-fake lead ready" in ready:
+            if "foil-fake lead turn 0" in ready:
                 break
             time.sleep(0.2)
-        assert "foil-fake lead ready" in ready
+        assert "foil-fake lead turn 0" in ready
         with (
             pytest.raises(AssertionError, match="timed out") as caught,
             _live_failure_panes(repo),
@@ -1115,7 +1123,7 @@ def test_unattended_templates_and_peek_on_timeout(
             _wait(repo, lambda: False, 0)
         message = str(caught.value)
         assert "foil seat peek lead" in message
-        assert "foil-fake lead ready" in message
+        assert "foil-fake lead turn 0" in message
     finally:
         _close(repo)
 

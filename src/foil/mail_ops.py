@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from foil.board import mail_name
+from foil.board import mail_from
 from foil.board_ops import board_root, inside, read_text, split_front_matter
 from foil.errors import FoilError
 from foil.store import actor
@@ -55,7 +55,7 @@ def mail_list(*, as_json: bool = False) -> None:
             and directory.resolve().is_relative_to(mail_root)
         ):
             for path in directory.glob("*.md"):
-                named = mail_name(path.name)
+                named = mail_from(board_root(), seat, path.name)
                 if named is None or path.is_symlink() or not path.is_file():
                     continue
                 resolved = path.resolve()

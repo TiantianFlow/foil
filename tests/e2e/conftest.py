@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -12,17 +13,30 @@ from tests.harness.live_record import record
 from tests.harness.shims import install_shims
 
 _FAKE = Path(__file__).resolve().parents[1] / "harness" / "foil_fake.py"
+STAND_INS = ("claude", "codex", "gemini", "opencode", "grok")
 
 
 @pytest.fixture(autouse=True)
 def _foil_fake_on_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
-) -> None:
+) -> Path:
     bindir = tmp_path_factory.mktemp("foil-fake")
-    binary = bindir / "foil-fake"
-    binary.symlink_to(_FAKE)
+    (bindir / "foil-fake").symlink_to(_FAKE)
     install_shims(bindir)
-    monkeypatch.setenv("PATH", os.pathsep.join((str(bindir), os.environ.get("PATH", ""))))
+    # Nothing a seat runs may depend on the interpreter's own bin directory.
+    venv_bin = str(Path(sys.executable).parent)
+    kept = [part for part in os.environ.get("PATH", "").split(os.pathsep) if part != venv_bin]
+    monkeypatch.setenv("PATH", os.pathsep.join((str(bindir), *kept)))
+    return bindir
+
+
+@pytest.fixture
+def stand_ins(_foil_fake_on_path: Path) -> Path:
+    """The fake linked under each real preset's command name."""
+
+    for name in STAND_INS:
+        (_foil_fake_on_path / name).symlink_to(_FAKE)
+    return _foil_fake_on_path
 
 
 @pytest.hookimpl(hookwrapper=True)

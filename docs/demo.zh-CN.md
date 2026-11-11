@@ -61,8 +61,8 @@ harness = "codex"
 
 `worktree = true` 让每个实现者拥有自己的 Git worktree 和分支。省略 `permission` 时
 取值是 `auto`，席位无人值守地运行。`permission = "ask"` 是显式选择：
-席位会停在第一个审批提示上，在自己的窗口里等你处理。
-有些 harness 仍会在执行某些命令前请求批准，所以要看一眼新席位。
+席位无界面的每一轮都会拒绝需要审批的操作，席位报告它需要什么。
+在 `auto` 下，有些 harness 仍可能拒绝某些命令。
 
 ## 3. 交出目标
 
@@ -81,8 +81,9 @@ foil seat spawn lead --task "Make the tests pass."
 ```
 
 运筹会打开一个名为 `lead` 的 tmux 窗口，启动主座的 CLI，并把完整指令作为第一条提示。
-任务会在 CLI 启动前写成一封邮件文件，指令里写明这个文件并让主座先读它。运筹不会往新窗口里
-打任何字，所以一开始就弹出信任或更新对话框的 CLI 会停在那里等着。
+任务会在 CLI 启动前写成一封邮件文件，指令里写明这个文件并让主座先读它。主座的 CLI 无界面地运行，
+每一轮一个进程：一轮结束后，运筹的运行器等待，有主座的邮件或房间帖子到达时，在同一个会话上开始下一轮。
+运筹不往窗口里打任何字。
 
 ## 4. 看着团队组建起来
 
@@ -91,15 +92,16 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	alive	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
-lead	lead	alive		claude	You oversee the fleet: you ask other seats for proposals, weigh them against the goal, and choose, and you do not do the work yourself.
-reviewer-1	reviewer	alive		claude	You check the change the lead names and report findings, and you do not fix them.
+implementer-1	implementer	working	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	019a4c2e-7d3b-7f10-a2c4-5e8f9b1d0c63	You make the change the task asks for, and you do not review your own work.
+lead	lead	idle		claude	3f1c2a9e-5b7d-4e21-9a0c-6d8b2f4e1a77	You oversee the fleet: you ask other seats for proposals, weigh them against the goal, and choose, and you do not do the work yourself.
+reviewer-1	reviewer	working		claude	b84e0d52-1c9a-4f36-8e7b-2a5d6c3f9e10	You check the change the lead names and report findings, and you do not fix them.
 ```
 
 主座派出了一个实现者和一个审查者。实现者在自己的 worktree 里、在分支
-`foil/implementer-1` 上工作。`alive` 表示这个席位的 tmux 窗口还在，并且带着这个
-席位的标记；它不表示 Agent 是否在忙。最后两列是这个席位启动时用的 harness（模板设了
-model 时写成 `harness/model`），以及它的角色 persona 的第一行。
+`foil/implementer-1` 上工作。`working` 表示席位窗口里有一轮正在运行，`idle` 表示它的运行器
+在等邮件；一轮接一轮失败的席位是 `paused`。这些来自运行器自己的记录，而不是屏幕。最后三列是
+这个席位启动时用的 harness（模板设了 model 时写成 `harness/model`）、它的会话 id，以及它的
+角色 persona 的第一行。
 
 ## 5. 看一眼席位内部
 
@@ -109,14 +111,25 @@ foil seat peek lead --lines 8
 
 ```text
 ...
-implementer-1 /var/foil/projects/your-repo-1a2b3c/fleets/main/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+foil: turn ended (exit 0)
+foil: turn started (turn)
 ...
-reviewer-1 /var/foil/projects/your-repo-1a2b3c/fleets/main/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
+foil: turn ended (exit 0)
+foil: turn started (turn)
+...
+foil: turn ended (exit 0)
 ```
 
-peek 原样打印那个窗口最下面的内容（这里有删节）。在 Agent 自己的输出中间，有两行
-提醒：实现者报告了修复，审查者批准了它。换成真实的 harness，你会看到它的完整屏幕。
+peek 原样打印那个窗口最下面的内容（这里有删节）。在 Agent 自己的输出之间，是运行器围着每一轮
+打印的行：主座读到实现者的修复和审查者的批准的那几轮。换成真实的 harness，你会看到每一轮的完整输出。
 运筹从不解读屏幕上的内容。
+
+每一轮都从运行器写的一段提示开始。它列出新文件，短邮件的正文会直接附上，例如：
+
+```text
+New for lead (1):
+2026-09-28T00:58:56Z implementer-1 /var/foil/projects/your-repo-1a2b3c/fleets/main/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+```
 
 ## 6. 读邮件和主座的报告
 
@@ -179,9 +192,9 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	killed	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
-lead	lead	killed		claude	You oversee the fleet: you ask other seats for proposals, weigh them against the goal, and choose, and you do not do the work yourself.
-reviewer-1	reviewer	killed		claude	You check the change the lead names and report findings, and you do not fix them.
+implementer-1	implementer	killed	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	019a4c2e-7d3b-7f10-a2c4-5e8f9b1d0c63	You make the change the task asks for, and you do not review your own work.
+lead	lead	killed		claude	3f1c2a9e-5b7d-4e21-9a0c-6d8b2f4e1a77	You oversee the fleet: you ask other seats for proposals, weigh them against the goal, and choose, and you do not do the work yourself.
+reviewer-1	reviewer	killed		claude	b84e0d52-1c9a-4f36-8e7b-2a5d6c3f9e10	You check the change the lead names and report findings, and you do not fix them.
 ```
 
 所有窗口都已关闭。分支和 worktree 会保留，`git status` 里也看不到任何运筹的文件。
@@ -190,13 +203,12 @@ reviewer-1	reviewer	killed		claude	You check the change the lead names and repor
 
 ## 如果什么都没发生
 
-运行 `foil seat peek lead`。一个没有进展的席位，通常停在对话框上。加入的主座只清掉一种对话框，
-其余的都报告给你。
+运行 `foil seat list`，再运行 `foil seat peek lead`。没有席位会停在对话框上：每一轮都无界面运行，
+需要人才能继续的一轮会结束。
 
-- 路径正好是该席位记录的检出目录的文件夹信任提示：加入的主座清掉它，再看一眼确认。席位工作树在仓库之外，
-  信任仓库一次覆盖不到它。每个席位标签对每个 harness 都要信任一次。
-- 其他任何对话框，比如登录提示、更新对话框、首次运行对话框、意见征集、命令审批，或另一条路径的信任提示：
-  主座报告它，留给你在窗口里回答（`tmux ls` 能列出运筹的会话，`tmux attach` 可以进入）。
-  CLI 在窗格里完成不了的登录，先手动登录一次，然后 `foil seat kill lead`，再重新启动主座。
+- `paused`：失败的一轮重试三次也都失败了。运筹把原因发邮件给主座；主座自己就是这个席位时，发给你。
+  修好原因，比如过期的登录（手动运行一次那个 CLI，接受它的更新、首次运行和意见征集对话框），
+  再运行 `foil seat resume lead`。
+- `dead`：窗口或它的运行器没了。运筹也会为此发邮件。`foil seat resume lead` 在同一个会话上重新启动它。
 
 如果 tmux 挂了或机器重启了，`foil seat resume` 会重新启动所有没被 kill 的席位。

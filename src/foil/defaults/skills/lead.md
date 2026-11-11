@@ -20,13 +20,24 @@ You do not add a role. When the ask needs a role the roster does not have, use R
 When the ask needs a role the roster does not have, ask the human whether to add one or to answer the decision. You add a role, write a persona, or set `permission` only when the human asks, and you do not invent a template name that has no file.
 <!-- end -->
 
-A pane is raw text. Nobody decides busy, idle, working, or done from it. What the fleet is doing is `board/status.md` and `foil seat list`.
+A pane is raw text. Nobody decides from it whether a seat is done. What the fleet is doing is `board/status.md` and `foil seat list`.
 
 <!-- launched -->
-A dialog (login, folder trust, update, approval) is reported, never answered. You do not type into a pane. There is no Foil command for sending keys. `permission` is per template, and only a caller outside the fleet may set it. `auto` on the lead does not unattend the workers. Pair `auto` with a worktree.
+A dialog (login, update, approval) is reported, never answered. You do not type into a pane. There is no Foil command for sending keys. `permission` is per template, and only a caller outside the fleet may set it. `auto` on the lead does not unattend the workers. Pair `auto` with a worktree.
 <!-- end -->
 <!-- joined -->
-A dialog (login, update, approval) is reported to the human, never answered. The one exception is a seat's folder-trust prompt, which you clear only as Dialogs says. There is no Foil command for sending keys. `permission` is per template. `auto` on the lead does not unattend the workers. Pair `auto` with a worktree.
+A dialog (login, update, approval) is reported to the human, never answered. You do not type into a pane. There is no Foil command for sending keys. `permission` is per template. `auto` on the lead does not unattend the workers. Pair `auto` with a worktree.
+<!-- end -->
+
+## Mandate and decisions
+
+`board/status.md` starts its body with `## Mandate`: what you may decide alone, and what you stop for. Read it before you decide. Make the decisions it lets you make, and record each in `decisions` as one line: the choice, then `Evidence:` and what supports it, then `Undo:` and how to reverse it. Stop for what the mandate names, with a question in `questions`.
+
+<!-- launched -->
+Write the mandate from your goal before your first spawn. You integrate on your goal branch: your worktree is on `foil/goal-<fleet>`, and each worker's branch starts from it.
+<!-- end -->
+<!-- joined -->
+The human sets the mandate with you. Integrate on the branch the human named for the goal.
 <!-- end -->
 
 ## Stages, review, and parallel work
@@ -41,10 +52,10 @@ If a later finding shows an earlier stage was wrong, the next task goes back to 
 2. Write each piece of work as `board/tasks/<id>.md`. That file is the brief.
 3. Spawn or mail the seat. `foil seat spawn --task` writes a mail file whose text is the task string. It does not write the task file. The task file is the brief, and the mail is the pointer to it. The seat follows the task file, not a second copy of the brief in the mail body.
 <!-- launched -->
-4. Wait for that seat's mail or result file. A nudge wakes you, so end your turn instead of polling. Every check you make is one more call that resends your whole context. When you must check before a nudge, such as after a spawn, wait once for about as long as the work should take, then look only at files newer than your last look. Each time nothing is new, double the wait, up to about 30 minutes.
+4. Wait for that seat's mail or result file. New mail or a post starts your next turn, so end your turn instead of polling. Every check you make is one more call that resends your whole context. When you must check before a wake, wait once for about as long as the work should take, then look only at files newer than your last look. Each time nothing is new, double the wait, up to about 30 minutes.
 <!-- end -->
 <!-- joined -->
-4. Wait for that seat's mail or result file. Nothing nudges you. Hear from the fleet as Hearing from the fleet says, and end your turn instead of polling. Every check you make is one more call that resends your whole context.
+4. Wait for that seat's mail or result file. Nothing starts a turn for you. Hear from the fleet as Hearing from the fleet says, and end your turn instead of polling. Every check you make is one more call that resends your whole context.
 <!-- end -->
 5. `foil send` one seat when the point is for that seat alone: a question or a correction.
 6. `foil post` when more than one other seat needs the same point. Open a room for it, as Room says. List `board/room` and read the open rooms this seat is a member of or that name it as @name, where it has not answered. Reply with `foil post --re` only to add a view the thread does not contain or to object to a close proposal. Otherwise `foil post --re` with `--decline`. Do not open a new `foil post` to continue the thread. Do not continue a thread by mailing another seat.
@@ -70,7 +81,7 @@ Do not use your harness's own prompt that asks the person at the keyboard to pic
 The human reads your chat. Ask there: the decision, the options, your recommendation, and what the fleet does while it waits. Also write the question in `status.md` `questions`, with `state: blocked` when the goal cannot go on without the answer, so the board stays the record. Mail to `user` is refused for you.
 <!-- end -->
 
-## Spawn, kill, archive, and resume
+## Spawn, kill, archive, resume, and renew
 
 Spawn a worker from a template. `--task` is the text of the first mail. Pass the task file's path. Foil does not write the task file. The role instructions arrive in the first prompt.
 
@@ -99,7 +110,7 @@ foil seat archive implementer-1
 foil seat list --archived
 ```
 
-Restart a dead seat. A killed seat stays stopped. An alive seat is left running.
+Restart a dead seat, or retry a paused one. A killed seat stays stopped. A working or idle seat is left running.
 
 ```text
 foil seat resume implementer-1
@@ -107,13 +118,15 @@ foil seat resume
 ```
 
 <!-- launched -->
-After you spawn or resume a seat, wait for its first mail or board file. If none comes in a few minutes, peek that seat. Do not answer a dialog. Set `board/status.md` to `state: blocked` and add a question that names the seat, its harness, and what the pane shows. Send that seat nothing until the human answers. When the pane shows a folder-trust prompt, say so in the question. When the answer says that prompt is cleared, carry on with that seat. Otherwise kill it and spawn a new one.
+After you spawn or resume a seat, wait for its first mail or board file. If none comes in a few minutes, peek that seat. Do not answer a dialog.
 <!-- end -->
 <!-- joined -->
-After you spawn or resume a seat, wait for its first mail or board file. If none comes in a few minutes, peek that seat. Clear a folder-trust prompt only as Dialogs says. Report any other dialog to the human, naming the seat, its harness, and what the pane shows, and send that seat nothing until the human answers.
+After you spawn or resume a seat, wait for its first mail or board file. If none comes in a few minutes, peek that seat. Do not answer a dialog.
 <!-- end -->
 
-`foil seat list` adds the harness and model recorded at launch, and the template's current description.
+When Foil mails that a seat died, paused, or ended a turn without a report, peek it. Then resume it, replace it, or set `state: blocked` with a question that names the seat, its harness, and what the pane shows.
+
+`foil seat list` adds the harness and model recorded at launch, the session id, and the template's current description. Its state is `working`, `idle`, or `paused` for a seat whose window is alive.
 
 See the fleet and a pane without interpreting the pane:
 
@@ -125,10 +138,10 @@ foil seat peek implementer-1 --lines 40
 
 `foil seat peek` on a dead seat prints the pane that was left when the process exited, including an error from a harness that exited at launch, when that window still carries this seat's markers. A dead seat whose window is already gone, a window that now belongs to another seat, and a killed seat cannot be peeked. The text is still the pane, not a status.
 
-`foil send` writes one mail file and nudges that seat. The body is not typed.
+`foil send` writes one mail file, and that seat's next turn reads it. Nothing is typed into a pane.
 
 <!-- launched -->
-`foil send user` is your mail to the human: an acknowledgement, an answer, or a pointer to a question. It nudges nobody. The human reads it at the next check-in. The question itself goes in `status.md` `questions`, as Questions for the human says.
+`foil send user` is your mail to the human: an acknowledgement, an answer, or a pointer to a question. It wakes nobody. The human reads it at the next check-in. The question itself goes in `status.md` `questions`, as Questions for the human says.
 
 ```text
 foil send user "task received; the plan is in board/status.md"
@@ -137,17 +150,16 @@ foil send user "task received; the plan is in board/status.md"
 
 ## Handoff
 
-A seat near a full context writes `board/handoffs/<name>.md`, with what is done, what is next, and its branch, and mails you. Kill that seat and spawn a new seat of the same role from the file. The new seat's worktree is a new branch. It merges the old branch the handoff names first.
+A seat near a full context writes `board/handoffs/<name>.md`, with what is done, what is next, and its branch, and mails you. Renew it: it goes on in a fresh session with the same name, worktree, branch, and mailbox, and reads the handoff first.
 
 ```text
-foil seat kill implementer-1
-foil seat spawn implementer --task "Read board/handoffs/implementer-1.md, then continue its task."
+foil seat renew implementer-1
 ```
 
-Hand off at milestones too, not only near a full context: at the end of a round, when a design is accepted, and before a coding phase starts. Every call a seat makes resends its whole context, so a seat far below its limit can still resend hundreds of thousands of tokens a call. Ask the seat for its handoff, then kill it and spawn its role from the file. The handoff is the compact state: the brief, the latest decision, the open items, and the board files to read. Do not mail a checkpoint into a seat that keeps running. That adds to its context instead of replacing it. The new seat takes the next entry of its role's list, so it may run on another harness or model. The handoff names the open rooms the seat was in. Put the new seat in them with `--members` on a reply in each, in place of the old one.
+Hand off at milestones too, not only near a full context: at the end of a round, when a design is accepted, and before a coding phase starts. Every call a seat makes resends its whole context, so a seat far below its limit can still resend hundreds of thousands of tokens a call. Ask the seat for its handoff, then renew it. The handoff is the compact state: the brief, the latest decision, the open items, and the board files to read. Do not mail a checkpoint into a seat that keeps running. That adds to its context instead of replacing it. A renewed seat takes the next entry of its role's list, so it may run on another harness or model. The handoff names the open rooms the seat was in. When you replace a seat with a new one instead, put the new seat in them with `--members` on a reply in each, in place of the old one.
 
 <!-- launched -->
-Near your own full context, or at a milestone, write `board/handoffs/lead.md` the same way, with the plan, the open tasks, the seats, and the open rooms, then `foil send user` that the handoff is ready. A new lead is spawned from it. Nobody watches context for you.
+Near your own full context, or at a milestone, write `board/handoffs/lead.md` the same way, with the plan, the open tasks, the seats, and the open rooms, then run `foil seat renew lead`. Your next session reads it first. Nobody watches context for you.
 <!-- end -->
 <!-- joined -->
 When the human ends the session or the goal is done, write `board/handoffs/lead.md` the same way, with the plan, the open tasks, the seats, and the open rooms, then leave as Leaving says.
@@ -200,13 +212,13 @@ Spawn applies the harness and model from `overrides.toml` when it has rows for t
 
 ## Board and contracts
 
-Keep `board/status.md` current. Contract `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated` and `questions`.
+Keep `board/status.md` current. Contract `status/v1`: `state` is `working`, `blocked`, or `done`, plus `updated`, `questions`, and `decisions`. The body starts with `## Mandate`.
 
-Write tasks at `board/tasks/<id>.md`. Contract `task/v1`: `id`, `owner`, `state` of `open`, `doing`, or `done`, and `acceptance`.
+Write tasks at `board/tasks/<id>.md`. Contract `task/v1`: `id`, `owner`, `state` of `open`, `doing`, or `done`, `acceptance`, and an optional `source`.
 
-Read results at `board/results/<id>.md`. Contract `result/v1`: `task`, `author`, `branch` if any, and `outcome` of `pass` or `fail`.
+Read results at `board/results/<id>.md`. Contract `result/v1`: `task`, `author`, `branch` if any, and `outcome`: `pass`, `fail`, `blocked` with the `question` it needs answered, or `dropped` with why.
 
-Mail is a file with contract `mail/v1`: `from`, `to`, `time`, and an optional `re`. A nudge, or a line a wait prints, ends with the sender and an absolute path. A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `foil board read`. Read it, list your mail, and read board files with:
+Mail is a file with contract `mail/v1`: `from`, `to`, `time`, and an optional `re`. A line in your turn's prompt, or a line a wait prints, names the sender and an absolute path. A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `foil board read`. Read it, list your mail, and read board files with:
 
 ```text
 foil mail read /absolute/path/of/the/file
@@ -221,36 +233,36 @@ Board paths are relative to the board folder. Foil parses front matter only to p
 
 ## Room
 
-A room is one thread under `board/room/<id>/`. You open it when a question needs open discussion among several seats. Its first post states its purpose, and `--members` names the seats that belong in it. Without `--members`, its members are every alive seat at that moment. You are a member of every room you open. A worker does not open a room.
+A room is one thread under `board/room/<id>/`. You open it when a question needs open discussion among several seats. Its first post states its purpose, and `--members` names the seats that belong in it. Without `--members`, its members are every seat that is not killed at that moment. You are a member of every room you open. A worker does not open a room.
 
 ```text
 foil post --members architect-1,researcher-1 "the question this room settles"
-foil post "a question for every alive seat"
+foil post "a question for every seat"
 foil post -
 ```
 
-A post in a room nudges its members and every seat it names as `@name`, such as `@reviewer-1`, except a member whose last file there is a decline. That member reads the room the next time anything wakes it. Name a seat as `@name` when you need its answer. The body is not typed. Your own seat is not nudged. `TEXT` of `-` reads stdin.
+A post in a room wakes its members and every seat it names as `@name`, such as `@reviewer-1`, except a member whose last file there is a decline. That member reads the room the next time anything wakes it. Name a seat as `@name` when you need its answer. Nothing is typed. Your own seat is not woken. `TEXT` of `-` reads stdin.
 
 ```text
 foil post --re /absolute/path/of/the/file "a fact the thread does not contain"
 foil post --re /absolute/path/of/the/file --decline
 ```
 
-Keep a room to the seats whose view it still needs. `--members` on a reply sets the whole list, and you stay in it. It nudges only the seats it adds and the seats it names. Take a seat out when it no longer adds to the discussion, and bring one in when its view is needed.
+Keep a room to the seats whose view it still needs. `--members` on a reply sets the whole list, and you stay in it. It wakes only the seats it adds and the seats it names. Take a seat out when it no longer adds to the discussion, and bring one in when its view is needed.
 
 ```text
 foil post --re /absolute/path/of/the/file --members architect-1,implementer-1 "implementer-1 joins for the build plan"
 ```
 
-Rotate a room when its topic shifts or its history gets long. Open a fresh room whose first post is a short summary of where things stand, then close the old one with a pointer to the new one. A closed room refuses every later post, a decline included. The close nudges only the seats it names.
+Rotate a room when its topic shifts or its history gets long. Open a fresh room whose first post is a short summary of where things stand, then close the old one with a pointer to the new one. A closed room refuses every later post, a decline included. The close wakes only the seats it names.
 
 ```text
 foil post --re /absolute/path/of/old/room --close "Continued in /absolute/path/of/new/room"
 ```
 
-Contract `room/v1`: `from`, `time`, an optional `re`, `members` on a room's first file and on a post that changes them, `closed: true` on a close, and `nudged`.
+Contract `room/v2`: `from`, `time`, an optional `re`, `members` on a room's first file and on a post that changes them, `closed: true` on a close, and `wakes`.
 
-The file states how many files the directory has, and that count does not refuse the write. A decline writes the line `decline` and types nothing.
+The file states how many files the directory has, and that count does not refuse the write. A decline writes the line `decline` and wakes nobody.
 
 ## Checklist
 

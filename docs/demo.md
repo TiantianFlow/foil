@@ -69,9 +69,9 @@ Add another `[[map]]` row, with an optional `model`, when a later seat of that r
 
 `worktree = true` gives each implementer its own Git worktree and branch.
 Omitting `permission` means `auto`, and the seat runs unattended.
-`permission = "ask"` is the explicit choice: the seat stops at its first
-approval prompt and waits for you in its window. A harness may still ask
-before some commands, so peek new seats.
+`permission = "ask"` is the explicit choice: the seat's headless turns
+refuse any action that needs approval, and the seat reports what it
+needed. A harness may still refuse some commands under `auto`.
 
 ## 3. Hand over the goal
 
@@ -94,8 +94,10 @@ foil seat spawn lead --task "Make the tests pass."
 Foil opens a tmux window named `lead` and starts the lead's CLI with its
 full instructions as the first prompt. The task becomes a mail file before
 the CLI starts, and the instructions name that file and tell the lead to
-read it first. Foil types nothing into the new window, so a CLI that opens
-on a trust or update dialog waits there.
+read it first. The lead's CLI runs headless, one process per turn: when a
+turn ends, Foil's runner waits, and it starts the next turn on the same
+session when mail or a room post for the lead arrives. Foil types nothing
+into the window.
 
 ## 4. Watch the team form
 
@@ -104,17 +106,18 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	alive	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
-lead	lead	alive		claude	You oversee the fleet: you ask other seats for proposals, weigh them against the goal, and choose, and you do not do the work yourself.
-reviewer-1	reviewer	alive		claude	You check the change the lead names and report findings, and you do not fix them.
+implementer-1	implementer	working	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	019a4c2e-7d3b-7f10-a2c4-5e8f9b1d0c63	You make the change the task asks for, and you do not review your own work.
+lead	lead	idle		claude	3f1c2a9e-5b7d-4e21-9a0c-6d8b2f4e1a77	You oversee the fleet: you ask other seats for proposals, weigh them against the goal, and choose, and you do not do the work yourself.
+reviewer-1	reviewer	working		claude	b84e0d52-1c9a-4f36-8e7b-2a5d6c3f9e10	You check the change the lead names and report findings, and you do not fix them.
 ```
 
 The lead spawned an implementer and a reviewer. The implementer works in
-its own worktree on branch `foil/implementer-1`. `alive` means the seat's
-tmux window still exists and carries that seat's markers. It does not say
-whether the agent is busy. The last two columns are the harness the seat
-was launched with, written `harness/model` when its template sets a model,
-and the first line of its role's persona.
+its own worktree on branch `foil/implementer-1`. `working` means a turn is
+running in the seat's window, and `idle` that its runner waits for mail; a
+seat whose turns keep failing is `paused`. Those come from the runner's own
+record, not from the screen. The last three columns are the harness the
+seat was launched with, written `harness/model` when its template sets a
+model, its session id, and the first line of its role's persona.
 
 ## 5. Look inside a seat
 
@@ -124,15 +127,28 @@ foil seat peek lead --lines 8
 
 ```text
 ...
-implementer-1 /var/foil/projects/your-repo-1a2b3c/fleets/main/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+foil: turn ended (exit 0)
+foil: turn started (turn)
 ...
-reviewer-1 /var/foil/projects/your-repo-1a2b3c/fleets/main/board/mail/lead/20260928T005857Z-reviewer-1-d5045b2b.md
+foil: turn ended (exit 0)
+foil: turn started (turn)
+...
+foil: turn ended (exit 0)
 ```
 
-Peek prints the raw bottom of that window (trimmed here). Among the
-agent's own output are two nudge lines: the implementer reported its fix,
-and the reviewer approved it. With a real
-harness you see its full screen. Foil never interprets what is there.
+Peek prints the raw bottom of that window (trimmed here). Between the
+agent's own output are the runner's lines around each turn: the lead's
+turns that read the implementer's fix and the reviewer's approval. With a
+real harness you see each turn's full output. Foil never interprets what is
+there.
+
+Each of those turns starts from a prompt the runner writes. It lists the
+new files and inlines a short mail's body, for example:
+
+```text
+New for lead (1):
+2026-09-28T00:58:56Z implementer-1 /var/foil/projects/your-repo-1a2b3c/fleets/main/board/mail/lead/20260928T005856Z-implementer-1-df1d08d0.md
+```
 
 ## 6. Read the mail and the lead's report
 
@@ -196,9 +212,9 @@ foil seat list
 ```
 
 ```text
-implementer-1	implementer	killed	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	You make the change the task asks for, and you do not review your own work.
-lead	lead	killed		claude	You oversee the fleet: you ask other seats for proposals, weigh them against the goal, and choose, and you do not do the work yourself.
-reviewer-1	reviewer	killed		claude	You check the change the lead names and report findings, and you do not fix them.
+implementer-1	implementer	killed	/var/foil/projects/your-repo-1a2b3c/worktrees/implementer-1	codex	019a4c2e-7d3b-7f10-a2c4-5e8f9b1d0c63	You make the change the task asks for, and you do not review your own work.
+lead	lead	killed		claude	3f1c2a9e-5b7d-4e21-9a0c-6d8b2f4e1a77	You oversee the fleet: you ask other seats for proposals, weigh them against the goal, and choose, and you do not do the work yourself.
+reviewer-1	reviewer	killed		claude	b84e0d52-1c9a-4f36-8e7b-2a5d6c3f9e10	You check the change the lead names and report findings, and you do not fix them.
 ```
 
 Every window is closed. Branches and worktrees stay, and nothing from
@@ -209,19 +225,15 @@ discards uncommitted work.
 
 ## If nothing happens
 
-Run `foil seat peek lead`. A seat that makes no progress is usually
-stopped on a dialog. A joined lead clears one kind and reports the others.
+Run `foil seat list`, then `foil seat peek lead`. No seat stops on a
+dialog: each turn runs headless, and a turn that needs a person ends.
 
-- a folder-trust prompt whose path is exactly that seat's recorded
-  checkout: the joined lead clears it and peeks again to check. A seat
-  worktree lives outside the repository, so trusting the repository does
-  not cover it. Each seat label needs that trust once per harness.
-- anything else, such as a login prompt, an update dialog, a first-run
-  dialog, an opt-in, a command approval, or a trust prompt for another
-  path: the lead reports it and leaves it for you to answer in the
-  window (`tmux ls` lists Foil's session, and `tmux attach` opens it). A
-  login the CLI will not finish in the pane is done once by hand, then
-  `foil seat kill lead` and spawn the lead again.
+- `paused`: three retries of a failed turn failed too. Foil mailed the
+  reason to the lead, or to you when the lead is the seat. Fix the cause,
+  such as a login that ran out (run that CLI once by hand and accept its
+  update, first-run, and opt-in dialogs), then `foil seat resume lead`.
+- `dead`: the window or its runner is gone. Foil mailed that too.
+  `foil seat resume lead` starts it again on the same session.
 
 If tmux died or the machine rebooted, `foil seat resume` restarts every
 seat that was not killed.

@@ -1,63 +1,33 @@
 #!/usr/bin/env python3
-"""Test double for a seat CLI. Not part of the foil package.
+"""Test double for a headless seat CLI: one run is one turn. Not part of the foil package.
 
-It runs in the seat's pane, reads typed lines, and follows a script at
-`<fleet>/run/fake/<seat>.json`:
+As `foil-fake` it takes `--session ID PROMPT` for a first turn and
+`--resume ID PROMPT` for a later one. Linked as `claude`, `codex`, `gemini`,
+`opencode`, or `grok`, it accepts that preset's argv and, for the two
+output-session presets, prints the session id the way that CLI does.
 
-    {
-      "exit_on_input": false,
-      "start": [ACTION, ...],
-      "steps": [{"when": {CONDITION, ...}, "do": [ACTION, ...]}, ...]
-    }
-
-`start` runs on every launch, before the double says it is ready. A step
-runs when every condition in its `when` holds.
-
-Conditions:
-    {"mail_contains": TEXT}  the nudged mail or room file contains TEXT
-    {"launch": KIND}         this launch is "first", "resume", "fresh" or
-                             "lost"; a list names several
-    {"quiet_for": SECONDS}   no line was typed for that long; runs once
-
-Actions:
-    {"sh": COMMAND}          run a shell command; a failure stops the step
-    {"write": PATH, "text": TEXT}
-    {"send": SEAT, "text": TEXT}
-    {"wait": SECONDS}
-    {"exit": CODE}           the process ends there, in the middle of the step
-    {"hang": true}           stay alive and never read another line
-    {"dialog": TEXT, "accept": LINE}
-                             print TEXT and take typed lines until LINE; any
-                             other line ends the process with code 1
-
-A step that does not finish leaves its mail unhandled, so the next launch
-sees it again. A worker that stays silent is a script with no `send`, and
-a slow start is a `wait` in `start`.
-
-A launch is "first" when this seat never ran, "resume" when it is given
-back a session it had, and "fresh" when it ran before and gets a new one.
-`--session ID` starts a session and `--resume ID` continues one. Starting
-an id that is already in use is an error. Resuming an id this seat never
-had is the launch "lost": the double carries on with nothing remembered.
-
-A shell action sees FAKE_BOARD, FAKE_LAUNCH, FAKE_SESSION and FAKE_MAIL,
-and what a stand-in read from its command line, such as FAKE_MODEL.
+The script is `run/fake/<seat>.json`: `steps` run when a listed mail or room
+file contains `mail_contains`, and `faults` apply to turns in order. Each turn's
+argv, prompt, and stdin go to `run/fake/<seat>.turns/<n>.json` for tests to check;
+`<seat>.log` is for debugging only.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
-import select
+import re
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+import uuid
 from pathlib import Path
 
+_PATH = re.compile(r"(/[^\s`'\"]+\.md)")
+_STAND_INS = {"claude", "codex", "gemini", "opencode", "grok"}
 
-def fleet_root(prompt: str) -> Path:
+
+def _foil_root(prompt: str) -> Path:
     marker = "/run/instructions/"
     index = prompt.find(marker)
     if index >= 0:
@@ -65,339 +35,241 @@ def fleet_root(prompt: str) -> Path:
         while left > 0 and prompt[left - 1] not in " \n\t`\"'":
             left -= 1
         return Path(prompt[left:index])
-    named = os.environ.get("FOIL_PROJECT", "").strip()
-    home = os.environ.get("FOIL_HOME", "").strip()
-    fleet = os.environ.get("FOIL_FLEET", "").strip() or "main"
-    if named and home:
-        candidate = Path(home) / "projects" / named
-        fleet_dir = candidate / "fleets" / fleet
-        if (fleet_dir / "board").is_dir() or (fleet_dir / "run").is_dir():
-            return fleet_dir
-        if candidate.is_dir():
-            return candidate
-    for parent in (Path.cwd(), *Path.cwd().parents):
-        candidate = parent / ".foil"
-        if candidate.is_dir():
-            return candidate
-    raise SystemExit("foil-fake: cannot find the project folder")
+    raise SystemExit("foil-fake: the prompt names no instruction file")
 
 
-def _append(path: Path, line: str) -> None:
+def _log(path: Path, message: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
-        handle.write(line.rstrip() + "\n")
+        handle.write(message.rstrip() + "\n")
 
 
-def _lines(path: Path) -> list[str]:
-    if not path.is_file():
-        return []
-    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
-def script(fleet: Path, seat: str) -> dict:
-    path = fleet / "run" / "fake" / f"{seat}.json"
+def _script(path: Path) -> dict:
     if not path.is_file():
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
     return payload if isinstance(payload, dict) else {}
 
 
-class Sessions:
-    """What this seat was launched with, one JSON line per launch."""
-
-    def __init__(self, fleet: Path, seat: str) -> None:
-        self.path = fleet / "run" / "fake" / f"{seat}.launches"
-
-    def all(self) -> list[dict]:
-        return [json.loads(line) for line in _lines(self.path)]
-
-    def known(self, session: str) -> bool:
-        return any(item["session"] == session for item in self.all())
-
-    def last_in(self, cwd: str) -> str:
-        """The newest session started in this directory, or ""."""
-
-        found = [item["session"] for item in self.all() if item["cwd"] == cwd]
-        return found[-1] if found else ""
-
-    def record(self, session: str, launch: str, facts: dict[str, str]) -> None:
-        entry = {
-            "session": session,
-            "launch": launch,
-            "cwd": str(Path.cwd()),
-            "pid": os.getpid(),
-            **facts,
-        }
-        _append(self.path, json.dumps(entry, sort_keys=True))
+def _write_target(foil: Path, relative: str) -> Path:
+    path = Path(relative)
+    if path.is_absolute():
+        return path
+    if relative.startswith("board/"):
+        return foil / relative
+    return Path.cwd() / path
 
 
-class _Typed:
-    """Lines typed into the pane. A wait that ends with no line gives None."""
+def _run_action(foil: Path, action: dict, log_path: Path) -> bool:
+    if "sh" in action:
+        result = subprocess.run(
+            action["sh"], shell=True, check=False, capture_output=True, text=True
+        )
+        _log(log_path, f"sh {result.returncode} {action['sh']}\n{result.stdout}{result.stderr}")
+        return result.returncode == 0
+    if "write" in action:
+        target = _write_target(foil, str(action["write"]))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(str(action.get("text", "")), encoding="utf-8")
+        _log(log_path, f"write {target}")
+        return True
+    if "send" in action:
+        result = subprocess.run(
+            ["foil", "send", str(action["send"]), str(action.get("text", ""))], check=False
+        )
+        _log(log_path, f"send {result.returncode} {action['send']}")
+        return result.returncode == 0
+    if "wait" in action:
+        time.sleep(float(action["wait"]))
+        _log(log_path, f"wait {action['wait']}")
+        return True
+    _log(log_path, f"unknown action {action}")
+    return False
 
-    def __init__(self) -> None:
-        self._buffer = b""
-        self._closed = False
 
-    def read(self, timeout: float | None) -> str | None:
-        while b"\n" not in self._buffer:
-            if self._closed:
-                raise EOFError
-            ready, _, _ = select.select([0], [], [], timeout)
-            if not ready:
-                return None
-            chunk = os.read(0, 4096)
-            if not chunk:
-                self._closed = True
-                if not self._buffer:
-                    raise EOFError
-                self._buffer += b"\n"
-            self._buffer += chunk
-        raw, _, self._buffer = self._buffer.partition(b"\n")
-        return raw.decode("utf-8", errors="replace")
-
-
-class Fake:
-    def __init__(
-        self,
-        seat: str,
-        fleet: Path,
-        *,
-        session: str,
-        launch: str,
-        name: str = "foil-fake",
-        facts: dict[str, str] | None = None,
-    ) -> None:
-        self.seat = seat
-        self.fleet = fleet
-        self.session = session
-        self.launch = launch
-        self.name = name
-        self.facts = facts or {}
-        directory = fleet / "run" / "fake"
-        self.log_path = directory / f"{seat}.log"
-        self.handled_path = directory / f"{seat}.handled"
-        self.handled = set(_lines(self.handled_path))
-        self.typed = _Typed()
-        payload = script(fleet, seat)
-        self.steps = [item for item in payload.get("steps") or [] if isinstance(item, dict)]
-        self.start = [item for item in payload.get("start") or [] if isinstance(item, dict)]
-        self.exit_on_input = payload.get("exit_on_input") is True
-
-    def log(self, message: str) -> None:
-        _append(self.log_path, message)
-
-    def _target(self, relative: str) -> Path:
-        path = Path(relative)
-        if path.is_absolute():
-            return path
-        if relative.startswith("board/"):
-            return self.fleet / relative
-        return Path.cwd() / path
-
-    def _act(self, action: dict, mail: str) -> bool:
-        if "sh" in action:
-            environment = {
-                **os.environ,
-                "FAKE_BOARD": str(self.fleet / "board"),
-                "FAKE_LAUNCH": self.launch,
-                "FAKE_SESSION": self.session,
-                "FAKE_MAIL": mail,
-                **{f"FAKE_{key.upper()}": value for key, value in self.facts.items()},
-            }
-            result = subprocess.run(
-                action["sh"],
-                shell=True,
-                check=False,
-                capture_output=True,
-                text=True,
-                env=environment,
-            )
-            self.log(f"sh {result.returncode} {action['sh']}\n{result.stdout}{result.stderr}")
-            return result.returncode == 0
-        if "write" in action:
-            target = self._target(str(action["write"]))
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(str(action.get("text", "")), encoding="utf-8")
-            self.log(f"write {target}")
-            return True
-        if "send" in action:
-            result = subprocess.run(
-                ["foil", "send", str(action["send"]), str(action.get("text", ""))],
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            self.log(f"send {result.returncode} {action['send']}\n{result.stdout}{result.stderr}")
-            return result.returncode == 0
-        if "wait" in action:
-            time.sleep(float(action["wait"]))
-            self.log(f"wait {action['wait']}")
-            return True
-        if "exit" in action:
-            self.log(f"exit {action['exit']}")
-            print(f"{self.name}: exit {action['exit']}", flush=True)
-            raise SystemExit(int(action["exit"]))
-        if "hang" in action:
-            self.log("hang")
-            while True:
-                time.sleep(3600)
-        if "dialog" in action:
-            return self._dialog(str(action["dialog"]), str(action.get("accept", "")))
-        self.log(f"unknown action {action}")
-        return False
-
-    def _dialog(self, text: str, accept: str) -> bool:
-        print(text, flush=True)
-        self.log(f"dialog {text}")
-        while True:
-            try:
-                line = self.typed.read(None)
-            except EOFError:
-                raise SystemExit(0) from None
-            if line is None or not line.strip():
-                continue
-            if line.strip() == accept:
-                self.log("dialog accepted")
-                return True
-            self.log(f"dialog refused by {line.strip()}")
-            print(f"{self.name}: not an answer", flush=True)
-            raise SystemExit(1)
-
-    def _matches(self, when: dict, text: str | None) -> bool:
-        wanted = when.get("launch")
-        if wanted is not None:
-            kinds = wanted if isinstance(wanted, list) else [wanted]
-            if self.launch not in kinds:
-                return False
+def _handle(path: Path, *, foil: Path, steps: list, handled: set[str], fake: Path, seat: str,
+            prompt: str) -> None:
+    key = str(path.resolve())
+    log_path = fake / f"{seat}.log"
+    inline = f"--- {path}" in prompt
+    if key in handled:
+        _log(log_path, f"again {key}")
+        return
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8")
+    _log(log_path, f"mail {key}" + (" inline" if inline else ""))
+    print(f"foil-fake {seat} mail {key}", flush=True)
+    os.environ["FOIL_FAKE_ITEM"] = key
+    for step in steps:
+        when = step.get("when") or {}
         needle = str(when.get("mail_contains", ""))
-        if text is None:
-            return not needle
-        return bool(needle) and needle in text
-
-    def _do(self, actions: list, mail: str) -> bool:
-        return all(isinstance(item, dict) and self._act(item, mail) for item in actions)
-
-    def _mark(self, key: str) -> None:
-        _append(self.handled_path, key)
-        self.handled.add(key)
-
-    def _handle(self, mail: Path) -> None:
-        key = str(mail.resolve())
-        if key in self.handled or not mail.is_file():
-            return
-        text = mail.read_text(encoding="utf-8")
-        self.log(f"mail {key}")
-        for step in self.steps:
-            when = step.get("when") or {}
-            if "quiet_for" in when or not self._matches(when, text):
-                continue
-            if not self._do(step.get("do") or [], key):
-                self.log(f"stopped {key}")
+        if not needle or needle not in text:
+            continue
+        for action in step.get("do") or []:
+            if not isinstance(action, dict) or not _run_action(foil, action, log_path):
+                _log(log_path, f"stopped {key}")
                 return
-        self._mark(key)
-
-    def _quiet(self) -> Iterator[tuple[float, str, dict]]:
-        for index, step in enumerate(self.steps):
-            when = step.get("when") or {}
-            key = f"quiet:{index}"
-            if "quiet_for" in when and key not in self.handled and self._matches(when, None):
-                yield float(when["quiet_for"]), key, step
-
-    def _fire_quiet(self, since: float) -> float | None:
-        """Run each quiet step that is due. Return the seconds until the next one."""
-
-        left: float | None = None
-        for seconds, key, step in list(self._quiet()):
-            remaining = since + seconds - time.monotonic()
-            if remaining > 0:
-                left = remaining if left is None else min(left, remaining)
-                continue
-            self.log(f"quiet {seconds}")
-            self._mark(key)
-            self._do(step.get("do") or [], "")
-        return left
-
-    def run(self) -> int:
-        self.log(f"launch {self.launch} session={self.session}")
-        if not self._do(self.start, ""):
-            self.log("start stopped")
-        print(f"{self.name} {self.seat} ready", flush=True)
-        self.log("ready")
-        # Startup re-reads this seat's mailbox only. Room files are not scanned:
-        # a hand-written room file wakes nobody, and a decline types nothing.
-        mailbox = self.fleet / "board" / "mail" / self.seat
-        if mailbox.is_dir():
-            for mail in sorted(mailbox.glob("*.md")):
-                self._handle(mail)
-        since = time.monotonic()
-        while True:
-            try:
-                raw = self.typed.read(self._fire_quiet(since))
-            except EOFError:
-                return 0
-            if raw is None:
-                continue
-            line = raw.strip()
-            if not line:
-                continue
-            since = time.monotonic()
-            if self.exit_on_input:
-                return 0
-            print(line, flush=True)
-            nudged = _nudged_path(line)
-            if nudged is not None:
-                self._handle(nudged)
-                since = time.monotonic()
+    with (fake / f"{seat}.handled").open("a", encoding="utf-8") as handle:
+        handle.write(key + "\n")
+    handled.add(key)
 
 
-def _nudged_path(line: str) -> Path | None:
-    """The file named by a nudge. Mail and room use one line shape."""
-
-    sender, separator, raw = line.partition(" ")
-    if not separator or not sender.strip() or not raw.strip():
-        return None
-    path = Path(raw.strip())
-    if not path.is_absolute():
-        return None
-    return path
-
-
-def seat_id(name: str) -> str:
-    seat = os.environ.get("FOIL_SEAT_ID", "")
-    if not seat:
-        print(f"{name}: FOIL_SEAT_ID is unset", file=sys.stderr)
-        raise SystemExit(1)
-    return seat
+# Per stand-in: flags that take a value, flags that take none, and leading words.
+_SHAPES = {
+    "claude": ({"-p", "--disallowedTools", "--session-id", "--resume", "--model",
+                "--permission-mode"}, set(), []),
+    "gemini": ({"-p", "--session-id", "--resume", "--model", "--approval-mode"},
+               {"--skip-trust"}, []),
+    "grok": ({"-p", "--session-id", "--resume", "--model"}, {"--always-approve"}, []),
+    "codex": ({"--model"}, {"--json", "--dangerously-bypass-approvals-and-sandbox"}, ["exec"]),
+    "opencode": ({"--format", "--session", "--model"}, {"--auto"}, ["run"]),
+}
 
 
-def refuse(name: str, seat: str, fleet: Path, message: str) -> None:
-    """End a launch the CLI would not accept. The pane and the log both say why."""
+def _flags(name: str, argv: list[str]) -> tuple[dict[str, str], set[str], list[str]]:
+    valued, bare, words = _SHAPES[name]
+    if argv[: len(words)] != words:
+        raise SystemExit(f"{name} stand-in: expected {' '.join(words)}")
+    values: dict[str, str] = {}
+    flags: set[str] = set()
+    positional: list[str] = []
+    rest = argv[len(words):]
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token in valued and index + 1 < len(rest) and token not in values:
+            values[token] = rest[index + 1]
+            index += 2
+            continue
+        if token in bare and token not in flags:
+            flags.add(token)
+        elif token.startswith("-"):
+            raise SystemExit(f"{name} stand-in: unknown flag {token}")
+        else:
+            positional.append(token)
+        index += 1
+    return values, flags, positional
 
-    _append(fleet / "run" / "fake" / f"{seat}.log", f"refused: {message}")
-    print(f"{name}: {message}", file=sys.stderr, flush=True)
-    raise SystemExit(2)
+
+def _parse(name: str, argv: list[str]) -> tuple[str, str, bool, list[str]]:
+    """(prompt, session id, first turn, argv to log) for the fake or a stand-in's argv."""
+
+    if name == "foil-fake":
+        if len(argv) != 3 or argv[0] not in ("--session", "--resume"):
+            raise SystemExit("foil-fake: usage: --session|--resume ID PROMPT")
+        return argv[2], argv[1], argv[0] == "--session", []
+    values, flags, positional = _flags(name, argv)
+    if name in ("claude", "gemini", "grok"):
+        if positional or "-p" not in values:
+            raise SystemExit(f"{name} stand-in: the prompt goes in -p")
+        if ("--session-id" in values) == ("--resume" in values):
+            raise SystemExit(f"{name} stand-in: one of --session-id and --resume")
+        if name == "claude" and values.get("--disallowedTools") != "AskUserQuestion":
+            raise SystemExit("claude stand-in: --disallowedTools AskUserQuestion")
+        if name == "gemini" and "--skip-trust" not in flags:
+            raise SystemExit("gemini stand-in: --skip-trust")
+        session = values.get("--session-id") or values["--resume"]
+        return values["-p"], session, "--session-id" in values, [name, *argv]
+    if name == "codex":
+        if values.get("--json", "") or "--json" not in flags:
+            raise SystemExit("codex stand-in: --json")
+        if len(positional) == 1:
+            return positional[0], "", True, [name, *argv]
+        if len(positional) == 3 and positional[0] == "resume":
+            return positional[2], positional[1], False, [name, *argv]
+        raise SystemExit("codex stand-in: PROMPT or resume ID PROMPT")
+    if values.get("--format") != "json" or len(positional) != 1:
+        raise SystemExit("opencode stand-in: --format json and one PROMPT")
+    session = values.get("--session", "")
+    return positional[0], session, not session, [name, *argv]
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="foil-fake")
-    kind = parser.add_mutually_exclusive_group()
-    kind.add_argument("--session", default="")
-    kind.add_argument("--resume")
-    parser.add_argument("--prompt", default="")
-    args = parser.parse_args()
-    seat = seat_id("foil-fake")
-    fleet = fleet_root(args.prompt)
-    sessions = Sessions(fleet, seat)
-    if args.resume is not None:
-        session, launch = args.resume, "resume"
-        if not sessions.known(session):
-            launch = "lost"
-    else:
-        if args.session and sessions.known(args.session):
-            refuse("foil-fake", seat, fleet, f"session '{args.session}' is already in use")
-        session, launch = args.session, ("fresh" if sessions.all() else "first")
-    sessions.record(session, launch, {"cli": "foil-fake"})
-    return Fake(seat, fleet, session=session, launch=launch).run()
+    name = Path(sys.argv[0]).name
+    if name not in _STAND_INS:
+        name = "foil-fake"
+    prompt, session, first, flags = _parse(name, sys.argv[1:])
+    seat = os.environ.get("FOIL_SEAT_ID", "")
+    if not seat:
+        print("foil-fake: FOIL_SEAT_ID is unset", file=sys.stderr)
+        return 1
+    foil = _foil_root(prompt)
+    fake = foil / "run" / "fake"
+    log_path = fake / f"{seat}.log"
+    fake.mkdir(parents=True, exist_ok=True)
+    if flags:
+        _log(log_path, "argv " + json.dumps(flags))
+    if not session:
+        session = str(uuid.uuid4())
+        key = "thread_id" if name == "codex" else "sessionID"
+        print(json.dumps({"type": "session", key: session}), flush=True)
+    sessions_path = fake / f"{seat}.sessions"
+    known = set(sessions_path.read_text().split()) if sessions_path.is_file() else set()
+    if first and session in known:
+        _log(log_path, f"session in use {session}")
+        print(f"foil-fake: session {session} is already in use", file=sys.stderr)
+        return 9
+    if first:
+        known.add(session)
+        sessions_path.write_text("\n".join(sorted(known)) + "\n")
+    elif session not in known:
+        _log(log_path, f"unknown session {session}")
+        print(f"foil-fake: no session {session}", file=sys.stderr)
+        return 9
+    # Faults count every turn of the seat; the printed number counts this session's turns.
+    counts_path = fake / f"{seat}.turns.json"
+    counts = json.loads(counts_path.read_text()) if counts_path.is_file() else {}
+    turn = counts.get("", 0)
+    number = counts.get(session, 0)
+    counts.update({"": turn + 1, session: number + 1})
+    counts_path.write_text(json.dumps(counts))
+    stdin = sys.stdin.read() if not sys.stdin.isatty() else "tty"
+    _log(log_path, f"turn {number} {'start' if first else 'resume'} session={session} "
+         f"stdin={'empty' if stdin == '' else 'open'}")
+    print(f"foil-fake {seat} turn {number}", flush=True)
+    record = {
+        "argv": [name, *sys.argv[1:]],
+        "prompt": prompt,
+        "session": session,
+        "first": first,
+        "stdin": stdin,
+        "cwd": str(Path.cwd()),
+    }
+    (fake / f"{seat}.turns").mkdir(exist_ok=True)
+    (fake / f"{seat}.turns" / f"{turn:03d}.json").write_text(json.dumps(record))
+    script = _script(fake / f"{seat}.json")
+    faults = script.get("faults") or []
+    fault = faults[turn] if turn < len(faults) and isinstance(faults[turn], dict) else {}
+    if fault.get("leave_child"):
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(600)"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        (fake / f"{seat}.child").write_text(str(child.pid))
+    if fault.get("hang"):
+        time.sleep(3600)
+    if "delay" in fault:
+        time.sleep(float(fault["delay"]))
+    if "exit" in fault:
+        _log(log_path, f"exit {fault['exit']}")
+        return int(fault["exit"])
+    if fault.get("silent"):
+        _log(log_path, "silent")
+        return 0
+    handled_path = fake / f"{seat}.handled"
+    handled = set(handled_path.read_text().split()) if handled_path.is_file() else set()
+    board = foil / "board"
+    for raw in dict.fromkeys(_PATH.findall(prompt)):
+        path = Path(raw)
+        try:
+            relative = path.relative_to(board).as_posix()
+        except ValueError:
+            continue
+        if relative.startswith((f"mail/{seat}/", "room/")):
+            _handle(path, foil=foil, steps=script.get("steps") or [], handled=handled,
+                    fake=fake, seat=seat, prompt=prompt)
+    return 0
 
 
 if __name__ == "__main__":

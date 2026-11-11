@@ -52,7 +52,7 @@ class CommandSpec:
     commands: dict[str, CommandSpec] | None = None
 
 
-# docs/requirements.md §6.1 — nine top-level commands, twenty-six actions.
+# docs/requirements.md §6.1 — nine top-level commands, twenty-seven actions.
 SECTION_6 = CommandSpec(
     flags=(FlagSpec("--version"),),
     commands={
@@ -72,8 +72,9 @@ SECTION_6 = CommandSpec(
                 ),
                 "archive": CommandSpec(positionals=(PositionalSpec("NAME"),)),
                 "resume": CommandSpec(positionals=(PositionalSpec("NAME", "?"),)),
+                "renew": CommandSpec(positionals=(PositionalSpec("NAME"),)),
                 "list": CommandSpec(
-                    flags=(FlagSpec("--json"), FlagSpec("--archived")),
+                    flags=(FlagSpec("--json"), FlagSpec("--archived"), FlagSpec("--all-fleets")),
                 ),
                 "peek": CommandSpec(
                     flags=(FlagSpec("--lines", metavar="N", default=40),),
@@ -116,6 +117,7 @@ SECTION_6 = CommandSpec(
                     flags=(
                         FlagSpec("--timeout", metavar="SECONDS", default=1800),
                         FlagSpec("--wake"),
+                        FlagSpec("--all-fleets"),
                     ),
                 ),
             }
@@ -182,6 +184,7 @@ SECTION_6_SYNOPSES = (
     "foil seat kill NAME",
     "foil seat archive NAME",
     "foil seat resume [NAME]",
+    "foil seat renew NAME",
     "foil seat list",
     "foil seat peek NAME",
     "foil seat join lead",
@@ -332,10 +335,10 @@ def test_section_6_synopses_are_the_requirements_oracle() -> None:
     text = REQUIREMENTS.read_text(encoding="utf-8")
     missing = [synopsis for synopsis in SECTION_6_SYNOPSES if f"`{synopsis}`" not in text]
     assert missing == [], "section 6.1 is missing synopses:\n" + "\n".join(missing)
-    assert "twenty-six actions" in text
+    assert "twenty-seven actions" in text
     assert "nine top-level commands" in text
     list_row = next(line for line in text.splitlines() if line.startswith("| `foil seat list`"))
-    assert "--json" in list_row and "--archived" in list_row
+    assert all(flag in list_row for flag in ("--json", "--archived", "--all-fleets"))
 
 
 def test_command_surface_matches_requirements_section_6() -> None:

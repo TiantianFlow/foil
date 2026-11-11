@@ -122,7 +122,7 @@ def harnesses(repo: Path) -> dict[str, str]:
         used.extend(str(seat.get("harness") or "") for seat in seats.values())
     if not any(used):
         used = [item["id"] for item in read_maps(repo) if item["role"] == "lead"][:1]
-    return {name: load_preset(repo, name)["command"][0] for name in sorted(set(used)) if name}
+    return {name: load_preset(repo, name)["start"][0] for name in sorted(set(used)) if name}
 
 
 def record(repo: Path, test: str, passed: bool) -> None:

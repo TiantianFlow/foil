@@ -1,4 +1,4 @@
-"""Requirement scenarios for `foil post` and the room nudge.
+"""Requirement scenarios for `foil post` and the seats a post wakes.
 
 The fake harness and a stand-in tmux are the seats. No network and no agent CLI.
 """
@@ -7,21 +7,20 @@ from __future__ import annotations
 
 import io
 import json
-import os
 import re
 import subprocess
-import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
+from foil.board import items_for
 from foil.board_ops import split_front_matter
 from foil.cli import main
 from foil.lifecycle import _instruction
 from foil.presets import load_template
-from foil.project import common_dir, foil_root, project_key
+from foil.project import foil_root
 from foil.store import SCHEMA_VERSION, create_exclusive
 from foil.tmux import TmuxController, TmuxTarget
 from tests.test_slice_b import _repo
@@ -41,7 +40,7 @@ _CHOICE = (
     "Send is one seat. Post is a room's members. "
     "The task and result files are the durable record. A note wakes nobody."
 )
-_ROOM_FIELDS = "room/v1 (from, time, optional re, members, closed, nudged)."
+_ROOM_FIELDS = "room/v2 (from, time, optional re, members, closed, wakes)."
 _TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _COUNT = re.compile(r"This directory has (\d+) files, and \1 does not refuse the write\.")
 
@@ -136,12 +135,19 @@ def _open(path: Path) -> tuple[dict[str, str | list[str]], str]:
     return fields, body
 
 
-def _nudge_lines(calls: list[list[str]]) -> list[str]:
-    return [argv[-1] for argv in calls if argv[:2] == ["send-keys", "-l"]]
+def _typed(calls: list[list[str]]) -> list[list[str]]:
+    return [argv for argv in calls if argv and argv[0] == "send-keys"]
 
 
-def _nudge_windows(calls: list[list[str]]) -> list[str]:
-    return [argv[argv.index("-t") + 1] for argv in calls if argv[:2] == ["send-keys", "-l"]]
+def _woken(repo: Path, calls: list[list[str]] | None = None) -> list[str]:
+    """The `wakes` of the newest room file. Given the tmux calls, nothing was typed."""
+
+    if calls is not None:
+        assert _typed(calls) == []
+    newest = max(_room(repo), key=lambda path: path.stat().st_mtime_ns)
+    wakes = _open(newest)[0]["wakes"]
+    assert isinstance(wakes, list)
+    return wakes
 
 
 def _one_line(capsys: pytest.CaptureFixture[str]) -> str:
@@ -185,7 +191,7 @@ def _refused(
     assert main(argv) == 1
     _one_line(capsys)
     assert [(path, path.read_bytes()) for path in _room(repo)] == before
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
 
 
 def _post(
@@ -216,7 +222,7 @@ def test_a_post_stays_in_the_fleet_that_wrote_it(
     files = sorted(path for path in side.rglob("*.md") if path.is_file())
     assert len(files) == 1
     assert "only side" in files[0].read_text(encoding="utf-8")
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
 
 
 def test_f33_waking_post_writes_one_room_file_and_nudges_every_other_alive_seat(
@@ -236,18 +242,17 @@ def test_f33_waking_post_writes_one_room_file_and_nudges_every_other_alive_seat(
     assert path.name == f"{path.parent.name}.md"
     assert [item.name for item in path.parent.iterdir()] == [path.name]
     fields, body = _open(path)
-    assert fields["contract"] == "room/v1"
+    assert fields["contract"] == "room/v2"
     assert fields["from"] == "lead"
     assert _TIME.fullmatch(str(fields["time"]))
-    assert fields["nudged"] == ["implementer-1", "reviewer-1"]
+    assert fields["wakes"] == ["implementer-1", "reviewer-1"]
     assert "re" not in fields
     assert "generation" not in fields
     assert "generation:" not in path.read_text(encoding="utf-8")
     assert "a view" in body
-    line = f"lead {path.resolve()}"
-    assert _nudge_lines(calls) == [line, line]
-    assert _nudge_windows(calls) == ["@2", "@3"]
-    assert "a view" not in line
+    f"lead {path.resolve()}"
+    assert _typed(calls) == []
+    assert _woken(repo) == ["implementer-1", "reviewer-1"]
     _no_pane_scrape(calls)
 
 
@@ -259,11 +264,9 @@ def test_f33_empty_seat_id_sends_as_user_and_reaches_every_alive_seat(
     path, calls = _post(repo, monkeypatch, "from outside")
     fields, _body = _open(path)
     assert fields["from"] == "user"
-    assert fields["nudged"] == ["implementer-1", "lead", "reviewer-1"]
-    line = f"user {path.resolve()}"
-    assert _nudge_lines(calls) == [line, line, line]
-    assert _nudge_windows(calls) == ["@2", "@1", "@3"]
-    assert "from outside" not in line
+    assert fields["wakes"] == ["implementer-1", "lead", "reviewer-1"]
+    assert _typed(calls) == []
+    assert _woken(repo) == ["implementer-1", "lead", "reviewer-1"]
 
 
 def test_f33_a_reply_wakes_the_members_except_a_member_whose_last_file_is_a_decline(
@@ -282,32 +285,31 @@ def test_f33_a_reply_wakes_the_members_except_a_member_whose_last_file_is_a_decl
     assert child.parent == root.parent
     assert child.name != f"{child.parent.name}.md"
     fields, body = _open(child)
-    assert fields["contract"] == "room/v1"
+    assert fields["contract"] == "room/v2"
     assert _TIME.fullmatch(str(fields["time"]))
     assert fields["re"] == str(root.resolve())
     assert fields["from"] == "lead"
     assert "members" not in fields
-    assert fields["nudged"] == ["reviewer-1"]
+    assert fields["wakes"] == ["reviewer-1"]
     assert "a further fact" in body
-    assert _nudge_windows(calls) == ["@3"]
+    assert _woken(repo) == ["reviewer-1"]
     # @implementer-1 wakes the member that declined.
     monkeypatch.setenv("FOIL_SEAT_ID", "reviewer-1")
     calls = _install_tmux(monkeypatch)
     assert main(["post", "--re", str(child.resolve()), "@implementer-1, an objection"]) == 0
     reply = max(_room(repo), key=lambda path: path.stat().st_mtime_ns)
     fields, _body = _open(reply)
-    assert fields["nudged"] == ["implementer-1", "lead"]
-    line = f"reviewer-1 {reply.resolve()}"
-    assert _nudge_lines(calls) == [line, line]
-    assert _nudge_windows(calls) == ["@2", "@1"]
-    assert "an objection" not in line
+    assert fields["wakes"] == ["implementer-1", "lead"]
+    f"reviewer-1 {reply.resolve()}"
+    assert _typed(calls) == []
+    assert _woken(repo) == ["implementer-1", "lead"]
     # A post after the decline makes implementer-1's last file a waking one again.
     monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
     assert main(["post", "--re", str(root.resolve()), "my view after all"]) == 0
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
     calls = _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root.resolve()), "noted"]) == 0
-    assert _nudge_windows(calls) == ["@2", "@3"]
+    assert _woken(repo) == ["implementer-1", "reviewer-1"]
 
 def test_s6_a_worker_replies_but_does_not_open_a_room(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -318,18 +320,18 @@ def test_s6_a_worker_replies_but_does_not_open_a_room(
     _refused(capsys, repo, ["post", "from the worker"], monkeypatch)
     assert _room(repo) == []
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
-    calls = _install_tmux(monkeypatch)
+    _install_tmux(monkeypatch)
     assert main(["post", "--members", "implementer-1", "a room"]) == 0
     root = _room(repo)[0]
     monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
-    calls = _install_tmux(monkeypatch)
+    _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root), "from the worker"]) == 0
     assert capsys.readouterr().err == ""
     path = max(_room(repo), key=lambda item: item.stat().st_mtime_ns)
     fields, _body = _open(path)
     assert fields["from"] == "implementer-1"
-    assert fields["nudged"] == ["lead"]
-    assert _nudge_windows(calls) == ["@1"]
+    assert fields["wakes"] == ["lead"]
+    assert _woken(repo) == ["lead"]
     for flags in (["--members", "reviewer-1"], ["--close"]):
         _refused(capsys, repo, ["post", "--re", str(root), *flags, "text"], monkeypatch)
 
@@ -345,8 +347,8 @@ def test_s6_lead_may_post(
     path = _room(repo)[0]
     fields, _body = _open(path)
     assert fields["from"] == "lead"
-    assert fields["nudged"] == ["implementer-1", "reviewer-1"]
-    assert "@1" not in _nudge_windows(calls)
+    assert fields["wakes"] == ["implementer-1", "reviewer-1"]
+    assert "lead" not in _woken(repo, calls)
 
 
 def test_f33_text_dash_reads_stdin(
@@ -360,11 +362,9 @@ def test_f33_text_dash_reads_stdin(
     assert main(["post", "-"]) == 0
     path = _room(repo)[0]
     fields, body = _open(path)
-    assert fields["contract"] == "room/v1"
+    assert fields["contract"] == "room/v2"
     assert body.endswith("does not refuse the write.\n\nfrom stdin\n")
-    line = f"user {path.resolve()}"
-    assert _nudge_lines(calls) == [line, line, line]
-    assert "from stdin" not in line
+    assert _typed(calls) == []
 
 
 def test_f31_board_read_prints_the_room_file_and_list_shows_it(
@@ -383,10 +383,10 @@ def test_f31_board_read_prints_the_room_file_and_list_shows_it(
     assert str(relative) in listed
     assert main(["board", "read", str(path), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["contract"] == "room/v1"
+    assert payload["contract"] == "room/v2"
     assert payload["from"] == "user"
     assert _TIME.fullmatch(payload["time"])
-    assert payload["nudged"] == ["implementer-1", "lead", "reviewer-1"]
+    assert payload["wakes"] == ["implementer-1", "lead", "reviewer-1"]
     assert "generation" not in payload
     assert "re" not in payload
     assert payload["body"].endswith("does not refuse the write.\n\nvisible\n")
@@ -446,28 +446,10 @@ def test_f33_decline_word_in_the_body_still_wakes(
     repo = _repo(tmp_path, monkeypatch)
     path, calls = _post(repo, monkeypatch, "decline")
     fields, body = _open(path)
-    assert fields["nudged"] == ["implementer-1", "lead", "reviewer-1"]
+    assert fields["wakes"] == ["implementer-1", "lead", "reviewer-1"]
     assert body.endswith("does not refuse the write.\n\ndecline\n")
     assert body != "decline\n"
-    line = f"user {path.resolve()}"
-    assert _nudge_lines(calls) == [line, line, line]
-
-
-def test_f33_empty_seat_id_reaches_a_seat_named_user(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = _repo(tmp_path, monkeypatch)
-    _fleet(repo, _seat("lead", window="@1"), _seat("user", window="@9"))
-    monkeypatch.setenv("FOIL_SEAT_ID", "")
-    calls = _install_tmux(monkeypatch)
-    assert main(["post", "hello"]) == 0
-    path = _room(repo)[0]
-    fields, _body = _open(path)
-    assert fields["from"] == "user"
-    assert fields["nudged"] == ["lead", "user"]
-    line = f"user {path.resolve()}"
-    assert _nudge_lines(calls) == [line, line]
-    assert _nudge_windows(calls) == ["@1", "@9"]
+    assert _typed(calls) == []
 
 
 def test_f33_a_hand_written_file_does_not_change_the_room(
@@ -488,9 +470,9 @@ def test_f33_a_hand_written_file_does_not_change_the_room(
     child = max(_room(repo), key=lambda path: path.stat().st_mtime_ns)
     fields, body = _open(child)
     assert fields["re"] == str(root.resolve())
-    assert fields["nudged"] == ["lead", "reviewer-1"]
+    assert fields["wakes"] == ["lead", "reviewer-1"]
     assert body.endswith("does not refuse the write.\n\na new fact @nobody\n")
-    assert _nudge_windows(calls) == ["@1", "@3"]
+    assert _woken(repo, calls) == ["lead", "reviewer-1"]
 
 def test_f33_decline_writes_the_line_decline_and_types_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -502,15 +484,15 @@ def test_f33_decline_writes_the_line_decline_and_types_nothing(
     assert capsys.readouterr().err == ""
     child = next(path for path in _room(repo) if path != root)
     fields, body = _open(child)
-    assert fields["contract"] == "room/v1"
+    assert fields["contract"] == "room/v2"
     assert fields["from"] == "user"
     assert _TIME.fullmatch(str(fields["time"]))
     assert body == "decline\n"
-    assert fields["nudged"] == []
+    assert fields["wakes"] == []
     assert fields["re"] == str(root.resolve())
     assert "generation" not in fields
     assert "Reply with" not in body
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
     assert all(argv[0] != "send-keys" for argv in calls)
     _no_pane_scrape(calls)
 
@@ -522,10 +504,10 @@ def test_f33_decline_flag_before_re_types_nothing(
     root, _calls = _post(repo, monkeypatch, "still open")
     calls = _install_tmux(monkeypatch)
     assert main(["post", "--decline", "--re", str(root)]) == 0
-    assert _nudge_windows(calls) == []
+    assert _woken(repo, calls) == []
     fields, body = _open(next(path for path in _room(repo) if path != root))
     assert body == "decline\n"
-    assert fields["nudged"] == []
+    assert fields["wakes"] == []
 
 
 def test_f33_decline_does_not_copy_the_parent_body(
@@ -542,7 +524,7 @@ def test_f33_decline_does_not_copy_the_parent_body(
     child = next(path for path in _room(repo) if path != root)
     assert _open(child)[1] == "decline\n"
     assert "sk-secret" not in child.read_text(encoding="utf-8")
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
 
 
 # --- Path refusal ---
@@ -650,11 +632,11 @@ def test_f33_empty_stored_state_still_reaches_every_seat(
     assert main(["post", "from outside"]) == 0
     fields, _body = _open(_room(repo)[0])
     assert fields["from"] == "user"
-    assert fields["nudged"] == ["implementer-1", "lead", "reviewer-1"]
-    assert _nudge_windows(calls) == ["@2", "@1", "@3"]
+    assert fields["wakes"] == ["implementer-1", "lead", "reviewer-1"]
+    assert _woken(repo, calls) == ["implementer-1", "lead", "reviewer-1"]
 
 
-def test_f33_empty_stored_state_omits_a_dead_pane(
+def test_f33_empty_stored_state_still_wakes_a_dead_pane(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
@@ -669,15 +651,12 @@ def test_f33_empty_stored_state_omits_a_dead_pane(
     path = _room(repo)[0]
     fields, body = _open(path)
     assert "hello" in body
-    assert fields["nudged"] == ["lead"]
-    line = f"user {path.resolve()}"
-    assert _nudge_lines(calls) == [line]
-    assert _nudge_windows(calls) == ["@1"]
-    assert "hello" not in line
-    assert any(argv[0] == "display-message" and "@2" in argv for argv in calls)
+    assert fields["wakes"] == ["implementer-1", "lead"]
+    assert _typed(calls) == []
+    assert _woken(repo) == ["implementer-1", "lead"]
 
 
-def test_f33_dead_seat_is_omitted_and_the_file_remains(
+def test_f33_a_dead_seat_is_woken_for_its_next_launch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
@@ -690,8 +669,8 @@ def test_f33_dead_seat_is_omitted_and_the_file_remains(
     assert main(["post", "hello"]) == 0
     fields, body = _open(_room(repo)[0])
     assert "hello" in body
-    assert fields["nudged"] == ["lead"]
-    assert _nudge_windows(calls) == ["@1"]
+    assert fields["wakes"] == ["implementer-1", "lead"]
+    assert _woken(repo) == ["implementer-1", "lead"]
     assert all(argv[0] != "send-keys" or "@2" not in argv for argv in calls)
 
 
@@ -708,27 +687,25 @@ def test_f33_killed_seat_is_omitted_and_the_file_remains(
     assert main(["post", "hello"]) == 0
     fields, body = _open(_room(repo)[0])
     assert "hello" in body
-    assert fields["nudged"] == ["lead"]
-    assert _nudge_windows(calls) == ["@1"]
+    assert fields["wakes"] == ["lead"]
+    assert _woken(repo) == ["lead"]
     assert all(argv[0] != "send-keys" or "@2" not in argv for argv in calls)
 
 
-def test_f33_failed_window_check_omits_the_seat_and_the_file_remains(
+def test_f33_no_window_check_runs_and_the_seat_is_woken(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     _alive(repo)
     calls = _install_tmux(monkeypatch, foreign=frozenset({"@2"}))
     assert main(["post", "hello"]) == 0
+    assert calls == []
     fields, body = _open(_room(repo)[0])
     assert "hello" in body
-    assert fields["nudged"] == ["lead", "reviewer-1"]
-    assert any(argv[0] == "display-message" and "@2" in argv for argv in calls)
-    assert "@2" not in _nudge_windows(calls)
-    assert _nudge_windows(calls) == ["@1", "@3"]
+    assert fields["wakes"] == ["implementer-1", "lead", "reviewer-1"]
 
 
-def test_f33_missing_window_id_omits_the_seat_and_the_file_remains(
+def test_f33_missing_window_id_still_wakes_the_seat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
@@ -742,8 +719,8 @@ def test_f33_missing_window_id_omits_the_seat_and_the_file_remains(
     assert main(["post", "hello"]) == 0
     fields, body = _open(_room(repo)[0])
     assert "hello" in body
-    assert fields["nudged"] == ["lead", "reviewer-1"]
-    assert _nudge_windows(calls) == ["@1", "@3"]
+    assert fields["wakes"] == ["implementer-1", "lead", "reviewer-1"]
+    assert _woken(repo, calls) == ["implementer-1", "lead", "reviewer-1"]
 
 
 def test_f33_author_is_not_nudged(
@@ -756,8 +733,8 @@ def test_f33_author_is_not_nudged(
     assert main(["post", "hello"]) == 0
     fields, body = _open(_room(repo)[0])
     assert "hello" in body
-    assert fields["nudged"] == ["implementer-1", "reviewer-1"]
-    assert _nudge_windows(calls) == ["@2", "@3"]
+    assert fields["wakes"] == ["implementer-1", "reviewer-1"]
+    assert _woken(repo, calls) == ["implementer-1", "reviewer-1"]
 
 
 def test_f33_post_creates_board_room_when_the_project_lacks_it(
@@ -773,7 +750,7 @@ def test_f33_post_creates_board_room_when_the_project_lacks_it(
     files = _room(repo)
     assert len(files) == 1
     fields, body = _open(files[0])
-    assert fields["contract"] == "room/v1"
+    assert fields["contract"] == "room/v2"
     assert "hello" in body
 
 
@@ -830,58 +807,14 @@ def test_s74_a_colliding_create_uses_another_name(
     assert len(_room(repo)) == 1
 
 
-def test_f33_writes_the_room_file_before_the_nudge(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = _repo(tmp_path, monkeypatch)
-    _alive(repo)
-    monkeypatch.setenv("FOIL_SEAT_ID", "")
-    ready: list[Path] = []
-
-    def on_literal(line: str) -> None:
-        path = Path(line.split(" ", 1)[1])
-        text = path.read_text(encoding="utf-8")
-        assert "contract: room/v1" in text
-        assert "written-before-nudge" in text
-        ready.append(path)
-
-    calls = _install_tmux(monkeypatch, on_literal=on_literal)
-    assert main(["post", "written-before-nudge"]) == 0
-    assert len(ready) == len(_nudge_lines(calls)) == 3
-    assert len(set(ready)) == 1
-
-
-def test_f33_nudge_is_the_sender_and_the_absolute_path(
+def test_f33_a_post_types_nothing_into_any_pane(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     path, calls = _post(repo, monkeypatch, "unique-body-text")
-    lines = _nudge_lines(calls)
-    assert lines
-    for line in lines:
-        sender, separator, raw = line.partition(" ")
-        assert separator == " "
-        assert sender == "user"
-        assert raw == str(path.resolve())
-        assert "unique-body-text" not in line
-        assert "\n" not in line
-
-
-def test_f33_nudge_is_one_attempt_with_no_retry_and_no_ack(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = _repo(tmp_path, monkeypatch)
-    _alive(repo)
-    calls = _install_tmux(monkeypatch, fail_keys=frozenset({"@2"}))
-    assert main(["post", "hello"]) == 0
-    literal = [argv for argv in calls if argv[:2] == ["send-keys", "-l"] and "@2" in argv]
-    assert len(literal) == 1
-    assert not any(argv[0] == "send-keys" and "-l" not in argv and "@2" in argv for argv in calls)
+    assert _typed(calls) == []
     _no_pane_scrape(calls)
-    fields, body = _open(_room(repo)[0])
-    assert "hello" in body
-    assert fields["nudged"] == ["lead", "reviewer-1"]
-    assert _nudge_windows(calls) == ["@2", "@1", "@3"]
+    assert _open(path)[0]["wakes"] == ["implementer-1", "lead", "reviewer-1"]
 
 
 # --- Credentials and empty input ---
@@ -903,7 +836,7 @@ def test_n5_post_refuses_the_same_credential_text_as_send(
         assert "sk-secret" not in send_err
         assert _room(repo) == []
         assert list(mail.rglob("*.md")) == []
-        assert _nudge_lines(calls) == []
+        assert _typed(calls) == []
 
 
 def test_f33_empty_waking_text_writes_nothing(
@@ -919,7 +852,7 @@ def test_f33_empty_waking_text_writes_nothing(
     assert main(["post", "-"]) == 1
     assert _one_line(capsys) == "foil: empty text\n"
     assert _room(repo) == []
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
 
 
 def test_f33_whitespace_waking_text_writes_nothing(
@@ -933,7 +866,7 @@ def test_f33_whitespace_waking_text_writes_nothing(
     assert main(["post", "\n"]) == 1
     assert _one_line(capsys) == "foil: empty text\n"
     assert _room(repo) == []
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
 
 
 def test_f33_empty_re_writes_nothing_and_types_nothing(
@@ -945,11 +878,11 @@ def test_f33_empty_re_writes_nothing_and_types_nothing(
     assert main(["post", "--re", "", "hello"]) == 1
     assert _one_line(capsys) == "foil: room path must be absolute\n"
     assert _room(repo) == []
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
     assert main(["post", "--re", "", "--decline"]) == 1
     assert _one_line(capsys) == "foil: --decline requires --re\n"
     assert _room(repo) == []
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
 
 
 def test_f33_missing_text_writes_nothing(
@@ -961,87 +894,39 @@ def test_f33_missing_text_writes_nothing(
     assert main(["post"]) == 1
     assert _one_line(capsys) == "foil: TEXT is required\n"
     assert _room(repo) == []
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
 
 
 # --- Harness and instruction ---
 
 
-def _run_fake(repo: Path, seat: str, stdin: str) -> subprocess.CompletedProcess[str]:
-    script = Path(__file__).resolve().parent / "harness" / "foil_fake.py"
-    env = os.environ.copy()
-    env["FOIL_SEAT_ID"] = seat
-    env["FOIL_PROJECT"] = project_key(common_dir(repo))
-    return subprocess.run(
-        [sys.executable, str(script), "--prompt", ""],
-        input=stdin,
-        text=True,
-        capture_output=True,
-        env=env,
-        cwd=repo,
-        check=False,
-    )
+def _given(repo: Path, seat: str) -> list[str]:
+    """What the runner would give the seat next: its items not yet delivered."""
+
+    board = (foil_root(repo) / "fleets" / "main" / "board").resolve()
+    return [item["path"] for item in items_for(board, seat, set())]
 
 
-def test_s10_fake_reads_the_room_file_a_nudge_names(
+def test_s10_a_post_is_an_item_for_each_seat_it_wakes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
-    path, calls = _post(repo, monkeypatch, "room-marker-alpha")
-    line = _nudge_lines(calls)[0]
-    assert line == f"user {path.resolve()}"
-    fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
-    fake.mkdir(exist_ok=True)
-    (fake / "implementer-1.json").write_text(
-        json.dumps(
-            {
-                "steps": [
-                    {
-                        "when": {"mail_contains": "room-marker-alpha"},
-                        "do": [{"write": "board/notes/opened.txt", "text": "yes\n"}],
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    result = _run_fake(repo, "implementer-1", line + "\n")
-    assert result.returncode == 0, result.stderr
-    note = foil_root(repo) / "fleets" / "main" / "board" / "notes" / "opened.txt"
-    assert note.read_text(encoding="utf-8") == "yes\n"
+    path, _calls = _post(repo, monkeypatch, "room-marker-alpha")
+    for seat in ("lead", "implementer-1", "reviewer-1"):
+        assert _given(repo, seat) == [str(path.resolve())]
 
 
-def test_s10_decline_types_nothing_so_the_fake_sees_no_line(
+def test_s10_a_decline_is_an_item_for_nobody(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     root, _calls = _post(repo, monkeypatch, "offer")
     calls = _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root), "--decline"]) == 0
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
     child = next(path for path in _room(repo) if path != root)
-    fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
-    fake.mkdir(exist_ok=True)
-    (fake / "implementer-1.json").write_text(
-        json.dumps(
-            {
-                "steps": [
-                    {
-                        "when": {"mail_contains": "decline"},
-                        "do": [{"write": "board/notes/saw-decline.txt", "text": "yes\n"}],
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    result = _run_fake(repo, "implementer-1", "")
-    assert result.returncode == 0, result.stderr
-    declined = foil_root(repo) / "fleets" / "main" / "board" / "notes" / "saw-decline.txt"
-    assert not declined.exists()
-    handled = fake / "implementer-1.handled"
-    if handled.is_file():
-        assert str(child.resolve()) not in handled.read_text(encoding="utf-8")
+    for seat in ("lead", "implementer-1", "reviewer-1"):
+        assert str(child.resolve()) not in _given(repo, seat)
 
 
 def test_f33_hand_written_room_file_wakes_nobody(
@@ -1057,26 +942,9 @@ def test_f33_hand_written_room_file_wakes_nobody(
     assert main(["board", "list", "room/*/*.md"]) == 0
     board = foil_root(repo) / "fleets" / "main" / "board"
     assert str(hand.relative_to(board)) in capsys.readouterr().out
-    assert all(argv[0] != "send-keys" for argv in calls)
-    fake = foil_root(repo) / "fleets" / "main" / "run" / "fake"
-    fake.mkdir(exist_ok=True)
-    (fake / "lead.json").write_text(
-        json.dumps(
-            {
-                "steps": [
-                    {
-                        "when": {"mail_contains": "hand written"},
-                        "do": [{"write": "board/notes/woke.txt", "text": "yes\n"}],
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    result = _run_fake(repo, "lead", "")
-    assert result.returncode == 0, result.stderr
-    assert not (foil_root(repo) / "fleets" / "main" / "board" / "notes" / "woke.txt").exists()
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
+    for seat in ("lead", "implementer-1", "reviewer-1"):
+        assert _given(repo, seat) == []
 
 
 def test_f24_instruction_offers_unanswered_room_threads(
@@ -1110,20 +978,19 @@ def test_f24_instruction_offers_unanswered_room_threads(
     assert "foil post" in skill_text["worker"]
 
 
-def test_s8_lead_skill_says_a_post_without_members_reaches_every_alive_seat() -> None:
+def test_s8_lead_skill_says_a_post_without_members_reaches_every_seat() -> None:
     text = (Path(__file__).resolve().parents[1] / "skills" / "lead.md").read_text(
         encoding="utf-8"
     )
-    assert "Without `--members`, its members are every alive seat at that moment." in text
-    assert "A decline writes the line `decline` and types nothing." in text
+    members = "Without `--members`, its members are every seat that is not killed at that moment."
+    assert members in text
 
 
-def test_f24_a_later_launch_is_not_a_second_nudge_and_writes_no_ledger(
+def test_f24_a_later_launch_wakes_no_one_and_writes_no_ledger(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
     path, calls = _post(repo, monkeypatch, "already posted")
-    before_lines = _nudge_lines(calls)
     before_bytes = path.read_bytes()
     room_file = f"room/{path.parent.name}/{path.name}"
     assert _board_files(repo) == [room_file]
@@ -1141,14 +1008,11 @@ def test_f24_a_later_launch_is_not_a_second_nudge_and_writes_no_ledger(
     monkeypatch.setattr("foil.lifecycle.TmuxController.launch", launch)
     assert main(["seat", "spawn", "reviewer", "--name", "late"]) == 0
     assert capsys.readouterr().err == ""
-    assert _nudge_lines(calls) == before_lines
-    assert "@40" not in _nudge_windows(calls)
+    assert _typed(calls) == []
     assert path.read_bytes() == before_bytes
     assert _board_files(repo) == [room_file]
     instruction = foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "late.md"
-    plan = foil_root(repo) / "fleets" / "main" / "run" / "plans" / "late.json"
     assert _LATE in instruction.read_text(encoding="utf-8")
-    assert _LATE in plan.read_text(encoding="utf-8")
 
 
 def test_f15_a_note_wakes_no_one(
@@ -1159,13 +1023,13 @@ def test_f15_a_note_wakes_no_one(
     calls = _install_tmux(monkeypatch)
     note = foil_root(repo) / "fleets" / "main" / "board" / "notes" / "shared.txt"
     note.write_text("a note\n", encoding="utf-8")
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
     capsys.readouterr()
     assert main(["board", "read", "notes/shared.txt"]) == 0
     assert capsys.readouterr().out == "a note\n"
     assert main(["board", "list", "notes/*"]) == 0
     assert "notes/shared.txt" in capsys.readouterr().out.splitlines()
-    assert _nudge_lines(calls) == []
+    assert _typed(calls) == []
     assert _room(repo) == []
 
 
@@ -1199,7 +1063,7 @@ def test_s6_worker_cannot_spawn_kill_or_resume(
     assert registry.read_text(encoding="utf-8") == before
 
 
-def test_f13_send_nudges_one_recipient_and_does_not_write_re(
+def test_f13_send_writes_one_mail_types_nothing_and_does_not_write_re(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
@@ -1213,8 +1077,7 @@ def test_f13_send_nudges_one_recipient_and_does_not_write_re(
     text = files[0].read_text(encoding="utf-8")
     assert "re:" not in text
     assert "to: lead\n" in text
-    assert _nudge_windows(calls) == ["@1"]
-    assert "only the lead" not in _nudge_lines(calls)[0]
+    assert _typed(calls) == []
     assert _room(repo) == []
 
 
@@ -1231,19 +1094,19 @@ def test_f33_the_lead_opens_a_room_for_the_members_it_names(
     repo = _repo(tmp_path, monkeypatch)
     _alive(repo)
     monkeypatch.setenv("FOIL_SEAT_ID", "lead")
-    calls = _install_tmux(monkeypatch)
+    _install_tmux(monkeypatch)
     assert main(["post", "--members", " reviewer-1 ,", "the question"]) == 0
     root = _room(repo)[0]
     fields, body = _open(root)
     assert fields["members"] == ["lead", "reviewer-1"]
-    assert fields["nudged"] == ["reviewer-1"]
-    assert _nudge_windows(calls) == ["@3"]
+    assert fields["wakes"] == ["reviewer-1"]
+    assert _woken(repo) == ["reviewer-1"]
     assert body.endswith("\n\nthe question\n")
     # A reply wakes the members only, not every seat that is alive.
     monkeypatch.setenv("FOIL_SEAT_ID", "reviewer-1")
-    calls = _install_tmux(monkeypatch)
+    _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root), "a view"]) == 0
-    assert _nudge_windows(calls) == ["@1"]
+    assert _woken(repo) == ["lead"]
     for members in ("nobody", "", ",", "../x"):
         monkeypatch.setenv("FOIL_SEAT_ID", "lead")
         _refused(capsys, repo, ["post", "--members", members, "text"], monkeypatch)
@@ -1258,24 +1121,24 @@ def test_f33_members_on_a_reply_wake_only_the_seats_they_add(
     _install_tmux(monkeypatch)
     assert main(["post", "--members", "reviewer-1", "the question"]) == 0
     root = _room(repo)[0]
-    calls = _install_tmux(monkeypatch)
+    _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root), "--members", "implementer-1,reviewer-1", "add"]) == 0
     fields, _body = _open(_newest(repo))
     assert fields["members"] == ["implementer-1", "lead", "reviewer-1"]
-    assert fields["nudged"] == ["implementer-1"]
-    assert _nudge_windows(calls) == ["@2"]
-    calls = _install_tmux(monkeypatch)
+    assert fields["wakes"] == ["implementer-1"]
+    assert _woken(repo) == ["implementer-1"]
+    _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root), "--members", "implementer-1", "remove"]) == 0
     fields, _body = _open(_newest(repo))
     assert fields["members"] == ["implementer-1", "lead"]
-    assert fields["nudged"] == []
+    assert fields["wakes"] == []
     # reviewer-1 left the room, so a later reply does not wake it unless named.
-    calls = _install_tmux(monkeypatch)
+    _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root), "next"]) == 0
-    assert _nudge_windows(calls) == ["@2"]
-    calls = _install_tmux(monkeypatch)
+    assert _woken(repo) == ["implementer-1"]
+    _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root), "@reviewer-1 one fact from you"]) == 0
-    assert _nudge_windows(calls) == ["@2", "@3"]
+    assert _woken(repo) == ["implementer-1", "reviewer-1"]
     assert "members" not in _open(_newest(repo))[0]
 
 
@@ -1294,9 +1157,9 @@ def test_f33_a_closed_room_refuses_every_later_post(
     assert main(["post", "--re", str(root), "--close", "Continued elsewhere @reviewer-1"]) == 0
     fields, body = _open(_newest(repo))
     assert fields["closed"] == "true"
-    assert fields["nudged"] == ["reviewer-1"]
+    assert fields["wakes"] == ["reviewer-1"]
     assert body.startswith("This room is closed. Foil refuses a reply here.\n")
-    assert _nudge_windows(calls) == ["@3"]
+    assert _woken(repo) == ["reviewer-1"]
     for seat, argv in (
         ("reviewer-1", ["post", "--re", str(root), "late view"]),
         ("reviewer-1", ["post", "--re", str(root), "--decline"]),
@@ -1308,7 +1171,7 @@ def test_f33_a_closed_room_refuses_every_later_post(
         assert main(argv) == 1
         assert capsys.readouterr().err == "foil: room is closed\n"
         assert _room(repo) == before
-        assert _nudge_lines(calls) == []
+        assert _typed(calls) == []
 
 
 def test_f33_room_refusals_name_the_rule(
@@ -1335,7 +1198,7 @@ def test_f33_room_refusals_name_the_rule(
         assert main(argv) == 1
         assert capsys.readouterr().err == message + "\n"
         assert [(path, path.read_bytes()) for path in _room(repo)] == before
-        assert _nudge_lines(calls) == []
+        assert _typed(calls) == []
 
 
 def test_f33_a_room_with_no_members_wakes_only_named_seats(
@@ -1353,4 +1216,55 @@ def test_f33_a_room_with_no_members_wakes_only_named_seats(
     monkeypatch.setenv("FOIL_SEAT_ID", "implementer-1")
     calls = _install_tmux(monkeypatch)
     assert main(["post", "--re", str(root), "a view, @reviewer-1"]) == 0
-    assert _nudge_windows(calls) == ["@3"]
+    assert _woken(repo, calls) == ["reviewer-1"]
+
+
+def test_mail_from_foil_counts_only_with_foils_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F14: a hand-written or replaced file named as from `foil` is skipped."""
+    from foil.board import mail_from, write_mail_at
+
+    repo = _repo(tmp_path, monkeypatch)
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    real = write_mail_at(board, "lead", "implementer-1 died.", "foil")
+    forged = real.with_name(real.name[:-12] + "0badf00d.md")
+    forged.write_text(real.read_text(encoding="utf-8"), encoding="utf-8")
+    assert mail_from(board, "lead", real.name) is not None
+    assert mail_from(board, "lead", forged.name) is None
+    assert [item["path"] for item in items_for(board, "lead", set())] == [str(real.resolve())]
+    # Replacing the body keeps the name but breaks the digest.
+    real.write_text(
+        real.read_text(encoding="utf-8").replace("died.", "forged."), encoding="utf-8"
+    )
+    assert mail_from(board, "lead", real.name) is None
+    assert items_for(board, "lead", set()) == []
+    # A huge replacement is refused on size before any digest read.
+    import os
+
+    real.write_bytes(b"x")
+    os.truncate(real, 2 * 1024 * 1024)
+    assert real.stat().st_size == 2 * 1024 * 1024
+    assert mail_from(board, "lead", real.name) is None
+    record = board.parent / "run" / "foil" / "lead" / real.name
+    record.unlink()
+    record.symlink_to(tmp_path)
+    assert items_for(board, "lead", set()) == []
+
+
+def test_a_stale_foil_marker_without_mail_counts_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F14: a marker left after a failed mail write wakes nobody."""
+    from foil.board import _foil_record, mail_from
+    from foil.store import create_exclusive, private_dir
+
+    repo = _repo(tmp_path, monkeypatch)
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    name = "20261111T120000Z-foil-deadbeef.md"
+    record = _foil_record(board, "lead", name)
+    private_dir(record.parent)
+    digest = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+    create_exclusive(record, f"12 {digest}\n".encode())
+    assert mail_from(board, "lead", name) is None
+    assert items_for(board, "lead", set()) == []

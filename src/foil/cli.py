@@ -19,6 +19,7 @@ from foil.lifecycle import (
     kill_seats,
     list_seats,
     peek_seat,
+    renew_seat,
     resume_seats,
     spawn_seat,
 )
@@ -46,6 +47,7 @@ _ALLOWED = {
     "leave": {OUTSIDE},
     "archive": {OUTSIDE, LEAD},
     "resume": {OUTSIDE, LEAD},
+    "renew": {OUTSIDE, LEAD},
     "list": {OUTSIDE, LEAD, WORKER},
     "peek": {OUTSIDE, LEAD, WORKER},
     "send": {OUTSIDE, LEAD, WORKER},
@@ -112,12 +114,16 @@ def _build_parser() -> argparse.ArgumentParser:
     archive = seat_sub.add_parser("archive", help="Free a killed seat's name")
     archive.add_argument("NAME", metavar="NAME")
 
-    resume = seat_sub.add_parser("resume", help="Restart dead seats")
+    resume = seat_sub.add_parser("resume", help="Restart dead seats and retry paused ones")
     resume.add_argument("NAME", nargs="?", metavar="NAME")
+
+    renew = seat_sub.add_parser("renew", help="Give a seat a fresh session after its handoff")
+    renew.add_argument("NAME", metavar="NAME")
 
     listed = seat_sub.add_parser("list", help="List seats")
     listed.add_argument("--json", action="store_true")
     listed.add_argument("--archived", action="store_true")
+    listed.add_argument("--all-fleets", action="store_true")
 
     peek = seat_sub.add_parser("peek", help="Print the pane tail")
     peek.add_argument("NAME", metavar="NAME")
@@ -131,11 +137,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     seat_sub.add_parser("leave", help="End the joined lead")
 
-    send = sub.add_parser("send", help="Write mail and nudge the recipient")
+    send = sub.add_parser("send", help="Write mail; it wakes the recipient")
     send.add_argument("TO", metavar="TO")
     send.add_argument("TEXT", metavar="TEXT")
 
-    post = sub.add_parser("post", help="Write a room file and nudge its members")
+    post = sub.add_parser("post", help="Write a room file; it wakes its members")
     post.add_argument("--re", metavar="PATH")
     post.add_argument("--decline", action="store_true")
     post.add_argument("--members", metavar="NAMES")
@@ -155,6 +161,7 @@ def _build_parser() -> argparse.ArgumentParser:
     mail_wait_p = mail_sub.add_parser("wait", help="Wait for new mail")
     mail_wait_p.add_argument("--timeout", metavar="SECONDS", type=int, default=1800)
     mail_wait_p.add_argument("--wake", action="store_true")
+    mail_wait_p.add_argument("--all-fleets", action="store_true")
 
     board = sub.add_parser("board", help="Read board files")
     board_sub = board.add_subparsers(dest="board_command", required=True)
@@ -284,9 +291,14 @@ def _run(args: argparse.Namespace) -> int:
         elif action == "resume":
             authorize("resume")
             return resume_seats(root, args.NAME)
+        elif action == "renew":
+            authorize("renew")
+            renew_seat(root, args.NAME)
         elif action == "list":
             authorize("list")
-            list_seats(root, as_json=args.json, archived=args.archived)
+            list_seats(
+                root, as_json=args.json, archived=args.archived, all_fleets=args.all_fleets
+            )
         elif action == "join":
             authorize("join")
             join_lead(root, harness=args.harness, session=args.session, take=args.take)
@@ -324,7 +336,7 @@ def _run(args: argparse.Namespace) -> int:
         elif action == "wait":
             if _caller() != OUTSIDE:
                 raise FoilError("foil: mail wait is outside the fleet only")
-            mail_wait(root, timeout=args.timeout, wake=args.wake)
+            mail_wait(root, timeout=args.timeout, wake=args.wake, all_fleets=args.all_fleets)
         else:
             authorize("mail-list")
             mail_list(as_json=args.json)

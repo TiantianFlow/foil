@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from foil import __version__
 from foil.cli import main
-from tests.e2e.support import close
-from tests.e2e.test_scenarios import _prepare
-from tests.harness import live_record, standin
+from tests.e2e.test_scenarios import _close, _prepare
+from tests.harness import live_record
 
-ROOT = Path(__file__).resolve().parents[2]
+_NAMES = ("claude", "codex", "gemini", "opencode", "grok")
 
 
 def test_a_later_run_replaces_the_row_for_its_harness_and_scenario(tmp_path: Path) -> None:
@@ -74,7 +69,7 @@ def test_a_failed_scenario_is_recorded_as_failed(
         path.read_text(encoding="utf-8")
     )
     # No seat was launched, so the harness is the lead's. The suite's stub prints nothing.
-    assert harness in standin.NAMES
+    assert harness in _NAMES
     assert (version, scenario, result, foil) == ("unknown", "1", "failed", __version__)
 
 
@@ -91,57 +86,7 @@ def test_the_row_names_the_harness_the_seats_were_launched_with(
         assert main(["roster", "update", "lead", "harness=codex"]) == 0
         live_record.record(repo, "test_scenario_2_live", True)
     finally:
-        close(repo)
+        _close(repo)
     assert [row[:4] for row in live_record.rows(path.read_text(encoding="utf-8"))] == [
         ("fake", "unknown", "2", "passed")
-    ]
-
-
-@pytest.mark.e2e
-def test_a_live_run_writes_one_row_per_scenario(tmp_path: Path) -> None:
-    """Run two live scenarios for real, against a stand-in for the CLI."""
-
-    bindir = tmp_path / "bin"
-    bindir.mkdir()
-    standin.install(bindir)
-    path = tmp_path / "record.md"
-    environment = {
-        key: value for key, value in os.environ.items() if not key.startswith(("PYTEST_", "FOIL_"))
-    }
-    environment.update(
-        PATH=os.pathsep.join((str(bindir), os.environ.get("PATH", ""))),
-        FOIL_E2E_LIVE="1",
-        FOIL_E2E_HARNESS="codex",
-        FOIL_E2E_RECORD=str(path),
-        FOIL_HOME=str(tmp_path / "home"),
-    )
-    ran = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "tests/e2e/test_live.py",
-            "-k",
-            "scenario_2 or scenario_6",
-            "-n",
-            "0",
-            "-q",
-            "-p",
-            "no:cacheprovider",
-            f"--basetemp={tmp_path / 'inner'}",
-        ],
-        cwd=ROOT,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert ran.returncode == 0, ran.stdout + ran.stderr
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
-    version = f"codex {standin.VERSION}"
-    # Scenario 2 launched seats and scenario 6 launched none. Both name the harness.
-    written = path.read_text(encoding="utf-8") if path.is_file() else ""
-    assert live_record.rows(written) == [
-        ("codex", version, "2", "passed", today, __version__),
-        ("codex", version, "6", "passed", today, __version__),
     ]
