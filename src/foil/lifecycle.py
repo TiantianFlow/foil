@@ -937,6 +937,7 @@ def spawn_seat(
     ensure_registry(root)
     registry = load_registry(root)
     seat = _seat_name(registry, loaded["name"], name)
+    _clear_turn_markers(root, seat)
     role = loaded["name"]
     key = rotation_key(root, role, loaded["harness"])
     count = rotation_index(registry, role, key)
@@ -1094,6 +1095,7 @@ def kill_seats(
             _end_turn(root, seat_name)
         if state != "killed":
             _remove_leftover(registry, root, seat_name, window)
+        _clear_turn_markers(root, seat_name)
 
         def apply(fresh: dict, seat_name: str = seat_name, window: str = window) -> None:
             current = fresh["seats"].get(seat_name)
@@ -1167,6 +1169,16 @@ def _fresh_path(root: Path, name: str) -> Path:
     """Pending renew: resume must start, even if an old runner record was written back."""
 
     return record_path(_board(root), name, ".fresh")
+
+
+def _clear_turn_markers(root: Path, name: str) -> None:
+    """Drop pending renew/resume markers so a reused seat name cannot inherit them."""
+
+    for suffix in (".fresh", ".renew", ".resume"):
+        path = record_path(_board(root), name, suffix)
+        if path.is_file() and not path.is_symlink():
+            with contextlib.suppress(OSError):
+                path.unlink()
 
 
 def _restart(root: Path, registry: dict, name: str) -> None:
@@ -1469,6 +1481,7 @@ def archive_seat(root: Path, name: str) -> None:
         _write_archive(root, name, record)
         registry["seats"].pop(name)
         write_json(path, registry)
+        _clear_turn_markers(root, name)
     print(f"archived seat '{name}'")
     if record.get("worktree"):
         print(f"kept branch {record.get('branch') or ''}")

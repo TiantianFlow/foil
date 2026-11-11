@@ -679,3 +679,53 @@ def test_resume_after_a_partial_output_renew_starts_fresh(
     assert plan["start"][0] == "codex"
     assert load_record(board, "worker")["session_id"] == ""
     assert not (foil_root(repo) / "fleets" / "main" / "run" / "turns" / "worker.fresh").exists()
+
+
+def test_spawn_after_archive_does_not_inherit_a_stale_renew_mark(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F44: kill/archive/spawn drop .fresh so a reused name can resume a real session."""
+    import foil.lifecycle as life
+    from foil.lifecycle import renew_seat
+    from foil.runner import empty_record, load_record, save_record
+    from tests.test_spawn import _add_role, _set_entries
+
+    repo = _repo(tmp_path, monkeypatch)
+    calls = _launch(monkeypatch)
+    _add_role(repo, "worker", "claude")
+    _set_entries(repo, "worker", [("claude", "old"), ("codex", "new")])
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "worker", "--name", "worker"]) == 0
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    (board / "handoffs").mkdir(parents=True, exist_ok=True)
+    (board / "handoffs" / "worker.md").write_text("hand off\n", encoding="utf-8")
+
+    real_write = life._write_instruction
+
+    def crash(*args: object, **kwargs: object) -> None:
+        monkeypatch.setattr(life, "_write_instruction", real_write)
+        raise RuntimeError("crash after turns reset")
+
+    monkeypatch.setattr(life, "_write_instruction", crash)
+    with contextlib.suppress(RuntimeError):
+        renew_seat(repo, "worker")
+    assert (foil_root(repo) / "fleets" / "main" / "run" / "turns" / "worker.fresh").is_file()
+    _alive(monkeypatch, set())
+    assert main(["seat", "kill", "worker"]) == 0
+    assert not (foil_root(repo) / "fleets" / "main" / "run" / "turns" / "worker.fresh").exists()
+    assert main(["seat", "archive", "worker"]) == 0
+    calls.clear()
+    assert main(["seat", "spawn", "worker", "--name", "worker"]) == 0
+    seat = load_registry(repo)["seats"]["worker"]
+    started = empty_record()
+    started["session_id"] = seat["session_id"]
+    started["started"] = True
+    started["last_exit"] = 0
+    save_record(board, "worker", started)
+    _alive(monkeypatch, set())
+    calls.clear()
+    assert main(["seat", "resume", "worker"]) == 0
+    plan = _plan_of(repo, "worker")
+    assert plan["first"] == "turn"
+    assert plan["session_id"] == seat["session_id"]
+    assert load_record(board, "worker")["session_id"] == seat["session_id"]
