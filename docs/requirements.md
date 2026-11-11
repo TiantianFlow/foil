@@ -497,6 +497,8 @@ exists, a window is gone), not Foil's reports about itself.
   `foil seat spawn`, `git commit`, the fixture's test runner), writing a
   board file, and `foil send`.
 - On start it handles any mail it hasn't handled yet, so restarts work. It does not scan `board/room/`.
+- A script can make it fail the way an agent CLI does: exit in the middle of a step, stay alive and read nothing more, start slowly, wait at a startup dialog that takes only its own answer, or act after a stretch with no nudge.
+- It is launched with a session id and resumed with that same id. It records each launch as first, resume, fresh, or lost (a resume of an id it never had), so a scenario asserts which one a restart was.
 - It keeps a debug log; tests never assert on it.
 - Each seat finds `foil` on `PATH` as a shim for the interpreter that runs the tests, so a seat runs the Foil under test and not another install.
 - It launches through the normal preset path, so templates, launch,
@@ -515,6 +517,24 @@ the test plays the human's agent):
 | 4b | Joined lead: the test joins as the lead, spawns a worker, waits with `foil mail wait`, kills the worker's window and waits again, leaves with a handoff, and joins again. | The worker's result mail comes back from the wait and carries the `foil --version` the seat ran, which is the version under test; the second wait returns one `died` mail from `foil` for the worker; nothing is typed for the lead; `seat list` shows the lead `joined` and then `killed`; the second join lists only mail that arrived after the leave. |
 | 5 | Memory: a worker proposes a lesson and fails to accept it; the lead accepts it. | A seat spawned afterwards has the lesson in its instruction file; `memory list` shows it accepted. |
 | 6 | Errors: send to an unknown seat, spawn a missing template, run outside a git repository. | Each gives a one-line error and a non-zero exit, with no traceback. |
+| 7 | Onboarding: `init` with five harness CLIs installed, then a lead with a task. | The report names every installed harness and the id each default role uses; `HOME` reaches the seat by name; the persona is inlined in the instruction file. |
+| 8 | The Foil under test: another `foil` is on `PATH`; the lead and a worker it spawned run `foil --version`. | Both seats print the version of the checkout being tested. |
+| 9 | A launched lead asks the human: the lead writes a question to `status.md` and mails `user`; the human's agent, a process of its own, waits for that mail and answers with `foil send lead`. | The final status reflects the answer; `user` holds the lead's mail and no pane was typed into for it; `seat peek lead` is the raw pane. |
+| 10 | Real presets: for each packaged CLI preset, a lead and a worker are launched against a stand-in for that CLI, the tmux session is killed, and `seat resume` runs. | Each launch has the model, the permission flags, the prompt, the working directory, and the session id the registry stores; each resume continues the session where the preset can (F9) and starts fresh where it cannot. |
+| 11 | A worker crashes in the middle of its task. | The seat is `dead` in real tmux and its pane still reads; `seat archive` refuses it; `seat resume` continues the stored session and scenario 1's outcome is reached. |
+| 12 | A worker hangs in silence. The lead notices, peeks, asks the human, then kills, archives, and replaces it under the same name. | The hung seat is `alive` until it is killed and its process is gone afterwards; the replacement works on a new branch and the old branch is kept; the tests pass on the merged result. |
+| 13 | Rework: the reviewer rejects the first fix, the same implementer reworks it, and the reviewer approves. | Each seat holds the mail the round sent it; the branch has both commits; the tests pass on the merged result. |
+| 14 | Merge conflict: two implementers change the same line. | The seat whose branch came second is asked to resolve it and does; both branches are merged; the tests pass. |
+| 15 | Two fleets: a second fleet chosen by `FOIL_FLEET` runs beside the default one in the same project. | Each seat is told its own fleet and a seat's spawn stays in it; mail, `seat list`, and `seat kill --all` reach the chosen fleet only. |
+| 16 | A scoped room: the lead opens a room with `--members`, adds a member, and closes it. | Each post wakes exactly the seats section 6 says; a decline wakes nobody; a reply to the closed room is refused and writes no file. |
+
+**Around the scenarios:**
+
+- A mocked seat runs the Foil under test. The scenarios put a `foil` command for the checkout first on the seats' `PATH`, so an installed Foil is never the one a seat runs.
+- Each packaged CLI preset has a stand-in that reads the command line as that CLI does and refuses what it would refuse: an unknown flag, a value a flag does not take, a prompt taken as a flag's value, a resume with nothing to resume. Past its command line, a stand-in behaves as the fake does.
+- A caller outside the fleet is played by a scripted process with no seat identity where a scenario depends on that: it runs `foil` commands, some in the background, and the scenario asserts on its transcript.
+- Every command an instruction file names is run as the seat that file was written for, a launched lead and a worker. Each must be a command the parser takes and that caller may run, and each one the file says is refused must be refused.
+- A wait that times out shows every fleet's seat list, every pane that is left, and every double's log. A wait ends at once when a seat dies that the scenario did not expect to die.
 
 **Standing checks:** the command surface matches section 6 exactly; the
 package source size is reported against the N4 target; tmux window identity, atomic
