@@ -37,7 +37,7 @@ Notable changes to Foil, newest first.
 ### Fixed
 
 - `FOIL_FLEET` refuses `.`, so fleet tmux session names and `foil/goal-<fleet>` branches stay unique and valid. (#92)
-- A renew that dies after updating the registry resets the runner record before writing the plan, so resume cannot run the new harness on the old session. (#92)
+- A renew that dies after updating the registry marks the renew pending and resets the runner record before writing the plan, so resume cannot run the new harness on the old session, including after an `output` preset's learned id. (#92)
 - An `output` preset's learned session id is written to the runner record as soon as it appears, so a crash mid-turn no longer loses it. (#92)
 - `foil seat renew` reserves the next harness and updates the seat in one registry write, and refuses a seat that is killed or changed under that lock. (#92)
 - A first turn that hits `turn_timeout` before its session exists keeps its items and runs `start` again on a fresh generated id. (#92)
@@ -128,8 +128,6 @@ This release was withdrawn. Its changes ship in 0.5.4.
 
 ### Fixed
 
-- `FOIL_FLEET` refuses `.`, so fleet tmux session names and `foil/goal-<fleet>` branches stay unique and valid. (#92)
-- A renew that dies after updating the registry resets the runner record before writing the plan, so resume cannot run the new harness on the old session. (#92)
 - `foil init` stores the origin remote without HTTP userinfo, and adopt matches that form. A token in the remote URL, or one git inserts through `insteadOf`, is not written into `project.json`.
 - In `foil view`, an open info explanation closes on a click anywhere else or on Escape, not only on its own icon. (#54)
 - The Installed column in `foil view` settings shows where it found each command, and its explanation says that it checks the viewer's own `PATH`, which a seat started from another shell may not share. (#54)
@@ -157,8 +155,6 @@ This release was withdrawn. Its changes ship in 0.5.4.
 
 ### Fixed
 
-- `FOIL_FLEET` refuses `.`, so fleet tmux session names and `foil/goal-<fleet>` branches stay unique and valid. (#92)
-- A renew that dies after updating the registry resets the runner record before writing the plan, so resume cannot run the new harness on the old session. (#92)
 - The first `foil seat spawn` in a new fleet (`FOIL_FLEET` set to a fleet with no registry yet) stored a different fleet id than the one it launched the window with, so that seat always read as `dead`. Spawn now creates the fleet's registry first.
 - `foil seat peek` reports `foil: could not peek seat` when tmux fails during the window check, instead of `foil: unexpected error`.
 - The operator skill tells the human `tmux attach -t '=<session>'`, so a gone `main` session does not attach to another fleet whose name begins with it.
@@ -196,8 +192,6 @@ Do this between goals. Do not resume a seat that was started on 0.4.
 
 ### Fixed
 
-- `FOIL_FLEET` refuses `.`, so fleet tmux session names and `foil/goal-<fleet>` branches stay unique and valid. (#92)
-- A renew that dies after updating the registry resets the runner record before writing the plan, so resume cannot run the new harness on the old session. (#92)
 - The init report lists a persona as available only when `roles.toml` has no row for it.
 - `foil post` writes the current fleet's room. Another fleet's room stays unchanged.
 
@@ -248,8 +242,6 @@ This release was withdrawn. Its changes ship in 0.4.5.
 
 ### Fixed
 
-- `FOIL_FLEET` refuses `.`, so fleet tmux session names and `foil/goal-<fleet>` branches stay unique and valid. (#92)
-- A renew that dies after updating the registry resets the runner record before writing the plan, so resume cannot run the new harness on the old session. (#92)
 - `foil send` waits 200ms after the nudge line before it sends Enter once. A harness that treats Enter inside a fast burst as an unsent paste was leaving that line in the input, both while the agent was working and while it was waiting. The message body is still never typed. Foil still does not read the pane or send Enter again. (#35)
 
 ## [0.4.1] - 2026-10-14
@@ -258,8 +250,6 @@ This release was withdrawn. Its changes ship in 0.4.5.
 
 ### Fixed
 
-- `FOIL_FLEET` refuses `.`, so fleet tmux session names and `foil/goal-<fleet>` branches stay unique and valid. (#92)
-- A renew that dies after updating the registry resets the runner record before writing the plan, so resume cannot run the new harness on the old session. (#92)
 - Upgrading a 0.3.x project is kill, then upgrade, then `foil init`. Kill the fleet with the old `foil` (`foil seat kill --all`) before replacing the command on `PATH`; a stale seat whose tmux window is already gone also counts. A refused `foil init` creates nothing in the store. When seats remain, its message names them and that order, and says a stale seat also counts without claiming that one exists. When none remain, it says to run `foil init`. When the old `foil` is no longer on `PATH`, the message gives a version-pinned install into a separate tool directory (`UV_TOOL_DIR=DIR UV_TOOL_BIN_DIR=DIR/bin uv tool install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then `DIR/bin/foil seat kill --all`, or with pipx `PIPX_HOME=DIR PIPX_BIN_DIR=DIR/bin pipx install "git+https://github.com/TiantianFlow/foil.git@v0.3.4"`, then `DIR/bin/foil seat kill --all`), which does not replace the `foil` on `PATH`. It never says to move the directory aside. A move into a store that holds only a fresh skeleton succeeds. A collision names the stored entry that is already taken. A directory that is not a simple tree says that `board`, `run`, and `templates` must be real directories. A repository with no origin is adopted when one store record has a recorded path that is gone and a matching repo identity, such as the root commit. Otherwise init warns, names the orphan's path, and does not silently create a second empty project. A record is considered only when it could be this repository, and the warning does not stop init. After adopt or a legacy move, and only after `git worktree repair` succeeds, absolute paths in `run/registry.json`, `run/plans/`, and `run/instructions/` are rewritten to the store paths no matter what the old absolute prefix was, including the old checkout and the old `.foil/` directory, and a stale `FOIL_PROJECT` value in `run/plans/*.json` is rewritten to the current project key. That write is atomic. A failed repair leaves the stored paths unchanged. A later init finishes the full rewrite: the old store root or the old `.foil/` is mapped whenever that directory itself no longer exists, and the checkout recorded before the write is what detects a checkout that is gone. When the gitdir no longer names the old store, that folder is the project key of the recorded checkout. A 0.4.x command that finds an in-repo legacy `.foil/` prints that upgrade order instead of `foil: not initialized`. (#29)
 
 ## [0.4.0] - 2026-10-10
@@ -291,8 +281,6 @@ This release was withdrawn. Its changes ship in 0.4.5.
 
 ### Fixed
 
-- `FOIL_FLEET` refuses `.`, so fleet tmux session names and `foil/goal-<fleet>` branches stay unique and valid. (#92)
-- A renew that dies after updating the registry resets the runner record before writing the plan, so resume cannot run the new harness on the old session. (#92)
 - `foil seat kill` on a dead seat whose stored window id now names another window no longer raises, and no longer stops `foil seat kill --all`. The seat is marked killed and the other window is left alone.
 - A harness that exits at launch leaves a peekable pane. The seat window stays after the process exits, `#{pane_dead}` makes that seat dead, and `foil seat peek` prints the pane when it still carries this seat's markers. `foil seat kill` and `foil seat resume` remove that leftover window first.
 
@@ -338,8 +326,6 @@ The three were developed on separate lines.
 
 ### Fixed
 
-- `FOIL_FLEET` refuses `.`, so fleet tmux session names and `foil/goal-<fleet>` branches stay unique and valid. (#92)
-- A renew that dies after updating the registry resets the runner record before writing the plan, so resume cannot run the new harness on the old session. (#92)
 - A persona that is not valid UTF-8, or that cannot be opened, no longer makes `roster list`, `roster show`, or `seat list` fail. That role lists with an empty description. A preset file that cannot be read, including one that is not valid UTF-8, lists as `invalid`. A template that is not valid UTF-8, or that cannot be opened, no longer makes `seat list` fail. That seat lists with an empty description. (#15)
 - A persona line that looks like a credential is never printed as a description by `roster list`, `roster show`, or `seat list`; the description is empty. A persona path that resolves outside `.foil/templates`, for example through a symlinked directory, is refused.
 
@@ -369,8 +355,6 @@ This release adds mail and board reads (issue #12) and roster commands
 
 ### Fixed
 
-- `FOIL_FLEET` refuses `.`, so fleet tmux session names and `foil/goal-<fleet>` branches stay unique and valid. (#92)
-- A renew that dies after updating the registry resets the runner record before writing the plan, so resume cannot run the new harness on the old session. (#92)
 - An invalid field name and a missing `--from` path stay on one error line when that text contains a newline.
 - A roster `harness`, `model`, or `persona` that starts with `-` is refused, so `expand_argv` cannot place it as a harness flag. A symlinked `.foil/board/mail` directory lists nothing.
 

@@ -1163,14 +1163,27 @@ def _relaunch(
         raise
 
 
+def _fresh_path(root: Path, name: str) -> Path:
+    """Pending renew: resume must start, even if an old runner record was written back."""
+
+    return record_path(_board(root), name, ".fresh")
+
+
 def _restart(root: Path, registry: dict, name: str) -> None:
     record = dict(registry["seats"][name])
     preset = load_preset(root, record["harness"])
     turns = load_record(_board(root), name)
     reserved = record.get("session_id") or ""
     turns_id = turns["session_id"] or ""
-    # F9: turn only when started and the id still matches the seat (or the seat has none).
-    if turns["started"] and (not reserved or not turns_id or reserved == turns_id):
+    fresh_mark = _fresh_path(root, name)
+    pending_renew = fresh_mark.is_file() and not fresh_mark.is_symlink()
+    # F9: turn only when started and the id still matches the seat (or the seat has none),
+    # and no renew is still waiting to be adopted (F44).
+    if (
+        not pending_renew
+        and turns["started"]
+        and (not reserved or not turns_id or reserved == turns_id)
+    ):
         record["session_id"] = turns_id or reserved
         started = bool(record["session_id"])
     elif reserved and turns_id and reserved != turns_id:
@@ -1179,11 +1192,12 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         started = False
     else:
         # Output presets learn their id in turns; generated spawns may still be unused.
-        record["session_id"] = turns_id or reserved
+        # A pending renew clears a learned output id so the new harness starts fresh.
+        record["session_id"] = reserved if pending_renew else (turns_id or reserved)
         started = False
     if not started and preset["session_id"] == "generated":
-        if reserved and turns_id == reserved:
-            # F44 already reset turns onto this unused generated id.
+        if reserved and (turns_id == reserved or pending_renew):
+            # F44 already reserved this unused generated id.
             record["session_id"] = reserved
         elif reserved and turns_id and reserved != turns_id:
             record["session_id"] = reserved
@@ -1195,6 +1209,9 @@ def _restart(root: Path, registry: dict, name: str) -> None:
         {"turn_started": None, "paused": False, "failures": 0, "pgid": 0, "started": started}
     )
     turns["session_id"] = record["session_id"]
+    if pending_renew:
+        with contextlib.suppress(OSError):
+            fresh_mark.unlink()
     branch = record.get("branch", "") if name == "lead" else ""
     _relaunch(
         root, registry, name, record, preset, turns, first=first, restarted=True, branch=branch
@@ -1308,6 +1325,9 @@ def renew_seat(root: Path, name: str) -> None:
     warning = model_warning(preset, str(chosen["model"]))
     if warning:
         print(warning, file=sys.stderr)
+    # Pending until the runner adopts or resume starts, so a clobbered turns file cannot
+    # resume the new harness on the old session (output presets included).
+    write_bytes(_fresh_path(root, name), b"")
     present = _present(root, name)
     branch = record.get("branch", "") if name == "lead" else ""
     turns = load_record(_board(root), name)
@@ -1321,6 +1341,8 @@ def renew_seat(root: Path, name: str) -> None:
             root, registry, name, record, preset, fresh,
             first="start", restarted=False, handoff=handoff, branch=branch,
         )
+        with contextlib.suppress(OSError):
+            _fresh_path(root, name).unlink()
     else:
         instruction = _write_instruction(
             root, name, loaded, restarted=False, handoff=handoff, branch=branch

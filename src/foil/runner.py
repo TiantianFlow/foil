@@ -374,6 +374,10 @@ class Runner:
         fresh["delivered"] = sorted(delivered)
         save_record(self.board, self.seat, fresh)
         marker.unlink()
+        pending = record_path(self.board, self.seat, ".fresh")
+        if pending.is_file() and not pending.is_symlink():
+            with contextlib.suppress(OSError):
+                pending.unlink()
         os.execv(sys.executable, [sys.executable, "-P", "-m", "foil.runner", str(self.plan_path)])
 
     def _paused(self) -> bool:
