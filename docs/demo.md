@@ -29,7 +29,7 @@ foil init
 ```
 
 ```text
-foil 0.6.3
+foil 0.7.0
 ...
 Project folder: /var/foil/projects/your-repo-1a2b3c
 Run foil seat join lead, then read the file it names. My goal: <goal>.
