@@ -1,0 +1,30 @@
+{
+  "steps": [
+    {
+      "when": {
+        "mail_contains": "two changes to add"
+      },
+      "do": [
+        {
+          "sh": "foil seat spawn implementer --task 'make add right'"
+        },
+        {
+          "sh": "foil seat spawn implementer --task 'name the arguments a and b'"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": " on foil/implementer-"
+      },
+      "do": [
+        {
+          "sh": "branch=$(sed -n 's/^.* on //p' \"$FAKE_MAIL\"); if git merge --no-edit -m \"merge $branch\" \"$branch\"; then echo \"$branch\" >> \"$FAKE_BOARD/notes/merged.txt\"; else git merge --abort; foil send \"${branch#foil/}\" \"conflict: merge $(git branch --show-current) into your branch\"; fi"
+        },
+        {
+          "sh": "if [ \"$(wc -l < \"$FAKE_BOARD/notes/merged.txt\")\" -eq 2 ]; then printf '%s\\n' '---' 'contract: status/v1' 'state: done' 'updated: 2026-11-10T00:00:04Z' 'questions: []' '---' '' 'Both branches are merged.' > \"$FAKE_BOARD/status.md\"; fi"
+        }
+      ]
+    }
+  ]
+}

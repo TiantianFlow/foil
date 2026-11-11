@@ -1,0 +1,51 @@
+{
+  "steps": [
+    {
+      "when": {
+        "mail_contains": "reviewer-1 joins"
+      },
+      "do": [
+        {
+          "sh": "basename \"$FAKE_MAIL\" >> \"$FAKE_BOARD/notes/$FOIL_SEAT_ID-woken.txt\""
+        },
+        {
+          "sh": "foil post --re \"$FAKE_MAIL\" --decline"
+        },
+        {
+          "send": "lead",
+          "text": "nothing to add"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "Which format"
+      },
+      "do": [
+        {
+          "sh": "basename \"$FAKE_MAIL\" >> \"$FAKE_BOARD/notes/$FOIL_SEAT_ID-woken.txt\""
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "results use json"
+      },
+      "do": [
+        {
+          "sh": "basename \"$FAKE_MAIL\" >> \"$FAKE_BOARD/notes/$FOIL_SEAT_ID-woken.txt\""
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "Settled"
+      },
+      "do": [
+        {
+          "sh": "basename \"$FAKE_MAIL\" >> \"$FAKE_BOARD/notes/$FOIL_SEAT_ID-woken.txt\""
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "steps": [
+    {
+      "when": {
+        "mail_contains": "settle the format"
+      },
+      "do": [
+        {
+          "sh": "foil seat spawn implementer && foil seat spawn reviewer"
+        },
+        {
+          "sh": "foil post --members implementer-1 'Which format do results use?'"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "results use json"
+      },
+      "do": [
+        {
+          "sh": "foil post --re \"$FAKE_MAIL\" --members implementer-1,reviewer-1 'reviewer-1 joins to check the choice'"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "nothing to add"
+      },
+      "do": [
+        {
+          "sh": "for d in \"$FAKE_BOARD\"/room/*; do root=\"$d/$(basename \"$d\").md\"; done; foil post --re \"$root\" --close 'Settled: json. @implementer-1 uses it from here.'"
+        }
+      ]
+    }
+  ]
+}

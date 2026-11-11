@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from foil.board_ops import split_front_matter
 from foil.lifecycle import peek_text, seat_rows
 from foil.project import foil_root
 from foil.store import load_registry
@@ -42,6 +43,16 @@ def scripts(repo: Path, fixture: str, seats: dict[str, str], fleet: str = "main"
     destination.mkdir(parents=True, exist_ok=True)
     for seat, name in seats.items():
         shutil.copy(FIXTURES / fixture / "scripts" / name, destination / f"{seat}.json")
+
+
+def mail(repo: Path, box: str, fleet: str = "main") -> list[tuple[str, str]]:
+    """Each mail in a mailbox as (sender, body), sorted. Two in one second have no order."""
+
+    found = []
+    for path in (board(repo, fleet) / "mail" / box).glob("*.md"):
+        fields, body = split_front_matter(path.read_text(encoding="utf-8"))
+        found.append((str((fields or {}).get("from")), body.strip()))
+    return sorted(found)
 
 
 def launches(repo: Path, seat: str, fleet: str = "main") -> list[dict]:

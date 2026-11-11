@@ -1,0 +1,27 @@
+{
+  "steps": [
+    {
+      "when": {
+        "mail_contains": "staff the fleet"
+      },
+      "do": [
+        {
+          "sh": "echo \"$FOIL_FLEET\" > \"$FAKE_BOARD/notes/$FOIL_SEAT_ID.txt\""
+        },
+        {
+          "sh": "foil seat spawn implementer --task 'say where you are'"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "only for this fleet"
+      },
+      "do": [
+        {
+          "sh": "echo heard >> \"$FAKE_BOARD/notes/heard.txt\""
+        }
+      ]
+    }
+  ]
+}

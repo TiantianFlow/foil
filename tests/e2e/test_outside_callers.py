@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 import foil.tmux
-from foil.board_ops import split_front_matter
 from foil.cli import main
 from foil.store import load_registry
 from tests.e2e.support import (
@@ -19,6 +18,7 @@ from tests.e2e.support import (
     close,
     fleet_dir,
     launches,
+    mail,
     outside_agent,
     scripts,
     states,
@@ -28,16 +28,6 @@ from tests.e2e.support import (
 from tests.e2e.test_scenarios import _git, _no_windows, _panes, _prepare, _status
 
 pytestmark = pytest.mark.e2e
-
-
-def _mail(repo: Path, box: str) -> list[tuple[str, str]]:
-    """Each mail in a mailbox as (sender, body), sorted. Two in one second have no order."""
-
-    found = []
-    for path in (board(repo) / "mail" / box).glob("*.md"):
-        fields, body = split_front_matter(path.read_text(encoding="utf-8"))
-        found.append((str((fields or {}).get("from")), body.strip()))
-    return sorted(found)
 
 
 def test_scenario_9_a_launched_lead_asks_the_human(
@@ -59,12 +49,12 @@ def test_scenario_9_a_launched_lead_asks_the_human(
 
         # What is on the board afterwards.
         assert "The answer is blue." in _status(repo)
-        assert _mail(repo, "user") == [
+        assert mail(repo, "user") == [
             ("lead", "done: the status uses blue"),
             ("lead", "question in board/status.md: which color"),
         ]
         # The agent's process had no seat identity, so its mail is the human's.
-        assert _mail(repo, "lead") == [("user", "pick a color"), ("user", "use blue")]
+        assert mail(repo, "lead") == [("user", "pick a color"), ("user", "use blue")]
 
         # The peek is the raw pane, and mail to the human was typed into no pane.
         registry = load_registry(repo)
@@ -141,7 +131,7 @@ def test_two_callers_outside_the_fleet_work_on_it_at_once(
         assert sorted(windows.stdout.split()) == sorted(seats)
         # Nothing either caller wrote was lost, and the lead was woken for each mail.
         sent = sorted(f"{who}{n}" for who in ("a", "b") for n in range(3))
-        assert _mail(repo, "lead") == [("user", f"count me {name}") for name in sent]
+        assert mail(repo, "lead") == [("user", f"count me {name}") for name in sent]
         wait(repo, lambda: _read(read) == sent, timeout=20, what="the lead to read six mails")
         rooms = [path for path in (board(repo) / "room").iterdir() if path.is_dir()]
         assert len(rooms) == 2
