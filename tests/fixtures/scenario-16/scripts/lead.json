@@ -1,0 +1,10 @@
+{
+  "steps": [
+    {
+      "when": {"mail_contains": "board/handoffs/lead.md"},
+      "do": [
+        {"sh": "foil send user \"continuing from the handoff: $(sed -n 1p \"$FAKE_BOARD/handoffs/lead.md\")\""}
+      ]
+    }
+  ]
+}

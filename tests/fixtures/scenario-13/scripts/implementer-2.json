@@ -1,0 +1,30 @@
+{
+  "steps": [
+    {
+      "when": {
+        "mail_contains": "name the arguments"
+      },
+      "do": [
+        {
+          "sh": "printf 'def add(a, b):\\n    return a - b\\n' > calc.py"
+        },
+        {
+          "sh": "git add calc.py && git commit --quiet -m 'name the arguments'"
+        },
+        {
+          "sh": "foil send lead \"done on $(git branch --show-current)\""
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "conflict: merge"
+      },
+      "do": [
+        {
+          "sh": "git merge --no-edit \"$(sed -n 's/^conflict: merge \\(.*\\) into your branch$/\\1/p' \"$FAKE_MAIL\")\" || true; printf 'def add(a, b):\\n    return a + b\\n' > calc.py; git add calc.py; git commit --quiet --no-edit; foil send lead \"resolved on $(git branch --show-current)\""
+        }
+      ]
+    }
+  ]
+}

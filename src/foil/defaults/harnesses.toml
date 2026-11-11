@@ -75,7 +75,7 @@ auto = ["--always-approve"]
 [[harness]]
 id = "fake"
 command = ["foil-fake", "--session", "{session_id}", "--prompt", "{prompt}"]
-resume = ["foil-fake", "--session", "{session_id}", "--prompt", "{prompt}"]
+resume = ["foil-fake", "--resume", "{session_id}", "--prompt", "{prompt}"]
 session_id = "generated"
 env = []
 models = []

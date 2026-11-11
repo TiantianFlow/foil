@@ -1,0 +1,14 @@
+{
+  "steps": [
+    {
+      "when": {
+        "mail_contains": "review"
+      },
+      "do": [
+        {
+          "sh": "wt=$(git worktree list | grep 'foil/implementer-1]' | cut -d' ' -f1); if (cd \"$wt\" && python3 -m pytest -q --noconftest check_calc.py) > \"$FAKE_BOARD/results/review.md\" 2>&1; then foil send lead approved; else foil send lead 'rejected: check_calc.py fails'; fi"
+        }
+      ]
+    }
+  ]
+}

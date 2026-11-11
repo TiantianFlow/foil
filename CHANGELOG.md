@@ -24,6 +24,10 @@ Notable changes to Foil, newest first.
 - The built-in `claude` preset launches and resumes with `--disallowedTools AskUserQuestion`, and the `opencode` preset denies its `question` tool. (#91)
 - `foil mail list` lists only files whose name `foil send` could have written, and takes the time and the sender from that name, not from the file's front matter. (#92)
 
+### Fixed
+
+- Two nudges sent to one seat at the same moment arrive as two lines. Before, the second sender could type between the first line and its Enter, and the seat got one line with both paths run together. (#96)
+
 ## [0.6.3] - 2026-10-31
 
 `foil --version` prints 0.6.3.

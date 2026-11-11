@@ -1,0 +1,60 @@
+{
+  "steps": [
+    {
+      "when": {
+        "mail_contains": "make the tests pass"
+      },
+      "do": [
+        {
+          "sh": "foil seat spawn implementer --task 'fix the failing test'"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "fixed on foil/implementer-1"
+      },
+      "do": [
+        {
+          "sh": "foil seat spawn reviewer --task 'review the fix'"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "rejected"
+      },
+      "do": [
+        {
+          "send": "implementer-1",
+          "text": "rework: the review rejected it, see board/results/review.md"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "reworked on foil/implementer-1"
+      },
+      "do": [
+        {
+          "send": "reviewer-1",
+          "text": "review again"
+        }
+      ]
+    },
+    {
+      "when": {
+        "mail_contains": "approved"
+      },
+      "do": [
+        {
+          "sh": "git merge --no-edit -m 'merge the fix' foil/implementer-1"
+        },
+        {
+          "write": "board/status.md",
+          "text": "---\ncontract: status/v1\nstate: done\nupdated: 2026-11-10T00:00:03Z\nquestions: []\n---\n\nThe tests pass.\n"
+        }
+      ]
+    }
+  ]
+}

@@ -15,6 +15,7 @@ from foil.store import (
     SAFE_ID,
     actor,
     create_exclusive,
+    exclusive_lock,
     find_seat,
     fleet_dir,
     load_registry,
@@ -61,8 +62,11 @@ def nudge(
         controller = TmuxController()
         if not controller.matches_window(fleet_id, seat, session, window_id):
             return False
-        return controller.nudge(window_id, f"{sender} {mail_path}")
-    except TmuxError:
+        # One sender at a time types into a seat, so a line and its Enter stay
+        # together (N6). The lock is in the run folder of the fleet that holds the file.
+        with exclusive_lock(mail_path.parents[3] / "run" / f"nudge-{seat}.lock"):
+            return controller.nudge(window_id, f"{sender} {mail_path}")
+    except (TmuxError, OSError, FoilError):
         return False
 
 

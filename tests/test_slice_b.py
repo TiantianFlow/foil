@@ -143,6 +143,40 @@ def test_send_from_seat_nudges_only_when_a_window_exists(
     assert text.endswith("from the lead\n")
 
 
+def test_a_nudge_whose_lock_cannot_be_taken_types_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import foil.board
+
+    typed: list[str] = []
+
+    class Controller:
+        def matches_window(self, *args: str) -> bool:
+            return True
+
+        def nudge(self, window_id: str, line: str) -> bool:
+            typed.append(line)
+            return True
+
+    monkeypatch.setattr(foil.board, "TmuxController", Controller)
+    fleet = tmp_path / "fleets" / "main"
+    mail = fleet / "board" / "mail" / "lead" / "one.md"
+    mail.parent.mkdir(parents=True)
+    mail.write_text("hello\n", encoding="utf-8")
+    (fleet / "run").mkdir()
+    lock = fleet / "run" / "nudge-lead.lock"
+
+    # A lock that is not a plain file: the mail stays written and nobody types.
+    lock.symlink_to(tmp_path / "elsewhere")
+    assert foil.board.nudge("main", "lead", "foil-x", "@1", "user", mail) is False
+    assert typed == []
+    assert not (tmp_path / "elsewhere").exists()
+
+    lock.unlink()
+    assert foil.board.nudge("main", "lead", "foil-x", "@1", "user", mail) is True
+    assert typed == [f"user {mail}"]
+
+
 def test_send_stdin_unknown_seat_and_secrets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

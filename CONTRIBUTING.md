@@ -59,6 +59,13 @@ not a command or a flag.
 FOIL_E2E_LIVE=1 uv run --frozen --extra dev pytest tests/e2e -m e2e_live -n 0
 ```
 
+Each live test that runs writes its row in docs/live-runs.md: the harness,
+the version that CLI prints, the scenario, passed or failed, the date, and
+the Foil version. A later run of the same harness and scenario replaces
+the row. Commit the file when the rows are a result worth keeping, and
+restore it when they are not. `FOIL_E2E_RECORD` is a test-only override
+that names another file to write.
+
 ## Rules every change keeps
 
 1. **Requirements first.** A change in behavior updates
@@ -129,6 +136,11 @@ Re-check each preset's model ids in `src/foil/defaults/harnesses.toml` against t
 - `opencode`: <https://opencode.ai/docs/cli/> and <https://opencode.ai/docs/models/>. Its model id is `provider_id/model_id`, and its docs say the built-in provider and model names come from <https://models.dev/>. The packaged list, `anthropic/claude-sonnet-4-5` and `openai/gpt-5.5`, was checked there on 2026-10-21 and both ids were current.
 
 `fake` has no vendor model list.
+
+Run the live tier against each harness CLI installed and logged in on your
+machine, with `FOIL_E2E_HARNESS` naming one harness per run, and commit
+the rows it writes in docs/live-runs.md. Say in the release notes which
+harnesses were not run.
 
 ## Release
 
