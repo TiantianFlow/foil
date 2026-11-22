@@ -53,6 +53,7 @@ foil = "foil.cli:main"
 
 [project.optional-dependencies]
 dev = [
+  "foil-bridge",
   "hypothesis",
   "playwright",
   "pytest",
@@ -87,10 +88,17 @@ exclude = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/foil"]
 
+[tool.uv.workspace]
+members = ["addons/bridge"]
+
+[tool.uv.sources]
+foil-ai = { workspace = true }
+foil-bridge = { workspace = true }
+
 [tool.pytest.ini_options]
 addopts = "-ra -n auto"
 testpaths = ["tests"]
-pythonpath = ["src", "."]
+pythonpath = ["src", "addons/bridge/src", "."]
 markers = [
   "e2e: operator end-to-end journeys against the lead-owned live fleet",
   "e2e_live: real harness CLIs; skipped unless FOIL_E2E_LIVE=1",
@@ -99,6 +107,7 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["addons/bridge/src/foil_bridge/vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

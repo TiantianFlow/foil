@@ -28,7 +28,10 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/delivery.py` | Appends the per-seat delivery log, the lead's pointers, and the fleet pause flag. A line is a time, a board path, and a state. It stores no mail body and no turn output. |
 | `src/foil/guard.py` | Writes the seat-only `pre-commit` and `pre-push` hooks, and runs their checks for private text and the worktree boundary before the repository's own hook. |
 | `src/foil/view.py` | Serves `foil view`, one read-only page on `127.0.0.1` for every project in the store, each under `/projects/<key>/`. It calls the same readers as `seat list`, `seat peek`, `roster list`, and `memory list`, and writes nothing. At start it reads `tailscale status --json` once, so a request that `tailscale serve` forwards from the owner's login can load under the tailnet name. |
+| `src/foil/bridge_cmd.py` | `foil bridge`, `foil bridge install`, and `foil doctor`. It writes the boot file and the desk token and does not import the Bridge package. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |
+
+`addons/bridge` is the `foil-bridge` package. Core does not import it. The Bridge process imports `bridge_cmd` for the desk token and `foil.api` only to read `VERSION`. It calls `foil.view.tailnet` for the same tailnet check `foil view` uses. Pairing credentials are files under the store. The process keeps no copy of a fleet's files.
 
 ### Module layers
 
@@ -48,6 +51,7 @@ flowchart TB
   roster_ops["<b>roster_ops.py</b><br/>list · show · add · update · remove"]
   memory["<b>memory.py</b><br/>lessons"]
   view["<b>view.py</b><br/>read-only page on 127.0.0.1"]
+  bridge_cmd["<b>bridge_cmd.py</b><br/>boot file · desk token · doctor"]
 
   presets["<b>presets.py</b><br/>templates · harness presets · argv"]
   tmuxmod["<b>tmux.py</b><br/>windows by exact id and markers<br/>calls tmux"]
@@ -84,6 +88,8 @@ flowchart TB
   api --> memory
   api --> project
   api --> view
+  api --> bridge_cmd
+  bridge_cmd --> project
   view --> lifecycle
   view --> roster_ops
   view --> memory

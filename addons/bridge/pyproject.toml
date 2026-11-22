@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "foil-bridge"
+version = "0.1.0"
+description = "A local page for Foil on this machine, reached from the desk or a paired phone"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+  { name = "TiantianFlow", email = "177855728+TiantianFlow@users.noreply.github.com" },
+]
+keywords = ["foil", "bridge"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Web Environment",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+]
+dependencies = [
+  "foil-ai @ git+https://github.com/TiantianFlow/foil.git",
+]
+
+[project.urls]
+Homepage = "https://github.com/TiantianFlow/foil"
+Repository = "https://github.com/TiantianFlow/foil"
+Issues = "https://github.com/TiantianFlow/foil/issues"
+
+[project.scripts]
+foil-bridge = "foil_bridge.cli:main"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/foil_bridge"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/README.md", "/pyproject.toml"]

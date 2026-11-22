@@ -237,6 +237,10 @@ journalctl --user -u foil-view
 
 It runs while you are logged in.
 
+## Bridge
+
+`foil bridge install` writes a boot file for a page on this machine. The page listens on `127.0.0.1` only. A request with no token gets an empty 401. The page shows a code that pairs a phone once. From another device, run `tailscale serve` on that port and open the https address it prints. When `foil-bridge` is not on `PATH`, `foil bridge` prints how to install it and does not start the page. `foil doctor` prints one line per check.
+
 ## Limits
 
 Foil is cooperative protection for seats that follow instructions. It is not isolation from a hostile process. A seat's identity is the `FOIL_SEAT_ID` environment variable Foil sets when it launches that seat. There is no flag a seat can pass to claim another seat. Anything you can do on this machine, a process running as you can do too.
@@ -248,6 +252,8 @@ Templates default to `permission = "auto"`. An omitted permission runs the seat 
 Foil never interprets what is on a seat's screen or in a turn's output. `foil seat peek` prints the raw tmux capture. `foil seat list` reports a seat's state from whether its window exists and from its runner's own record of whether a turn is running and how the last one ended, or `joined` for your own agent. The runner reads one thing from a turn's output: for Codex and OpenCode, which make their own session id, the id from the first turn's JSON line. Agents say whether they are blocked or done in board files. Foil does not scrape a pane and types nothing into one.
 
 `foil view` has no login. Your project folders are private to you, but a port on `127.0.0.1` is open to every account on the machine, so while the viewer runs anyone logged in can read it, including every project's pane text and board files. It hides launch-command tokens that look like credentials, as a best effort. On a machine other people log in to, stop it when you are done. The tailnet check guards only the tailnet name: an account on this machine can still read the page on `127.0.0.1`.
+
+The Bridge listens only on `127.0.0.1` and answers 401 without a token. The tailnet check is extra and does not replace that token. The desk address that `foil bridge install` prints is the token for this machine; a paired phone keeps its own.
 
 A seat's turn runs with no one to answer it. A harness that wants a person mid-turn (a login, an update, an approval under `ask`) ends that turn or fails it; Foil retries a failed turn three times, then pauses the seat and mails the reason. A turn that runs longer than the role's `turn_timeout`, four hours by default, is ended, and Foil mails the reader that it was stopped. Before a session exists, Foil retries that turn after 30 seconds, 2 minutes, and 8 minutes, then pauses the seat. Once a session exists, that turn's items are delivered and the seat waits for the next mail. Mail that arrives during a turn waits for the next one.
 

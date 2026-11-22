@@ -6,6 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Added
 
+- `foil doctor` checks the Bridge and exits 0, 1, 2, or 3. `foil bridge` prints the install line when `foil-bridge` is missing, and the version when it is present. `foil bridge install` writes a systemd user unit or a launchd agent and the desk token. The page is the separate `foil-bridge` package: loopback only, a token on every request, a one-time pairing code, an installable page, and an id-only change stream. (#116)
 - `foil master start`, `stop`, and `renew` run one master per store on the seat runner. Its files are `<root>/master/`: `mail/`, `log.md`, `watches.md`, `mandate.md`, and `run/`. A lead and the human mail it with `foil send master`. It wakes on that mail and on a new inbox identity across projects, checked once a second with no model, and not on an unchanged set. Each turn is a new session seeded with its charter, `foil brief --all-projects`, its log, watches, and mandate, the recent conversation, and the wake items. The charter is a control plane: it talks to leads, proposes a merge, a settings change, a new fleet, or init as a message for the human, and does not merge, kill, or archive. It can start a launched lead with `foil seat spawn lead --project KEY`. The package version stays 0.7.0: phase 1 is still unreleased, and the master does not take a separate release. Reading a transcript stays with the Bridge. (#117)
 - `foil inbox` lists what needs the human, computed on read from the fleet's files, in one fixed order: questions and unread human mail, dead or paused seats, undelivered mail, blocked with no question, then a paused fleet and a done goal. One item per subject, so a dead seat with stuck mail is one item. `foil brief` prints each fleet's goal, state, latest journal lines, open questions, and stuck items, with no model. A `status/v1` question may be a plain string or a flat mapping (`id`, `ask`, `options`, `recommended`, `why`, `evidence`, `owner`). Front matter outside that one-level subset is shown raw. The lead and joined skills write the mapping. (#114)
 - `foil fleet pause` and `foil fleet resume`. While a fleet is paused, its runners start no turn, including a new seat's first turn, and mail stays queued. A turn already running finishes. The next command a joined lead runs prints `foil: fleet is paused` once. (#115)
@@ -24,6 +25,7 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
+- The command surface is seventeen top-level commands and thirty-nine actions. `doctor`, `bridge`, and `bridge install` join `master start`, `stop`, and `renew`. (#116)
 - The command surface is fifteen top-level commands and thirty-six actions. `master start`, `stop`, and `renew` are the three new actions. (#117)
 - Packaged Python is 13407 lines, above the N4 2500-line target (the #114 count was 12464). The master runner, its store mailbox, and the shared turn process are the growth. The count is reported, not enforced. (#117)
 - Requirements describe the meta-harness. One agent, the master, is who you talk to, and the `foil` CLI stays usable on its own. The optional Bridge is in scope as a separate package. Core still has no daemon, no MCP server, and no UI besides `foil view`. The delivery log is in scope and records paths and states only. That change left the binary's nine top-level commands and twenty-seven actions as they were. Later commands are named by phase. (#111)
@@ -33,6 +35,7 @@ Notable changes to Foil, newest first.
 - Packaged Python is 10710 lines, above the N4 2500-line target (the #112 count was 10377). The journal module and one line at each fact the runner and the lifecycle already record are the growth. The count is reported, not enforced. (#113)
 - Packaged Python is 11533 lines, above the N4 2500-line target (the #113 count was 10710). The delivery log, fleet pause, pointers, and the session list are the growth. The count is reported, not enforced. (#115)
 - The command surface is fourteen top-level commands and thirty-three actions. `inbox` and `brief` are the two new actions. (#114)
+- Packaged Python is 13882 lines, above the N4 2500-line target (the #117 count was 13407). `foil bridge`, `foil bridge install`, and `foil doctor` are the growth on top of the master. The count is reported, not enforced. (#116)
 - Packaged Python is 12464 lines, above the N4 2500-line target (the #115 count was 11533). The one-level front-matter parser and the computed inbox and brief are the growth. The count is reported, not enforced. (#114)
 
 ## [0.7.0] - 2026-11-11

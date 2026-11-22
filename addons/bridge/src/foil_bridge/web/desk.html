@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foil Bridge</title>
+<link rel="manifest" href="manifest.webmanifest?token=__TOKEN__">
+<link rel="icon" href="icon-192.png?token=__TOKEN__">
+<link rel="stylesheet" href="desk.css?token=__TOKEN__">
+</head>
+<body>
+<main>
+<p class="mark">Foil</p>
+<h1>Bridge</h1>
+<p class="lede" id="lede">A page on this machine. Pair a phone once, then that phone opens this same page.</p>
+<section id="pair">
+<h2>Pair a phone</h2>
+<p>The code works once, and then it is spent.</p>
+<button type="button" id="mint">Show a code</button>
+<p id="code" class="code" hidden></p>
+<img id="qr" alt="" hidden>
+<p id="pair-note" hidden></p>
+</section>
+<section>
+<h2>Paired phones</h2>
+<ul id="devices"></ul>
+</section>
+<section>
+<h2>From another device</h2>
+<p>Put Tailscale in front of this page, then open the https address it prints.</p>
+<pre>tailscale serve --bg 8791</pre>
+<p>Add the page to the phone's home screen after it is paired. When the machine is asleep or off the tailnet, the saved page says so.</p>
+</section>
+<p id="changed" class="quiet"></p>
+</main>
+<script src="app.js?token=__TOKEN__" type="module"></script>
+</body>
+</html>

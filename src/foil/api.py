@@ -113,6 +113,8 @@ _ALLOWED = {
     "master-start": {_OUTSIDE},
     "master-stop": {_OUTSIDE},
     "master-renew": {_OUTSIDE},
+    "doctor": {_OUTSIDE},
+    "bridge": {_OUTSIDE},
 }
 
 
@@ -855,3 +857,56 @@ def view(
 
         code = serve(port)
     return {"code": code}
+
+
+def _outside(command: str, *, inside: bool) -> None:
+    if inside:
+        raise FoilError(f"foil: {command} is outside the fleet only")
+
+
+def doctor(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _outside("doctor", inside=inside)
+    _authorize("doctor", caller=caller, inside=inside)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        from foil.bridge_cmd import run_doctor
+
+        return run_doctor()
+
+
+def bridge(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _outside("bridge", inside=inside)
+    _authorize("bridge", caller=caller, inside=inside)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        from foil.bridge_cmd import show_bridge
+
+        return show_bridge()
+
+
+def bridge_install(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _outside("bridge", inside=inside)
+    _authorize("bridge", caller=caller, inside=inside)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        from foil.bridge_cmd import install_bridge
+
+        return install_bridge()

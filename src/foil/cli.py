@@ -257,6 +257,15 @@ def _build_parser() -> argparse.ArgumentParser:
     master_renew.add_argument("--harness", metavar="ID/MODEL")
     _shared(master_renew)
 
+    doctor = sub.add_parser("doctor", help="Check the Bridge")
+    _shared(doctor)
+
+    bridge = sub.add_parser("bridge", help="The local Bridge")
+    _shared(bridge)
+    bridge_sub = bridge.add_subparsers(dest="bridge_command", required=False)
+    install = bridge_sub.add_parser("install", help="Write the boot unit")
+    _shared(install)
+
     return parser
 
 
@@ -310,7 +319,7 @@ def _project_for(args: argparse.Namespace, key: str | None, *, inside: bool) -> 
         return found
     if args.command == "init":
         return None
-    if args.command == "view":
+    if args.command in {"view", "doctor", "bridge"}:
         try:
             return _discover()
         except FoilError:
@@ -618,6 +627,14 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
             as_json=args.json,
         )
         return 0
+    if args.command == "doctor":
+        return api.doctor(project, fleet, caller, inside=inside, pinned=pinned)["code"]
+    if args.command == "bridge":
+        if getattr(args, "bridge_command", None) == "install":
+            api.bridge_install(project, fleet, caller, inside=inside, pinned=pinned)
+        else:
+            api.bridge(project, fleet, caller, inside=inside, pinned=pinned)
+        return 0
     action = args.roster_command
     layer = getattr(args, "project", False)
     if action == "list":
@@ -683,7 +700,7 @@ def _paused_notice(call: _Call | None) -> None:
 def _notice(args: argparse.Namespace) -> None:
     """The joined lead's new-items line, after every other command outside the fleet (F41)."""
     quiet = (
-        args.command == "view"
+        args.command in {"view", "doctor", "bridge"}
         or (args.command == "seat" and args.seat_command in {"join", "leave"})
         or (args.command == "mail" and args.mail_command == "wait")
     )
