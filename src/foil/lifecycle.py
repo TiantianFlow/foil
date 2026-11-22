@@ -625,7 +625,8 @@ def _instruction(
         "Notes: write files under `board/notes/`. They wake no one.",
         "Contracts (parsed only to print; Foil does not act on them):",
         "status/v1 (state working|blocked|done, updated, questions, decisions; "
-        "the body starts with ## Mandate),",
+        "a question is a string or a mapping with id, ask, options, recommended, why, "
+        "evidence, and owner human or master; the body starts with ## Mandate),",
         "task/v1 (id, owner, state open|doing|done, acceptance, optional source),",
         "result/v1 (task, author, branch, outcome pass|fail|blocked|dropped, optional question),",
         "room/v2 (from, time, optional re, members, closed, wakes).",

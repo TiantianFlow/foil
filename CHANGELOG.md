@@ -6,6 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Added
 
+- `foil inbox` lists what needs the human, computed on read from the fleet's files, in one fixed order: questions and unread human mail, dead or paused seats, undelivered mail, blocked with no question, then a paused fleet and a done goal. One item per subject, so a dead seat with stuck mail is one item. `foil brief` prints each fleet's goal, state, latest journal lines, open questions, and stuck items, with no model. A `status/v1` question may be a plain string or a flat mapping (`id`, `ask`, `options`, `recommended`, `why`, `evidence`, `owner`). Front matter outside that one-level subset is shown raw. The lead and joined skills write the mapping. (#114)
 - `foil fleet pause` and `foil fleet resume`. While a fleet is paused, its runners start no turn, including a new seat's first turn, and mail stays queued. A turn already running finishes. The next command a joined lead runs prints `foil: fleet is paused` once. (#115)
 - Each launched seat has an append-only delivery log at `fleets/<id>/run/turns/<seat>.log`: a time, a board path, and `inflight`, `delivered`, `retry`, `skipped`, or `printed`. No mail body and no turn output. At 64 KiB the file rotates to `<seat>.log.1`. `foil mail list --sent` lists mail the caller sent with a derived state: `queued`, `inflight`, `delivered`, `stuck`, or `skipped`. A file stuck for 60 seconds is an undelivered inbox item, computed when something reads it. (#115)
 - Mail from the human to a worker appends a pointer. The lead's next wake prompt lists it once, and it wakes nobody. (#115)
@@ -28,6 +29,8 @@ Notable changes to Foil, newest first.
 - The command surface is twelve top-level commands and thirty-one actions. `fleet pause` and `fleet resume` are the two new actions. `mail list` gains `--sent`, and roster writes gain `--base REV`. (#115)
 - Packaged Python is 10710 lines, above the N4 2500-line target (the #112 count was 10377). The journal module and one line at each fact the runner and the lifecycle already record are the growth. The count is reported, not enforced. (#113)
 - Packaged Python is 11533 lines, above the N4 2500-line target (the #113 count was 10710). The delivery log, fleet pause, pointers, and the session list are the growth. The count is reported, not enforced. (#115)
+- The command surface is fourteen top-level commands and thirty-three actions. `inbox` and `brief` are the two new actions. (#114)
+- Packaged Python is 12464 lines, above the N4 2500-line target (the #115 count was 11533). The one-level front-matter parser and the computed inbox and brief are the growth. The count is reported, not enforced. (#114)
 
 ## [0.7.0] - 2026-11-11
 

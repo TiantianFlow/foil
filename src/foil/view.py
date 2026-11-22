@@ -35,6 +35,7 @@ from foil.board import room_state
 from foil.board_ops import split_front_matter
 from foil.delivery import fleet_paused
 from foil.errors import FoilError, assert_no_secret
+from foil.inbox import shown_questions
 from foil.lifecycle import peek_text, seat_rows
 from foil.memory import read_lessons
 from foil.presets import (
@@ -165,8 +166,9 @@ TIPS = {
     "status.md.",
     "Pane": "Raw tmux capture of the runner's window: each turn's output as the harness "
     "printed it. The viewer does not decide that the seat is busy or blocked.",
-    "Needs you": "The questions in status.md, and the seats that are paused or dead. foil "
-    "seat resume restarts a dead seat and retries a paused one.",
+    "Needs you": "The questions in status.md. A mapping shows its ask, and front matter "
+    "outside the subset is shown raw. Paused and dead seats are listed too. foil seat "
+    "resume restarts a dead seat and retries a paused one.",
 }
 _ALIVE = ("working", "idle", "paused", "joined")
 FILTERS = {
@@ -1082,9 +1084,7 @@ def _needs_you(root: Path, fleet: str, rows: list[dict], here: str) -> str:
     items = []
     with suppress(Exception):
         text, _size = _read_listed(root, fleet, "status.md")
-        questions = (split_front_matter(text)[0] or {}).get("questions")
-        if isinstance(questions, list):
-            items += [escape(item) for item in questions if item]
+        items += [escape(item) for item in shown_questions(text)]
     for row in rows:
         if row["state"] in ("paused", "dead"):
             link = escape(f"{here}/seats/{quote(row['name'])}")
