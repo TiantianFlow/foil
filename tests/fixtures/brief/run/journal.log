@@ -1,0 +1,2 @@
+{"event":"spawn","n":1,"seat":"lead","time":"2026-01-02T03:00:00Z"}
+{"by":"lead","event":"decision","n":2,"text":"Use the first reading.","time":"2026-01-02T03:01:00Z","why":"The tests match it."}

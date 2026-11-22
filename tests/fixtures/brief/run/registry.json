@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "fleet_id": "main",
+  "tmux_session": "foil-brief",
+  "lead": "",
+  "seats": {
+    "implementer-1": {
+      "name": "implementer-1",
+      "template": "implementer",
+      "harness": "fake",
+      "model": "",
+      "window_id": "@999999",
+      "state": "idle",
+      "worktree": "",
+      "branch": "",
+      "session_id": "s"
+    }
+  },
+  "rotation": {}
+}

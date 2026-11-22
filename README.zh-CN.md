@@ -135,7 +135,7 @@ foil seat list
 foil seat peek lead
 ```
 
-主座的第一条提示已经带上了它的指令，所以消息里只放目标或回答。主座给你发邮件时，`foil mail wait` 就会返回，但那封邮件仍算新的，直到 `foil mail wait --timeout 0` 再打印一次并把它记为已看。项目目录里的 `board/status.md` 是主座自己的报告，也会列出要问你的问题；用 `foil send lead "..."` 回答。它带有一份清单，写明已经完成的和还剩下的。如果这个文件本来就在，只有 `updated` 变了，目标才算完成。结束时，`foil seat kill --all` 会停掉每个席位，分支和 worktree 都会保留。被停掉的席位名字会一直保留，直到 `foil seat archive NAME`。这条命令释放名字，不删除 worktree、分支、邮箱或未提交的工作。`foil seat list --archived` 显示保存的 worktree 路径。留下的席位工作树在 `<项目目录>/worktrees/<label>`。干净的用 `git worktree remove <path>` 删掉。不干净的需要 `--force`，那会丢掉未提交的工作。
+主座的第一条提示已经带上了它的指令，所以消息里只放目标或回答。主座给你发邮件时，`foil mail wait` 就会返回，但那封邮件仍算新的，直到 `foil mail wait --timeout 0` 再打印一次并把它记为已看。项目目录里的 `board/status.md` 是主座自己的报告，也会列出要问你的问题；用 `foil send lead "..."` 回答。`foil inbox` 按固定顺序列出需要你处理的事，`foil brief` 打印每个舰队的目标、状态、最近的日志、未答问题和卡住的项。两者只读文件，不调用模型。它带有一份清单，写明已经完成的和还剩下的。如果这个文件本来就在，只有 `updated` 变了，目标才算完成。结束时，`foil seat kill --all` 会停掉每个席位，分支和 worktree 都会保留。被停掉的席位名字会一直保留，直到 `foil seat archive NAME`。这条命令释放名字，不删除 worktree、分支、邮箱或未提交的工作。`foil seat list --archived` 显示保存的 worktree 路径。留下的席位工作树在 `<项目目录>/worktrees/<label>`。干净的用 `git worktree remove <path>` 删掉。不干净的需要 `--force`，那会丢掉未提交的工作。
 
 ### 同时进行几个目标
 

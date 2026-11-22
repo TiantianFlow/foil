@@ -74,6 +74,19 @@ A path under `board/mail/` is `foil mail read`. A path under `board/room/` is `f
 
 ## Questions for the human
 
+Write each question as a mapping with `id`, `ask`, `options` (a flow list), `recommended`, `why`, `evidence`, and `owner` (`human` or `master`). A plain string is still a question and has no options.
+
+```yaml
+questions:
+  - id: reading
+    ask: Which reading of the goal?
+    options: [first, second]
+    recommended: first
+    why: The first matches the tests.
+    evidence: board/results/t1.md
+    owner: human
+```
+
 <!-- launched -->
 Nobody reads your pane. The human reads `board/status.md` and your mail to `user`, and the answer comes back to you as mail. A question for the human goes in `status.md` `questions`: the decision, the options, your recommendation, and what the fleet does while it waits. Set `state: blocked` when the goal cannot go on without the answer. Then `foil send user` one line that points at the question, and end your turn.
 

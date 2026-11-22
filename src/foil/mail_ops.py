@@ -168,7 +168,7 @@ def sent_rows() -> list[dict[str, str]]:
 
 
 def undelivered(board: Path | None = None) -> list[dict[str, str]]:
-    """Stuck mail in this fleet, oldest first. ``foil inbox`` reads this later."""
+    """Stuck mail in this fleet, oldest first. ``foil inbox`` reads this."""
 
     root = board if board is not None else board_root()
     mail_dir = root / "mail"

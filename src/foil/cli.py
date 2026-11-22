@@ -235,6 +235,17 @@ def _build_parser() -> argparse.ArgumentParser:
     resume = fleet_sub.add_parser("resume", help="Take the queued items")
     _shared(resume)
 
+    inbox = sub.add_parser("inbox", help="List what needs the human")
+    inbox.add_argument("--all-fleets", action="store_true")
+    inbox.add_argument("--all-projects", action="store_true")
+    inbox.add_argument("--json", action="store_true")
+    _shared(inbox)
+
+    brief = sub.add_parser("brief", help="Print one fleet's status from its files")
+    brief.add_argument("--all-projects", action="store_true")
+    brief.add_argument("--json", action="store_true")
+    _shared(brief)
+
     return parser
 
 
@@ -289,6 +300,11 @@ def _project_for(args: argparse.Namespace, key: str | None, *, inside: bool) -> 
     if args.command == "init":
         return None
     if args.command == "view":
+        try:
+            return _discover()
+        except FoilError:
+            return None
+    if args.command in {"inbox", "brief"} and getattr(args, "all_projects", False) and not key:
         try:
             return _discover()
         except FoilError:
@@ -545,6 +561,29 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
             api.fleet_pause(project, fleet, caller, inside=inside, pinned=pinned)
         else:
             api.fleet_resume(project, fleet, caller, inside=inside, pinned=pinned)
+        return 0
+    if args.command == "inbox":
+        api.inbox(
+            project,
+            fleet,
+            caller,
+            inside=inside,
+            pinned=pinned,
+            all_fleets=args.all_fleets,
+            all_projects=args.all_projects,
+            as_json=args.json,
+        )
+        return 0
+    if args.command == "brief":
+        api.brief(
+            project,
+            fleet,
+            caller,
+            inside=inside,
+            pinned=pinned,
+            all_projects=args.all_projects,
+            as_json=args.json,
+        )
         return 0
     action = args.roster_command
     layer = getattr(args, "project", False)

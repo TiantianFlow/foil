@@ -19,6 +19,14 @@ from foil.board import post_room, send_mail
 from foil.board_ops import board_list_payload, board_read_payload, show_board_list, show_board_read
 from foil.delivery import pause_fleet, resume_fleet
 from foil.errors import FoilError
+from foil.inbox import (
+    collect,
+    collect_brief,
+    collect_brief_projects,
+    collect_projects,
+    show_brief,
+    show_items,
+)
 from foil.joined import join_lead, leave_lead, mail_wait
 from foil.journal import check_line, check_since, note, read_log, show_log, stream
 from foil.lifecycle import (
@@ -48,7 +56,7 @@ from foil.memory import (
     reject_lesson,
     show_lessons,
 )
-from foil.project import is_initialized, refuse_legacy_layout
+from foil.project import foil_root, is_initialized, refuse_legacy_layout
 from foil.roster_ops import (
     add_template,
     remove_template,
@@ -59,7 +67,7 @@ from foil.roster_ops import (
     update_template,
 )
 from foil.scope import bound
-from foil.store import RESERVED, SAFE_ID, fleet_dir
+from foil.store import RESERVED, SAFE_ID, fleet_dir, fleet_id, fleet_ids
 
 VERSION = 1
 
@@ -100,6 +108,8 @@ _ALLOWED = {
     "decide": {_OUTSIDE, _LEAD, _WORKER},
     "fleet-pause": {_OUTSIDE, _LEAD},
     "fleet-resume": {_OUTSIDE, _LEAD},
+    "inbox": {_OUTSIDE, _LEAD},
+    "brief": {_OUTSIDE, _LEAD},
 }
 
 
@@ -713,6 +723,61 @@ def fleet_resume(
         resume_fleet(fleet_dir(root))
     print("foil: fleet resumed")
     return {"paused": False}
+
+
+def _fleets(root: Path, *, all_fleets: bool) -> list[str]:
+    if all_fleets:
+        return fleet_ids(root)
+    return [fleet_id()]
+
+
+def _project_key(root: Path) -> str:
+    return foil_root(root).name
+
+
+def inbox(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+    all_fleets: bool = False,
+    all_projects: bool = False,
+    as_json: bool = False,
+) -> list:
+    _authorize("inbox", caller=caller, inside=inside)
+    if all_projects:
+        items = collect_projects()
+        show_items(items, scope="projects", as_json=as_json)
+        return items
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        items = collect(root, _fleets(root, all_fleets=all_fleets), _project_key(root))
+        show_items(items, scope="fleets" if all_fleets else "", as_json=as_json)
+    return items
+
+
+def brief(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+    all_projects: bool = False,
+    as_json: bool = False,
+) -> list:
+    _authorize("brief", caller=caller, inside=inside)
+    if all_projects:
+        records = collect_brief_projects()
+        show_brief(records, projects_named=len(records) > 1, as_json=as_json)
+        return records
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        records = collect_brief(root, [fleet_id()], _project_key(root))
+        show_brief(records, projects_named=False, as_json=as_json)
+    return records
 
 
 def view(

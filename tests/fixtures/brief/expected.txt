@@ -1,0 +1,13 @@
+fleet main
+goal: the tests pass
+state: blocked
+paused: yes
+journal:
+  2026-01-02T03:00:00Z spawn seat=lead
+  2026-01-02T03:01:00Z decision by=lead text="Use the first reading." why="The tests match it."
+questions:
+  reading	Which reading?
+  q2	Ship the notes too?
+stuck:
+  seat	seat:implementer-1	implementer-1 is dead
+  undelivered	mail:mail/reviewer-1/20200101T000000Z-lead-abcdabcd.md	mail/reviewer-1/20200101T000000Z-lead-abcdabcd.md
