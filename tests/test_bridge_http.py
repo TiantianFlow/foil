@@ -91,6 +91,8 @@ def test_no_token_is_refused_including_forged_tailnet_headers(
         status, body = _request(port, "GET", "/", token=read_desk_token(), headers=forged)
         assert status == 403 and body == b""
         status, body = _request(port, "GET", "/", token=read_desk_token())
+        assert status == 200 and b"The conversation with the master" in body
+        status, body = _request(port, "GET", "/desk", token=read_desk_token())
         assert status == 200 and b"Show a code" in body
         status, body = _request(port, "GET", "/v1/terminal")
         assert status == 401 and body == b""

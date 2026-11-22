@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from foil.answer import answer_question
 from foil.board import post_room, send_mail
 from foil.board_ops import board_list_payload, board_read_payload, show_board_list, show_board_read
 from foil.delivery import pause_fleet, resume_fleet
@@ -88,6 +89,7 @@ _ALLOWED = {
     "list": {_OUTSIDE, _LEAD, _WORKER},
     "peek": {_OUTSIDE, _LEAD, _WORKER},
     "send": {_OUTSIDE, _LEAD, _WORKER},
+    "answer": {_OUTSIDE},
     "post": {_OUTSIDE, _LEAD, _WORKER},
     "mail-read": {_OUTSIDE, _LEAD, _WORKER},
     "mail-list": {_OUTSIDE, _LEAD, _WORKER},
@@ -328,6 +330,34 @@ def seat_leave(
     root = _root(project)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         leave_lead(root)
+    return {"ok": True}
+
+
+def answer(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    question_id: str,
+    text: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+    read_text=None,
+) -> dict:
+    """Mail the asking lead as ``user``, quoting the question id.
+
+    ``read_text`` expands ``-`` after the refusal. Callers pass the message.
+    """
+
+    _authorize("answer", caller=caller, inside=inside)
+    if caller != "user":
+        raise FoilError("foil: answer is from user")
+    body = text if read_text is None else read_text(text)
+    if not body.strip():
+        raise FoilError("foil: answer text is empty")
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        answer_question(root, question_id, body)
     return {"ok": True}
 
 

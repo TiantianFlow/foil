@@ -15,7 +15,10 @@ import pytest
 from foil_bridge.server import open_server
 from playwright.sync_api import Browser, expect, sync_playwright
 
+from foil import api
 from foil.bridge_cmd import read_desk_token
+from tests.test_answer import _lead_mail, _question
+from tests.test_bridge_home import _master_mail, _short_repo
 
 
 @pytest.fixture(scope="module")
@@ -42,7 +45,7 @@ def test_pair_once_and_revoke(
     errors: list[str] = []
     page.on("pageerror", lambda exc: errors.append(str(exc)))
     try:
-        page.goto(f"{origin}/?token={token}")
+        page.goto(f"{origin}/desk?token={token}")
         page.get_by_role("button", name="Show a code").click()
         code = page.locator("#code")
         expect(code).to_be_visible()
@@ -80,3 +83,53 @@ def test_pair_once_and_revoke(
         server.server_close()
         thread.join(timeout=5)
     assert errors == []
+
+
+def test_home_answers_on_a_tap_and_leaves_a_card_until_then(
+    monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> None:
+    monkeypatch.setattr("foil.view.tailnet", lambda: None)
+    with _short_repo(monkeypatch) as repo:
+        _question(repo)
+        _master_mail(
+            "master",
+            "card: settings\nrole: lead\nfield: permission\nvalue: ask\n\nThe lead should ask.\n",
+        )
+        assert api.roster_show(repo, "main", "user", "lead")["permission"] == "auto"
+        server = open_server(0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+        token = read_desk_token()
+        origin = f"http://127.0.0.1:{port}"
+        context = browser.new_context()
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        try:
+            page.goto(f"{origin}/?token={token}")
+            expect(page.get_by_text("Which reading?")).to_be_visible()
+            expect(page.get_by_role("button", name="Apply this setting")).to_be_visible()
+            assert api.roster_show(repo, "main", "user", "lead")["permission"] == "auto"
+            page.get_by_role("button", name="keep", exact=True).click()
+            expect(page.get_by_text("answered, waiting for lead")).to_be_visible()
+            mail = _lead_mail(repo)[0].read_text(encoding="utf-8")
+            assert mail.split("---", 2)[2].lstrip("\n").startswith("question: reading\n")
+            page.get_by_role("button", name="Apply this setting").click()
+            expect(page.get_by_role("button", name="Done.")).to_be_visible()
+            assert api.roster_show(repo, "main", "user", "lead")["permission"] == "ask"
+            ready = page.evaluate(
+                """() => Promise.race([
+                  navigator.serviceWorker.ready.then((reg) => Boolean(reg.active)),
+                  new Promise((resolve) => setTimeout(() => resolve(false), 5000)),
+                ])"""
+            )
+            assert ready is True
+        finally:
+            context.close()
+            server.stopped.set()
+            server.watch.stop()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+        assert errors == []

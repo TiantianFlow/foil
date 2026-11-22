@@ -239,7 +239,7 @@ It runs while you are logged in.
 
 ## Bridge
 
-`foil bridge install` writes a boot file for a page on this machine. The page listens on `127.0.0.1` only. A request with no token gets an empty 401. The page shows a code that pairs a phone once. From another device, run `tailscale serve` on that port and open the https address it prints. When `foil-bridge` is not on `PATH`, `foil bridge` prints how to install it and does not start the page. `foil doctor` prints one line per check.
+`foil bridge install` writes a boot file for a page on this machine. The page listens on `127.0.0.1` only. A request with no token gets an empty 401. The home is the conversation with the master, read from its mail, so it is still there after `foil master renew`. A question is a card: tap an option, or reply in words, and that answer is mailed to the lead as you. A card the master proposes for init, a setting, a new fleet, or a merge runs only when you tap it. The page also shows a code that pairs a phone once. From another device, run `tailscale serve` on that port and open the https address it prints. When `foil-bridge` is not on `PATH`, `foil bridge` prints how to install it and does not start the page. `foil doctor` prints one line per check.
 
 ## Limits
 

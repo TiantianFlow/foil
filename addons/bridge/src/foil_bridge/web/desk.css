@@ -63,4 +63,42 @@ pre {
   background: transparent;
   margin: 0.6rem 0;
 }
-.quiet { color: var(--quiet); font-size: 0.9rem; margin-top: 2rem; }
+.quiet { color: var(--quiet); font-size: 0.9rem; }
+a { color: var(--copper); }
+.thread { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+.thread li {
+  display: block;
+  border-top: 1px solid var(--line);
+  padding: 0.8rem 0;
+  font: 17px/1.45 Palatino, "Palatino Linotype", "Iowan Old Style", serif;
+}
+.who {
+  margin: 0;
+  font: 12px/1 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--copper);
+}
+.card {
+  border: 1px solid var(--line);
+  padding: 0.7rem 0.9rem;
+  margin: 0.7rem 0;
+}
+.card button { margin-right: 0.4rem; }
+label { display: block; margin-top: 0.8rem; }
+textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  font: 16px/1.4 ui-sans-serif, system-ui, sans-serif;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 0.45rem 0.55rem;
+}
+.tail {
+  white-space: pre-wrap;
+  font: 0.85rem/1.4 ui-monospace, monospace;
+  margin: 0.4rem 0 0;
+}
+.mono { font: 0.9rem/1.4 ui-monospace, monospace; }

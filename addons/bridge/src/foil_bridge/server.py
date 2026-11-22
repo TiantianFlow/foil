@@ -20,8 +20,16 @@ from foil import view as foil_view
 from foil.bridge_cmd import bridge_port, ensure_desk_token
 from foil.errors import FoilError
 from foil.project import store_root
-from foil_bridge import auth
-from foil_bridge.pages import asset, desk_html, icon_png, manifest, pair_page
+from foil_bridge import auth, home
+from foil_bridge.pages import (
+    asset,
+    desk_html,
+    evidence_html,
+    home_html,
+    icon_png,
+    manifest,
+    pair_page,
+)
 from foil_bridge.qr import svg
 from foil_bridge.watch import Watcher
 
@@ -30,6 +38,7 @@ _SHELL = {
     "/app.js": ("app.js", "text/javascript", "max-age=0"),
     "/sw.js": ("sw.js", "text/javascript", "max-age=0"),
     "/desk.css": ("desk.css", "text/css", "max-age=0"),
+    "/home.js": ("home.js", "text/javascript", "max-age=0"),
     "/offline": ("offline.html", "text/html", "max-age=0"),
 }
 _PAGE_POLICY = (
@@ -172,7 +181,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, b"")
             return
         if path == "/" and method in {"GET", "HEAD"}:
+            self._send(200, home_html(identity.token), "text/html", policy=_PAGE_POLICY)
+            return
+        if path == "/desk" and method in {"GET", "HEAD"}:
             self._send(200, desk_html(identity.token), "text/html", policy=_PAGE_POLICY)
+            return
+        if path == "/evidence" and method in {"GET", "HEAD"}:
+            self._evidence(identity.token)
             return
         if path == "/manifest.webmanifest" and method in {"GET", "HEAD"}:
             self._send(
@@ -203,6 +218,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/v1/items/") and method in {"GET", "HEAD"}:
             self._one_item(path[len("/v1/items/") :])
+            return
+        if path == "/v1/home" and method in {"GET", "HEAD"}:
+            self._call(home.snapshot)
+            return
+        if path == "/v1/send" and method == "POST":
+            self._send_message()
+            return
+        if path == "/v1/answer" and method == "POST":
+            self._answer()
+            return
+        if path == "/v1/act" and method == "POST":
+            self._act()
             return
         if path == "/v1/session" and method in {"GET", "HEAD"}:
             if identity.kind == "desk":
@@ -350,13 +377,19 @@ class Handler(BaseHTTPRequestHandler):
             self.rfile.read(length)
         return True
 
-    def _json(self) -> dict[str, Any] | None:
+    def _length(self, limit: int) -> int | None:
         raw = self.headers.get("Content-Length", "0")
         if not raw.isascii() or not raw.isdecimal():
             return None
         length = int(raw)
-        if length > 4096:
+        if length > limit:
             self.close_connection = True
+            return None
+        return length
+
+    def _json(self, limit: int = 4096) -> dict[str, Any] | None:
+        length = self._length(limit)
+        if length is None:
             return None
         try:
             value = json.loads(self.rfile.read(length).decode() or "null")
@@ -365,6 +398,60 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(value, dict):
             return None
         return value
+
+    def _call(self, function) -> None:
+        try:
+            body = function()
+        except FoilError as exc:
+            self._error(exc)
+            return
+        self._json_ok(body)
+
+    def _error(self, exc: FoilError) -> None:
+        self._send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
+
+    def _send_message(self) -> None:
+        if self._length(64 * 1024) is None:
+            self._error(FoilError("foil: message text is too long"))
+            return
+        body = self._json(64 * 1024)
+        text = body.get("text") if isinstance(body, dict) else None
+        if not isinstance(text, str):
+            self._error(FoilError("foil: message text is empty"))
+            return
+        self._call(lambda: home.post_message(text) or {"ok": True})
+
+    def _answer(self) -> None:
+        body = self._json()
+        if not isinstance(body, dict):
+            self._error(FoilError("foil: answer text is empty"))
+            return
+        project, fleet, question_id, text = (
+            body.get("project"),
+            body.get("fleet"),
+            body.get("id"),
+            body.get("text"),
+        )
+        if not all(isinstance(item, str) for item in (project, fleet, question_id, text)):
+            self._error(FoilError("foil: answer text is empty"))
+            return
+        self._call(lambda: home.post_answer(project, fleet, question_id, text) or {"ok": True})
+
+    def _act(self) -> None:
+        body = self._json()
+        name = body.get("id") if isinstance(body, dict) else None
+        if not isinstance(name, str):
+            self._error(FoilError("foil: unknown card"))
+            return
+        self._call(lambda: home.run_card(name) or {"ok": True})
+
+    def _evidence(self, token: str) -> None:
+        target = (parse_qs(urlsplit(self.path).query).get("target") or [""])[-1]
+        described = home.describe(target)
+        if described is None:
+            self._send(404, b"")
+            return
+        self._send(200, evidence_html(described, token), "text/html", policy=_PAGE_POLICY)
 
     def _json_ok(self, body: object) -> None:
         self._send(200, json.dumps(body).encode(), "application/json")

@@ -1,7 +1,8 @@
-"""The desk page, the offline page, the manifest, and the icon."""
+"""The desk page, the home, the offline page, the manifest, and the icon."""
 
 from __future__ import annotations
 
+import html
 import json
 import struct
 import zlib
@@ -18,6 +19,47 @@ def asset(name: str) -> bytes:
 def desk_html(token: str) -> bytes:
     page = asset("desk.html").decode()
     return page.replace("__TOKEN__", quote(token, safe="")).encode()
+
+
+def home_html(token: str) -> bytes:
+    page = asset("home.html").decode()
+    return page.replace("__TOKEN__", quote(token, safe="")).encode()
+
+
+def evidence_html(described: dict[str, str], token: str) -> bytes:
+    """A resolved target. The file itself stays where it is."""
+
+    kind = described["kind"]
+    if kind == "file":
+        heading = "A file in this fleet."
+    elif kind == "fleet":
+        heading = "A fleet on this machine."
+    else:
+        heading = "A project on this machine."
+    where = described["project"]
+    if described["fleet"]:
+        where = f"{where} / {described['fleet']}"
+    if described["path"]:
+        where = f"{where} / {described['path']}"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foil</title>
+<link rel="stylesheet" href="desk.css?token={quote(token, safe="")}">
+</head>
+<body>
+<main>
+<p class="mark">Foil</p>
+<h1>Evidence</h1>
+<p>{html.escape(heading)}</p>
+<p class="mono">{html.escape(where)}</p>
+<p class="quiet">The file itself is not on this page.</p>
+</main>
+</body>
+</html>
+""".encode()
 
 
 def manifest(token: str) -> bytes:
