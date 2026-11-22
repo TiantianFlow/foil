@@ -108,8 +108,8 @@ def _questions(fields: dict[str, Any] | None, raw: str | None) -> list[dict[str,
         if kind == "str":
             chosen = fallback
             found.append(
-                {"id": chosen, "title": entry, "options": [], "recommended": "", "from": "",
-                 "evidence": ""}
+                {"id": chosen, "title": entry, "options": [], "recommended": "", "why": "",
+                 "from": "", "evidence": ""}
             )
             used.add(chosen)
             continue
@@ -121,6 +121,7 @@ def _questions(fields: dict[str, Any] | None, raw: str | None) -> list[dict[str,
         evidence = entry.get("evidence")
         ask = entry.get("ask")
         recommended = entry.get("recommended")
+        why = entry.get("why")
         found.append(
             {
                 "id": chosen,
@@ -129,6 +130,7 @@ def _questions(fields: dict[str, Any] | None, raw: str | None) -> list[dict[str,
                 if isinstance(options, list)
                 else [],
                 "recommended": recommended if isinstance(recommended, str) else "",
+                "why": why if isinstance(why, str) else "",
                 "from": owner if owner in {"human", "master"} else "",
                 "evidence": evidence if isinstance(evidence, str) else "",
             }

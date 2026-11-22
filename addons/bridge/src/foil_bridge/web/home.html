@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foil</title>
+<link rel="manifest" href="manifest.webmanifest?token=__TOKEN__">
+<link rel="icon" href="icon-192.png?token=__TOKEN__">
+<link rel="stylesheet" href="desk.css?token=__TOKEN__">
+</head>
+<body>
+<main>
+<p class="mark">Foil</p>
+<h1>Home</h1>
+<p class="lede" id="lede">The conversation with the master on this machine. It is the mail, so it stays when the master renews.</p>
+<p><a href="/desk?token=__TOKEN__">Pair a phone</a></p>
+<section id="working" hidden>
+<h2>Working</h2>
+<pre id="tail" class="tail"></pre>
+</section>
+<section>
+<h2>Questions</h2>
+<div id="questions"></div>
+</section>
+<section>
+<h2>Conversation</h2>
+<ol id="thread" class="thread"></ol>
+</section>
+<form id="say">
+<label for="message">Message</label>
+<textarea id="message" name="message" rows="3"></textarea>
+<button type="submit">Send</button>
+<p id="say-error" class="quiet"></p>
+</form>
+</main>
+<script src="home.js?token=__TOKEN__" type="module"></script>
+</body>
+</html>

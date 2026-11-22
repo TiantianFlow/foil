@@ -1,0 +1,332 @@
+"""The home: the master's mail, question cards, and action cards (section 12).
+
+Nothing here is kept. A tap calls ``foil.api`` as ``user``.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import io
+import re
+from pathlib import Path
+from typing import Any
+
+from foil.answer import question_cards
+from foil.api import answer, init, roster_update, seat_spawn, send
+from foil.board import mail_name
+from foil.board_ops import split_front_matter
+from foil.errors import FoilError
+from foil.master import (
+    conversation,
+    directory,
+    load_record,
+    pane_tail,
+    queue_reason,
+    turn_running,
+)
+from foil.project import checkout_for_key, store_root
+
+BODY_CAP = 8 * 1024
+_KEY = re.compile(r"[a-z]+")
+_SAFE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+_PROJECT = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,200}")
+_STORE = re.compile(
+    r"projects/[A-Za-z0-9][A-Za-z0-9-]{0,200}"
+    r"(?:/fleets/[A-Za-z0-9][A-Za-z0-9_-]{0,127}"
+    r"(?:/board/[A-Za-z0-9][A-Za-z0-9._/-]{0,240})?)?"
+)
+_BOARD = re.compile(r"(?<![\w./-])board/(?P<rest>[A-Za-z0-9][A-Za-z0-9._/-]{0,240})")
+_ACTIONS = {
+    "init": {"dir"},
+    "settings": {"role", "field", "value"},
+    "fleet": {"project", "fleet"},
+    "merge": {"project", "fleet"},
+}
+_OPTIONAL = {
+    "init": set(),
+    "settings": {"project", "layer"},
+    "fleet": {"task"},
+    "merge": {"into"},
+}
+_LABEL = {
+    "init": "Init this repository",
+    "settings": "Apply this setting",
+    "fleet": "Start this fleet",
+    "merge": "Merge this fleet",
+}
+
+
+def _cap(text: str) -> str:
+    raw = text.encode()
+    if len(raw) <= BODY_CAP:
+        return text
+    return raw[:BODY_CAP].decode(errors="ignore") + "\n... truncated\n"
+
+
+def _value_ok(action: str, key: str, value: str) -> bool:
+    if not value or any(ord(char) < 32 for char in value):
+        return False
+    limit = 1024 if action == "init" and key == "dir" else 400
+    return len(value) <= limit
+
+
+def parse_card(body: str) -> tuple[dict[str, str] | None, str]:
+    """A card block at the start of a message, and the prose after it."""
+
+    lines = body.splitlines()
+    if not lines or ": " not in lines[0]:
+        return None, body
+    name, action = lines[0].split(": ", 1)
+    if name != "card" or action not in _ACTIONS:
+        return None, body
+    fields: dict[str, str] = {}
+    index = 1
+    while index < len(lines) and lines[index] != "":
+        if ": " not in lines[index]:
+            return None, body
+        key, value = lines[index].split(": ", 1)
+        if not _KEY.fullmatch(key) or key in fields or not _value_ok(action, key, value):
+            return None, body
+        fields[key] = value
+        index += 1
+    allowed = _ACTIONS[action] | _OPTIONAL[action]
+    if not _ACTIONS[action] <= set(fields) <= allowed:
+        return None, body
+    if action in {"fleet", "merge"} and not _SAFE.fullmatch(fields["fleet"]):
+        return None, body
+    if "project" in fields and not _PROJECT.fullmatch(fields["project"]):
+        return None, body
+    if action == "settings":
+        layer = fields.get("layer", "global")
+        if layer not in {"global", "project"}:
+            return None, body
+        if layer == "project" and "project" not in fields:
+            return None, body
+        if layer == "global" and "project" in fields:
+            return None, body
+        fields["layer"] = layer
+    prose = "\n".join(lines[index + 1 :]) if index < len(lines) else ""
+    return {"action": action, **fields}, prose
+
+
+def _within(relative: str) -> Path | None:
+    if relative.startswith("/") or ".." in relative.split("/"):
+        return None
+    root = store_root()
+    path = root / relative
+    if path.is_symlink():
+        return None
+    try:
+        resolved = path.resolve()
+        base = root.resolve()
+    except OSError:
+        return None
+    if not resolved.is_relative_to(base):
+        return None
+    return path
+
+
+def describe(target: str) -> dict[str, str] | None:
+    """The kind of one store-relative target, or None when it does not resolve."""
+
+    path = _within(target)
+    if path is None:
+        return None
+    parts = target.split("/")
+    if (
+        len(parts) >= 5
+        and parts[2] == "fleets"
+        and parts[4] == "board"
+        and path.is_file()
+    ):
+        return {
+            "target": target,
+            "kind": "file",
+            "project": parts[1],
+            "fleet": parts[3],
+            "path": "/".join(parts[4:]),
+        }
+    if len(parts) == 4 and parts[2] == "fleets" and path.is_dir():
+        registry = path / "run" / "registry.json"
+        if registry.is_symlink() or not registry.is_file():
+            return None
+        return {
+            "target": target,
+            "kind": "fleet",
+            "project": parts[1],
+            "fleet": parts[3],
+            "path": "",
+        }
+    record = path / "project.json"
+    if len(parts) == 2 and path.is_dir() and not record.is_symlink() and record.is_file():
+        return {
+            "target": target,
+            "kind": "project",
+            "project": parts[1],
+            "fleet": "",
+            "path": "",
+        }
+    return None
+
+
+def links_in(text: str, *, project: str = "", fleet: str = "") -> list[dict[str, str]]:
+    found: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(target: str) -> None:
+        described = describe(target)
+        if described is None and target.endswith("."):
+            target = target[:-1]
+            described = describe(target)
+        if described is None or target in seen:
+            return
+        seen.add(target)
+        found.append(described)
+
+    for match in _STORE.finditer(text):
+        add(match.group(0))
+    if project and fleet and _PROJECT.fullmatch(project) and _SAFE.fullmatch(fleet):
+        for match in _BOARD.finditer(text):
+            rest = match.group("rest").rstrip("/")
+            if rest and ".." not in rest.split("/"):
+                add(f"projects/{project}/fleets/{fleet}/board/{rest}")
+    return found
+
+
+def _card_view(fields: dict[str, str]) -> dict[str, Any]:
+    action = fields["action"]
+    shown = []
+    order = ("dir", "project", "fleet", "role", "field", "value", "layer", "task", "into")
+    for key in order:
+        if key not in fields:
+            continue
+        if key == "layer" and fields[key] == "global" and "project" not in fields:
+            continue
+        shown.append({"key": key, "value": fields[key]})
+    return {"action": action, "label": _LABEL[action], "fields": shown}
+
+
+def snapshot() -> dict[str, Any]:
+    """The home, computed from files. This stores nothing."""
+
+    root = directory()
+    record = load_record(root)
+    running = turn_running(root)
+    reason = queue_reason(root)
+    delivered = set(record["delivered"])
+    inflight = set(record["inflight"]) if running else set()
+    messages = []
+    for path in conversation(root):
+        named = mail_name(path.name)
+        if named is None:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        matter, body = split_front_matter(text)
+        if matter is None or matter.get("contract") != "mail/v1":
+            continue
+        sender = named[1]
+        card = None
+        prose = body
+        if sender == "master":
+            parsed, prose = parse_card(body)
+            if parsed is not None:
+                card = _card_view(parsed)
+        project = str(matter.get("project") or "")
+        fleet = str(matter.get("fleet") or "")
+        queued = ""
+        if sender != "master" and path.name not in delivered and path.name not in inflight:
+            queued = reason
+        messages.append(
+            {
+                "id": path.name,
+                "time": named[0],
+                "from": sender,
+                "body": _cap(prose),
+                "queued": queued,
+                "card": card,
+                "links": links_in(prose, project=project, fleet=fleet),
+            }
+        )
+    questions = []
+    for question in question_cards():
+        evidence = question["evidence"]
+        question["links"] = []
+        if evidence and "\n" not in evidence and len(evidence) <= 240:
+            question["links"] = links_in(
+                evidence, project=question["project"], fleet=question["fleet"]
+            )
+            if not question["links"]:
+                question["links"] = links_in(evidence)
+        questions.append(question)
+    tail = pane_tail(root) if running else ""
+    return {
+        "messages": messages,
+        "working": {"running": running, "tail": tail},
+        "questions": questions,
+    }
+
+
+def post_message(text: str) -> None:
+    if len(text.encode()) > 16 * 1024:
+        raise FoilError("foil: message text is too long")
+    if not text.strip():
+        raise FoilError("foil: message text is empty")
+    send(None, "main", "user", "master", text)
+
+
+def post_answer(project: str, fleet: str, question_id: str, text: str) -> None:
+    if not isinstance(project, str) or not _PROJECT.fullmatch(project):
+        raise FoilError(f"foil: unknown project '{project}'")
+    checkout = checkout_for_key(project)
+    answer(checkout, fleet, "user", question_id, text)
+
+
+def _mail(name: str) -> tuple[Path, str]:
+    if mail_name(name) is None or name != Path(name).name:
+        raise FoilError("foil: unknown card")
+    path = directory() / "mail" / name
+    if path.is_symlink() or not path.is_file():
+        raise FoilError("foil: unknown card")
+    sender = mail_name(name)
+    assert sender is not None
+    return path, sender[1]
+
+
+def run_card(name: str) -> None:
+    """Run the card in one master message. The file is read again here."""
+
+    path, sender = _mail(name)
+    if sender != "master":
+        raise FoilError("foil: unknown card")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise FoilError("foil: unknown card") from exc
+    _matter, body = split_front_matter(text)
+    parsed, _prose = parse_card(body)
+    if parsed is None:
+        raise FoilError("foil: unknown card")
+    action = parsed["action"]
+    with contextlib.redirect_stdout(io.StringIO()):
+        if action == "init":
+            init(None, "main", "user", directory=parsed["dir"])
+        elif action == "settings":
+            layer = parsed.get("layer") == "project"
+            checkout = checkout_for_key(parsed["project"]) if layer else None
+            roster_update(
+                checkout,
+                "main",
+                "user",
+                parsed["role"],
+                f"{parsed['field']}={parsed['value']}",
+                project_layer=layer,
+            )
+        elif action == "fleet":
+            checkout = checkout_for_key(parsed["project"])
+            task = parsed.get("task")
+            seat_spawn(checkout, parsed["fleet"], "user", "lead", task=task)
+        else:
+            raise FoilError("foil: fleet merge is not a command")

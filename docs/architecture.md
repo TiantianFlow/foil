@@ -10,6 +10,7 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 |---|---|
 | `src/foil/cli.py` | Parses the command line, resolves the project, fleet, and caller, and calls `foil.api`. It does not talk to tmux. |
 | `src/foil/api.py` | One function per command. Each takes the project, the fleet, and the caller, returns the command's JSON value, and binds that call for its thread. `VERSION` is `1`. |
+| `src/foil/answer.py` | `foil answer`: mail from `user` to the lead that quotes the question id, and the question cards read from `status.md` plus that mail. |
 | `src/foil/scope.py` | Holds the bound project, fleet, and caller for one call. It does not read or write the process environment. |
 | `src/foil/project.py` | Finds the Git toplevel and the project folder in the per-user store. A bound project wins over `FOIL_PROJECT` and the working directory. |
 | `src/foil/store.py` | Writes JSON atomically, loads the registry, and rejects credential-shaped text. |
@@ -31,7 +32,7 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/bridge_cmd.py` | `foil bridge`, `foil bridge install`, and `foil doctor`. It writes the boot file and the desk token and does not import the Bridge package. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |
 
-`addons/bridge` is the `foil-bridge` package. Core does not import it. The Bridge process imports `bridge_cmd` for the desk token and `foil.api` only to read `VERSION`. It calls `foil.view.tailnet` for the same tailnet check `foil view` uses. Pairing credentials are files under the store. The process keeps no copy of a fleet's files. `foil-bridge transcript` reads a harness's own session file, masks credential-shaped text, and falls back to the live pane. That parse is for display. Core does not read a transcript.
+`addons/bridge` is the `foil-bridge` package. Core does not import it. The Bridge process imports `bridge_cmd` for the desk token and calls `foil.api` as `user` for a message, an answer, and an action card. It calls `foil.view.tailnet` for the same tailnet check `foil view` uses. Pairing credentials are files under the store. The home reads the master's mail on each request and keeps no copy of a fleet's files. `foil-bridge transcript` reads a harness's own session file, masks credential-shaped text, and falls back to the live pane. That parse is for display. Core does not read a transcript.
 
 ### Module layers
 

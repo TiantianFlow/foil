@@ -119,6 +119,11 @@ def _build_parser() -> argparse.ArgumentParser:
     send.add_argument("TEXT", metavar="TEXT")
     _shared(send)
 
+    answer = sub.add_parser("answer", help="Answer one closed question")
+    answer.add_argument("ID", metavar="ID")
+    answer.add_argument("TEXT", nargs="?", metavar="TEXT")
+    _shared(answer)
+
     post = sub.add_parser("post", help="Write a room file; it wakes its members")
     post.add_argument("--re", metavar="PATH")
     post.add_argument("--decline", action="store_true")
@@ -465,6 +470,18 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
                 lines=args.lines,
                 as_json=args.json,
             )
+        return 0
+    if args.command == "answer":
+        api.answer(
+            project,
+            fleet,
+            caller,
+            args.ID,
+            "" if args.TEXT is None else args.TEXT,
+            inside=inside,
+            pinned=pinned,
+            read_text=None if args.TEXT is None else _text_arg,
+        )
         return 0
     if args.command == "send":
         api.send(

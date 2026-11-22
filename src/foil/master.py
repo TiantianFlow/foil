@@ -246,6 +246,61 @@ def save_record(root: Path, record: dict[str, Any]) -> None:
     write_json(record_path(root), record)
 
 
+def _group_alive(pgid: object) -> bool:
+    """The recorded turn's process group still exists."""
+
+    if not isinstance(pgid, int) or pgid <= 1:
+        return False
+    try:
+        os.kill(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def turn_running(root: Path) -> bool:
+    """A turn is running when the record says so and that process group exists."""
+
+    record = load_record(root)
+    return record["turn_started"] is not None and _group_alive(record["pgid"])
+
+
+def queue_reason(root: Path) -> str:
+    """Why a message that has not entered a turn is waiting."""
+
+    record = load_record(root)
+    if turn_running(root):
+        return "a running turn"
+    if record["paused"]:
+        return "a paused master"
+    if record["failures"]:
+        return "a retry"
+    return "the next turn"
+
+
+def pane_tail(root: Path, lines: int = 40) -> str:
+    """The last lines of the master's pane. A missing window is empty.
+
+    The text is for display. It does not decide that a turn is running.
+    """
+
+    window = _load_window(root)
+    if not _alive(window):
+        return ""
+    try:
+        text = TmuxController().capture_pane(str(window.get("window_id") or ""), lines)
+    except TmuxError:
+        return ""
+    raw = text.encode()
+    if len(raw) <= FILE_CAP:
+        return text
+    return raw[:FILE_CAP].decode(errors="ignore")
+
+
 def load_plan(path: Path) -> dict[str, Any]:
     """The master plan. A seat plan is refused here."""
 
