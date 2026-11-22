@@ -23,6 +23,7 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/board_ops.py` | Reads and lists board files. Paths must stay inside the project folder's `board/`. |
 | `src/foil/memory.py` | Stores project lessons as JSON files. |
 | `src/foil/runner.py` | Runs inside each seat's window and runs that seat's turns one at a time from its plan: the first prompt, the wake prompts, retries, pauses, and the runner record. It does not choose the argv. |
+| `src/foil/journal.py` | Appends one fact per line to a fleet's journal, and lists or follows that file. It stores no mail body and no turn output. |
 | `src/foil/guard.py` | Writes the seat-only `pre-commit` and `pre-push` hooks, and runs their checks for private text and the worktree boundary before the repository's own hook. |
 | `src/foil/view.py` | Serves `foil view`, one read-only page on `127.0.0.1` for every project in the store, each under `/projects/<key>/`. It calls the same readers as `seat list`, `seat peek`, `roster list`, and `memory list`, and writes nothing. At start it reads `tailscale status --json` once, so a request that `tailscale serve` forwards from the owner's login can load under the tailnet name. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |
@@ -54,6 +55,7 @@ flowchart TB
   scope["<b>scope.py</b><br/>bound project, fleet, and caller"]
 
   runner["<b>runner.py</b><br/>runs inside each tmux window<br/>one turn at a time · wake prompts · retries"]
+  journal["<b>journal.py</b><br/>one fact per line · no body"]
 
   cli --> api
   cli --> joined
@@ -89,6 +91,12 @@ flowchart TB
   lifecycle --> store
   lifecycle --> project
   lifecycle --> runner
+  api --> journal
+  lifecycle --> journal
+  runner --> journal
+  board --> journal
+  joined --> journal
+  journal --> store
   runner --> board
   runner --> board_ops
   runner --> store
@@ -113,7 +121,7 @@ flowchart TB
   classDef base fill:#e5e7eb,stroke:#374151,color:#1f2937
   classDef apart fill:#fde68a,stroke:#b45309,color:#1f2937
   class cli,api entry
-  class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,view core
+  class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,view,journal core
   class presets,tmuxmod,store,project,scope base
   class runner apart
 ```
@@ -174,6 +182,7 @@ The project folder holds:
 - `fleets/<id>/run/archive/<time>-<name>.txt` — one prose record of an archived seat, written by `foil seat archive`. The fields are the nine seat fields, one per line, with the worktree path after a space. Init's path rewrite covers this directory. An old binary never reads these files and never deletes them.
 - `fleets/<id>/run/instructions/<seat>.md` — generated when that seat is spawned or resumed. It includes the text of that seat's role skill and the Foil version that wrote the file.
 - `fleets/<id>/run/plans/<seat>.json` — the `start` and `turn` argv, which turn runs first, the working directory, the environment, the instruction path, the reader of the runner's notices, `turn_timeout`, and the retry waits. The plan sets `FOIL_FLEET`.
+- `fleets/<id>/run/journal.log` — one JSON object per fact the fleet already recorded: spawn, turn start, turn end and its exit code, mail sent, mail delivered, retry, pause, resume, renew, kill, join, leave, and a decision. No mail body and no turn output. When another line would pass 64 KiB, the file becomes `journal.log.1` and a new `journal.log` starts. `foil journal` reads both, oldest first.
 - `fleets/<id>/run/turns/<seat>.json` — the runner record: the session id the next turn uses, the delivered and in-flight board paths (absent delivered paths dropped on save, and the oldest dropped if the record would exceed its size limit), when the running turn started, the last exit code, the failures in a row, whether the session has been started, whether the seat is paused, and the running turn's process group. Spawn, resume, and renew write it before the runner starts; after that only the runner writes it. `<seat>.resume` beside it retries a paused seat, and `<seat>.renew` asks a running seat's runner to start the new session after its current turn.
 - `fleets/<id>/run/foil/<mailbox>/<file>` — the byte length and SHA-256 digest of each mail Foil itself wrote from `foil`. Mail named as from `foil` without a matching size and digest is skipped (size first), so a file written or replaced on the board cannot speak for Foil.
 - `fleets/<id>/run/seats/<name>.json` — the seen record for a mailbox a caller outside the fleet reads, `lead` or `user`: the board paths marked seen (by the join brief and `mail wait --timeout 0`; a blocking wait leaves them new), the quiet waits in a row, the seats reported dead and not seen alive since, the time of the last dead-seat check, and the join time. It is written under `run/seats/<name>.lock`.

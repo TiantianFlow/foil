@@ -12,12 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from foil.board import items_for
+from foil.board import items_for, write_mail_at
+from foil.errors import FoilError
+from foil.journal import read_log
 from foil.runner import (
     INLINE,
     INLINE_TOTAL,
     LISTED,
     RESTARTED,
+    Runner,
     RunnerError,
     load_plan,
     load_record,
@@ -248,6 +251,71 @@ def test_a_failed_start_runs_start_again_on_a_fresh_generated_id(tmp_path: Path)
     finally:
         os.killpg(runner.pid, signal.SIGKILL)
         runner.wait()
+
+
+def _facts(board: Path) -> list[dict]:
+    return read_log(board.parent)
+
+
+def test_a_turn_journals_its_start_end_and_delivery_without_the_body(tmp_path: Path) -> None:
+    (tmp_path / "probe.py").write_text("raise SystemExit(0)\n", encoding="utf-8")
+    plan = _plan(tmp_path, retry=[30])
+    board = Path(plan["board"])
+    body = "UNIQUE-BODY-NOT-IN-JOURNAL"
+    write_mail_at(board, "seat-1", body, "lead")
+    runner = _run(tmp_path, plan)
+    try:
+        _until(lambda: any(item["event"] == "mail_delivered" for item in _facts(board)))
+    finally:
+        os.killpg(runner.pid, signal.SIGKILL)
+        runner.wait()
+    facts = _facts(board)
+    assert [item["event"] for item in facts[:2]] == ["turn_start", "turn_end"]
+    assert facts[0]["kind"] == "start" and facts[1]["exit"] == 0
+    delivered = [item for item in facts if item["event"] == "mail_delivered"]
+    assert len(delivered) == 1
+    assert delivered[0]["seat"] == "seat-1"
+    assert delivered[0]["path"].startswith("mail/seat-1/")
+    text = (board.parent / "run" / "journal.log").read_text(encoding="utf-8")
+    assert body not in text
+    assert "Do the task" not in text
+
+
+def test_failed_turns_journal_one_retry_line_then_a_pause(tmp_path: Path) -> None:
+    plan = _plan(tmp_path, start=[str(tmp_path / "missing"), "{prompt}"])
+    runner = _run(tmp_path, plan)
+    board = Path(plan["board"])
+    try:
+        _until(lambda: load_record(board, "seat-1")["paused"])
+        _until(lambda: any(item["event"] == "pause" for item in _facts(board)))
+    finally:
+        os.killpg(runner.pid, signal.SIGKILL)
+        runner.wait()
+    facts = _facts(board)
+    kinds = [item["event"] for item in facts]
+    assert kinds.count("turn_start") == 4
+    assert kinds.count("turn_end") == 4
+    assert kinds.count("retry") == 3
+    assert kinds.count("pause") == 1
+    failed = {"turn_end", "retry", "pause"}
+    assert all(item["exit"] == 127 for item in facts if item["event"] in failed)
+    text = (board.parent / "run" / "journal.log").read_text(encoding="utf-8")
+    assert "See foil seat peek" not in text
+    assert any(item["event"] == "mail_sent" and item["from"] == "foil" for item in facts)
+
+
+def test_a_journal_error_on_a_notice_does_not_stop_the_runner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise FoilError("foil: refusing symlink")
+
+    monkeypatch.setattr("foil.runner.sent", refuse)
+    plan = _plan(tmp_path)
+    Runner(_write(tmp_path, plan)).mail("lead", "seat-1 paused")
+    mail = Path(plan["board"]) / "mail" / "lead"
+    assert any(mail.glob("*.md"))
+    assert not (Path(plan["board"]).parent / "run" / "journal.log").exists()
 
 
 def test_a_program_that_cannot_run_is_a_failed_turn_and_pauses(tmp_path: Path) -> None:

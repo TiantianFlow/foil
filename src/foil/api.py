@@ -19,6 +19,7 @@ from foil.board import post_room, send_mail
 from foil.board_ops import board_list_payload, board_read_payload, show_board_list, show_board_read
 from foil.errors import FoilError
 from foil.joined import join_lead, leave_lead, mail_wait
+from foil.journal import check_line, check_since, note, read_log, show_log, stream
 from foil.lifecycle import (
     archive_seat,
     init_project,
@@ -50,7 +51,7 @@ from foil.roster_ops import (
     update_template,
 )
 from foil.scope import bound
-from foil.store import RESERVED, SAFE_ID
+from foil.store import RESERVED, SAFE_ID, fleet_dir
 
 VERSION = 1
 
@@ -87,6 +88,8 @@ _ALLOWED = {
     "roster-update": {_OUTSIDE, _LEAD},
     "roster-remove": {_OUTSIDE, _LEAD},
     "view": {_OUTSIDE},
+    "journal": {_OUTSIDE, _LEAD, _WORKER},
+    "decide": {_OUTSIDE, _LEAD, _WORKER},
 }
 
 
@@ -610,6 +613,50 @@ def roster_remove(
     root = _roster_root(project, project_layer=project_layer)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         remove_template(root, role, project=project_layer)
+    return {"ok": True}
+
+
+def journal(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+    since: str | None = None,
+    follow: bool = False,
+    as_json: bool = False,
+) -> list:
+    _authorize("journal", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        if since is not None:
+            check_since(since)
+        directory = fleet_dir(root)
+        if follow:
+            stream(directory, since, as_json=as_json)
+            return []
+        events = read_log(directory, since)
+        show_log(events, as_json=as_json)
+    return events
+
+
+def decide(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    text: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+    why: str,
+) -> dict:
+    _authorize("decide", caller=caller, inside=inside)
+    choice = check_line(text, "decision text")
+    reason = check_line(why, "decision reason")
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        note(fleet_dir(root), "decision", by=caller, text=choice, why=reason)
     return {"ok": True}
 
 

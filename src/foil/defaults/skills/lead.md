@@ -31,7 +31,13 @@ A dialog (login, update, approval) is reported to the human, never answered. You
 
 ## Mandate and decisions
 
-`board/status.md` starts its body with `## Mandate`: what you may decide alone, and what you stop for. Read it before you decide. Make the decisions it lets you make, and record each in `decisions` as one line: the choice, then `Evidence:` and what supports it, then `Undo:` and how to reverse it. Stop for what the mandate names, with a question in `questions`.
+`board/status.md` starts its body with `## Mandate`: what you may decide alone, and what you stop for. Read it before you decide. Make the decisions it lets you make, and record each in `decisions` as one line: the choice, then `Evidence:` and what supports it, then `Undo:` and how to reverse it. Stop for what the mandate names, with a question in `questions`. When you make a decision the mandate lets you make, also record the choice and the reason:
+
+```text
+foil decide "the choice" --why "the evidence"
+```
+
+That line is the fleet's record of the choice. It stores the choice and the reason, not a mail body, a pane, or a secret. The `decisions` list in `status.md` stays the mandate record.
 
 <!-- launched -->
 Write the mandate from your goal before your first spawn. You integrate on your goal branch: your worktree is on `foil/goal-<fleet>`, and each worker's branch starts from it.

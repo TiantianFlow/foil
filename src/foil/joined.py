@@ -13,6 +13,7 @@ from pathlib import Path
 
 from foil.board import items_for, write_mail
 from foil.errors import FoilError
+from foil.journal import note, sent
 from foil.lifecycle import _state, _write_instruction, handoff_on_board
 from foil.presets import load_preset, load_template
 from foil.store import (
@@ -126,11 +127,17 @@ def _dead_check(root: Path, name: str, record: dict, *, force: bool = False) -> 
     for seat in sorted(seat for seat, state in states.items() if state == "dead"):
         if seat in reported:
             continue
-        write_mail(
-            root,
+        sent(
+            fleet_dir(root),
+            fleet_dir(root) / "board",
+            "foil",
             name,
-            f"{seat} died. See foil seat peek {seat} --lines 200.",
-            sender="foil",
+            write_mail(
+                root,
+                name,
+                f"{seat} died. See foil seat peek {seat} --lines 200.",
+                sender="foil",
+            ),
         )
         reported.add(seat)
     record["reported"] = sorted(reported)
@@ -270,6 +277,7 @@ def join_lead(root: Path, *, harness: str | None, session: str | None, take: boo
 
         update_registry(root, restore)
         raise
+    note(fleet_dir(root), "join", seat="lead")
     registry = load_registry(root)
     board = (fleet_dir(root) / "board").resolve()
     head = [
@@ -328,6 +336,7 @@ def leave_lead(root: Path) -> None:
         current["state"] = "killed"
 
     update_registry(root, apply)
+    note(fleet_dir(root), "leave", seat="lead")
     print("lead left. Mail to lead queues until a lead joins or is spawned.")
 
 
