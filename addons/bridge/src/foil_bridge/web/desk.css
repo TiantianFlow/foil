@@ -1,0 +1,66 @@
+:root {
+  color-scheme: light dark;
+  --paper: #f3ecdf;
+  --ink: #241c14;
+  --copper: #8d4f24;
+  --line: #e2d5c3;
+  --quiet: #6d6256;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #1c1712;
+    --ink: #f3ecdf;
+    --copper: #d0894f;
+    --line: #3a3128;
+    --quiet: #c4b6a6;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 17px/1.45 Palatino, "Palatino Linotype", "Iowan Old Style", serif;
+}
+main { max-width: 36rem; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
+.mark {
+  margin: 0;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font: 12px/1 ui-sans-serif, system-ui, sans-serif;
+  color: var(--copper);
+}
+h1 { font-weight: 500; font-size: 2.5rem; margin: 0.35rem 0 0.5rem; }
+h2 { font-size: 1.15rem; font-weight: 600; margin: 2.2rem 0 0.35rem; }
+p { margin: 0.4rem 0; }
+button {
+  font: 15px/1.2 ui-sans-serif, system-ui, sans-serif;
+  background: var(--ink);
+  color: var(--paper);
+  border: 0;
+  padding: 0.5rem 0.9rem;
+  margin-top: 0.6rem;
+}
+button:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+.code {
+  font: 2rem/1 ui-monospace, monospace;
+  letter-spacing: 0.22em;
+  margin-top: 1rem;
+}
+img { width: 12rem; height: 12rem; margin-top: 0.8rem; background: #fff; }
+ul { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  border-top: 1px solid var(--line);
+  padding: 0.45rem 0;
+  font: 14px/1.3 ui-monospace, monospace;
+}
+pre {
+  font: 0.9rem/1.4 ui-monospace, monospace;
+  background: transparent;
+  margin: 0.6rem 0;
+}
+.quiet { color: var(--quiet); font-size: 0.9rem; margin-top: 2rem; }

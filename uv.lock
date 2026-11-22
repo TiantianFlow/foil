@@ -1,6 +1,12 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
+
+[manifest]
+members = [
+    "foil-ai",
+    "foil-bridge",
+]
 
 [[package]]
 name = "colorama"
@@ -27,6 +33,7 @@ source = { editable = "." }
 
 [package.optional-dependencies]
 dev = [
+    { name = "foil-bridge" },
     { name = "hypothesis" },
     { name = "playwright" },
     { name = "pytest" },
@@ -36,6 +43,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "foil-bridge", marker = "extra == 'dev'", editable = "addons/bridge" },
     { name = "hypothesis", marker = "extra == 'dev'" },
     { name = "playwright", marker = "extra == 'dev'" },
     { name = "pytest", marker = "extra == 'dev'" },
@@ -43,6 +51,17 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "foil-bridge"
+version = "0.1.0"
+source = { editable = "addons/bridge" }
+dependencies = [
+    { name = "foil-ai" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "foil-ai", editable = "." }]
 
 [[package]]
 name = "greenlet"

@@ -33,7 +33,7 @@ These bind the master, the Bridge, and every later phase. A change that
 breaks one updates this list in the same pull request.
 
 1. **Core never needs the Bridge.** Every action an app can take is also a core command, and the same code checks it.
-2. **Files are the truth.** The Bridge keeps no state of its own. If it stops, nothing is lost.
+2. **Files are the truth.** The Bridge keeps no copy of fleet state. Pairing credentials are files under the store. If it stops, nothing is lost.
 3. **Interpretation is for display only.** The Bridge may parse a transcript to show it. Nothing it parses decides a wake, a state, or progress.
 4. **Show the agent's real conversation,** read from that CLI's own session file. Foil still stores no turn output (N5).
 5. **"Needs you" is computed,** in a fixed order, with no model summarizing it.
@@ -357,15 +357,18 @@ rows after this table are not in the binary.
 | `foil master start` | `--harness ID/MODEL` | Starts the master on the runner (section 13). Outside the fleet only (`foil: not allowed` inside). With no `--harness`, uses the recorded harness, or the first installed eligible harness when none is recorded. A running master that is not paused is `foil: master is running`. A running paused master is resumed: `foil: master resumed`. Otherwise prints `foil: master started (<id>[/<model>])`. |
 | `foil master stop` | none | Stops the master's window. Outside the fleet only. A master that is not running is `foil: master is not running`. Otherwise prints `foil: master stopped`. |
 | `foil master renew` | `--harness ID/MODEL` | Replaces the master's harness for the next turn. Each turn already starts a fresh session (design rule 10). Outside the fleet only. With no `--harness`, keeps the recorded harness, or the first installed eligible harness when none is recorded. A running master takes the new argv after its current turn. Prints `foil: master harness <id>[/<model>]`. |
+| `foil doctor` | none | Outside the fleet only (`foil: doctor is outside the fleet only`). Needs no checkout. Prints one line per check in section 12 and exits 0, 1, 2, or 3 as that section says. Phase 4 adds the master's runner, each fleet's runners, and push. |
+| `foil bridge` | none | Outside the fleet only (`foil: bridge is outside the fleet only`). Needs no checkout. When `foil-bridge` is missing from `PATH`, prints the install line in section 12 and exits non-zero. When it is present, prints the version line and does not start the Bridge. |
+| `foil bridge install` | none | Outside the fleet only, the same refusal as `foil bridge`. When `foil-bridge` is not on `PATH`, prints the install line and writes nothing. Otherwise writes the boot unit in section 12, creates the desk token if it is missing, and prints the unit path, the page address, the load command, and the `tailscale serve` line. It does not start the Bridge and does not import the package. |
 
-That's fifteen top-level commands (`init`, `seat`, `send`, `post`, `memory`, `mail`, `board`, `roster`, `view`, `journal`, `decide`, `fleet`, `inbox`, `brief`, `master`) and
-thirty-six actions.
+That's seventeen top-level commands (`init`, `seat`, `send`, `post`, `memory`, `mail`, `board`, `roster`, `view`, `journal`, `decide`, `fleet`, `inbox`, `brief`, `master`, `doctor`, `bridge`) and
+thirty-nine actions.
 
 #### Planned commands
 
 These rows are part of section 6 so a later phase can add the command.
 They are not in the binary. The standing check reads the table above,
-which stays fifteen top-level commands and thirty-six actions, until a
+which stays seventeen top-level commands and thirty-nine actions, until a
 phase moves a row into that table and updates the check in the same
 change. A command, subcommand, or flag in neither table is out of scope
 (section 11). Roster's `--project` on `roster add`, `roster update`, and
@@ -375,22 +378,19 @@ change. A command, subcommand, or flag in neither table is out of scope
 |---|---|---|---|
 | `foil answer ID [TEXT]` | 2 | none | Answers one closed question by id. The answer is mail from `user` to the asking lead and quotes that id. The Bridge's tap and a later MCP answer tool both call this command. |
 | `foil fleet merge` | 2 | `--into BRANCH` | Merges that fleet's `foil/goal-<fleet>` branch into the checkout's current branch, or into `BRANCH`. A dirty checkout or a conflict is one refusal line. Any caller outside the fleet may run it (section 6.2). The charter leaves it for the human's tap, which runs it as `user`. |
-| `foil doctor` | 2, then 4 | none | Exit 0 when the checked parts are ok, 1 when a restart may fix them, 2 when something is broken, and 3 when setup is still required. Phase 2 checks the minimum the Bridge needs. Phase 4 checks the Bridge, the master's runner, each fleet's runners, and the push path, so a scheduled run from outside Foil can use it. |
-| `foil bridge` | 2 | none | Core's command for the Bridge package. When that package is missing, it prints the install line and exits non-zero. It does not start the Bridge (section 11, section 12). |
-| `foil bridge install` | 2 | none | Writes a systemd user unit or a launchd agent so the Bridge starts on boot. The unit runs the Bridge. Core still has no daemon. |
 
 ### 6.2 Authority
 
-| Caller | `init` | `seat spawn` | `seat kill` | `seat archive` | `seat kill --all` | `seat resume` / `renew` | `seat list` / `peek` | `seat join` / `leave` | `send` | `post` | `mail read` | `mail list` | `mail wait` | `board read` | `board list` | `memory add` / `list` | `memory accept` / `reject` | `roster list` / `show` | `roster add` / `update` / `remove` | `view` | `journal` | `decide` | `fleet pause` / `resume` | `inbox` | `brief` | `master start` / `stop` / `renew` |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Outside the fleet | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| Lead | no | yes | yes, not itself | yes, not itself | no | yes | yes | no | yes | yes | yes | yes | no | yes | yes | yes | yes | yes | `harness` and `model` only | no | yes | yes | yes | yes | yes | no |
-| Worker | no | no | no | no | no | no | yes | no | yes | replies only | yes | yes | no | yes | yes | yes | no | no | no | no | yes | yes | no | no | no | no |
-| Master | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Caller | `init` | `seat spawn` | `seat kill` | `seat archive` | `seat kill --all` | `seat resume` / `renew` | `seat list` / `peek` | `seat join` / `leave` | `send` | `post` | `mail read` | `mail list` | `mail wait` | `board read` | `board list` | `memory add` / `list` | `memory accept` / `reject` | `roster list` / `show` | `roster add` / `update` / `remove` | `view` | `journal` | `decide` | `fleet pause` / `resume` | `inbox` | `brief` | `master start` / `stop` / `renew` | `doctor` | `bridge` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Outside the fleet | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Lead | no | yes | yes, not itself | yes, not itself | no | yes | yes | no | yes | yes | yes | yes | no | yes | yes | yes | yes | yes | `harness` and `model` only | no | yes | yes | yes | yes | yes | no | no | no |
+| Worker | no | no | no | no | no | no | yes | no | yes | replies only | yes | yes | no | yes | yes | yes | no | no | no | no | yes | yes | no | no | no | no | no | no |
+| Master | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 
 The Lead row is a launched lead, and it may renew itself (F44). A joined lead is a caller outside the fleet and has that row's authority (F4). A worker's `post` needs `--re` and takes no `--members` or `--close` (F33). A caller inside the fleet may set `harness` and `model` only. `add`, `remove`, `persona`, `worktree`, `permission`, and `--project` are refused. An omitted permission on a role written outside the fleet is `auto`. The lead cannot set `permission`.
 
-The Master row matches the row for a caller outside the fleet, including `master start`, `stop`, and `renew`. The master is one process per store and sits outside every fleet (section 13). It may run every command that row allows. That authority is cooperative, as F5 states it: the check catches a mistake by an agent that follows the rules, and a hostile process is outside that check. The human's tap runs a merge, a kill, an archive, and a settings change, as `user`. The master's charter tells it to leave those actions for the tap. The charter is not a second check in the CLI. A harness `permission` of `ask` or `auto` (section 7.3) applies to that seat's own tool calls, not to a `foil` command. The master's launch uses `ask`. A launched lead may `fleet pause`, `fleet resume`, `inbox`, and `brief`. A worker may not. `foil master start`, `stop`, and `renew` are outside the fleet only. Planned commands use this table. A phase that needs a different caller updates the row when it adds the command.
+The Master row matches the row for a caller outside the fleet, including `master start`, `stop`, and `renew`. The master is one process per store and sits outside every fleet (section 13). It may run every command that row allows. That authority is cooperative, as F5 states it: the check catches a mistake by an agent that follows the rules, and a hostile process is outside that check. The human's tap runs a merge, a kill, an archive, and a settings change, as `user`. The master's charter tells it to leave those actions for the tap. The charter is not a second check in the CLI. A harness `permission` of `ask` or `auto` (section 7.3) applies to that seat's own tool calls, not to a `foil` command. The master's launch uses `ask`. A launched lead may `fleet pause`, `fleet resume`, `inbox`, and `brief`. A worker may not. `foil master start`, `stop`, and `renew` are outside the fleet only. `doctor` and `bridge`, including `bridge install`, are outside the fleet only. Inside a fleet they print `foil: doctor is outside the fleet only` or `foil: bridge is outside the fleet only` and write nothing. Planned commands use this table. A phase that needs a different caller updates the row when it adds the command.
 
 ## 7. Data design
 
@@ -692,7 +692,7 @@ the test plays the human's agent):
 - A wait that times out shows every fleet's seat list, every pane that is left, and every double's log. A wait ends at once when a seat dies that the scenario did not expect to die.
 
 **Standing checks:** the command surface matches the current table in
-section 6.1 exactly: fifteen top-level commands and thirty-six actions.
+section 6.1 exactly: seventeen top-level commands and thirty-nine actions.
 Planned rows stay outside that check until their phase moves them into
 that table. The package source size is reported against the N4 target;
 tmux window identity, atomic writes, public-safety checks (N9), and the
@@ -725,36 +725,132 @@ Out of scope:
 - Parsing or interpreting pane contents or a turn's output. The only exception is the session id an `output` preset prints, bounded by F12.
 - Keeping a joined lead's file tools from changing what a spawn runs. Spawn and resume read a project harness file (F20, F27), so a joined lead whose file tools may write more than the fleet's board (onboarding step 1) could set a launch command that runs outside its sandbox. The board-only setting and the joined skill's rule against writing harness files are the guards. Only `--wake` reads no project harness file (F41).
 - Remote machines and Windows. A project is one copy of the code. Several fleets may run on it. They share the effective roles, harnesses, and mapping. Each fleet has its own board, posts, registry, and an optional pair-list override. Seat worktrees stay in the same Git repository.
-- In core: a UI other than `foil view`; a viewer that writes, or types into a pane; a daemon; an MCP server; a hosted service. Core does not grow those. `foil bridge` and `foil bridge install` are core commands in the planned table. The page, the local process, and a later MCP endpoint belong to the Bridge package (section 12).
+- In core: a UI other than `foil view`; a viewer that writes, or types into a pane; a daemon; an MCP server; a hosted service. Core does not grow those. `foil bridge` and `foil bridge install` are core commands. The page, the local process, and a later MCP endpoint belong to the Bridge package (section 12).
 - Message read receipts, usage-based dispatch, and persona catalog tools beyond `roster list` of the personas `init` copied. Usage-based dispatch includes quota detection, probes, pacing, credential rotation, and switching a running seat because it looks exhausted. Spawn-time rotation across the ordered harness list on a role is in scope. A spawn selects `entries[n % len(entries)]`, where `n` counts that role's spawns since its lists last changed (F3). That spreads later spawns, the lead's included, across the entries the role was given. It does not balance usage and it does not move a seat that is already running. Foil does not read or show a harness's token usage or quota.
 - Context monitoring. Foil does not read a seat's context use. A seat near a full context, or at a milestone the lead picks, writes a handoff file, and the lead or a caller outside the fleet replaces it (section 8).
 
 ## 12. Bridge
 
-The Bridge is optional. Core never needs it (design rule 1). It is a
-separate package, `foil-bridge`, in this repo, released in lockstep with
-core and pinned to the `foil.api` major once that module exists. Core
-stays the standard library only (N1). Bridge code lives outside
-`src/foil`, so the N4 count stays the core package. The Bridge may depend
-on `cryptography` and implements Web Push encryption itself.
+The Bridge is optional. Core never needs it (design rule 1). It is the
+package `foil-bridge` 0.1.0 in `addons/bridge/`, released in lockstep with
+core. It depends on `foil-ai` and refuses to start unless `foil.api.VERSION`
+has major 1 (`foil-bridge: needs foil.api 1`). Core stays the standard
+library only (N1). Bridge code lives outside `src/foil`, so the N4 count
+stays the core package. The Bridge may depend on `cryptography` and
+implements Web Push encryption itself. This phase does not send push.
 
-One local process, started on boot by `foil bridge install`: a page on
-`127.0.0.1` with a token on every request, a one-time pairing for a
-phone, a watcher that checks file times, push, transcript reads, a
-supervisor for the master, and a desk terminal. It binds `127.0.0.1`
-only. The tailnet owner check from `foil view` is an extra condition
-on a request, and the token is still required. The Bridge keeps no store
-of its own (design rule 2). The page is plain ES modules and vendored
-libraries, with no Node build.
+The program is `foil-bridge`. Core does not import it. `foil bridge` looks
+for that program on `PATH`. When it is missing, the command prints
+`foil: bridge is not installed; uv tool install "git+https://github.com/TiantianFlow/foil.git#subdirectory=addons/bridge"`
+and exits non-zero. When it is present, the command runs
+`foil-bridge --version`, prints that line, and does not start the process.
+`foil bridge install` writes the boot file and does not import the package
+and does not start the process. The program the file names is `foil-bridge`.
 
-The Bridge calls core. Core does not import the Bridge. When the package
-is missing, `foil bridge` prints the install line. `foil bridge install`
-is that same core command's work: it writes the boot unit and does not
-import the package. The process the unit starts is the Bridge. This
-section is the boundary. The phase that builds the Bridge fills the
-routes, the unit file's text, pairing, and push. A later phase may add
-an MCP endpoint on this process, stdio and loopback HTTP. Core still has
-no daemon, no MCP server, and no UI other than `foil view`.
+The process binds `127.0.0.1` and port 8791, or `FOIL_BRIDGE_PORT` when
+that is a port from 1024 to 65535 (`foil: invalid port` otherwise). It
+reads `tailscale status --json` once at start, the same way `foil view`
+does. A restart is how a new login or a tag is noticed. The tailnet owner
+check is an extra condition and never replaces the token. A request whose
+`Host` is the tailnet name is served only when `Tailscale-User-Login` is
+that owner and `X-Forwarded-Host` is that host. A loopback `Host` is
+refused when the request carries `X-Forwarded-For`, `X-Forwarded-Host`,
+`Tailscale-User-Login`, or `Tailscale-Funnel-Request`, so a forged tailnet
+header on loopback is refused. Any other host is refused.
+
+Every request needs a token, including a read, the event stream, and
+`/v1/terminal`. A missing or unknown token is 401 with an empty body.
+The desk token is `<root>/bridge/desk`, mode 0600, one line. A device
+token is `id.secret`. `<root>/bridge/devices/<id>` holds the SHA-256 of
+the token and the time it was created, not the secret. Those directories
+are mode 0700. The files are the pairing credentials (design rule 2).
+The process copies no fleet file. Push, transcript reads, the master
+supervisor, and the desk terminal are later phases on this same process.
+`/v1/terminal` is 404 after the token check and 401 without one.
+
+A `POST` also needs an `Origin` of `http://` plus the `Host` on loopback,
+or `http://` or `https://` plus the `Host` on the tailnet name. A missing
+or other `Origin` is 403. A read does not need `Origin`.
+
+`foil bridge install` creates the desk token when the file is missing and
+does not rotate an existing one. It prints four lines: the unit path, the
+page address on `127.0.0.1` at that port with query `token` set to the
+desk token and the `http` scheme, the load command, and
+`tailscale serve --bg <port>`. On Linux the file is
+`$XDG_CONFIG_HOME/systemd/user/foil-bridge.service`, or
+`~/.config/systemd/user/foil-bridge.service` when `XDG_CONFIG_HOME` is
+unset. The unit has `Description=Foil Bridge`, `After=network.target`,
+`Type=simple`, `ExecStart` the absolute `foil-bridge`,
+`Restart=on-failure`, `RestartSec=2`, and `WantedBy=default.target`.
+It sets `Environment` for `PATH` and `FOIL_BRIDGE_PORT`, and for
+`FOIL_HOME` and `XDG_DATA_HOME` when the installing process has them.
+On macOS the file is `~/Library/LaunchAgents/com.foil.bridge.plist`,
+label `com.foil.bridge`, `ProgramArguments` that same path, the same
+environment keys, `RunAtLoad` true, and `KeepAlive` true. Any other OS
+prints `foil: bridge install supports Linux and macOS` and writes nothing.
+The load command it prints is
+`systemctl --user enable --now foil-bridge.service` or
+`launchctl bootstrap gui/<uid> <plist>`. It does not run that command.
+
+The desk page asks for a code with `POST /v1/pairing`, the desk token,
+and a matching `Origin`. The code is 8 characters from
+`23456789ABCDEFGHJKLMNPQRSTUVWXYZ`, it expires in 300 seconds, and `url`
+is `https://<tailnet>/pair?code=<code>` when the tailnet name was read,
+or empty when it was not. The page shows the code, and a QR of `url`
+only when `url` is not empty. `GET /pair?code=<code>` returns the pairing
+page and does not spend the code. `POST /v1/pair` with
+`{"code":"<code>"}` and a matching `Origin` spends it and returns
+`{"token","id"}` once. A second use, an expired code, or a wrong code is
+401 and creates no device. A device token on `POST /v1/pairing` is 403.
+`GET /v1/devices` lists each id and the time it was created.
+`POST /v1/devices/<id>/revoke` removes that device. The desk token may
+revoke any id. A device token may revoke only its own. Revocation is on
+the desk page.
+
+The page is an installable web app. `GET /manifest.webmanifest` returns
+`name` `Foil Bridge`, `short_name` `Bridge`, `display` `standalone`, a
+`start_url` and icon URLs that carry the token, and icons at 192 and 512.
+`GET /sw.js` is the service worker. `GET /offline` is the page it serves
+when the machine does not answer. That page says: This machine can't be
+reached. Check Tailscale. The page script is a plain ES module. The QR
+drawing is a vendored library. There is no Node build.
+
+Once a second, or every `FOIL_BRIDGE_INTERVAL` seconds when that value is
+a positive number up to 60, the process records the modification time of
+each regular file under the store except `<root>/bridge/` and except a
+symlink. `GET /v1/events` is a text event stream. Each event is
+`{"id":"<path>"}` and nothing else. An id `*` means more than 500 paths
+changed and the client lists again. `GET /v1/items` and
+`GET /v1/items/<id>` return `id` and `mtime` and no file bytes. A missing
+id is 404.
+
+`foil doctor` prints these lines, in this order, and exits 2 when any
+check is broken, else 3 when setup is still required, else 1 when a
+restart may fix it, else 0.
+
+| Line | What it means | Code |
+|---|---|---|
+| `bridge: installed` | `foil-bridge --version` printed a version. | 0 |
+| `bridge: not installed` | `foil-bridge` is not on `PATH`. | 3 |
+| `bridge: failed` | The program did not print a version. | 2 |
+| `unit: ok` | The boot file is the text install would write now. | 0 |
+| `unit: missing` | There is no boot file. | 3 |
+| `unit: wrong` | The boot file is not that text. | 2 |
+| `unit: unsupported` | This OS has no boot file. | 2 |
+| `token: ok` | The desk file is one line and mode 0600. | 0 |
+| `token: missing` | There is no desk file. | 3 |
+| `token: too open` | The desk file is not owner-only, or it is not one line. | 2 |
+| `listen: up` | A request with no token got 401. | 0 |
+| `listen: down` | Nothing answered on the port. | 1 |
+| `listen: open` | Something answered with a status other than 401. | 2 |
+| `tailscale: ok` | `tailscale serve status` mentions the port. | 0 |
+| `tailscale: serve not set` | The `tailscale` binary exists and serve does not mention the port. | 3 |
+| `tailscale: not installed` | The binary is absent. This line does not change the exit. | 0 |
+
+Phase 4 adds the master's runner, each fleet's runners, and the push path to
+`foil doctor`. A later phase may add an MCP endpoint on this process,
+stdio and loopback HTTP. Core still has no daemon, no MCP server, and no
+UI other than `foil view`.
 
 ## 13. Master
 
