@@ -19,6 +19,7 @@ from pathlib import Path
 
 from foil import __version__
 from foil.board import ensure_board, items_for, write_mail
+from foil.delivery import skipped as log_skipped
 from foil.errors import FoilError, shown
 from foil.guard import hook_environment
 from foil.journal import note, sent
@@ -56,7 +57,7 @@ from foil.project import (
     rewrite_stored_paths,
     store_root,
 )
-from foil.runner import empty_record, load_record, record_path, save_record
+from foil.runner import empty_record, load_record, record_path, remember_session, save_record
 from foil.store import (
     SAFE_ID,
     SCHEMA_VERSION,
@@ -1021,6 +1022,10 @@ def spawn_seat(
     try:
         seeded = empty_record()
         seeded["delivered"] = _present(root, seat)
+        if native:
+            remember_session(
+                seeded, session_id=native, harness=chosen["id"], model=model
+            )
         if task is not None:
             mailed = write_mail(root, seat, task)
             seeded["inflight"].append(mailed.relative_to(_board(root)).as_posix())
@@ -1086,6 +1091,7 @@ def spawn_seat(
         raise
     fleet = fleet_dir(root)
     note(fleet, "spawn", seat=seat)
+    log_skipped(fleet, seat, seeded["delivered"])
     if mailed is not None:
         sent(fleet, _board(root), actor(root), seat, mailed)
     if seat == "lead" and not in_seat():
@@ -1425,10 +1431,19 @@ def renew_seat(root: Path, name: str) -> None:
     branch = record.get("branch", "") if name == "lead" else ""
     turns = load_record(_board(root), name)
     fresh = empty_record()
+    fresh["sessions"] = list(turns["sessions"])
+    remember_session(
+        fresh,
+        session_id=str(reserved["session_id"]),
+        harness=str(chosen["id"]),
+        model=str(chosen["model"]),
+    )
     fresh["delivered"] = sorted({*turns["delivered"], *turns["inflight"], *present})
     fresh["session_id"] = str(reserved["session_id"])
     # Before plan/.renew/relaunch, so a crash cannot resume the new harness on the old session.
     save_record(_board(root), name, fresh)
+    newly = sorted((set(present) | set(turns["inflight"])) - set(turns["delivered"]))
+    log_skipped(fleet_dir(root), name, newly)
     if state == "dead":
         _relaunch(
             root, registry, name, record, preset, fresh,

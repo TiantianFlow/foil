@@ -32,7 +32,7 @@ FLAGS = {
     ("send",): set(_SHARED),
     ("post",): {"--re", "--decline", "--members", "--close", *_SHARED},
     ("mail", "read"): {"--json", *_SHARED},
-    ("mail", "list"): {"--json", *_SHARED},
+    ("mail", "list"): {"--json", "--sent", *_SHARED},
     ("mail", "wait"): {"--timeout", "--wake", "--all-fleets", "--json", *_SHARED},
     ("board", "read"): {"--json", *_SHARED},
     ("board", "list"): {"--json", *_SHARED},
@@ -45,9 +45,9 @@ FLAGS = {
     # Section 6 lists the valueless `--project` on roster add, update, and remove.
     # `--as` is allowed there too. The store key is `foil --project KEY` before
     # the subcommand, so a skill line does not put KEY on that `--project`.
-    ("roster", "add"): {"--from", "--project", "--as"},
-    ("roster", "update"): {"--project", "--as"},
-    ("roster", "remove"): {"--project", "--as"},
+    ("roster", "add"): {"--from", "--project", "--base", "--as"},
+    ("roster", "update"): {"--project", "--base", "--as"},
+    ("roster", "remove"): {"--project", "--base", "--as"},
     ("view",): {"--port", *_SHARED},
     ("journal",): {"--follow", "--since", "--json", *_SHARED},
     ("decide",): {"--why", *_SHARED},

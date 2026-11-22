@@ -13,11 +13,14 @@ import sys
 import threading
 import time
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from foil.board import items_for, write_mail_at
 from foil.board_ops import body_for_inline, front_fields
+from foil.delivery import append, fleet_paused, list_pointers, pending_pointers
+from foil.delivery import skipped as log_skipped
 from foil.errors import FoilError
 from foil.journal import note, sent
 from foil.store import MAX_BYTES, SAFE_ID, SCHEMA_VERSION, read_json, write_json
@@ -123,6 +126,7 @@ def empty_record() -> dict[str, Any]:
         "started": False,
         "paused": False,
         "pgid": 0,
+        "sessions": [],
     }
 
 
@@ -139,6 +143,8 @@ def load_record(board: Path, seat: str) -> dict[str, Any]:
         if key in ("delivered", "inflight"):
             value = value if isinstance(value, list) else []
             value = [item for item in value if isinstance(item, str)]
+        elif key == "sessions":
+            value = _sessions(value)
         elif key == "turn_started":
             value = value if isinstance(value, int | float) else None
         elif key == "last_exit":
@@ -147,6 +153,67 @@ def load_record(board: Path, seat: str) -> dict[str, Any]:
             value = default
         record[key] = value
     return record
+
+
+def _sessions(value: Any) -> list[dict[str, str]]:
+    """Session rows already stored. A record written without the list loads empty."""
+
+    if not isinstance(value, list):
+        return []
+    kept: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        session_id = item.get("id")
+        harness = item.get("harness")
+        model = item.get("model")
+        started = item.get("started")
+        if not all(isinstance(part, str) for part in (session_id, harness, model, started)):
+            continue
+        if not SAFE_ID.fullmatch(session_id):
+            continue
+        kept.append(
+            {"id": session_id, "harness": harness, "model": model, "started": started}
+        )
+    return kept
+
+
+def remember_session(
+    record: dict[str, Any],
+    *,
+    session_id: str,
+    harness: str,
+    model: str,
+    started: str | None = None,
+) -> None:
+    """Append one session id. The same id is not stored twice."""
+
+    if not session_id or not SAFE_ID.fullmatch(session_id):
+        return
+    sessions = record.setdefault("sessions", [])
+    if any(isinstance(item, dict) and item.get("id") == session_id for item in sessions):
+        return
+    when = started or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    sessions.append(
+        {"id": session_id, "harness": harness, "model": model, "started": when}
+    )
+
+
+def _merged_sessions(*records: dict[str, Any]) -> list[dict[str, str]]:
+    """Session rows from each record, first occurrence of an id kept."""
+
+    merged: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for record in records:
+        for item in record.get("sessions") or []:
+            if not isinstance(item, dict):
+                continue
+            session_id = item.get("id")
+            if not isinstance(session_id, str) or session_id in seen:
+                continue
+            seen.add(session_id)
+            merged.append(item)
+    return merged
 
 
 def prune_delivered(board: Path, record: dict[str, Any]) -> None:
@@ -180,7 +247,13 @@ def save_record(board: Path, seat: str, record: dict[str, Any]) -> None:
     write_json(path, record)
 
 
-def wake_prompt(plan: dict[str, Any], items: list[dict[str, str]], *, restarted: bool) -> str:
+def wake_prompt(
+    plan: dict[str, Any],
+    items: list[dict[str, str]],
+    *,
+    restarted: bool,
+    pointers: list[dict[str, str]] | None = None,
+) -> str:
     lines = [RESTARTED] if restarted else []
     listed = items[:LISTED]
     if items:
@@ -193,6 +266,8 @@ def wake_prompt(plan: dict[str, Any], items: list[dict[str, str]], *, restarted:
             )
     else:
         lines.append(f"Nothing new for {plan['seat']}.")
+    for item in pointers or []:
+        lines.append(f"The human mailed {item['to']} directly: {item['time']} {item['path']}")
     inlined = set()
     budget = INLINE_TOTAL
     for item in listed:
@@ -266,6 +341,26 @@ class Runner:
     def save(self) -> None:
         with self._lock:
             save_record(self.board, self.seat, self.record)
+
+    def _pair(self) -> tuple[str, str]:
+        """Harness and model for a session this runner creates."""
+
+        sessions = self.record.get("sessions") or []
+        if sessions and isinstance(sessions[-1], dict) and sessions[-1].get("harness"):
+            return str(sessions[-1]["harness"]), str(sessions[-1].get("model") or "")
+        try:
+            stored = read_json(self.board.parent / "run" / "registry.json")
+            seat = stored.get("seats", {}).get(self.seat, {})
+        except (FoilError, OSError, AttributeError):
+            return "", ""
+        if not isinstance(seat, dict):
+            return "", ""
+        return str(seat.get("harness") or ""), str(seat.get("model") or "")
+
+    def _remember_current(self) -> None:
+        session = self.record["session_id"] or self.plan["session_id"]
+        harness, model = self._pair()
+        remember_session(self.record, session_id=session, harness=harness, model=model)
 
     def mail(self, to: str, text: str) -> None:
         """Best-effort notice. A journal or mail failure leaves the turn loop running."""
@@ -361,6 +456,10 @@ class Runner:
                         continue
                     self.record["session_id"] = value
                     self.record["started"] = True
+                    harness, model = self._pair()
+                    remember_session(
+                        self.record, session_id=value, harness=harness, model=model
+                    )
                     save_record(self.board, self.seat, self.record)
 
     def _new(self) -> list[dict[str, str]]:
@@ -380,8 +479,15 @@ class Runner:
         delivered = set(self.record["delivered"]) | set(self.record["inflight"])
         delivered |= {item for item in present if isinstance(item, str)}
         fresh = empty_record()
+        fresh["sessions"] = _merged_sessions(self.record, load_record(self.board, self.seat))
         fresh["delivered"] = sorted(delivered)
         save_record(self.board, self.seat, fresh)
+        added = [
+            path
+            for path in fresh["delivered"]
+            if path not in self.record["delivered"]
+        ]
+        log_skipped(self.board.parent, self.seat, added)
         marker.unlink()
         pending = record_path(self.board, self.seat, ".fresh")
         if pending.is_file() and not pending.is_symlink():
@@ -417,6 +523,9 @@ class Runner:
             if self._paused():
                 time.sleep(POLL)
                 continue
+            if fleet_paused(self.board.parent):
+                time.sleep(POLL)
+                continue
             items = self._new()
             if first is None and not self.record["inflight"] and not items:
                 time.sleep(POLL)
@@ -430,18 +539,29 @@ class Runner:
                 self.record["session_id"] or self.plan["session_id"]
             ):
                 kind = "start"
+            pointers = pending_pointers(self.board.parent) if self.seat == "lead" else []
             if kind == "start":
                 prompt = first_prompt(self.plan)
                 # The instruction file says it already when the plan starts with start.
                 said = restarted and not (self.plan["first"] == "start" and first == "start")
-                if batch or said:
-                    prompt += "\n" + wake_prompt(self.plan, batch, restarted=said)
+                if batch or said or pointers:
+                    prompt += "\n" + wake_prompt(
+                        self.plan, batch, restarted=said, pointers=pointers
+                    )
             else:
-                prompt = wake_prompt(self.plan, batch, restarted=restarted)
+                prompt = wake_prompt(self.plan, batch, restarted=restarted, pointers=pointers)
+            if pointers:
+                list_pointers(self.board.parent, [item["path"] for item in pointers])
             self.record["inflight"] = [item["relative"] for item in batch]
+            self._remember_current()
             started = time.time()
             self.record["turn_started"] = started
             self.save()
+            append(
+                self.board.parent,
+                self.seat,
+                [(item["relative"], "inflight") for item in batch],
+            )
             code = self.turn(kind, prompt)
             self.record["turn_started"] = None
             self.record["last_exit"] = code
@@ -455,6 +575,11 @@ class Runner:
                     if path.startswith("mail/") and path not in already
                 ]
                 self.record["delivered"] = sorted(already | set(self.record["inflight"]))
+                append(
+                    self.board.parent,
+                    self.seat,
+                    [(path, "delivered") for path in self.record["inflight"]],
+                )
                 self.record["inflight"] = []
                 self.record["failures"] = 0
                 first, restarted = None, False
@@ -476,6 +601,7 @@ class Runner:
                 and self.plan["session_id"]
             ):
                 self.record["session_id"] = str(uuid.uuid4())
+                self._remember_current()
                 first = "start"
             waits = self.plan["retry"]
             if self.record["failures"] > len(waits):
@@ -492,6 +618,11 @@ class Runner:
             wait = waits[self.record["failures"] - 1]
             self.save()
             note(self.board.parent, "retry", seat=self.seat, exit=code, wait=wait)
+            append(
+                self.board.parent,
+                self.seat,
+                [(path, "retry") for path in self.record["inflight"]],
+            )
             deadline = time.monotonic() + wait
             while time.monotonic() < deadline:
                 self._renew()

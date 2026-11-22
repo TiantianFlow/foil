@@ -63,7 +63,7 @@ def _flags(*items: FlagSpec, key: bool = True) -> tuple[FlagSpec, ...]:
     return items + ((_AS, _KEY) if key else (_AS,))
 
 
-# docs/requirements.md §6.1 — eleven top-level commands, twenty-nine actions.
+# docs/requirements.md §6.1 — twelve top-level commands, thirty-one actions.
 SECTION_6 = CommandSpec(
     flags=_flags(FlagSpec("--version")),
     commands={
@@ -138,7 +138,7 @@ SECTION_6 = CommandSpec(
                     flags=_flags(FlagSpec("--json")),
                     positionals=(PositionalSpec("PATH"),),
                 ),
-                "list": CommandSpec(flags=_flags(FlagSpec("--json"))),
+                "list": CommandSpec(flags=_flags(FlagSpec("--json"), FlagSpec("--sent"))),
                 "wait": CommandSpec(
                     flags=_flags(
                         FlagSpec("--timeout", metavar="SECONDS", default=1800),
@@ -188,16 +188,25 @@ SECTION_6 = CommandSpec(
                     flags=_flags(
                         FlagSpec("--from", metavar="FILE"),
                         FlagSpec("--project"),
+                        FlagSpec("--base", metavar="REV"),
                         key=False,
                     ),
                     positionals=(PositionalSpec("ROLE"),),
                 ),
                 "update": CommandSpec(
-                    flags=_flags(FlagSpec("--project"), key=False),
+                    flags=_flags(
+                        FlagSpec("--project"),
+                        FlagSpec("--base", metavar="REV"),
+                        key=False,
+                    ),
                     positionals=(PositionalSpec("ROLE"), PositionalSpec("FIELD=VALUE")),
                 ),
                 "remove": CommandSpec(
-                    flags=_flags(FlagSpec("--project"), key=False),
+                    flags=_flags(
+                        FlagSpec("--project"),
+                        FlagSpec("--base", metavar="REV"),
+                        key=False,
+                    ),
                     positionals=(PositionalSpec("ROLE"),),
                 ),
             }
@@ -213,6 +222,12 @@ SECTION_6 = CommandSpec(
         "decide": CommandSpec(
             flags=_flags(FlagSpec("--why", metavar="TEXT")),
             positionals=(PositionalSpec("TEXT"),),
+        ),
+        "fleet": CommandSpec(
+            commands={
+                "pause": CommandSpec(flags=_flags()),
+                "resume": CommandSpec(flags=_flags()),
+            }
         ),
     },
 )
@@ -247,6 +262,8 @@ SECTION_6_SYNOPSES = (
     "foil view",
     "foil journal",
     "foil decide TEXT",
+    "foil fleet pause",
+    "foil fleet resume",
 )
 
 
@@ -376,8 +393,8 @@ def test_section_6_synopses_are_the_requirements_oracle() -> None:
     text = REQUIREMENTS.read_text(encoding="utf-8")
     missing = [synopsis for synopsis in SECTION_6_SYNOPSES if f"`{synopsis}`" not in text]
     assert missing == [], "section 6.1 is missing synopses:\n" + "\n".join(missing)
-    assert "twenty-nine actions" in text
-    assert "eleven top-level commands" in text
+    assert "thirty-one actions" in text
+    assert "twelve top-level commands" in text
     list_row = next(line for line in text.splitlines() if line.startswith("| `foil seat list`"))
     assert all(flag in list_row for flag in ("--json", "--archived", "--all-fleets"))
 

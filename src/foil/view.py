@@ -33,6 +33,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from foil.board import room_state
 from foil.board_ops import split_front_matter
+from foil.delivery import fleet_paused
 from foil.errors import FoilError, assert_no_secret
 from foil.lifecycle import peek_text, seat_rows
 from foil.memory import read_lessons
@@ -56,7 +57,7 @@ from foil.presets import (
 )
 from foil.project import cached_common_dirs, foil_root, project_record, store_root
 from foil.roster_ops import roster_rows
-from foil.store import SAFE_ID, load_registry
+from foil.store import SAFE_ID, fleet_dir, load_registry
 from foil.tmux import time_budget
 
 BASE_PORT = 7460
@@ -591,11 +592,25 @@ def _argv(command: list[str]) -> str:
     return " ".join(shown)
 
 
+def _paused_mark(root: Path, fleet: str) -> str:
+    """A paused fleet is visible on the list and on its page (F38)."""
+
+    try:
+        if fleet_paused(fleet_dir(root, fleet)):
+            return ' <small>paused</small>'
+    except (FoilError, OSError):
+        return ""
+    return ""
+
+
 def _fleets_page(root: Path, base: str) -> _Page:
     def fleets() -> str:
         rows = []
         for fleet in _fleet_ids(root):
-            link = f'<a class="mono" href="{base}/fleets/{quote(fleet)}">{escape(fleet)}</a>'
+            link = (
+                f'<a class="mono" href="{base}/fleets/{quote(fleet)}">{escape(fleet)}</a>'
+                f"{_paused_mark(root, fleet)}"
+            )
             try:
                 states = [
                     row["state"]
@@ -1204,8 +1219,12 @@ def _fleet_page(root: Path, fleet: str, query: dict, base: str) -> _Page:
 
     noun = "seat" if len(rows) == 1 else "seats"
     workspace = _guard(lambda: f"<code>{escape(_checkout(root))}</code>")
+    banner = ""
+    if _paused_mark(root, fleet):
+        banner = "<p>This fleet is paused. Runners start no new turn.</p>"
     body = (
-        _needs_you(root, fleet, rows, here)
+        banner
+        + _needs_you(root, fleet, rows, here)
         + f'<section id="agents"><h2>{_label("Agents")} <span class="muted">{len(rows)} '
         f"{noun}</span></h2>{_guard(agents)}</section>"
         + _board_sections(root, fleet, here)

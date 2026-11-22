@@ -24,6 +24,7 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/memory.py` | Stores project lessons as JSON files. |
 | `src/foil/runner.py` | Runs inside each seat's window and runs that seat's turns one at a time from its plan: the first prompt, the wake prompts, retries, pauses, and the runner record. It does not choose the argv. |
 | `src/foil/journal.py` | Appends one fact per line to a fleet's journal, and lists or follows that file. It stores no mail body and no turn output. |
+| `src/foil/delivery.py` | Appends the per-seat delivery log, the lead's pointers, and the fleet pause flag. A line is a time, a board path, and a state. It stores no mail body and no turn output. |
 | `src/foil/guard.py` | Writes the seat-only `pre-commit` and `pre-push` hooks, and runs their checks for private text and the worktree boundary before the repository's own hook. |
 | `src/foil/view.py` | Serves `foil view`, one read-only page on `127.0.0.1` for every project in the store, each under `/projects/<key>/`. It calls the same readers as `seat list`, `seat peek`, `roster list`, and `memory list`, and writes nothing. At start it reads `tailscale status --json` once, so a request that `tailscale serve` forwards from the owner's login can load under the tailnet name. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |
@@ -56,8 +57,10 @@ flowchart TB
 
   runner["<b>runner.py</b><br/>runs inside each tmux window<br/>one turn at a time · wake prompts · retries"]
   journal["<b>journal.py</b><br/>one fact per line · no body"]
+  delivery["<b>delivery.py</b><br/>path and state · pause · pointers"]
 
   cli --> api
+  cli --> delivery
   cli --> joined
   cli --> project
   cli --> store
@@ -97,6 +100,14 @@ flowchart TB
   board --> journal
   joined --> journal
   journal --> store
+  api --> delivery
+  lifecycle --> delivery
+  runner --> delivery
+  board --> delivery
+  mail_ops --> delivery
+  joined --> delivery
+  view --> delivery
+  delivery --> store
   runner --> board
   runner --> board_ops
   runner --> store
@@ -121,7 +132,7 @@ flowchart TB
   classDef base fill:#e5e7eb,stroke:#374151,color:#1f2937
   classDef apart fill:#fde68a,stroke:#b45309,color:#1f2937
   class cli,api entry
-  class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,view,journal core
+  class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,view,journal,delivery core
   class presets,tmuxmod,store,project,scope base
   class runner apart
 ```
@@ -183,7 +194,10 @@ The project folder holds:
 - `fleets/<id>/run/instructions/<seat>.md` — generated when that seat is spawned or resumed. It includes the text of that seat's role skill and the Foil version that wrote the file.
 - `fleets/<id>/run/plans/<seat>.json` — the `start` and `turn` argv, which turn runs first, the working directory, the environment, the instruction path, the reader of the runner's notices, `turn_timeout`, and the retry waits. The plan sets `FOIL_FLEET`.
 - `fleets/<id>/run/journal.log` — one JSON object per fact the fleet already recorded: spawn, turn start, turn end and its exit code, mail sent, mail delivered, retry, pause, resume, renew, kill, join, leave, and a decision. No mail body and no turn output. When another line would pass 64 KiB, the file becomes `journal.log.1` and a new `journal.log` starts. `foil journal` reads both, oldest first.
-- `fleets/<id>/run/turns/<seat>.json` — the runner record: the session id the next turn uses, the delivered and in-flight board paths (absent delivered paths dropped on save, and the oldest dropped if the record would exceed its size limit), when the running turn started, the last exit code, the failures in a row, whether the session has been started, whether the seat is paused, and the running turn's process group. Spawn, resume, and renew write it before the runner starts; after that only the runner writes it. `<seat>.resume` beside it retries a paused seat, and `<seat>.renew` asks a running seat's runner to start the new session after its current turn.
+- `fleets/<id>/run/turns/<seat>.json` — the runner record: the session id the next turn uses, the delivered and in-flight board paths (absent delivered paths dropped on save, and the oldest dropped if the record would exceed its size limit), when the running turn started, the last exit code, the failures in a row, whether the session has been started, whether the seat is paused, the running turn's process group, and `sessions`, an append-only list of `{id, harness, model, started}` for each session id the seat has used. Renew keeps that list and appends the new id. A record written without `sessions` loads it as empty. Spawn, resume, and renew write the record before the runner starts; after that only the runner writes it. `<seat>.resume` beside it retries a paused seat, and `<seat>.renew` asks a running seat's runner to start the new session after its current turn.
+- `fleets/<id>/run/turns/<seat>.log` — the delivery log. One JSON line per path and state: `inflight`, `delivered`, `retry`, `skipped`, or `printed`. No mail body and no turn output. At 64 KiB the file rotates to `<seat>.log.1`. `foil mail list --sent` reads a derived state from it.
+- `fleets/<id>/run/fleet.json` — whether the fleet is paused. While it is, a runner starts no turn, including a seat's first turn, and mail stays queued. A turn already running finishes. `foil fleet pause` and `foil fleet resume` write it.
+- `fleets/<id>/run/pointers.log` — one line when the human mails a worker directly. The lead's next wake lists it once. It wakes nobody. Same size cap as the delivery log.
 - `fleets/<id>/run/foil/<mailbox>/<file>` — the byte length and SHA-256 digest of each mail Foil itself wrote from `foil`. Mail named as from `foil` without a matching size and digest is skipped (size first), so a file written or replaced on the board cannot speak for Foil.
 - `fleets/<id>/run/seats/<name>.json` — the seen record for a mailbox a caller outside the fleet reads, `lead` or `user`: the board paths marked seen (by the join brief and `mail wait --timeout 0`; a blocking wait leaves them new), the quiet waits in a row, the seats reported dead and not seen alive since, the time of the last dead-seat check, and the join time. It is written under `run/seats/<name>.lock`.
 
@@ -213,7 +227,7 @@ Foil's own state is the store: `<root>/roles.toml`, `<root>/mapping.toml`, and, 
 | `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/`, and similar | Every tree, at that tree's commit | Yes | The seat reads its own checkout; a project-checkout edit arrives only once the seat's branch includes it |
 | A gitignored local file (for example a harness settings file) | Project checkout only | No | It does not. `git worktree add` does not copy it, so a worktree seat runs without it while the lead and other non-worktree seats have it |
 
-Foil stores only a session id per seat, in `fleets/<id>/run/registry.json`. Each harness keeps transcripts and trust under the user's home directory. Foil forwards `HOME`, so every seat writes into the same global store as the human. Those stores are keyed by working directory. Moving or renaming the project changes every key, and a harness that resumes by a directory lookup can then miss the old session. Foil's tmux session name hashes the resolved toplevel path, so a move is a new fleet anyway. `foil init` in the new location adopts the old project folder when one stored record has a recorded path that is gone and matches this repository: the same origin remote, compared without HTTP userinfo, or, when there is no origin, the same root commit. Several matches adopt none. When no match is possible, init warns, names the orphan's path, and creates a new project folder. A record for some other repository is ignored. The warning does not stop init.
+Foil stores a session id per seat in `fleets/<id>/run/registry.json`, and the runner record keeps the list of session ids that seat has used. A preset's `transcript` field is a format id. Core stores it and does not read a transcript. Each harness keeps transcripts and trust under the user's home directory. Foil forwards `HOME`, so every seat writes into the same global store as the human. Those stores are keyed by working directory. Moving or renaming the project changes every key, and a harness that resumes by a directory lookup can then miss the old session. Foil's tmux session name hashes the resolved toplevel path, so a move is a new fleet anyway. `foil init` in the new location adopts the old project folder when one stored record has a recorded path that is gone and matches this repository: the same origin remote, compared without HTTP userinfo, or, when there is no origin, the same root commit. Several matches adopt none. When no match is possible, init warns, names the orphan's path, and creates a new project folder. A record for some other repository is ignored. The warning does not stop init.
 
 Every built-in preset runs its CLI headless, one process per turn, and continues one session by an explicit id. None has been run live against its CLI, so each marks `start` and `turn` unverified.
 
@@ -258,13 +272,13 @@ The packaged lead skill marks some paragraphs `<!-- launched -->` or `<!-- joine
 
 ## Turns
 
-The runner prints `foil: turn started (start)` or `(turn)` before each turn and `foil: turn ended (exit <code>)` after it, and passes everything else the CLI writes to the pane untouched. Between turns it checks about once a second for new items, by the same rules `foil mail wait` uses: mail in the seat's mailbox and `room/v2` files whose `wakes` names it, minus the delivered set. After the first one it waits a second more, marks them in flight, and starts a turn on the `turn` argv with a wake prompt: `New for <seat> (N):`, one `time from path` line per item up to 50 and a count of the rest, the body of each listed mail of 600 bytes or less while the bodies stay within 16 KiB (front matter from the first 8 KiB, body read at most 601 bytes), and the line to re-read the instruction file. After a restart the prompt starts with the restart line. A turn that exits 0 moves its items to delivered. A turn whose program cannot be run ends with exit 127. One that exits non-zero runs again after 30 seconds, 2 minutes, and 8 minutes, as a `turn` once the session was started and otherwise as a `start` on a fresh generated id, with any newer items; then the seat is paused, and the runner mails the reader (`lead`, or `user` for the lead) from `foil` and waits for `<seat>.resume`. A turn past `turn_timeout` is ended with its process group. When the session is started, its items are delivered and the seat waits for the next mail. When the session is not started, the turn is a failed turn: the items stay in flight, `start` runs again on a fresh generated id after the retry waits, and the seat pauses once those waits are used. Each such turn mails the reader that it was stopped. A worker turn that exits 0 having written no mail, room file, or result gets a mail to the lead. After every turn the runner ends what is left in the turn's process group. A signal ends a turn with exit 128 plus its number.
+The runner prints `foil: turn started (start)` or `(turn)` before each turn and `foil: turn ended (exit <code>)` after it, and passes everything else the CLI writes to the pane untouched. Between turns it checks about once a second for new items, by the same rules `foil mail wait` uses: mail in the seat's mailbox and `room/v2` files whose `wakes` names it, minus the delivered set. After the first one it waits a second more, marks them in flight, and starts a turn on the `turn` argv with a wake prompt: `New for <seat> (N):`, one `time from path` line per item up to 50 and a count of the rest, the body of each listed mail of 600 bytes or less while the bodies stay within 16 KiB (front matter from the first 8 KiB, body read at most 601 bytes), and the line to re-read the instruction file. When the human has mailed a worker directly, the lead's prompt adds one line per pointer, `The human mailed <to> directly: <time> <path>`, and that turn does not list the same pointer again. After a restart the prompt starts with the restart line. While `run/fleet.json` says the fleet is paused, the loop starts no turn, including the first, and leaves mail queued. Each path a turn starts with is appended to the seat's delivery log as `inflight`, each path marked delivered is appended as `delivered`, and each path a failed turn will run again is appended as `retry`. A turn that exits 0 moves its items to delivered. A turn whose program cannot be run ends with exit 127. One that exits non-zero runs again after 30 seconds, 2 minutes, and 8 minutes, as a `turn` once the session was started and otherwise as a `start` on a fresh generated id, with any newer items; then the seat is paused, and the runner mails the reader (`lead`, or `user` for the lead) from `foil` and waits for `<seat>.resume`. A turn past `turn_timeout` is ended with its process group. When the session is started, its items are delivered and the seat waits for the next mail. When the session is not started, the turn is a failed turn: the items stay in flight, `start` runs again on a fresh generated id after the retry waits, and the seat pauses once those waits are used. Each such turn mails the reader that it was stopped. A worker turn that exits 0 having written no mail, room file, or result gets a mail to the lead. After every turn the runner ends what is left in the turn's process group. A signal ends a turn with exit 128 plus its number.
 
 ## Mail
 
 `foil send TO TEXT` checks the recipient against the registry before it writes. An unknown seat prints one stderr line and leaves no file. `TEXT` of `-` reads stdin. The sender is the seat id when a seat sends. Outside the fleet it is `lead` while a lead is joined, and `user` otherwise. `TO` of `user` is the human's mailbox, `board/mail/user/`. Only a launched lead writes it. A joined lead asks in its own chat. Outside the fleet, `foil mail list` lists the joined lead's mailbox, or the human's. A joined lead reads new items with `foil mail wait`, which also prints room files whose `wakes` names it.
 
-The file is Markdown with `contract: mail/v1` and `from`, `to`, and `time`. Writing it is all `send` does: the recipient's runner picks it up between turns. Mail from `foil` is written with a digest record under `run/foil/` first, and only counts while that digest still matches the file.
+The file is Markdown with `contract: mail/v1` and `from`, `to`, and `time`. Writing it is all `send` does: the recipient's runner picks it up between turns. Mail from `user` to a worker also appends a pointer for the lead. That pointer is not mail to the lead, so it wakes nobody. Mail from `foil` is written with a digest record under `run/foil/` first, and only counts while that digest still matches the file.
 
 Only one sender at a time types into a seat. Foil holds `fleets/<id>/run/nudge-<seat>.lock` from the line to its Enter, so two nudges sent to one seat at the same moment arrive as two lines.
 
