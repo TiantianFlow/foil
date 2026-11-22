@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
+from foil.errors import FoilError
 from foil.lifecycle import _git, _refused_worktree
 from foil.presets import BUILTIN_IDS, load_preset
 from foil.project import foil_root, store_root
@@ -430,7 +431,11 @@ def test_launch_failure_is_one_line(
     assert "Traceback" not in captured.err
     assert "hidden" not in captured.err
     assert "implementer-1" not in load_registry(repo)["seats"]
-    assert (foil_root(repo) / "worktrees" / "implementer-1").is_dir()
+    assert not (foil_root(repo) / "worktrees" / "implementer-1").exists()
+    assert not _branch_exists(repo, "foil/implementer-1")
+    lead = load_registry(repo)["seats"]["lead"]
+    assert Path(lead["worktree"]).is_dir()
+    assert _branch_exists(repo, lead["branch"])
     assert not (repo.parent / "project.foil").exists()
 
 
@@ -448,6 +453,179 @@ def test_failed_launch_removes_the_task_mail(
     assert capsys.readouterr().err == "foil: could not launch seat\n"
     assert _mail(repo, "lead") == []
     assert "lead" not in load_registry(repo)["seats"]
+    assert not (foil_root(repo) / "worktrees" / "goal-main").exists()
+    assert not _branch_exists(repo, "foil/goal-main")
+
+
+def test_a_failed_launch_removes_only_the_worktree_it_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The next spawn reuses the name, and a sibling seat's worktree stays."""
+
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    kept = load_registry(repo)["seats"]["implementer-1"]
+    note = Path(kept["worktree"]) / "note.txt"
+    note.write_text("keep\n", encoding="utf-8")
+
+    def boom(self: TmuxController, **kwargs: object) -> TmuxTarget:
+        del self, kwargs
+        created = foil_root(repo) / "worktrees" / "implementer-2"
+        (created / "during.txt").write_text("attempt\n", encoding="utf-8")
+        raise TmuxError("hidden")
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.launch", boom)
+    assert main(["seat", "spawn", "implementer", "--task", "again"]) == 1
+    assert capsys.readouterr().err == "foil: could not launch seat\n"
+    assert not (foil_root(repo) / "worktrees" / "implementer-2").exists()
+    assert not _branch_exists(repo, "foil/implementer-2")
+    assert note.read_text(encoding="utf-8") == "keep\n"
+    assert _branch_exists(repo, kept["branch"])
+    assert _mail(repo, "implementer-2") == []
+    assert "implementer-2" not in load_registry(repo)["seats"]
+
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "implementer"]) == 0
+    retried = load_registry(repo)["seats"]["implementer-2"]
+    assert retried["branch"] == "foil/implementer-2"
+    assert Path(retried["worktree"]).is_dir()
+
+
+def test_a_failed_registry_write_removes_only_the_new_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    assert main(["seat", "spawn", "implementer"]) == 0
+    kept = Path(load_registry(repo)["seats"]["implementer-1"]["worktree"])
+    abandoned: list[str] = []
+
+    def abandon(self: TmuxController, target: TmuxTarget) -> None:
+        del self
+        abandoned.append(target.window_id or "")
+
+    def fail_update(root: Path, mutate: object) -> dict:
+        del root, mutate
+        raise FoilError("foil: seat 'implementer-2' already exists")
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.abandon_window", abandon)
+    monkeypatch.setattr("foil.lifecycle.update_registry", fail_update)
+    assert main(["seat", "spawn", "implementer", "--task", "next"]) == 1
+    assert capsys.readouterr().err == "foil: seat 'implementer-2' already exists\n"
+    assert not (foil_root(repo) / "worktrees" / "implementer-2").exists()
+    assert not _branch_exists(repo, "foil/implementer-2")
+    assert kept.is_dir()
+    assert _branch_exists(repo, "foil/implementer-1")
+    assert _mail(repo, "implementer-2") == []
+    assert "implementer-2" not in load_registry(repo)["seats"]
+    assert len(abandoned) == 1 and abandoned[0].startswith("@")
+
+
+def test_a_failed_spawn_without_a_worktree_leaves_an_unrelated_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    subprocess.run(
+        ["git", "-C", str(repo), "branch", "foil/reviewer-1"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    def boom(self: TmuxController, **kwargs: object) -> TmuxTarget:
+        del self, kwargs
+        raise TmuxError("hidden")
+
+    monkeypatch.setattr("foil.lifecycle.TmuxController.launch", boom)
+    assert main(["seat", "spawn", "reviewer", "--task", "look"]) == 1
+    assert capsys.readouterr().err == "foil: could not launch seat\n"
+    assert _branch_exists(repo, "foil/reviewer-1")
+    assert _mail(repo, "reviewer-1") == []
+    assert "reviewer-1" not in load_registry(repo)["seats"]
+
+
+def test_a_failed_worktree_add_removes_the_checkout_it_left(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A post-checkout hook can fail after git has registered the new checkout."""
+
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    subprocess.run(
+        ["git", "-C", str(repo), "branch", "foil/kept"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    hooks = repo / ".git" / "hooks"
+    hooks.mkdir(exist_ok=True)
+    hook = hooks / "post-checkout"
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    assert main(["seat", "spawn", "implementer"]) == 1
+    assert capsys.readouterr().err == "foil: could not create worktree\n"
+    assert not (foil_root(repo) / "worktrees" / "implementer-1").exists()
+    assert not _branch_exists(repo, "foil/implementer-1")
+    assert _branch_exists(repo, "foil/kept")
+    lead = load_registry(repo)["seats"]["lead"]
+    assert Path(lead["worktree"]).is_dir()
+    assert _branch_exists(repo, lead["branch"])
+    assert "implementer-1" not in load_registry(repo)["seats"]
+
+
+def test_cleanup_leaves_a_branch_that_is_not_checked_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from foil.lifecycle import _drop_spawn_worktree
+
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    subprocess.run(
+        ["git", "-C", str(repo), "branch", "foil/implementer-1"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    missing = foil_root(repo) / "worktrees" / "implementer-1"
+    _drop_spawn_worktree(repo, str(missing), "foil/implementer-1")
+    assert _branch_exists(repo, "foil/implementer-1")
+    assert not missing.exists()
+
+
+def test_a_task_mail_that_fails_after_it_is_linked_is_removed_with_the_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from foil.store import create_exclusive
+
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+
+    def fail_after_link(path: Path, payload: bytes) -> None:
+        create_exclusive(path, payload)
+        if path.suffix == ".md":
+            raise OSError("directory fsync failed")
+
+    monkeypatch.setattr("foil.board.create_exclusive", fail_after_link)
+    assert main(["seat", "spawn", "implementer", "--task", "again"]) == 1
+    assert capsys.readouterr().err == "foil: unexpected error\n"
+    assert _mail(repo, "implementer-1") == []
+    assert not (foil_root(repo) / "worktrees" / "implementer-1").exists()
+    assert not _branch_exists(repo, "foil/implementer-1")
+    lead = load_registry(repo)["seats"]["lead"]
+    assert Path(lead["worktree"]).is_dir()
+    assert _branch_exists(repo, lead["branch"])
 
 
 def test_spawn_records_the_model_and_an_older_registry_still_loads(

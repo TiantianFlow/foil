@@ -332,9 +332,99 @@ def test_a_timeout_before_the_session_starts_keeps_the_batch(tmp_path: Path) -> 
         assert record["inflight"] == [relative]
         assert record["delivered"] == []
         assert record["started"] is False
+        assert record["failures"] == 1
+        assert record["paused"] is False
+        assert record["turn_started"] is None
         assert record["session_id"] != "s-1"  # fresh generated id for the retry
         notice = list((board / "mail" / "lead").glob("*-foil-*.md"))
         assert notice and "turn_timeout" in notice[0].read_text()
+        time.sleep(0.4)
+        still = load_record(board, "seat-1")
+        assert still["failures"] == 1 and still["turn_started"] is None and still["paused"] is False
+    finally:
+        os.killpg(runner.pid, signal.SIGKILL)
+        runner.wait()
+
+
+def test_timeouts_before_a_session_pause_after_the_retry_waits(tmp_path: Path) -> None:
+    """A timeout before the session exists uses the retry waits, then pauses (F43)."""
+
+    from foil.board import write_mail_at
+    from foil.runner import empty_record, save_record
+
+    log = tmp_path / "starts.log"
+    (tmp_path / "probe.py").write_text(
+        "import sys, time\n"
+        f"open({str(log)!r}, 'a').write(sys.argv[2] + '\\n')\n"
+        "time.sleep(600)\n",
+        encoding="utf-8",
+    )
+    plan = _plan(tmp_path, turn_timeout=1, retry=[0.2, 0.2, 0.2], first="start")
+    probe = str(tmp_path / "probe.py")
+    plan["start"] = [sys.executable, probe, "start", "{session_id}", "{prompt}"]
+    board = Path(plan["board"])
+    mailed = write_mail_at(board, "seat-1", "task", "lead")
+    relative = mailed.relative_to(board).as_posix()
+    seeded = empty_record()
+    seeded["session_id"] = "s-1"
+    seeded["inflight"] = [relative]
+    save_record(board, "seat-1", seeded)
+    runner = _run(tmp_path, plan)
+    try:
+        # Each timed-out turn pays the runner's leftover grace before the next wait.
+        _until(lambda: load_record(board, "seat-1")["paused"], timeout=45)
+        record = load_record(board, "seat-1")
+        assert record["failures"] == 4
+        assert record["last_exit"] == -1
+        assert record["started"] is False
+        assert record["delivered"] == []
+        assert record["inflight"] == [relative]
+        starts = log.read_text().split()
+        assert starts[0] == "s-1"
+        assert len(starts) == 4 and len(set(starts)) == 4
+        notices = [
+            path.read_text(encoding="utf-8")
+            for path in (board / "mail" / "lead").glob("*-foil-*.md")
+        ]
+        assert any("turn_timeout" in text for text in notices)
+        assert any("paused after 4 failed turns (exit -1)" in text for text in notices)
+    finally:
+        os.killpg(runner.pid, signal.SIGKILL)
+        runner.wait()
+
+
+def test_a_timeout_after_the_session_exists_delivers_and_waits(tmp_path: Path) -> None:
+    """Once a session exists, a timed-out turn is delivered and another does not start."""
+
+    from foil.board import write_mail_at
+
+    runs = tmp_path / "runs"
+    (tmp_path / "probe.py").write_text(
+        "import pathlib, sys, time\n"
+        f"log = pathlib.Path({str(runs)!r})\n"
+        "n = int(log.read_text()) if log.exists() else 0\n"
+        "log.write_text(str(n + 1))\n"
+        "if n == 0:\n"
+        "    sys.exit(0)\n"
+        "time.sleep(600)\n",
+        encoding="utf-8",
+    )
+    plan = _plan(tmp_path, turn_timeout=1, retry=[30])
+    board = Path(plan["board"])
+    runner = _run(tmp_path, plan)
+    try:
+        _until(lambda: load_record(board, "seat-1")["last_exit"] == 0)
+        mailed = write_mail_at(board, "seat-1", "later", "lead")
+        relative = mailed.relative_to(board).as_posix()
+        _until(lambda: load_record(board, "seat-1")["last_exit"] == -1)
+        record = load_record(board, "seat-1")
+        assert record["started"] is True
+        assert relative in record["delivered"]
+        assert record["inflight"] == []
+        assert record["failures"] == 0 and record["paused"] is False
+        time.sleep(0.4)
+        assert runs.read_text() == "2"
+        assert load_record(board, "seat-1")["turn_started"] is None
     finally:
         os.killpg(runner.pid, signal.SIGKILL)
         runner.wait()

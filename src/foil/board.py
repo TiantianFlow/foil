@@ -192,6 +192,13 @@ def write_mail_at(board: Path, to: str, text: str, sender: str) -> Path:
             if record is not None:
                 record.unlink(missing_ok=True)
             continue
+        except OSError:
+            # The file can be linked before chmod or the directory fsync fails.
+            if path.is_file() and not path.is_symlink():
+                path.unlink(missing_ok=True)
+            if record is not None and record.is_file() and not record.is_symlink():
+                record.unlink(missing_ok=True)
+            raise
         return path
     raise FoilError("foil: could not write mail")
 
