@@ -101,8 +101,7 @@ def read_lessons(toplevel: Path, *, all_lessons: bool = False) -> list[dict[str,
     return lessons
 
 
-def list_lessons(toplevel: Path, *, all_lessons: bool = False, as_json: bool = False) -> None:
-    lessons = read_lessons(toplevel, all_lessons=all_lessons)
+def show_lessons(lessons: list[dict[str, Any]], *, all_lessons: bool, as_json: bool) -> None:
     if as_json:
         print(json.dumps(lessons, ensure_ascii=False, sort_keys=True))
         return
@@ -112,3 +111,8 @@ def list_lessons(toplevel: Path, *, all_lessons: bool = False, as_json: bool = F
             print(f"{item['id']}\t{item.get('state', '')}\t{text}")
         else:
             print(f"{item['id']}\t{text}")
+
+
+def list_lessons(toplevel: Path, *, all_lessons: bool = False, as_json: bool = False) -> None:
+    lessons = read_lessons(toplevel, all_lessons=all_lessons)
+    show_lessons(lessons, all_lessons=all_lessons, as_json=as_json)

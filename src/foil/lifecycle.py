@@ -67,6 +67,7 @@ from foil.store import (
     fleet_id,
     fleet_ids,
     in_fleet,
+    in_seat,
     load_registry,
     read_json,
     registry_path,
@@ -349,6 +350,8 @@ def _seat_name(registry: dict, template_name: str, requested: str | None) -> str
         raise FoilError("foil: seat name 'user' is the human's mailbox")
     if requested == "foil":
         raise FoilError("foil: seat name 'foil' is reserved")
+    if requested == "master":
+        raise FoilError("foil: seat name 'master' is reserved")
     if requested == "lead" or (requested is not None and requested in seats):
         raise FoilError(f"foil: seat '{shown(requested or '')}' already exists")
     if requested:
@@ -1079,7 +1082,7 @@ def spawn_seat(
         _drop_mail(mailed)
         _drop_spawn_worktree(root, worktree, branch)
         raise
-    if seat == "lead" and not os.environ.get("FOIL_SEAT_ID", "").strip():
+    if seat == "lead" and not in_seat():
         print(_supervisor_note(root, worktree, branch))
 
 
@@ -1543,23 +1546,6 @@ def archive_seat(root: Path, name: str) -> None:
         print(f"kept branch {record.get('branch') or ''}")
 
 
-def _list_archived(root: Path, *, as_json: bool) -> None:
-    rows = []
-    for path in _archive_files(root):
-        record = _read_archive(path)
-        record["archived"] = path.name
-        rows.append(record)
-    if as_json:
-        print(json.dumps(rows, sort_keys=True))
-        return
-    for row in rows:
-        launched = f"{row['harness']}/{row['model']}" if row["model"] else row["harness"]
-        print(
-            f"{row['name']}\t{row['template']}\t{row['state']}\t"
-            f"{row['worktree']}\t{launched}\t{row['branch']}"
-        )
-
-
 def seat_rows(
     root: Path,
     registry: dict,
@@ -1610,14 +1596,20 @@ def seat_rows(
     return rows
 
 
-def list_seats(
-    root: Path, *, as_json: bool = False, archived: bool = False, all_fleets: bool = False
-) -> None:
+def seat_list_rows(
+    root: Path, *, archived: bool = False, all_fleets: bool = False
+) -> list[dict]:
+    """The ``seat list --json`` array."""
+
     if archived:
         if all_fleets:
             raise FoilError("foil: --archived takes no --all-fleets")
-        _list_archived(root, as_json=as_json)
-        return
+        rows = []
+        for path in _archive_files(root):
+            record = _read_archive(path)
+            record["archived"] = path.name
+            rows.append(record)
+        return rows
     keys = (
         "name",
         "template",
@@ -1638,8 +1630,20 @@ def list_seats(
                 if fleet is not None:
                     picked["fleet"] = fleet
                 rows.append(picked)
+    return rows
+
+
+def show_seat_list(rows: list[dict], *, as_json: bool, archived: bool = False) -> None:
     if as_json:
         print(json.dumps(rows, sort_keys=True))
+        return
+    if archived:
+        for row in rows:
+            launched = f"{row['harness']}/{row['model']}" if row["model"] else row["harness"]
+            print(
+                f"{row['name']}\t{row['template']}\t{row['state']}\t"
+                f"{row['worktree']}\t{launched}\t{row['branch']}"
+            )
         return
     for row in rows:
         launched = f"{row['harness']}/{row['model']}" if row["model"] else row["harness"]
@@ -1650,8 +1654,26 @@ def list_seats(
         )
 
 
+def list_seats(
+    root: Path, *, as_json: bool = False, archived: bool = False, all_fleets: bool = False
+) -> None:
+    show_seat_list(
+        seat_list_rows(root, archived=archived, all_fleets=all_fleets),
+        as_json=as_json,
+        archived=archived,
+    )
+
+
+def show_peek(payload: dict, *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps({"name": payload["name"], "text": payload["text"]}))
+        return
+    sys.stdout.write(payload["text"])
+
+
 def peek_seat(root: Path, name: str, *, lines: int) -> None:
-    sys.stdout.write(peek_text(root, name, lines=lines))
+    text = peek_text(root, name, lines=lines)
+    show_peek({"name": name, "text": text}, as_json=False)
 
 
 def peek_text(root: Path, name: str, *, lines: int, fleet: str | None = None) -> str:

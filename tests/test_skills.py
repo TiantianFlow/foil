@@ -15,36 +15,40 @@ from foil import __version__
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS = ROOT / "skills"
 
+_SHARED = {"--as", "--project"}
+
 FLAGS = {
-    ("init",): set(),
+    ("init",): set(_SHARED),
     ("--version",): set(),
-    ("seat", "spawn"): {"--name", "--task"},
-    ("seat", "kill"): {"--all"},
-    ("seat", "resume"): set(),
-    ("seat", "renew"): set(),
-    ("seat", "list"): {"--json", "--archived", "--all-fleets"},
-    ("seat", "archive"): set(),
-    ("seat", "peek"): {"--lines"},
-    ("seat", "join"): {"--harness", "--session", "--take"},
-    ("seat", "leave"): set(),
-    ("send",): set(),
-    ("post",): {"--re", "--decline", "--members", "--close"},
-    ("mail", "read"): {"--json"},
-    ("mail", "list"): {"--json"},
-    ("mail", "wait"): {"--timeout", "--wake", "--all-fleets"},
-    ("board", "read"): {"--json"},
-    ("board", "list"): {"--json"},
-    ("memory", "add"): {"--replaces"},
-    ("memory", "accept"): set(),
-    ("memory", "reject"): set(),
-    ("memory", "list"): {"--all", "--json"},
-    ("roster", "list"): {"--json"},
-    ("roster", "show"): {"--json"},
-    # Section 6 lists `--project` on roster add, update, and remove.
-    ("roster", "add"): {"--from", "--project"},
-    ("roster", "update"): {"--project"},
-    ("roster", "remove"): {"--project"},
-    ("view",): {"--port"},
+    ("seat", "spawn"): {"--name", "--task", *_SHARED},
+    ("seat", "kill"): {"--all", *_SHARED},
+    ("seat", "resume"): set(_SHARED),
+    ("seat", "renew"): set(_SHARED),
+    ("seat", "list"): {"--json", "--archived", "--all-fleets", *_SHARED},
+    ("seat", "archive"): set(_SHARED),
+    ("seat", "peek"): {"--lines", "--json", *_SHARED},
+    ("seat", "join"): {"--harness", "--session", "--take", *_SHARED},
+    ("seat", "leave"): set(_SHARED),
+    ("send",): set(_SHARED),
+    ("post",): {"--re", "--decline", "--members", "--close", *_SHARED},
+    ("mail", "read"): {"--json", *_SHARED},
+    ("mail", "list"): {"--json", *_SHARED},
+    ("mail", "wait"): {"--timeout", "--wake", "--all-fleets", "--json", *_SHARED},
+    ("board", "read"): {"--json", *_SHARED},
+    ("board", "list"): {"--json", *_SHARED},
+    ("memory", "add"): {"--replaces", *_SHARED},
+    ("memory", "accept"): set(_SHARED),
+    ("memory", "reject"): set(_SHARED),
+    ("memory", "list"): {"--all", "--json", *_SHARED},
+    ("roster", "list"): {"--json", *_SHARED},
+    ("roster", "show"): {"--json", *_SHARED},
+    # Section 6 lists the valueless `--project` on roster add, update, and remove.
+    # `--as` is allowed there too. The store key is `foil --project KEY` before
+    # the subcommand, so a skill line does not put KEY on that `--project`.
+    ("roster", "add"): {"--from", "--project", "--as"},
+    ("roster", "update"): {"--project", "--as"},
+    ("roster", "remove"): {"--project", "--as"},
+    ("view",): {"--port", *_SHARED},
 }
 
 ROLE_COMMANDS = {

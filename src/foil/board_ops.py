@@ -136,16 +136,26 @@ def read_text(path: Path, shown: str) -> str:
         raise FoilError(f"foil: cannot read: {shown}") from None
 
 
-def board_read(path_text: str, *, as_json: bool = False) -> None:
+def board_read_payload(path_text: str) -> tuple[str, dict]:
     text = read_text(inside(path_text, board_root()), path_text)
+    fields, body = split_front_matter(text)
+    payload = {**fields, "body": body} if fields is not None else {"body": text}
+    return text, payload
+
+
+def show_board_read(text: str, payload: dict, *, as_json: bool) -> None:
     if not as_json:
         print(text, end="" if text.endswith("\n") else "\n")
         return
-    fields, body = split_front_matter(text)
-    print(json.dumps({**fields, "body": body} if fields is not None else {"body": text}))
+    print(json.dumps(payload))
 
 
-def board_list(pattern: str, *, as_json: bool = False) -> None:
+def board_read(path_text: str, *, as_json: bool = False) -> None:
+    text, payload = board_read_payload(path_text)
+    show_board_read(text, payload, as_json=as_json)
+
+
+def board_list_payload(pattern: str) -> dict[str, list[str]]:
     root = board_root()
     if ".." in Path(pattern).parts or Path(pattern).is_absolute():
         raise FoilError("foil: pattern must be relative and must not contain '..'")
@@ -160,8 +170,16 @@ def board_list(pattern: str, *, as_json: bool = False) -> None:
         )
     except (ValueError, NotImplementedError):
         raise FoilError(f"foil: invalid pattern: {pattern}") from None
+    return {"files": files}
+
+
+def show_board_list(payload: dict[str, list[str]], *, as_json: bool) -> None:
     if as_json:
-        print(json.dumps({"files": files}))
-    else:
-        for name in files:
-            print(name)
+        print(json.dumps(payload))
+        return
+    for name in payload["files"]:
+        print(name)
+
+
+def board_list(pattern: str, *, as_json: bool = False) -> None:
+    show_board_list(board_list_payload(pattern), as_json=as_json)

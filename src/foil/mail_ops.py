@@ -18,29 +18,34 @@ def _fields(text: str, shown: str) -> tuple[dict[str, str | list[str]], str]:
     return fields, body
 
 
-def mail_read(path_text: str, *, as_json: bool = False) -> None:
+def mail_read_payload(path_text: str) -> dict[str, str | list[str] | None]:
     if not Path(path_text).is_absolute():
         raise FoilError("foil: path must be absolute")
     text = read_text(inside(path_text, board_root() / "mail"), path_text)
     fields, body = _fields(text, path_text)
+    return {
+        "contract": fields.get("contract", ""),
+        "from": fields.get("from", ""),
+        "to": fields.get("to", ""),
+        "time": fields.get("time", ""),
+        "re": fields.get("re"),
+        "body": body,
+    }
+
+
+def show_mail_read(payload: dict, *, as_json: bool) -> None:
     if as_json:
-        print(
-            json.dumps(
-                {
-                    "contract": fields.get("contract", ""),
-                    "from": fields.get("from", ""),
-                    "to": fields.get("to", ""),
-                    "time": fields.get("time", ""),
-                    "re": fields.get("re"),
-                    "body": body,
-                }
-            )
-        )
-    else:
-        print(body, end="" if body.endswith("\n") else "\n")
+        print(json.dumps(payload))
+        return
+    body = str(payload.get("body", ""))
+    print(body, end="" if body.endswith("\n") else "\n")
 
 
-def mail_list(*, as_json: bool = False) -> None:
+def mail_read(path_text: str, *, as_json: bool = False) -> None:
+    show_mail_read(mail_read_payload(path_text), as_json=as_json)
+
+
+def mail_rows() -> list[dict[str, str]]:
     # Outside the fleet this is the joined lead's mailbox, or the human's.
     seat = actor()
     mail_dir = board_root() / "mail"
@@ -71,8 +76,16 @@ def mail_list(*, as_json: bool = False) -> None:
                 when, sender = named
                 mails.append({"from": sender, "to": seat, "time": when, "path": str(resolved)})
     mails.sort(key=lambda m: (m["time"], m["path"]), reverse=True)
+    return mails
+
+
+def show_mail_list(mails: list[dict[str, str]], *, as_json: bool) -> None:
     if as_json:
         print(json.dumps(mails))
-    else:
-        for mail in mails:
-            print(f"{mail['time']} {mail['from']} {mail['path']}")
+        return
+    for mail in mails:
+        print(f"{mail['time']} {mail['from']} {mail['path']}")
+
+
+def mail_list(*, as_json: bool = False) -> None:
+    show_mail_list(mail_rows(), as_json=as_json)

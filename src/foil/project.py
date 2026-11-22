@@ -15,7 +15,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from foil.errors import FoilError
+from foil.errors import FoilError, shown
+from foil.scope import project_var
 
 FOIL_DIRNAME = ".foil"
 SKELETON = (
@@ -211,14 +212,43 @@ def refuse_legacy_layout(toplevel: Path) -> None:
     )
 
 
-def discover_project(start: Path | None = None) -> Path:
+def discover_project(start: Path | None = None, *, named: str | None = None) -> Path:
+    """The checkout this call uses.
+
+    A bound project wins, so the call does not read ``FOIL_PROJECT`` or the
+    working directory. ``named`` is that variable's value when the caller
+    already read it. Omit ``named`` and the environment is read, which is
+    how a direct caller still selects a project.
+    """
+
+    chosen = project_var.get()
+    if chosen is not None:
+        return chosen
     require_host_tools()
-    named = os.environ.get("FOIL_PROJECT", "").strip()
+    if named is None:
+        named = os.environ.get("FOIL_PROJECT", "")
+    named = named.strip()
     if named:
         folder = store_root() / "projects" / named
         if (folder / "project.json").is_file():
             return Path(project_record(folder).get("path") or git_toplevel(start))
     return git_toplevel(start)
+
+
+def checkout_for_key(key: str) -> Path:
+    """The recorded checkout of one initialized project, addressed by store key."""
+
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,200}", key):
+        raise FoilError(f"foil: unknown project '{shown(key)}'")
+    folder = store_root() / "projects" / key
+    record_path = folder / "project.json"
+    if folder.is_symlink() or record_path.is_symlink() or not record_path.is_file():
+        raise FoilError(f"foil: unknown project '{shown(key)}'")
+    recorded = project_record(folder).get("path") or ""
+    checkout = Path(recorded)
+    if not recorded or not checkout.exists():
+        raise FoilError(f"foil: unknown project '{shown(key)}'")
+    return checkout
 
 
 def _origin_identity(url: str) -> str:

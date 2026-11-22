@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -28,7 +27,7 @@ from foil.presets import (
     template_permission,
 )
 from foil.project import foil_root, store_root
-from foil.store import SAFE_ID, write_bytes
+from foil.store import SAFE_ID, in_seat, write_bytes
 
 _PROTECTED_ROLES = {"lead", "implementer", "reviewer"}
 _TEMPLATE_FIELDS = {"harness", "model", "persona", "worktree", "permission"}
@@ -263,7 +262,7 @@ def _visible_roles(toplevel: Path) -> list[dict] | None:
 
 
 def _in_fleet() -> bool:
-    return bool(os.environ.get("FOIL_SEAT_ID", "").strip())
+    return in_seat()
 
 
 def _fleet_rows(toplevel: Path, role: str) -> list[dict[str, str]]:
@@ -399,34 +398,42 @@ def roster_rows(toplevel: Path) -> tuple[list[tuple[str, dict | None]], list[dic
     return [(name, _listed(toplevel, name)) for name in sorted(names)], available
 
 
-def list_roster(toplevel: Path, *, as_json: bool = False) -> None:
-    """List all templates and available personas."""
+def roster_list_payload(toplevel: Path) -> dict:
+    """The ``roster list --json`` object."""
+
     loaded, available = roster_rows(toplevel)
+    missing = {"error": "invalid template", "preset": "invalid", "description": ""}
+    templates = [row if row is not None else {"role": name, **missing} for name, row in loaded]
+    return {"templates": templates, "personas": available}
+
+
+def show_roster_list(payload: dict, *, as_json: bool) -> None:
     if as_json:
-        missing = {"error": "invalid template", "preset": "invalid", "description": ""}
-        templates = [
-            row if row is not None else {"role": name, **missing} for name, row in loaded
-        ]
-        print(json.dumps({"templates": templates, "personas": available}, indent=2))
+        print(json.dumps(payload, indent=2))
         return
-    for name, row in loaded:
-        if row is None:
-            print(f"{name}\tinvalid\tinvalid\t")
+    for row in payload["templates"]:
+        if row.get("error"):
+            print(f"{row['role']}\tinvalid\tinvalid\t")
             continue
         harness = ",".join(entry_label(entry) for entry in row["harness"])
         preset = ",".join(row["preset"])
-        print(f"{name}\t{harness}\t{preset}\t{row['description']}")
+        print(f"{row['role']}\t{harness}\t{preset}\t{row['description']}")
         print(f"\tlayer\t{row['layer']}")
         print(f"\tmapping\t{row['mapping']}")
-    for person in available:
+    for person in payload["personas"]:
         print(f"+ {person['name']}\t{person['description']}")
 
 
-def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
-    """Show one template's configuration."""
+def list_roster(toplevel: Path, *, as_json: bool = False) -> None:
+    """List all templates and available personas."""
+    show_roster_list(roster_list_payload(toplevel), as_json=as_json)
+
+
+def roster_show_payload(toplevel: Path, role: str) -> dict:
+    """The ``roster show --json`` object, plus the harness line human output uses."""
+
     if not SAFE_ID.fullmatch(role):
         raise FoilError(f"foil: unknown template '{shown(role)}'")
-
     roles = _visible_roles(toplevel) or []
     match = next((item for item in roles if item["id"] == role), None)
     entries = [
@@ -445,35 +452,40 @@ def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
         "permission": match["permission"],
         "description": match["description"],
     }
-    entries = template["harness"]
     preset = [preset_source(toplevel, str(entry["id"])) for entry in entries]
     description = read_description(template)
-    harness = ",".join(entry_label(entry) for entry in entries)
+    return {
+        "role": role,
+        "harness": [{"id": entry["id"], "model": entry["model"]} for entry in entries],
+        "persona": template.get("persona", ""),
+        "worktree": template.get("worktree", False),
+        "permission": template.get("permission", "auto"),
+        "preset": preset,
+        "layer": _role_layer(toplevel, role),
+        "mapping": _mapping_layer(toplevel, role),
+        "description": description,
+    }
 
+
+def show_roster_template(payload: dict, *, as_json: bool) -> None:
     if as_json:
-        output = {
-            "role": role,
-            "harness": [{"id": entry["id"], "model": entry["model"]} for entry in entries],
-            "persona": template.get("persona", ""),
-            "worktree": template.get("worktree", False),
-            "permission": template.get("permission", "auto"),
-            "preset": preset,
-            "layer": _role_layer(toplevel, role),
-            "mapping": _mapping_layer(toplevel, role),
-            "description": description,
-        }
-        print(json.dumps(output, indent=2))
-    else:
-        print(f"role: {role}")
-        print(f"harness: {harness}")
-        if template.get("persona"):
-            print(f"persona: {template['persona']}")
-        print(f"worktree: {template.get('worktree', False)}")
-        print(f"permission: {template.get('permission', 'auto')}")
-        print(f"preset: {','.join(preset)}")
-        print(f"layer: {_role_layer(toplevel, role)}")
-        print(f"mapping: {_mapping_layer(toplevel, role)}")
-        print(f"description: {description}")
+        print(json.dumps(payload, indent=2))
+        return
+    print(f"role: {payload['role']}")
+    print(f"harness: {','.join(entry_label(entry) for entry in payload['harness'])}")
+    if payload.get("persona"):
+        print(f"persona: {payload['persona']}")
+    print(f"worktree: {payload.get('worktree', False)}")
+    print(f"permission: {payload.get('permission', 'auto')}")
+    print(f"preset: {','.join(payload['preset'])}")
+    print(f"layer: {payload['layer']}")
+    print(f"mapping: {payload['mapping']}")
+    print(f"description: {payload['description']}")
+
+
+def show_template(toplevel: Path, role: str, *, as_json: bool = False) -> None:
+    """Show one template's configuration."""
+    show_roster_template(roster_show_payload(toplevel, role), as_json=as_json)
 
 
 def _restore(path: Path, payload: bytes | None) -> None:

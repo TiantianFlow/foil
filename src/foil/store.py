@@ -17,6 +17,7 @@ from typing import Any
 
 from foil.errors import FoilError, assert_no_secret, shown
 from foil.project import foil_root
+from foil.scope import caller_var, fleet_var
 
 SCHEMA_VERSION = 1
 MAX_BYTES = 1024 * 1024
@@ -34,12 +35,33 @@ SEAT_FIELDS = (
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 # Fleet ids also name tmux suffixes and git branches: no '.' (F20).
 FLEET_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
-RESERVED = ("user", "foil")
+RESERVED = ("user", "foil", "master")
+
+
+def in_seat() -> bool:
+    """True when this call is a seat. A bound caller wins over the environment."""
+
+    chosen = caller_var.get()
+    if chosen is not None:
+        return chosen[1]
+    return bool(os.environ.get("FOIL_SEAT_ID", "").strip())
 
 
 def actor(toplevel: Path | None = None) -> str:
-    """A seat acts as itself. Outside: `lead` while one is joined, else `user`."""
+    """A seat acts as itself. Outside: `lead` while one is joined, else `user`.
 
+    A pinned caller is that call's identity in every fleet. ``user`` stays the
+    human while a lead is joined. An unpinned caller is the outside default:
+    ``lead`` while the fleet in scope has a joined lead, otherwise ``user``.
+    With no bound caller, the process environment decides.
+    """
+
+    chosen = caller_var.get()
+    if chosen is not None:
+        name, _inside, pinned = chosen
+        if pinned:
+            return name
+        return "lead" if joined(toplevel) else "user"
     seat = os.environ.get("FOIL_SEAT_ID", "").strip()
     if not seat:
         return "lead" if joined(toplevel) else "user"
@@ -77,9 +99,13 @@ def scan(value: Any) -> None:
 
 
 def fleet_id() -> str:
-    """The fleet these commands talk to. Unset means ``main``."""
+    """The fleet these commands talk to. Unset means ``main``.
 
-    raw = os.environ.get("FOIL_FLEET", "").strip() or "main"
+    A bound fleet wins, so one process can serve two fleets at once.
+    """
+
+    chosen = fleet_var.get()
+    raw = chosen if chosen is not None else (os.environ.get("FOIL_FLEET", "").strip() or "main")
     if not FLEET_ID.fullmatch(raw):
         raise FoilError(f"foil: invalid fleet '{shown(raw)}'")
     return raw
@@ -102,20 +128,20 @@ def fleet_ids(toplevel: Path) -> list[str]:
 
 @contextmanager
 def in_fleet(fleet: str | None) -> Iterator[None]:
-    """Run the body as if ``FOIL_FLEET`` named ``fleet``. None leaves it as it is."""
+    """Run the body against ``fleet``. None leaves the current fleet as it is.
+
+    This does not write the process environment. Another thread's fleet stays
+    its own.
+    """
 
     if fleet is None:
         yield
         return
-    previous = os.environ.get("FOIL_FLEET")
-    os.environ["FOIL_FLEET"] = fleet
+    token = fleet_var.set(fleet)
     try:
         yield
     finally:
-        if previous is None:
-            os.environ.pop("FOIL_FLEET", None)
-        else:
-            os.environ["FOIL_FLEET"] = previous
+        fleet_var.reset(token)
 
 
 def fleet_dir(toplevel: Path, fleet: str | None = None) -> Path:
