@@ -1,0 +1,5 @@
+{"type":"user","message":{"role":"user","content":"Where is the status file?"},"uuid":"a","sessionId":"11111111-1111-4111-8111-111111111111"}
+{"type":"assistant","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"It is board/status.md."},{"type":"thinking","thinking":"Check the board."},{"type":"tool_use","id":"t1","name":"read","input":{"path":"board/status.md"}}],"usage":{"input_tokens":12,"output_tokens":4}},"uuid":"b"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"status text"}]},"uuid":"c"}
+{"type":"summary","summary":"Looked up the status file."}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"system scaffold"},"uuid":"d"}

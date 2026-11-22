@@ -1,0 +1,40 @@
+[
+  {
+    "role": "user",
+    "kind": "message",
+    "text": "Run the check.",
+    "tool": "",
+    "usage": null
+  },
+  {
+    "role": "assistant",
+    "kind": "message",
+    "text": "The check passed.",
+    "tool": "",
+    "usage": null
+  },
+  {
+    "role": "tool",
+    "kind": "tool",
+    "text": "{\"cmd\":\"true\"}",
+    "tool": "shell",
+    "usage": null
+  },
+  {
+    "role": "tool",
+    "kind": "tool",
+    "text": "ok",
+    "tool": "result",
+    "usage": null
+  },
+  {
+    "role": "assistant",
+    "kind": "usage",
+    "text": "",
+    "tool": "",
+    "usage": {
+      "input": 3,
+      "output": 5
+    }
+  }
+]

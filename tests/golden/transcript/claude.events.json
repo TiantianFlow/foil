@@ -1,0 +1,54 @@
+[
+  {
+    "role": "user",
+    "kind": "message",
+    "text": "Where is the status file?",
+    "tool": "",
+    "usage": null
+  },
+  {
+    "role": "assistant",
+    "kind": "message",
+    "text": "It is board/status.md.",
+    "tool": "",
+    "usage": null
+  },
+  {
+    "role": "assistant",
+    "kind": "thought",
+    "text": "Check the board.",
+    "tool": "",
+    "usage": null
+  },
+  {
+    "role": "tool",
+    "kind": "tool",
+    "text": "{\"path\":\"board/status.md\"}",
+    "tool": "read",
+    "usage": null
+  },
+  {
+    "role": "assistant",
+    "kind": "usage",
+    "text": "",
+    "tool": "",
+    "usage": {
+      "input": 12,
+      "output": 4
+    }
+  },
+  {
+    "role": "tool",
+    "kind": "tool",
+    "text": "status text",
+    "tool": "result",
+    "usage": null
+  },
+  {
+    "role": "system",
+    "kind": "message",
+    "text": "Looked up the status file.",
+    "tool": "",
+    "usage": null
+  }
+]

@@ -1,0 +1,3 @@
+{"sessionId":"33333333-3333-4333-8333-333333333333","projectHash":"ignored","startTime":"2026-01-02T03:04:05.000Z"}
+{"id":"u1","type":"user","content":[{"text":"List the board."}]}
+{"id":"g1","type":"gemini","content":"Two files.","model":"gemini-test","toolCalls":[{"id":"tc1","name":"list","args":{"path":"board"},"result":[{"functionResponse":{"response":{"output":"status.md"}}}]}],"tokens":{"input":8,"output":2}}
