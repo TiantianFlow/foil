@@ -51,6 +51,11 @@ FLAGS = {
     ("view",): {"--port", *_SHARED},
     ("journal",): {"--follow", "--since", "--json", *_SHARED},
     ("decide",): {"--why", *_SHARED},
+    ("inbox",): {"--all-fleets", "--all-projects", "--json", *_SHARED},
+    ("brief",): {"--all-projects", "--json", *_SHARED},
+    ("master", "start"): {"--harness", *_SHARED},
+    ("master", "stop"): set(_SHARED),
+    ("master", "renew"): {"--harness", *_SHARED},
 }
 
 ROLE_COMMANDS = {
@@ -110,6 +115,16 @@ ROLE_COMMANDS = {
         ("memory", "list"),
         ("decide",),
     },
+    "master.md": {
+        ("init",),
+        ("seat", "spawn"),
+        ("seat", "list"),
+        ("send",),
+        ("mail", "read"),
+        ("board", "read"),
+        ("brief",),
+        ("inbox",),
+    },
 }
 
 FORBIDDEN = (
@@ -140,7 +155,7 @@ def _invocations(text: str) -> list[str]:
 def _command(tokens: list[str]) -> tuple[str, ...]:
     if tokens[:2] == ["foil", "seat"]:
         return ("seat", tokens[2])
-    if tokens[1:2] in (["memory"], ["mail"], ["board"], ["roster"]):
+    if tokens[1:2] in (["memory"], ["mail"], ["board"], ["roster"], ["master"]):
         return (tokens[1], tokens[2])
     return (tokens[1],)
 
@@ -258,7 +273,7 @@ def _settings_texts(root: Path) -> list[tuple[str, str]]:
 
     packaged = ROOT / "src" / "foil" / "defaults" / "skills"
     texts: list[tuple[str, str]] = []
-    for name in ("joined.md", "lead.md", "worker.md"):
+    for name in ("joined.md", "lead.md", "worker.md", "master.md"):
         texts.append(
             (
                 f"src/foil/defaults/skills/{name}",
@@ -301,13 +316,14 @@ def test_only_the_three_skills_remain() -> None:
     assert sorted(path.name for path in SKILLS.glob("*.md")) == [
         "joined.md",
         "lead.md",
+        "master.md",
         "worker.md",
     ]
 
 
 def test_skill_links_point_at_the_packaged_files() -> None:
     packaged = ROOT / "src" / "foil" / "defaults" / "skills"
-    for name in ("joined.md", "lead.md", "worker.md"):
+    for name in ("joined.md", "lead.md", "master.md", "worker.md"):
         link = SKILLS / name
         assert link.is_symlink()
         assert link.resolve() == (packaged / name).resolve()
@@ -520,7 +536,7 @@ def test_skills_state_the_channel_choice() -> None:
 def test_no_skill_types_into_a_pane() -> None:
     """Turns are headless: no skill clears a dialog, and Foil has no key-sending code."""
 
-    for name in ("joined.md", "lead.md", "worker.md"):
+    for name in ("joined.md", "lead.md", "master.md", "worker.md"):
         text = (SKILLS / name).read_text(encoding="utf-8")
         assert "folder-trust" not in text, name
         assert "send-keys" not in text, name

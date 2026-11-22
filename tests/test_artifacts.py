@@ -190,7 +190,7 @@ def test_wheel_contains_only_the_package_and_packaged_resources(built: Built) ->
 
 def test_wheel_skills_have_name_and_description(built: Built) -> None:
     _sdist, wheel, _marker, _stage = built
-    for name in ("joined.md", "lead.md", "worker.md"):
+    for name in ("joined.md", "lead.md", "master.md", "worker.md"):
         text = wheel[f"foil/defaults/skills/{name}"].decode()
         assert text.startswith("---\n")
         header = text.split("---", 2)[1]
