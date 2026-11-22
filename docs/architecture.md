@@ -22,7 +22,8 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/joined.py` | `seat join lead`, `seat leave`, `mail wait`, and the new-items line a joined lead's other commands end with. It keeps the seen record and the dead-seat check. |
 | `src/foil/board_ops.py` | Reads and lists board files. Paths must stay inside the project folder's `board/`. |
 | `src/foil/memory.py` | Stores project lessons as JSON files. |
-| `src/foil/runner.py` | Runs inside each seat's window and runs that seat's turns one at a time from its plan: the first prompt, the wake prompts, retries, pauses, and the runner record. It does not choose the argv. |
+| `src/foil/runner.py` | Runs inside each seat's window and runs that seat's turns one at a time from its plan: the first prompt, the wake prompts, retries, pauses, and the runner record. It does not choose the argv. A master plan runs the same process with a fresh session every turn. |
+| `src/foil/master.py` | The store-level master: `<root>/master/`, `foil master start`, `stop`, and `renew`, mail to `master`, and the seed for each turn. It does not import the Bridge. |
 | `src/foil/journal.py` | Appends one fact per line to a fleet's journal, and lists or follows that file. It stores no mail body and no turn output. |
 | `src/foil/delivery.py` | Appends the per-seat delivery log, the lead's pointers, and the fleet pause flag. A line is a time, a board path, and a state. It stores no mail body and no turn output. |
 | `src/foil/guard.py` | Writes the seat-only `pre-commit` and `pre-push` hooks, and runs their checks for private text and the worktree boundary before the repository's own hook. |
@@ -56,6 +57,7 @@ flowchart TB
   scope["<b>scope.py</b><br/>bound project, fleet, and caller"]
 
   runner["<b>runner.py</b><br/>runs inside each tmux window<br/>one turn at a time · wake prompts · retries"]
+  masterpy["<b>master.py</b><br/>store mailbox · start · stop · renew"]
   journal["<b>journal.py</b><br/>one fact per line · no body"]
   delivery["<b>delivery.py</b><br/>path and state · pause · pointers"]
 
@@ -108,6 +110,12 @@ flowchart TB
   joined --> delivery
   view --> delivery
   delivery --> store
+  api --> masterpy
+  masterpy --> presets
+  masterpy --> tmuxmod
+  masterpy --> store
+  masterpy --> project
+  runner --> masterpy
   runner --> board
   runner --> board_ops
   runner --> store
@@ -132,7 +140,7 @@ flowchart TB
   classDef base fill:#e5e7eb,stroke:#374151,color:#1f2937
   classDef apart fill:#fde68a,stroke:#b45309,color:#1f2937
   class cli,api entry
-  class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,view,journal,delivery core
+  class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,view,journal,delivery,masterpy core
   class presets,tmuxmod,store,project,scope base
   class runner apart
 ```

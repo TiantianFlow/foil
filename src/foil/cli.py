@@ -246,6 +246,17 @@ def _build_parser() -> argparse.ArgumentParser:
     brief.add_argument("--json", action="store_true")
     _shared(brief)
 
+    master = sub.add_parser("master", help="Run the master for this store")
+    master_sub = master.add_subparsers(dest="master_command", required=True)
+    master_start = master_sub.add_parser("start", help="Start the master")
+    master_start.add_argument("--harness", metavar="ID/MODEL")
+    _shared(master_start)
+    master_stop = master_sub.add_parser("stop", help="Stop the master")
+    _shared(master_stop)
+    master_renew = master_sub.add_parser("renew", help="Replace the master's harness")
+    master_renew.add_argument("--harness", metavar="ID/MODEL")
+    _shared(master_renew)
+
     return parser
 
 
@@ -300,6 +311,16 @@ def _project_for(args: argparse.Namespace, key: str | None, *, inside: bool) -> 
     if args.command == "init":
         return None
     if args.command == "view":
+        try:
+            return _discover()
+        except FoilError:
+            return None
+    if args.command == "master":
+        try:
+            return _discover()
+        except FoilError:
+            return None
+    if args.command == "send" and getattr(args, "TO", None) == "master" and not key:
         try:
             return _discover()
         except FoilError:
@@ -573,6 +594,18 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
             all_projects=args.all_projects,
             as_json=args.json,
         )
+        return 0
+    if args.command == "master":
+        if args.master_command == "start":
+            api.master_start(
+                project, fleet, caller, inside=inside, pinned=pinned, harness=args.harness
+            )
+        elif args.master_command == "stop":
+            api.master_stop(project, fleet, caller, inside=inside, pinned=pinned)
+        else:
+            api.master_renew(
+                project, fleet, caller, inside=inside, pinned=pinned, harness=args.harness
+            )
         return 0
     if args.command == "brief":
         api.brief(

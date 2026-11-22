@@ -110,6 +110,9 @@ _ALLOWED = {
     "fleet-resume": {_OUTSIDE, _LEAD},
     "inbox": {_OUTSIDE, _LEAD},
     "brief": {_OUTSIDE, _LEAD},
+    "master-start": {_OUTSIDE},
+    "master-stop": {_OUTSIDE},
+    "master-renew": {_OUTSIDE},
 }
 
 
@@ -340,6 +343,12 @@ def send(
 
     _authorize("send", caller=caller, inside=inside)
     body = text if read_text is None else read_text(text)
+    if to == "master":
+        from foil.master import deliver
+
+        with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+            deliver(body, project if project is not None and is_initialized(project) else None)
+        return {"ok": True}
     root = _root(project)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         send_mail(root, to, body)
@@ -756,6 +765,56 @@ def inbox(
         items = collect(root, _fleets(root, all_fleets=all_fleets), _project_key(root))
         show_items(items, scope="fleets" if all_fleets else "", as_json=as_json)
     return items
+
+
+def master_start(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+    harness: str | None = None,
+) -> dict:
+    _authorize("master-start", caller=caller, inside=inside)
+    from foil.master import start
+
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        start(harness)
+    return {"ok": True}
+
+
+def master_stop(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _authorize("master-stop", caller=caller, inside=inside)
+    from foil.master import stop
+
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        stop()
+    return {"ok": True}
+
+
+def master_renew(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+    harness: str | None = None,
+) -> dict:
+    _authorize("master-renew", caller=caller, inside=inside)
+    from foil.master import renew
+
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        renew(harness)
+    return {"ok": True}
 
 
 def brief(

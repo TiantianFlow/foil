@@ -401,42 +401,26 @@ class Runner:
         learn = bool(self.plan["session_key"]) and not session
         print(f"foil: turn started ({kind})", flush=True)
         note(self.board.parent, "turn_start", seat=self.seat, kind=kind)
-        try:
-            child = subprocess.Popen(
-                argv,
-                cwd=self.plan["cwd"],
-                env=self.environment,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE if learn else None,
-                start_new_session=True,
-            )
-        except OSError as exc:
-            print(f"foil: could not run {argv[0]}: {exc.strerror or exc}", flush=True)
-            print(f"foil: turn ended (exit {CANNOT_RUN})", flush=True)
-            note(self.board.parent, "turn_end", seat=self.seat, exit=CANNOT_RUN)
-            return CANNOT_RUN
-        self.child = child
-        self.record["pgid"] = child.pid
-        self.save()
-        reader = None
-        if learn:
-            reader = threading.Thread(target=self._relay, args=(child,), daemon=True)
-            reader.start()
-        try:
-            code = child.wait(timeout=self.plan["turn_timeout"])
-            code = 128 - code if code < 0 else code
-        except subprocess.TimeoutExpired:
-            self._end_group(child.pid)
-            child.wait()
-            code = -1
-        self._end_group(child.pid)
-        if reader is not None:
-            reader.join(timeout=LEFTOVER_GRACE)
-        self.child = None
-        self.record["pgid"] = 0
-        print(f"foil: turn ended (exit {code})", flush=True)
+        code = execute_turn(
+            argv,
+            cwd=self.plan["cwd"],
+            env=self.environment,
+            timeout=self.plan["turn_timeout"],
+            learn=learn,
+            relay=self._relay,
+            on_child=self._child,
+            end_group=self._end_group,
+        )
         note(self.board.parent, "turn_end", seat=self.seat, exit=code)
         return code
+
+    def _child(self, child: subprocess.Popen | None) -> None:
+        self.child = child
+        if child is None:
+            self.record["pgid"] = 0
+            return
+        self.record["pgid"] = child.pid
+        self.save()
 
     def _relay(self, child: subprocess.Popen) -> None:
         """Pass the output on as written; take the session id from its first line (F12)."""
@@ -643,13 +627,77 @@ class Runner:
             )
 
 
+def execute_turn(
+    argv: list[str],
+    *,
+    cwd: str,
+    env: dict[str, str],
+    timeout: int,
+    learn: bool,
+    relay,
+    on_child,
+    end_group,
+) -> int:
+    """Run one turn process. A signal is 128 plus its number, and -1 is a timeout.
+
+    ``learn`` reads stdout for an output preset's session id. ``on_child`` is
+    called with the process, then with None when it has ended.
+    """
+
+    try:
+        child = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE if learn else None,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        print(f"foil: could not run {argv[0]}: {exc.strerror or exc}", flush=True)
+        print(f"foil: turn ended (exit {CANNOT_RUN})", flush=True)
+        return CANNOT_RUN
+    on_child(child)
+    reader = None
+    if learn:
+        reader = threading.Thread(target=relay, args=(child,), daemon=True)
+        reader.start()
+    try:
+        code = child.wait(timeout=timeout)
+        code = 128 - code if code < 0 else code
+    except subprocess.TimeoutExpired:
+        end_group(child.pid)
+        child.wait()
+        code = -1
+    end_group(child.pid)
+    if reader is not None:
+        reader.join(timeout=LEFTOVER_GRACE)
+    on_child(None)
+    print(f"foil: turn ended (exit {code})", flush=True)
+    return code
+
+
+def _master_plan(path: Path) -> bool:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return False
+    return isinstance(raw, dict) and raw.get("kind") == "master"
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     if len(arguments) != 1:
         print("usage: python -m foil.runner PLAN.json", file=sys.stderr)
         return 2
+    path = Path(arguments[0])
     try:
-        runner = Runner(Path(arguments[0]))
+        if _master_plan(path):
+            from foil.master import MasterRunner
+
+            runner = MasterRunner(path)
+        else:
+            runner = Runner(path)
         signal.signal(signal.SIGTERM, runner.stop)
         signal.signal(signal.SIGHUP, runner.stop)
         runner.loop()

@@ -63,7 +63,7 @@ def _flags(*items: FlagSpec, key: bool = True) -> tuple[FlagSpec, ...]:
     return items + ((_AS, _KEY) if key else (_AS,))
 
 
-# docs/requirements.md §6.1 — fourteen top-level commands, thirty-three actions.
+# docs/requirements.md §6.1 — fifteen top-level commands, thirty-six actions.
 SECTION_6 = CommandSpec(
     flags=_flags(FlagSpec("--version")),
     commands={
@@ -239,6 +239,13 @@ SECTION_6 = CommandSpec(
         "brief": CommandSpec(
             flags=_flags(FlagSpec("--all-projects"), FlagSpec("--json")),
         ),
+        "master": CommandSpec(
+            commands={
+                "start": CommandSpec(flags=_flags(FlagSpec("--harness", metavar="ID/MODEL"))),
+                "stop": CommandSpec(flags=_flags()),
+                "renew": CommandSpec(flags=_flags(FlagSpec("--harness", metavar="ID/MODEL"))),
+            }
+        ),
     },
 )
 
@@ -276,6 +283,9 @@ SECTION_6_SYNOPSES = (
     "foil fleet resume",
     "foil inbox",
     "foil brief",
+    "foil master start",
+    "foil master stop",
+    "foil master renew",
 )
 
 
@@ -405,8 +415,8 @@ def test_section_6_synopses_are_the_requirements_oracle() -> None:
     text = REQUIREMENTS.read_text(encoding="utf-8")
     missing = [synopsis for synopsis in SECTION_6_SYNOPSES if f"`{synopsis}`" not in text]
     assert missing == [], "section 6.1 is missing synopses:\n" + "\n".join(missing)
-    assert "thirty-three actions" in text
-    assert "fourteen top-level commands" in text
+    assert "thirty-six actions" in text
+    assert "fifteen top-level commands" in text
     list_row = next(line for line in text.splitlines() if line.startswith("| `foil seat list`"))
     assert all(flag in list_row for flag in ("--json", "--archived", "--all-fleets"))
 
