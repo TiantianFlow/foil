@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import secrets
 import stat
@@ -18,6 +17,7 @@ from foil.store import (
     create_exclusive,
     find_seat,
     fleet_dir,
+    in_seat,
     load_registry,
     private_dir,
     scan,
@@ -207,7 +207,7 @@ def send_mail(toplevel: Path, to: str, text: str) -> None:
     sender = actor(toplevel)
     if to == "user":
         # The human's mailbox. Only a launched lead writes it.
-        if sender == "lead" and not os.environ.get("FOIL_SEAT_ID", "").strip():
+        if sender == "lead" and not in_seat():
             raise FoilError("foil: a joined lead asks in its own chat")
         if sender != "lead":
             raise FoilError("foil: only the lead may send to user")

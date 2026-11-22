@@ -4,6 +4,10 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- `foil.api` is one function per command. Each takes the project, the fleet, and the caller and returns that command's JSON value. `foil.api.VERSION` is `1`. The CLI parses and calls it. Two calls in one process can name different projects and fleets, because the call binds those on its thread instead of writing `FOIL_FLEET` into the process environment. `--as user` or `--as lead` selects the caller outside the fleet. `user` is the human even while a lead is joined. `--project KEY` addresses another initialized project. `seat peek` and `mail wait` accept `--json` and print the same value the function returns. `seat spawn --name master` is reserved, and a `FOIL_SEAT_ID` of `master` is an unknown seat. (#112)
+
 ### Fixed
 
 - A first turn that hits `turn_timeout` before a session exists now waits 30 seconds, 2 minutes, and 8 minutes, then the seat is paused. This resolves the 0.7.0 limitation where that turn retried immediately and never paused. The items stay in flight and the next turn is `start` on a fresh generated id. (#110)
@@ -12,6 +16,7 @@ Notable changes to Foil, newest first.
 ### Changed
 
 - Requirements describe the meta-harness. One agent, the master, is who you talk to, and the `foil` CLI stays usable on its own. The optional Bridge is in scope as a separate package. Core still has no daemon, no MCP server, and no UI besides `foil view`. The delivery log is in scope and records paths and states only. The binary's nine top-level commands and twenty-seven actions are unchanged. Later commands are named by phase and are not in this binary. (#111)
+- Packaged Python is 10377 lines, above the N4 2500-line target (0.7.0 was 9380). The `foil.api` module and the call scope are the growth. The command bodies moved out of `cli.py` so concurrent in-process calls do not share a process-global identity. The count is reported, not enforced. (#112)
 
 ## [0.7.0] - 2026-11-11
 

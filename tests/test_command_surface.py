@@ -52,53 +52,79 @@ class CommandSpec:
     commands: dict[str, CommandSpec] | None = None
 
 
+# `--as` and `--project KEY` are on the root and every leaf. Roster add,
+# update, and remove keep the valueless `--project` switch, so the key is
+# only the root flag there.
+_AS = FlagSpec("--as", metavar="CALLER")
+_KEY = FlagSpec("--project", metavar="KEY")
+
+
+def _flags(*items: FlagSpec, key: bool = True) -> tuple[FlagSpec, ...]:
+    return items + ((_AS, _KEY) if key else (_AS,))
+
+
 # docs/requirements.md §6.1 — nine top-level commands, twenty-seven actions.
 SECTION_6 = CommandSpec(
-    flags=(FlagSpec("--version"),),
+    flags=_flags(FlagSpec("--version")),
     commands={
-        "init": CommandSpec(positionals=(PositionalSpec("DIR", "?"),)),
+        "init": CommandSpec(
+            flags=_flags(),
+            positionals=(PositionalSpec("DIR", "?"),),
+        ),
         "seat": CommandSpec(
             commands={
                 "spawn": CommandSpec(
-                    flags=(
+                    flags=_flags(
                         FlagSpec("--name", metavar="NAME"),
                         FlagSpec("--task", metavar="TEXT"),
                     ),
                     positionals=(PositionalSpec("TEMPLATE"),),
                 ),
                 "kill": CommandSpec(
-                    flags=(FlagSpec("--all"),),
+                    flags=_flags(FlagSpec("--all")),
                     positionals=(PositionalSpec("NAME", "?"),),
                 ),
-                "archive": CommandSpec(positionals=(PositionalSpec("NAME"),)),
-                "resume": CommandSpec(positionals=(PositionalSpec("NAME", "?"),)),
-                "renew": CommandSpec(positionals=(PositionalSpec("NAME"),)),
+                "archive": CommandSpec(
+                    flags=_flags(),
+                    positionals=(PositionalSpec("NAME"),),
+                ),
+                "resume": CommandSpec(
+                    flags=_flags(),
+                    positionals=(PositionalSpec("NAME", "?"),),
+                ),
+                "renew": CommandSpec(
+                    flags=_flags(),
+                    positionals=(PositionalSpec("NAME"),),
+                ),
                 "list": CommandSpec(
-                    flags=(FlagSpec("--json"), FlagSpec("--archived"), FlagSpec("--all-fleets")),
+                    flags=_flags(
+                        FlagSpec("--json"), FlagSpec("--archived"), FlagSpec("--all-fleets")
+                    ),
                 ),
                 "peek": CommandSpec(
-                    flags=(FlagSpec("--lines", metavar="N", default=40),),
+                    flags=_flags(FlagSpec("--lines", metavar="N", default=40), FlagSpec("--json")),
                     positionals=(PositionalSpec("NAME"),),
                 ),
                 "join": CommandSpec(
-                    flags=(
+                    flags=_flags(
                         FlagSpec("--harness", metavar="ID"),
                         FlagSpec("--session", metavar="ID"),
                         FlagSpec("--take"),
                     ),
                     positionals=(PositionalSpec("lead"),),
                 ),
-                "leave": CommandSpec(),
+                "leave": CommandSpec(flags=_flags()),
             }
         ),
         "send": CommandSpec(
+            flags=_flags(),
             positionals=(
                 PositionalSpec("TO"),
                 PositionalSpec("TEXT"),
-            )
+            ),
         ),
         "post": CommandSpec(
-            flags=(
+            flags=_flags(
                 FlagSpec("--re", metavar="PATH"),
                 FlagSpec("--decline"),
                 FlagSpec("--members", metavar="NAMES"),
@@ -109,15 +135,16 @@ SECTION_6 = CommandSpec(
         "mail": CommandSpec(
             commands={
                 "read": CommandSpec(
-                    flags=(FlagSpec("--json"),),
+                    flags=_flags(FlagSpec("--json")),
                     positionals=(PositionalSpec("PATH"),),
                 ),
-                "list": CommandSpec(flags=(FlagSpec("--json"),)),
+                "list": CommandSpec(flags=_flags(FlagSpec("--json"))),
                 "wait": CommandSpec(
-                    flags=(
+                    flags=_flags(
                         FlagSpec("--timeout", metavar="SECONDS", default=1800),
                         FlagSpec("--wake"),
                         FlagSpec("--all-fleets"),
+                        FlagSpec("--json"),
                     ),
                 ),
             }
@@ -125,11 +152,11 @@ SECTION_6 = CommandSpec(
         "board": CommandSpec(
             commands={
                 "read": CommandSpec(
-                    flags=(FlagSpec("--json"),),
+                    flags=_flags(FlagSpec("--json")),
                     positionals=(PositionalSpec("PATH"),),
                 ),
                 "list": CommandSpec(
-                    flags=(FlagSpec("--json"),),
+                    flags=_flags(FlagSpec("--json")),
                     positionals=(PositionalSpec("PATTERN"),),
                 ),
             }
@@ -137,13 +164,13 @@ SECTION_6 = CommandSpec(
         "memory": CommandSpec(
             commands={
                 "add": CommandSpec(
-                    flags=(FlagSpec("--replaces", metavar="ID"),),
+                    flags=_flags(FlagSpec("--replaces", metavar="ID")),
                     positionals=(PositionalSpec("TEXT"),),
                 ),
-                "accept": CommandSpec(positionals=(PositionalSpec("ID"),)),
-                "reject": CommandSpec(positionals=(PositionalSpec("ID"),)),
+                "accept": CommandSpec(flags=_flags(), positionals=(PositionalSpec("ID"),)),
+                "reject": CommandSpec(flags=_flags(), positionals=(PositionalSpec("ID"),)),
                 "list": CommandSpec(
-                    flags=(
+                    flags=_flags(
                         FlagSpec("--all"),
                         FlagSpec("--json"),
                     )
@@ -152,29 +179,30 @@ SECTION_6 = CommandSpec(
         ),
         "roster": CommandSpec(
             commands={
-                "list": CommandSpec(flags=(FlagSpec("--json"),)),
+                "list": CommandSpec(flags=_flags(FlagSpec("--json"))),
                 "show": CommandSpec(
-                    flags=(FlagSpec("--json"),),
+                    flags=_flags(FlagSpec("--json")),
                     positionals=(PositionalSpec("ROLE"),),
                 ),
                 "add": CommandSpec(
-                    flags=(
+                    flags=_flags(
                         FlagSpec("--from", metavar="FILE"),
                         FlagSpec("--project"),
+                        key=False,
                     ),
                     positionals=(PositionalSpec("ROLE"),),
                 ),
                 "update": CommandSpec(
-                    flags=(FlagSpec("--project"),),
+                    flags=_flags(FlagSpec("--project"), key=False),
                     positionals=(PositionalSpec("ROLE"), PositionalSpec("FIELD=VALUE")),
                 ),
                 "remove": CommandSpec(
-                    flags=(FlagSpec("--project"),),
+                    flags=_flags(FlagSpec("--project"), key=False),
                     positionals=(PositionalSpec("ROLE"),),
                 ),
             }
         ),
-        "view": CommandSpec(flags=(FlagSpec("--port", metavar="N"),)),
+        "view": CommandSpec(flags=_flags(FlagSpec("--port", metavar="N"))),
     },
 )
 

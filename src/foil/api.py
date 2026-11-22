@@ -1,0 +1,631 @@
+"""One function per command.
+
+Each takes the checkout (``project``), the fleet id, and the caller.
+``caller`` is ``user``, ``lead``, or a seat id. ``inside`` is true when
+that caller is a seat: a launched lead is ``lead`` with ``inside`` true,
+and a joined lead is ``lead`` with ``inside`` false. ``user`` is the human
+even while a lead is joined. ``VERSION`` is the major the Bridge pins to.
+
+A function returns the JSON value of that command. A read command's
+``--json`` prints that same value. The call binds project, fleet, and
+caller for its thread and does not read or write them on the process.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from foil.board import post_room, send_mail
+from foil.board_ops import board_list_payload, board_read_payload, show_board_list, show_board_read
+from foil.errors import FoilError
+from foil.joined import join_lead, leave_lead, mail_wait
+from foil.lifecycle import (
+    archive_seat,
+    init_project,
+    kill_seats,
+    peek_text,
+    renew_seat,
+    resume_seats,
+    seat_list_rows,
+    show_peek,
+    show_seat_list,
+    spawn_seat,
+)
+from foil.mail_ops import mail_read_payload, mail_rows, show_mail_list, show_mail_read
+from foil.memory import (
+    accept_lesson,
+    add_lesson,
+    read_lessons,
+    reject_lesson,
+    show_lessons,
+)
+from foil.project import is_initialized, refuse_legacy_layout
+from foil.roster_ops import (
+    add_template,
+    remove_template,
+    roster_list_payload,
+    roster_show_payload,
+    show_roster_list,
+    show_roster_template,
+    update_template,
+)
+from foil.scope import bound
+from foil.store import RESERVED, SAFE_ID
+
+VERSION = 1
+
+_OUTSIDE = "outside"
+_LEAD = "lead"
+_WORKER = "worker"
+
+_ALLOWED = {
+    "init": {_OUTSIDE},
+    "spawn": {_OUTSIDE, _LEAD},
+    "kill": {_OUTSIDE, _LEAD},
+    "kill-all": {_OUTSIDE},
+    "join": {_OUTSIDE},
+    "leave": {_OUTSIDE},
+    "archive": {_OUTSIDE, _LEAD},
+    "resume": {_OUTSIDE, _LEAD},
+    "renew": {_OUTSIDE, _LEAD},
+    "list": {_OUTSIDE, _LEAD, _WORKER},
+    "peek": {_OUTSIDE, _LEAD, _WORKER},
+    "send": {_OUTSIDE, _LEAD, _WORKER},
+    "post": {_OUTSIDE, _LEAD, _WORKER},
+    "mail-read": {_OUTSIDE, _LEAD, _WORKER},
+    "mail-list": {_OUTSIDE, _LEAD, _WORKER},
+    "mail-wait": {_OUTSIDE},
+    "board-read": {_OUTSIDE, _LEAD, _WORKER},
+    "board-list": {_OUTSIDE, _LEAD, _WORKER},
+    "memory-add": {_OUTSIDE, _LEAD, _WORKER},
+    "memory-list": {_OUTSIDE, _LEAD, _WORKER},
+    "memory-accept": {_OUTSIDE, _LEAD},
+    "memory-reject": {_OUTSIDE, _LEAD},
+    "roster-list": {_OUTSIDE, _LEAD},
+    "roster-show": {_OUTSIDE, _LEAD},
+    "roster-add": {_OUTSIDE, _LEAD},
+    "roster-update": {_OUTSIDE, _LEAD},
+    "roster-remove": {_OUTSIDE, _LEAD},
+    "view": {_OUTSIDE},
+}
+
+
+def _kind(caller: str, *, inside: bool) -> str:
+    if not inside:
+        return _OUTSIDE
+    if caller == "lead":
+        return _LEAD
+    return _WORKER
+
+
+def _authorize(action: str, *, caller: str, inside: bool, name: str | None = None) -> None:
+    if _kind(caller, inside=inside) not in _ALLOWED[action]:
+        raise FoilError("foil: not allowed")
+    if action == "kill" and inside and caller == "lead" and name == "lead":
+        raise FoilError("foil: cannot kill the lead")
+
+
+def _enter(project: Path | None, fleet: str, caller: str, *, inside: bool, pinned: bool):
+    """Bind the call. A seat id is checked here, after the command's own refusal.
+
+    Fleet text is checked when an operation reads it, as ``fleet_id`` always did.
+    """
+
+    if inside:
+        if not SAFE_ID.fullmatch(caller) or caller in RESERVED:
+            raise FoilError("foil: unknown seat")
+    elif caller not in {"user", "lead"}:
+        raise FoilError("foil: unknown caller")
+    return bound(project, fleet, caller, inside=inside, pinned=pinned)
+
+
+def _root(project: Path | None) -> Path:
+    if project is None:
+        raise FoilError("foil: not initialized")
+    refuse_legacy_layout(project)
+    if not is_initialized(project):
+        raise FoilError("foil: not initialized")
+    return project
+
+
+def _roster_root(project: Path | None, *, project_layer: bool) -> Path:
+    if project_layer:
+        if project is None or not is_initialized(project):
+            raise FoilError("foil: --project needs a checkout")
+        refuse_legacy_layout(project)
+        return project
+    if project is None:
+        return Path.cwd()
+    return project
+
+
+def init(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    directory: str | None = None,
+) -> dict:
+    _authorize("init", caller=caller, inside=inside)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        init_project(directory)
+    return {"ok": True}
+
+
+def seat_spawn(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    template: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    name: str | None = None,
+    task: str | None = None,
+) -> dict:
+    _authorize("spawn", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        spawn_seat(root, template, name=name, task=task)
+    return {"ok": True}
+
+
+def seat_kill(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    name: str | None = None,
+    all_seats: bool = False,
+) -> dict:
+    if all_seats:
+        _authorize("kill-all", caller=caller, inside=inside)
+        if name:
+            raise FoilError("foil: NAME and --all cannot be combined")
+    else:
+        if not name:
+            raise FoilError("foil: NAME is required")
+        _authorize("kill", caller=caller, inside=inside, name=name)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        kill_seats(root, name=name, all_seats=all_seats)
+    return {"ok": True}
+
+
+def seat_archive(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    name: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _authorize("archive", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        archive_seat(root, name)
+    return {"ok": True}
+
+
+def seat_resume(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    name: str | None,
+    *,
+    inside: bool = False, pinned: bool = True,
+) -> dict:
+    _authorize("resume", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        code = resume_seats(root, name)
+    return {"code": code}
+
+
+def seat_renew(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    name: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _authorize("renew", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        renew_seat(root, name)
+    return {"ok": True}
+
+
+def seat_list(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    as_json: bool = False,
+    archived: bool = False,
+    all_fleets: bool = False,
+) -> list:
+    _authorize("list", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        rows = seat_list_rows(root, archived=archived, all_fleets=all_fleets)
+        show_seat_list(rows, as_json=as_json, archived=archived)
+    return rows
+
+
+def seat_peek(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    name: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    lines: int = 40,
+    as_json: bool = False,
+) -> dict:
+    _authorize("peek", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        payload = {"name": name, "text": peek_text(root, name, lines=lines)}
+        show_peek(payload, as_json=as_json)
+    return payload
+
+
+def seat_join(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    harness: str | None = None,
+    session: str | None = None,
+    take: bool = False,
+) -> dict:
+    _authorize("join", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        join_lead(root, harness=harness, session=session, take=take)
+    return {"ok": True}
+
+
+def seat_leave(
+    project: Path | None, fleet: str, caller: str, *, inside: bool = False, pinned: bool = True
+) -> dict:
+    _authorize("leave", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        leave_lead(root)
+    return {"ok": True}
+
+
+def send(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    to: str,
+    text: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    read_text=None,
+) -> dict:
+    """``read_text`` expands ``-`` after the refusal. Callers pass the message."""
+
+    _authorize("send", caller=caller, inside=inside)
+    body = text if read_text is None else read_text(text)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        send_mail(root, to, body)
+    return {"ok": True}
+
+
+def post(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    text: str | None,
+    *,
+    inside: bool = False, pinned: bool = True,
+    reply: str | None = None,
+    decline: bool = False,
+    members: str | None = None,
+    close: bool = False,
+    read_text=None,
+) -> dict:
+    """``text`` is the argv token. ``read_text`` expands ``-`` after the refusal.
+
+    An in-process caller passes the message and leaves ``read_text`` unset.
+    """
+
+    _authorize("post", caller=caller, inside=inside)
+    if decline:
+        if text is not None:
+            raise FoilError("foil: --decline takes no text")
+        body = ""
+    else:
+        if text is None:
+            raise FoilError("foil: TEXT is required")
+        body = text if read_text is None else read_text(text)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        post_room(root, body, reply=reply, decline=decline, members=members, close=close)
+    return {"ok": True}
+
+
+def mail_read(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    path: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    as_json: bool = False,
+) -> dict:
+    _authorize("mail-read", caller=caller, inside=inside)
+    _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        payload = mail_read_payload(path)
+        show_mail_read(payload, as_json=as_json)
+    return payload
+
+
+def mail_list(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    as_json: bool = False,
+) -> list:
+    _authorize("mail-list", caller=caller, inside=inside)
+    _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        rows = mail_rows()
+        show_mail_list(rows, as_json=as_json)
+    return rows
+
+
+def mail_wait_for(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    timeout: int = 1800,
+    wake: bool = False,
+    all_fleets: bool = False,
+    as_json: bool = False,
+) -> dict:
+    """``mail wait``. Named so it does not shadow the joined helper."""
+
+    if inside:
+        raise FoilError("foil: mail wait is outside the fleet only")
+    _authorize("mail-wait", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        return mail_wait(root, timeout=timeout, wake=wake, all_fleets=all_fleets, as_json=as_json)
+
+
+def board_read(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    path: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    as_json: bool = False,
+) -> dict:
+    _authorize("board-read", caller=caller, inside=inside)
+    _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        text, payload = board_read_payload(path)
+        show_board_read(text, payload, as_json=as_json)
+    return payload
+
+
+def board_list(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    pattern: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    as_json: bool = False,
+) -> dict:
+    _authorize("board-list", caller=caller, inside=inside)
+    _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        payload = board_list_payload(pattern)
+        show_board_list(payload, as_json=as_json)
+    return payload
+
+
+def memory_add(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    text: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    replaces: str | None = None,
+    read_text=None,
+) -> dict:
+    """``read_text`` expands ``-`` after the refusal. Callers pass the lesson."""
+
+    _authorize("memory-add", caller=caller, inside=inside)
+    body = text if read_text is None else read_text(text)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        add_lesson(root, body, replaces=replaces)
+    return {"ok": True}
+
+
+def memory_accept(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    lesson_id: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _authorize("memory-accept", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        accept_lesson(root, lesson_id)
+    return {"ok": True}
+
+
+def memory_reject(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    lesson_id: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _authorize("memory-reject", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        reject_lesson(root, lesson_id)
+    return {"ok": True}
+
+
+def memory_list(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    all_lessons: bool = False,
+    as_json: bool = False,
+) -> list:
+    _authorize("memory-list", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        lessons = read_lessons(root, all_lessons=all_lessons)
+        show_lessons(lessons, all_lessons=all_lessons, as_json=as_json)
+    return lessons
+
+
+def roster_list(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    as_json: bool = False,
+) -> dict:
+    _authorize("roster-list", caller=caller, inside=inside)
+    root = _roster_root(project, project_layer=False)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        payload = roster_list_payload(root)
+        show_roster_list(payload, as_json=as_json)
+    return payload
+
+
+def roster_show(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    role: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    as_json: bool = False,
+) -> dict:
+    _authorize("roster-show", caller=caller, inside=inside)
+    root = _roster_root(project, project_layer=False)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        payload = roster_show_payload(root, role)
+        show_roster_template(payload, as_json=as_json)
+    return payload
+
+
+def roster_add(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    role: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    from_file: str | None = None,
+    project_layer: bool = False,
+) -> dict:
+    _authorize("roster-add", caller=caller, inside=inside)
+    if project_layer and inside:
+        raise FoilError("foil: --project is outside the fleet only")
+    if inside:
+        raise FoilError("foil: roles are outside the fleet only")
+    root = _roster_root(project, project_layer=project_layer)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        add_template(root, role, from_file=from_file, in_fleet=inside, project=project_layer)
+    return {"ok": True}
+
+
+def roster_update(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    role: str,
+    field_value: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    project_layer: bool = False,
+) -> dict:
+    _authorize("roster-update", caller=caller, inside=inside)
+    if "=" not in field_value:
+        raise FoilError("foil: FIELD=VALUE format required")
+    field, value = field_value.split("=", 1)
+    if project_layer and inside:
+        raise FoilError("foil: --project is outside the fleet only")
+    if field == "permission" and inside:
+        raise FoilError("foil: permission is outside the fleet only")
+    if inside and field in {"persona", "worktree"}:
+        raise FoilError("foil: roles are outside the fleet only")
+    root = _roster_root(project, project_layer=project_layer)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        update_template(root, role, field, value, in_fleet=inside, project=project_layer)
+    return {"ok": True}
+
+
+def roster_remove(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    role: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    project_layer: bool = False,
+) -> dict:
+    _authorize("roster-remove", caller=caller, inside=inside)
+    if project_layer and inside:
+        raise FoilError("foil: --project is outside the fleet only")
+    if inside:
+        raise FoilError("foil: roles are outside the fleet only")
+    root = _roster_root(project, project_layer=project_layer)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        remove_template(root, role, project=project_layer)
+    return {"ok": True}
+
+
+def view(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False, pinned: bool = True,
+    port: str | None = None,
+) -> dict:
+    if inside:
+        raise FoilError("foil: view is outside the fleet only")
+    _authorize("view", caller=caller, inside=inside)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        from foil.view import serve
+
+        code = serve(port)
+    return {"code": code}

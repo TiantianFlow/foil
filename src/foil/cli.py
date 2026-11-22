@@ -1,4 +1,7 @@
-"""Argparse surface matching requirements section 6, plus N8 handling."""
+"""Argparse surface matching requirements section 6, plus N8 handling.
+
+Parsing and the call's identity live here. The operation is ``foil.api``.
+"""
 
 from __future__ import annotations
 
@@ -8,82 +11,29 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from foil import __version__
-from foil.board import post_room, send_mail
-from foil.board_ops import board_list, board_read
+from foil import __version__, api
 from foil.errors import FoilError
-from foil.joined import join_lead, leave_lead, mail_wait, notice
-from foil.lifecycle import (
-    archive_seat,
-    init_project,
-    kill_seats,
-    list_seats,
-    peek_seat,
-    renew_seat,
-    resume_seats,
-    spawn_seat,
-)
-from foil.mail_ops import mail_list, mail_read
-from foil.memory import accept_lesson, add_lesson, list_lessons, reject_lesson
-from foil.project import discover_project, is_initialized, refuse_legacy_layout
-from foil.roster_ops import (
-    add_template,
-    list_roster,
-    remove_template,
-    show_template,
-    update_template,
-)
+from foil.joined import notice
+from foil.project import checkout_for_key, discover_project, is_initialized, refuse_legacy_layout
+from foil.scope import bound
+from foil.store import in_seat, load_registry
 
-OUTSIDE = "outside"
-LEAD = "lead"
-WORKER = "worker"
-
-_ALLOWED = {
-    "init": {OUTSIDE},
-    "spawn": {OUTSIDE, LEAD},
-    "kill": {OUTSIDE, LEAD},
-    "kill-all": {OUTSIDE},
-    "join": {OUTSIDE},
-    "leave": {OUTSIDE},
-    "archive": {OUTSIDE, LEAD},
-    "resume": {OUTSIDE, LEAD},
-    "renew": {OUTSIDE, LEAD},
-    "list": {OUTSIDE, LEAD, WORKER},
-    "peek": {OUTSIDE, LEAD, WORKER},
-    "send": {OUTSIDE, LEAD, WORKER},
-    "post": {OUTSIDE, LEAD, WORKER},
-    "mail-read": {OUTSIDE, LEAD, WORKER},
-    "mail-list": {OUTSIDE, LEAD, WORKER},
-    "mail-wait": {OUTSIDE},
-    "board-read": {OUTSIDE, LEAD, WORKER},
-    "board-list": {OUTSIDE, LEAD, WORKER},
-    "memory-add": {OUTSIDE, LEAD, WORKER},
-    "memory-list": {OUTSIDE, LEAD, WORKER},
-    "memory-accept": {OUTSIDE, LEAD},
-    "memory-reject": {OUTSIDE, LEAD},
-    "roster-list": {OUTSIDE, LEAD},
-    "roster-show": {OUTSIDE, LEAD},
-    "roster-add": {OUTSIDE, LEAD},
-    "roster-update": {OUTSIDE, LEAD},
-    "roster-remove": {OUTSIDE, LEAD},
-}
+_USER = "user"
+_LEAD = "lead"
 
 
-def _caller() -> str:
-    seat = os.environ.get("FOIL_SEAT_ID")
-    if not seat:
-        return OUTSIDE
-    if seat == "lead":
-        return LEAD
-    return WORKER
+class _Call:
+    """The project, fleet, and caller one command resolved to."""
 
-
-def authorize(action: str, *, name: str | None = None) -> None:
-    kind = _caller()
-    if kind not in _ALLOWED[action]:
-        raise FoilError("foil: not allowed")
-    if action == "kill" and kind == LEAD and name == "lead":
-        raise FoilError("foil: cannot kill the lead")
+    def __init__(
+        self, project: Path | None, fleet: str, caller: str, *, inside: bool, pinned: bool
+    ) -> None:
+        self.project = project
+        self.fleet = fleet
+        self.caller = caller
+        self.inside = inside
+        # False is the outside default, which is lead or user per fleet.
+        self.pinned = pinned
 
 
 class FoilParser(argparse.ArgumentParser):
@@ -91,13 +41,30 @@ class FoilParser(argparse.ArgumentParser):
         self.exit(2, f"foil: {message}\n")
 
 
+def _shared(parser: argparse.ArgumentParser, *, key: bool = True) -> None:
+    """``--as`` and ``--project KEY`` on the root and on each leaf.
+
+    ``default=SUPPRESS`` lets a flag on the root survive a leaf that omits it.
+    Roster add, update, and remove keep the valueless ``--project`` switch, so
+    they do not take ``KEY`` on the leaf. The key goes before the subcommand.
+    """
+
+    parser.add_argument("--as", dest="as_caller", metavar="CALLER", default=argparse.SUPPRESS)
+    if key:
+        parser.add_argument(
+            "--project", dest="project_key", metavar="KEY", default=argparse.SUPPRESS
+        )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = FoilParser(prog="foil")
     parser.add_argument("--version", action="version", version=f"foil {__version__}")
+    _shared(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 
     init_p = sub.add_parser("init", help="Create the Foil folder")
     init_p.add_argument("DIR", nargs="?", metavar="DIR")
+    _shared(init_p)
 
     seat = sub.add_parser("seat", help="Manage seats")
     seat_sub = seat.add_subparsers(dest="seat_command", required=True)
@@ -106,40 +73,51 @@ def _build_parser() -> argparse.ArgumentParser:
     spawn.add_argument("TEMPLATE", metavar="TEMPLATE")
     spawn.add_argument("--name", metavar="NAME")
     spawn.add_argument("--task", metavar="TEXT")
+    _shared(spawn)
 
     kill = seat_sub.add_parser("kill", help="Stop a seat")
     kill.add_argument("NAME", nargs="?", metavar="NAME")
     kill.add_argument("--all", action="store_true")
+    _shared(kill)
 
     archive = seat_sub.add_parser("archive", help="Free a killed seat's name")
     archive.add_argument("NAME", metavar="NAME")
+    _shared(archive)
 
     resume = seat_sub.add_parser("resume", help="Restart dead seats and retry paused ones")
     resume.add_argument("NAME", nargs="?", metavar="NAME")
+    _shared(resume)
 
     renew = seat_sub.add_parser("renew", help="Give a seat a fresh session after its handoff")
     renew.add_argument("NAME", metavar="NAME")
+    _shared(renew)
 
     listed = seat_sub.add_parser("list", help="List seats")
     listed.add_argument("--json", action="store_true")
     listed.add_argument("--archived", action="store_true")
     listed.add_argument("--all-fleets", action="store_true")
+    _shared(listed)
 
     peek = seat_sub.add_parser("peek", help="Print the pane tail")
     peek.add_argument("NAME", metavar="NAME")
     peek.add_argument("--lines", metavar="N", type=int, default=40)
+    peek.add_argument("--json", action="store_true")
+    _shared(peek)
 
     join = seat_sub.add_parser("join", help="Take the lead seat for this session")
     join.add_argument("SEAT", metavar="lead", choices=["lead"])
     join.add_argument("--harness", metavar="ID")
     join.add_argument("--session", metavar="ID")
     join.add_argument("--take", action="store_true")
+    _shared(join)
 
-    seat_sub.add_parser("leave", help="End the joined lead")
+    leave = seat_sub.add_parser("leave", help="End the joined lead")
+    _shared(leave)
 
     send = sub.add_parser("send", help="Write mail; it wakes the recipient")
     send.add_argument("TO", metavar="TO")
     send.add_argument("TEXT", metavar="TEXT")
+    _shared(send)
 
     post = sub.add_parser("post", help="Write a room file; it wakes its members")
     post.add_argument("--re", metavar="PATH")
@@ -147,6 +125,7 @@ def _build_parser() -> argparse.ArgumentParser:
     post.add_argument("--members", metavar="NAMES")
     post.add_argument("--close", action="store_true")
     post.add_argument("TEXT", nargs="?", metavar="TEXT")
+    _shared(post)
 
     mail = sub.add_parser("mail", help="Read mail files")
     mail_sub = mail.add_subparsers(dest="mail_command", required=True)
@@ -154,14 +133,18 @@ def _build_parser() -> argparse.ArgumentParser:
     mail_read_p = mail_sub.add_parser("read", help="Read a mail file")
     mail_read_p.add_argument("PATH", metavar="PATH")
     mail_read_p.add_argument("--json", action="store_true")
+    _shared(mail_read_p)
 
     mail_list_p = mail_sub.add_parser("list", help="List mail for current seat")
     mail_list_p.add_argument("--json", action="store_true")
+    _shared(mail_list_p)
 
     mail_wait_p = mail_sub.add_parser("wait", help="Wait for new mail")
     mail_wait_p.add_argument("--timeout", metavar="SECONDS", type=int, default=1800)
     mail_wait_p.add_argument("--wake", action="store_true")
     mail_wait_p.add_argument("--all-fleets", action="store_true")
+    mail_wait_p.add_argument("--json", action="store_true")
+    _shared(mail_wait_p)
 
     board = sub.add_parser("board", help="Read board files")
     board_sub = board.add_subparsers(dest="board_command", required=True)
@@ -169,10 +152,12 @@ def _build_parser() -> argparse.ArgumentParser:
     board_read_p = board_sub.add_parser("read", help="Read a board file")
     board_read_p.add_argument("PATH", metavar="PATH")
     board_read_p.add_argument("--json", action="store_true")
+    _shared(board_read_p)
 
     board_list_p = board_sub.add_parser("list", help="List board files")
     board_list_p.add_argument("PATTERN", metavar="PATTERN")
     board_list_p.add_argument("--json", action="store_true")
+    _shared(board_list_p)
 
     memory = sub.add_parser("memory", help="Project lessons")
     mem_sub = memory.add_subparsers(dest="memory_command", required=True)
@@ -180,43 +165,53 @@ def _build_parser() -> argparse.ArgumentParser:
     add = mem_sub.add_parser("add", help="Propose a lesson")
     add.add_argument("TEXT", metavar="TEXT")
     add.add_argument("--replaces", metavar="ID")
+    _shared(add)
 
     accept = mem_sub.add_parser("accept", help="Accept a proposal")
     accept.add_argument("ID", metavar="ID")
+    _shared(accept)
 
     reject = mem_sub.add_parser("reject", help="Reject a proposal")
     reject.add_argument("ID", metavar="ID")
+    _shared(reject)
 
     mem_list = mem_sub.add_parser("list", help="List lessons")
     mem_list.add_argument("--all", action="store_true")
     mem_list.add_argument("--json", action="store_true")
+    _shared(mem_list)
 
     roster = sub.add_parser("roster", help="Manage role templates")
     roster_sub = roster.add_subparsers(dest="roster_command", required=True)
 
     roster_list = roster_sub.add_parser("list", help="List templates and personas")
     roster_list.add_argument("--json", action="store_true")
+    _shared(roster_list)
 
     roster_show = roster_sub.add_parser("show", help="Show one template")
     roster_show.add_argument("ROLE", metavar="ROLE")
     roster_show.add_argument("--json", action="store_true")
+    _shared(roster_show)
 
     roster_add = roster_sub.add_parser("add", help="Add a new template")
     roster_add.add_argument("ROLE", metavar="ROLE")
     roster_add.add_argument("--from", dest="from_file", metavar="FILE")
     roster_add.add_argument("--project", action="store_true")
+    _shared(roster_add, key=False)
 
     roster_update = roster_sub.add_parser("update", help="Update a template field")
     roster_update.add_argument("ROLE", metavar="ROLE")
     roster_update.add_argument("FIELD_VALUE", metavar="FIELD=VALUE")
     roster_update.add_argument("--project", action="store_true")
+    _shared(roster_update, key=False)
 
     roster_remove = roster_sub.add_parser("remove", help="Remove a template")
     roster_remove.add_argument("ROLE", metavar="ROLE")
     roster_remove.add_argument("--project", action="store_true")
+    _shared(roster_remove, key=False)
 
     view = sub.add_parser("view", help="Serve a read-only page for every project on this host")
     view.add_argument("--port", metavar="N")
+    _shared(view)
 
     return parser
 
@@ -227,194 +222,304 @@ def _text_arg(value: str) -> str:
     return value
 
 
-def _require_project() -> Path:
-    root = discover_project()
+def _fleet_name() -> str:
+    return os.environ.get("FOIL_FLEET", "").strip() or "main"
+
+
+def _discover() -> Path:
+    return discover_project(named=os.environ.get("FOIL_PROJECT", "").strip())
+
+
+def _require() -> Path:
+    root = _discover()
     refuse_legacy_layout(root)
     if not is_initialized(root):
         raise FoilError("foil: not initialized")
     return root
 
 
-def _run(args: argparse.Namespace) -> int:
-    if args.command == "init":
-        authorize("init")
-        init_project(args.DIR)
-        return 0
-    if args.command == "view":
-        if _caller() != OUTSIDE:
-            raise FoilError("foil: view is outside the fleet only")
-        # Imported here so other commands do not load the HTTP server modules.
-        from foil.view import serve
+def _initialized(project: Path) -> bool:
+    try:
+        return is_initialized(project)
+    except FoilError:
+        return False
 
-        return serve(args.port)
-    if args.command == "roster" and not getattr(args, "project", False):
+
+def _lead_joined(project: Path | None, fleet: str) -> bool:
+    if project is None or not _initialized(project):
+        return False
+    try:
+        record = load_registry(project, fleet)["seats"].get("lead")
+    except (FoilError, OSError):
+        return False
+    return bool(record) and record.get("state") == "joined"
+
+
+def _project_for(args: argparse.Namespace, key: str | None, *, inside: bool) -> Path | None:
+    layer = args.command == "roster" and getattr(args, "project", False)
+    if key:
+        if args.command == "init" and args.DIR:
+            raise FoilError("foil: init DIR and --project cannot be combined")
+        found = checkout_for_key(key)
+        if layer and not inside and not _initialized(found):
+            raise FoilError("foil: --project needs a checkout")
+        return found
+    if args.command == "init":
+        return None
+    if args.command == "view":
         try:
-            root = _require_project()
+            return _discover()
+        except FoilError:
+            return None
+    if args.command == "roster" and not layer:
+        try:
+            return _require()
         except FoilError as exc:
-            # A checkout where init has not run is still the global layer.
             message = str(exc)
             if "not a git repository" not in message and "not initialized" not in message:
                 raise
-            root = Path.cwd()
+            return Path.cwd()
+    if layer and not inside:
+        try:
+            _discover()
+        except FoilError:
+            raise FoilError("foil: --project needs a checkout") from None
+        if not _initialized(_discover()):
+            raise FoilError("foil: --project needs a checkout")
+    return _require()
+
+
+def _resolve(args: argparse.Namespace) -> _Call:
+    """Read the process identity once and turn it into this call's arguments."""
+
+    fleet = _fleet_name()
+    seat = os.environ.get("FOIL_SEAT_ID", "").strip()
+    inside = bool(seat)
+    chosen = getattr(args, "as_caller", None)
+    if chosen is not None:
+        if inside:
+            raise FoilError("foil: --as is outside the fleet only")
+        if chosen not in {_USER, _LEAD}:
+            raise FoilError("foil: --as is user or lead")
+    project = _project_for(args, getattr(args, "project_key", None), inside=inside)
+    if chosen == _LEAD:
+        if not _lead_joined(project, fleet):
+            raise FoilError("foil: --as lead needs a joined lead")
+        caller = _LEAD
+    elif chosen == _USER:
+        caller = _USER
+    elif inside:
+        caller = seat
+    elif _lead_joined(project, fleet):
+        caller = _LEAD
     else:
-        if (
-            args.command == "roster"
-            and getattr(args, "project", False)
-            and _caller() == OUTSIDE
-        ):
-            try:
-                found = discover_project()
-            except FoilError:
-                raise FoilError("foil: --project needs a checkout") from None
-            if not is_initialized(found):
-                raise FoilError("foil: --project needs a checkout")
-        root = _require_project()
+        caller = _USER
+    # No --as outside the fleet follows each fleet's joined lead. A seat and
+    # an explicit --as stay the name resolved above, including across fleets.
+    pinned = inside or chosen is not None
+    return _Call(project, fleet, caller, inside=inside, pinned=pinned)
+
+
+def _run(args: argparse.Namespace, call: _Call) -> int:
+    project, fleet, caller = call.project, call.fleet, call.caller
+    inside, pinned = call.inside, call.pinned
+    if args.command == "init":
+        directory = args.DIR
+        if directory is None and project is not None:
+            directory = str(project)
+        api.init(project, fleet, caller, inside=inside, pinned=pinned, directory=directory)
+        return 0
+    if args.command == "view":
+        return api.view(
+            project, fleet, caller, inside=inside, pinned=pinned, port=args.port
+        )["code"]
     if args.command == "seat":
         action = args.seat_command
         if action == "spawn":
-            authorize("spawn")
-            spawn_seat(root, args.TEMPLATE, name=args.name, task=args.task)
+            api.seat_spawn(
+                project,
+                fleet,
+                caller,
+                args.TEMPLATE,
+                inside=inside,
+                pinned=pinned,
+                name=args.name,
+                task=args.task,
+            )
         elif action == "kill":
-            if args.all:
-                authorize("kill-all")
-                if args.NAME:
-                    raise FoilError("foil: NAME and --all cannot be combined")
-                kill_seats(root, all_seats=True)
-            else:
-                if not args.NAME:
-                    raise FoilError("foil: NAME is required")
-                authorize("kill", name=args.NAME)
-                kill_seats(root, name=args.NAME)
+            api.seat_kill(
+                project,
+                fleet,
+                caller,
+                inside=inside,
+                pinned=pinned,
+                name=args.NAME,
+                all_seats=args.all,
+            )
         elif action == "archive":
-            authorize("archive")
-            archive_seat(root, args.NAME)
+            api.seat_archive(project, fleet, caller, args.NAME, inside=inside, pinned=pinned)
         elif action == "resume":
-            authorize("resume")
-            return resume_seats(root, args.NAME)
+            resumed = api.seat_resume(
+                project, fleet, caller, args.NAME, inside=inside, pinned=pinned
+            )
+            return resumed["code"]
         elif action == "renew":
-            authorize("renew")
-            renew_seat(root, args.NAME)
+            api.seat_renew(project, fleet, caller, args.NAME, inside=inside, pinned=pinned)
         elif action == "list":
-            authorize("list")
-            list_seats(
-                root, as_json=args.json, archived=args.archived, all_fleets=args.all_fleets
+            api.seat_list(
+                project,
+                fleet,
+                caller,
+                inside=inside, pinned=pinned,
+                as_json=args.json,
+                archived=args.archived,
+                all_fleets=args.all_fleets,
             )
         elif action == "join":
-            authorize("join")
-            join_lead(root, harness=args.harness, session=args.session, take=args.take)
+            api.seat_join(
+                project,
+                fleet,
+                caller,
+                inside=inside, pinned=pinned,
+                harness=args.harness,
+                session=args.session,
+                take=args.take,
+            )
         elif action == "leave":
-            authorize("leave")
-            leave_lead(root)
+            api.seat_leave(project, fleet, caller, inside=inside, pinned=pinned)
         else:
-            authorize("peek")
-            peek_seat(root, args.NAME, lines=args.lines)
+            api.seat_peek(
+                project,
+                fleet,
+                caller,
+                args.NAME,
+                inside=inside, pinned=pinned,
+                lines=args.lines,
+                as_json=args.json,
+            )
         return 0
     if args.command == "send":
-        authorize("send")
-        send_mail(root, args.TO, _text_arg(args.TEXT))
+        api.send(
+            project,
+            fleet,
+            caller,
+            args.TO,
+            args.TEXT,
+            inside=inside,
+            pinned=pinned,
+            read_text=_text_arg,
+        )
         return 0
     if args.command == "post":
-        authorize("post")
-        if args.decline:
-            if args.TEXT is not None:
-                raise FoilError("foil: --decline takes no text")
-            post_room(
-                root, "", reply=args.re, decline=True, members=args.members, close=args.close
-            )
-        else:
-            if args.TEXT is None:
-                raise FoilError("foil: TEXT is required")
-            post_room(
-                root, _text_arg(args.TEXT), reply=args.re, members=args.members, close=args.close
-            )
+        api.post(
+            project,
+            fleet,
+            caller,
+            args.TEXT,
+            inside=inside, pinned=pinned,
+            reply=args.re,
+            decline=args.decline,
+            members=args.members,
+            close=args.close,
+            read_text=_text_arg,
+        )
         return 0
     if args.command == "mail":
         action = args.mail_command
         if action == "read":
-            authorize("mail-read")
-            mail_read(args.PATH, as_json=args.json)
+            api.mail_read(
+                project, fleet, caller, args.PATH, inside=inside, pinned=pinned, as_json=args.json
+            )
         elif action == "wait":
-            if _caller() != OUTSIDE:
-                raise FoilError("foil: mail wait is outside the fleet only")
-            mail_wait(root, timeout=args.timeout, wake=args.wake, all_fleets=args.all_fleets)
+            api.mail_wait_for(
+                project,
+                fleet,
+                caller,
+                inside=inside, pinned=pinned,
+                timeout=args.timeout,
+                wake=args.wake,
+                all_fleets=args.all_fleets,
+                as_json=args.json,
+            )
         else:
-            authorize("mail-list")
-            mail_list(as_json=args.json)
+            api.mail_list(project, fleet, caller, inside=inside, pinned=pinned, as_json=args.json)
         return 0
     if args.command == "board":
-        action = args.board_command
-        if action == "read":
-            authorize("board-read")
-            board_read(args.PATH, as_json=args.json)
+        if args.board_command == "read":
+            api.board_read(
+                project, fleet, caller, args.PATH, inside=inside, pinned=pinned, as_json=args.json
+            )
         else:
-            authorize("board-list")
-            board_list(args.PATTERN, as_json=args.json)
+            api.board_list(
+                project,
+                fleet,
+                caller,
+                args.PATTERN,
+                inside=inside,
+                pinned=pinned,
+                as_json=args.json,
+            )
         return 0
     if args.command == "memory":
         action = args.memory_command
         if action == "add":
-            authorize("memory-add")
-            add_lesson(root, _text_arg(args.TEXT), replaces=args.replaces)
+            api.memory_add(
+                project,
+                fleet,
+                caller,
+                args.TEXT,
+                inside=inside, pinned=pinned,
+                replaces=args.replaces,
+                read_text=_text_arg,
+            )
         elif action == "accept":
-            authorize("memory-accept")
-            accept_lesson(root, args.ID)
+            api.memory_accept(project, fleet, caller, args.ID, inside=inside, pinned=pinned)
         elif action == "reject":
-            authorize("memory-reject")
-            reject_lesson(root, args.ID)
+            api.memory_reject(project, fleet, caller, args.ID, inside=inside, pinned=pinned)
         else:
-            authorize("memory-list")
-            list_lessons(root, all_lessons=args.all, as_json=args.json)
+            api.memory_list(
+                project,
+                fleet,
+                caller,
+                inside=inside,
+                pinned=pinned,
+                all_lessons=args.all,
+                as_json=args.json,
+            )
         return 0
     action = args.roster_command
+    layer = getattr(args, "project", False)
     if action == "list":
-        authorize("roster-list")
-        list_roster(root, as_json=args.json)
+        api.roster_list(project, fleet, caller, inside=inside, pinned=pinned, as_json=args.json)
     elif action == "show":
-        authorize("roster-show")
-        show_template(root, args.ROLE, as_json=args.json)
+        api.roster_show(
+            project, fleet, caller, args.ROLE, inside=inside, pinned=pinned, as_json=args.json
+        )
     elif action == "add":
-        authorize("roster-add")
-        _refuse_project(getattr(args, "project", False))
-        if _caller() != OUTSIDE:
-            raise FoilError("foil: roles are outside the fleet only")
-        add_template(
-            root,
+        api.roster_add(
+            project,
+            fleet,
+            caller,
             args.ROLE,
+            inside=inside, pinned=pinned,
             from_file=args.from_file,
-            in_fleet=_caller() != OUTSIDE,
-            project=getattr(args, "project", False),
+            project_layer=layer,
         )
     elif action == "update":
-        authorize("roster-update")
-        if "=" not in args.FIELD_VALUE:
-            raise FoilError("foil: FIELD=VALUE format required")
-        field, value = args.FIELD_VALUE.split("=", 1)
-        _refuse_project(getattr(args, "project", False))
-        if field == "permission" and _caller() != OUTSIDE:
-            raise FoilError("foil: permission is outside the fleet only")
-        if _caller() != OUTSIDE and field in {"persona", "worktree"}:
-            raise FoilError("foil: roles are outside the fleet only")
-        update_template(
-            root,
+        api.roster_update(
+            project,
+            fleet,
+            caller,
             args.ROLE,
-            field,
-            value,
-            in_fleet=_caller() != OUTSIDE,
-            project=getattr(args, "project", False),
+            args.FIELD_VALUE,
+            inside=inside, pinned=pinned,
+            project_layer=layer,
         )
     else:
-        authorize("roster-remove")
-        _refuse_project(getattr(args, "project", False))
-        if _caller() != OUTSIDE:
-            raise FoilError("foil: roles are outside the fleet only")
-        remove_template(root, args.ROLE, project=getattr(args, "project", False))
+        api.roster_remove(
+            project, fleet, caller, args.ROLE, inside=inside, pinned=pinned, project_layer=layer
+        )
     return 0
-
-
-def _refuse_project(project: bool) -> None:
-    """``--project`` is refused inside a fleet. The checkout check is earlier."""
-    if project and _caller() != OUTSIDE:
-        raise FoilError("foil: --project is outside the fleet only")
 
 
 def _notice(args: argparse.Namespace) -> None:
@@ -424,7 +529,7 @@ def _notice(args: argparse.Namespace) -> None:
         or (args.command == "seat" and args.seat_command in {"join", "leave"})
         or (args.command == "mail" and args.mail_command == "wait")
     )
-    if quiet or _caller() != OUTSIDE:
+    if quiet or in_seat():
         return
     try:
         root = discover_project()
@@ -436,16 +541,24 @@ def _notice(args: argparse.Namespace) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = None
+    call = None
     try:
         parser = _build_parser()
         args = parser.parse_args(None if argv is None else list(argv))
-        code = _run(args)
-        sys.stdout.flush()
-        _notice(args)
-        return code
+        call = _resolve(args)
+        with bound(call.project, call.fleet, call.caller, inside=call.inside, pinned=call.pinned):
+            code = _run(args, call)
+            sys.stdout.flush()
+            _notice(args)
+            return code
     except FoilError as exc:
         print(str(exc), file=sys.stderr)
-        if args is not None:
+        if args is not None and call is not None:
+            with bound(
+                call.project, call.fleet, call.caller, inside=call.inside, pinned=call.pinned
+            ):
+                _notice(args)
+        elif args is not None:
             _notice(args)
         return 1
     except BrokenPipeError:

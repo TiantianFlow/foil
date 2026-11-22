@@ -8,8 +8,10 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 
 | Module | Role |
 |---|---|
-| `src/foil/cli.py` | Parses the command line, decides who the caller is, and dispatches. It does not talk to tmux. |
-| `src/foil/project.py` | Finds the Git toplevel and the project folder in the per-user store. |
+| `src/foil/cli.py` | Parses the command line, resolves the project, fleet, and caller, and calls `foil.api`. It does not talk to tmux. |
+| `src/foil/api.py` | One function per command. Each takes the project, the fleet, and the caller, returns the command's JSON value, and binds that call for its thread. `VERSION` is `1`. |
+| `src/foil/scope.py` | Holds the bound project, fleet, and caller for one call. It does not read or write the process environment. |
+| `src/foil/project.py` | Finds the Git toplevel and the project folder in the per-user store. A bound project wins over `FOIL_PROJECT` and the working directory. |
 | `src/foil/store.py` | Writes JSON atomically, loads the registry, and rejects credential-shaped text. |
 | `src/foil/presets.py` | Loads harness presets and role templates, scans which eligible presets are installed, and expands launch argv. It does not start a process. |
 | `src/foil/roster_ops.py` | Lists, shows, adds, updates, and removes role templates. Writes are atomic and refuse a symlink. |
@@ -32,7 +34,8 @@ the one-line errors in `errors.py`; those arrows are left out.
 
 ```mermaid
 flowchart TB
-  cli["<b>cli.py</b><br/>parse · authorize · dispatch"]
+  cli["<b>cli.py</b><br/>parse · resolve the call"]
+  api["<b>api.py</b><br/>one function per command · authorize"]
 
   lifecycle["<b>lifecycle.py</b><br/>init · spawn · kill · resume · renew · list · peek<br/>instruction files · plans · worktrees · calls git"]
   board["<b>board.py</b><br/>mail files · room files · new items"]
@@ -48,24 +51,32 @@ flowchart TB
   store["<b>store.py</b><br/>atomic JSON · registry · secret scan"]
 
   project["<b>project.py</b><br/>find the repo and its store folder · calls git"]
+  scope["<b>scope.py</b><br/>bound project, fleet, and caller"]
 
   runner["<b>runner.py</b><br/>runs inside each tmux window<br/>one turn at a time · wake prompts · retries"]
 
-  cli --> lifecycle
-  cli --> board
-  cli --> mail_ops
+  cli --> api
   cli --> joined
+  cli --> project
+  cli --> store
+  cli --> scope
+  api --> scope
+  api --> store
+  api --> lifecycle
+  api --> board
+  api --> mail_ops
+  api --> joined
   joined --> lifecycle
   joined --> board
   joined --> board_ops
   joined --> presets
   joined --> tmuxmod
   joined --> store
-  cli --> board_ops
-  cli --> roster_ops
-  cli --> memory
-  cli --> project
-  cli --> view
+  api --> board_ops
+  api --> roster_ops
+  api --> memory
+  api --> project
+  api --> view
   view --> lifecycle
   view --> roster_ops
   view --> memory
@@ -94,14 +105,16 @@ flowchart TB
   presets --> store
   presets --> project
   store --> project
+  store --> scope
+  project --> scope
 
   classDef entry fill:#bfdbfe,stroke:#1d4ed8,color:#1f2937
   classDef core fill:#bbf7d0,stroke:#15803d,color:#1f2937
   classDef base fill:#e5e7eb,stroke:#374151,color:#1f2937
   classDef apart fill:#fde68a,stroke:#b45309,color:#1f2937
-  class cli entry
+  class cli,api entry
   class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,view core
-  class presets,tmuxmod,store,project base
+  class presets,tmuxmod,store,project,scope base
   class runner apart
 ```
 
@@ -214,7 +227,7 @@ Global roles, the default mapping, harness files someone wrote, and changed pers
 
 ## Authority
 
-The caller is outside the fleet when `FOIL_SEAT_ID` is unset. Outside the fleet, a command acts as `lead` while the registry stores the lead seat as `joined`, and as `user` otherwise; a joined lead keeps every right of a caller outside the fleet. The lead is the process whose variable is `lead`. Every other value is a worker. The CLI allows or refuses the action before it changes anything. A worker cannot spawn, kill, archive, resume, or renew, and cannot accept or reject a lesson. The lead cannot kill or archive the seat named `lead` and cannot run `foil seat kill --all`. The lead also cannot set a template's `permission`, including `roster add --from` when the file's permission is not `auto`; only a caller outside the fleet can. An omitted permission is `auto`. No flag selects a different identity.
+The caller is outside the fleet when `FOIL_SEAT_ID` is unset. Outside the fleet, a command acts as `lead` while the registry stores the lead seat as `joined`, and as `user` otherwise; a joined lead keeps every right of a caller outside the fleet. The lead is the process whose variable is `lead`. Every other value is a worker. `foil.api` allows or refuses the action before it changes anything. A worker cannot spawn, kill, archive, resume, or renew, and cannot accept or reject a lesson. The lead cannot kill or archive the seat named `lead` and cannot run `foil seat kill --all`. The lead also cannot set a template's `permission`, including `roster add --from` when the file's permission is not `auto`; only a caller outside the fleet can. An omitted permission is `auto`. `--as user` or `--as lead` selects the caller outside the fleet, and that name stays the caller in every fleet. Inside a fleet the flag is refused, so a seat cannot change its identity. `user` stays the human while a lead is joined. With no `--as`, the default above still holds, and `mail wait --all-fleets` applies it to each fleet: `lead` where that fleet's lead is joined, and `user` in the others. `--as user` still runs the joined lead's dead-seat check and does not print the new-items line. A call binds its project, fleet, and caller for that thread. The runner and the guard still read their own process environment.
 
 ## Spawn
 

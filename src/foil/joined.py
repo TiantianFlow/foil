@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import signal
 import subprocess
@@ -24,6 +25,8 @@ from foil.store import (
     fleet_dir,
     fleet_ids,
     in_fleet,
+    in_seat,
+    joined,
     load_registry,
     private_dir,
     read_json,
@@ -47,7 +50,7 @@ _HARNESS_ENV = (
 
 
 def _outside() -> bool:
-    return not os.environ.get("FOIL_SEAT_ID", "").strip()
+    return not in_seat()
 
 
 def _record_path(root: Path, name: str) -> Path:
@@ -371,7 +374,25 @@ def _end(root: Path, name: str, *, quiet: bool) -> int:
     return record["quiet"]
 
 
-def mail_wait(root: Path, *, timeout: int, wake: bool, all_fleets: bool = False) -> None:
+def show_mail_wait(result: dict, *, as_json: bool) -> None:
+    """Human lines, or the same dict ``mail_wait`` returns."""
+
+    if as_json:
+        print(json.dumps(result, sort_keys=True))
+        return
+    items = result["items"]
+    if not items:
+        quiet = result["quiet"]
+        print("no new mail" if quiet < 2 else f"no new mail ({quiet} quiet waits in a row)")
+        return
+    for item in items:
+        line = f"{item['time']} {item['from']} {item['path']}"
+        print(f"{item['fleet']} {line}" if item.get("fleet") else line)
+
+
+def mail_wait(
+    root: Path, *, timeout: int, wake: bool, all_fleets: bool = False, as_json: bool = False
+) -> dict:
     if not _outside():
         raise FoilError("foil: mail wait is outside the fleet only")
     if timeout < 0:
@@ -412,21 +433,29 @@ def mail_wait(root: Path, *, timeout: int, wake: bool, all_fleets: bool = False)
             with in_fleet(fleet):
                 count = _end(root, actor(root), quiet=not found)
             quiet = max(quiet, count)
-    if not found:
-        print("no new mail" if quiet < 2 else f"no new mail ({quiet} quiet waits in a row)")
-        return
     found.sort(key=lambda pair: (pair[1]["time"], pair[1]["path"]))
+    items = []
     for fleet, item in found:
-        print(_line(item) if fleet is None else f"{fleet} {_line(item)}")
+        row = {"time": item["time"], "from": item["from"], "path": item["path"]}
+        if fleet is not None:
+            row["fleet"] = fleet
+        items.append(row)
+    result = {"items": items, "quiet": quiet}
+    show_mail_wait(result, as_json=as_json)
     sys.stdout.flush()
-    if wake_argv:
+    if wake_argv and items:
         _wake(wake_argv, session, [item for _fleet, item in found])
+    return result
 
 
 def notice(root: Path) -> None:
-    """The stderr line a joined lead's other commands end with (F41)."""
+    """The stderr line a joined lead's other commands end with (F41).
 
-    if not _outside() or actor(root) != "lead":
+    ``--as user`` is the human, so the line is not printed. The dead-seat
+    check still runs while a lead is joined.
+    """
+
+    if not _outside() or not joined(root):
         return
     with _lock(root, "lead"):
         record = _load(root, "lead")
@@ -435,6 +464,6 @@ def notice(root: Path) -> None:
         if record["checked"] != checked:
             _save(root, "lead", record)
         count = len(_new_items(root, "lead", set(record["seen"])))
-    if count:
+    if count and actor(root) == "lead":
         print(f"foil: {count} new for lead. Run foil mail wait --timeout 0.", file=sys.stderr)
 
