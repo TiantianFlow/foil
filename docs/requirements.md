@@ -2,8 +2,15 @@
 
 ## 1. Summary
 
-Foil is a lightweight command-line tool for running a fleet of CLI coding
-agents in tmux. A human works with their own agent session. When a task
+Foil's core is a lightweight command-line tool for fleets of CLI coding
+agents in tmux, and the base of a meta-harness. One agent, the master, is
+who you talk to. It runs every fleet on the machine and can show the
+evidence behind what it says. You reach it from a phone or a desk through
+the optional Bridge, a separate package. The `foil` command stays usable
+on its own. Core never needs the Bridge, the master, or a UI beyond
+`foil view`.
+
+A human works with their own agent session. When a task
 grows, that session runs `foil seat join lead` and becomes the fleet's
 *lead*, in the middle of its conversation. The lead spawns worker agents
 from role templates, directs them, and integrates their work, and
@@ -15,6 +22,39 @@ for that seat arrives, and Foil never types into a pane. Agents talk
 through short messages and shared files. Anyone can peek at an agent's
 screen, but Foil never interprets what it shows. The workers do the
 project work, never the lead.
+
+The master, the Bridge, and the planned rows in section 6.1 land in the
+phase each row names. Until that phase moves the row into the current
+command table, the rest of this document describes the binary.
+
+### Design rules
+
+These bind the master, the Bridge, and every later phase. A change that
+breaks one updates this list in the same pull request.
+
+1. **Core never needs the Bridge.** Every action an app can take is also a core command, and the same code checks it.
+2. **Files are the truth.** The Bridge keeps no state of its own. If it stops, nothing is lost.
+3. **Interpretation is for display only.** The Bridge may parse a transcript to show it. Nothing it parses decides a wake, a state, or progress.
+4. **Show the agent's real conversation,** read from that CLI's own session file. Foil still stores no turn output (N5).
+5. **"Needs you" is computed,** in a fixed order, with no model summarizing it.
+6. **An escalation is a closed question:** one question, options, a recommendation, why, and evidence.
+7. **The master is a control plane.** It talks to leads and writes no project code. A question the human has to decide stays with the human.
+8. **The human can reach any seat directly.** A direct path to every seat stays open.
+9. **The master proposes. The human's tap acts.** A merge, a settings change, and a new fleet trace back to the human.
+10. **The master starts a fresh session every turn,** seeded from files: its brief, its log, and the recent conversation. Its context stays the size of that seed, and anything it must remember is in a file.
+11. **Confirm on consequences.** Confirm a merge, a kill, an archive, and a settings change. A tool call needs no confirm.
+
+### Layers
+
+A lower layer does not import a higher one.
+
+| Layer | What it is |
+|---|---|
+| Surfaces | What a person uses. Today that is `foil view` in core. The Bridge's page, its push, and a later MCP client are further surfaces on the Bridge. |
+| Bridge | The optional package. Section 12. |
+| Core | The `foil-ai` package: the CLI and the runner. Phase 1 adds `foil.api`, one function per operation with an explicit project, fleet, and caller. From then on the CLI parses and calls those functions. |
+| Agents | The master, leads, and workers. |
+| State on disk | The source of truth: settings, each fleet's board and run records, the master's mail, and worktrees. Each CLI's own transcripts are read from that CLI's session file. Foil does not copy them. |
 
 ## 2. Glossary
 
@@ -38,6 +78,9 @@ project work, never the lead.
 | Contract | A board file with an agreed, versioned format. |
 | Memory | Reviewed lessons for the project. They outlive fleets and are given to every new seat. Fleet memory is separate: it belongs to one fleet and can name the harness and model list to use for a role from the next spawn on. |
 | Peek | Printing the raw last lines of a seat's pane. |
+| Master | One agent per machine, above every fleet, that the human talks to. It has no seat window. The binary has no master until phase 1, which also reserves the seat name `master` (section 13). |
+| Bridge | The optional package `foil-bridge`: one local process on the machine. Core runs with no Bridge. Section 12. |
+| Delivery log | An append-only record of a board path and a log state. It holds no message body and no turn output. `foil mail list --sent` derives a message state from it (section 11). |
 
 ## 3. Workflow
 
@@ -130,13 +173,13 @@ sentence; everything after step 2 is the agent's work.
 
 | ID | Requirement |
 |---|---|
-| F1 | The command set is exactly the one in section 6. |
+| F1 | The command set in the binary is exactly the current table in section 6.1. A planned row there waits until its phase moves it into that table. |
 | F2 | The template named `lead` defines a launched lead, and the lead seat is always named `lead`, launched or joined (F42). A fleet has at most one live lead, and its first seat must be the lead. A new lead may be spawned or joined only after the previous one was killed or left. |
 | F3 | `seat spawn` takes a template name, not a harness command. The role's mapping rows are one ordered list of harness entries (section 7.2). Spawn selects `entries[n % len(entries)]`, where `n` counts that role's successful spawns in this fleet since its lists last changed. The registry stores, per role, that count and the lists it counts for: the role's pair list and that fleet's override rows for the role, written as `roster list` prints them (section 7.5). A spawn whose lists differ from the stored ones starts at `n = 0`, so an edited list starts at its first entry. A killed or archived seat was a spawn, so it still counts. Every spawn of the lead, including one that replaces a killed lead, is a spawn, so each new lead takes the next entry. A renew counts as a spawn of that seat's role (F44). Resume is not a spawn and does not change `n`. A list of one stays on that entry; the length is not a special case. The chosen id and model are written on the new seat. When the chosen model is not one of that harness's `models` and that list is not empty, spawn prints one line on stderr, `foil: warning: model '<model>' is not in the models of harness '<id>': <ids>`, and launches anyway. When the fleet's overrides have rows for that role, those rows replace the role's mapping rows for that fleet, and spawn selects `rows[n % len(rows)]` with the same `n`. A row with a `harness` launches that id with the row's model, or with no model when the row has none. A row with only a `model`, the older form, makes `seat spawn` refuse when the pair list that row replaces has more than one entry. The refusal is one line, it names `foil roster update ROLE harness=ID/MODEL,ID/MODEL`, and it writes no seat record. When that pair list has one entry, the older row stays valid: it keeps the id that list selects and replaces only its model. A failed launch stores nothing, so a retry selects the same entry. Worker names are auto-numbered from the template name (`implementer-1`, `implementer-2`) unless `--name` is given. `--name user` is refused, because `user` is the human's mailbox (F14). A worker name is never reused while its record exists. After `seat archive` the name may be spawned again, and auto-numbering may reclaim it. |
 | F4 | Only the lead or a caller outside the fleet may spawn, kill, archive, resume, or renew seats, or review memory (section 6.2). A joined lead is a caller outside the fleet and keeps that authority, including `permission` and roles. |
 | F5 | A seat's identity comes from an environment variable Foil sets when launching it. A seat can't claim another identity through any flag. This protects against mistakes by cooperating agents, not against hostile processes, and the documentation says so. |
 | F6 | When a template asks for a worktree, spawning creates a git worktree on a new branch whose name is unique in the repository. A spawn that fails after creating that worktree removes the worktree and branch that attempt created, including files written there during the attempt, and removes the task mail it wrote. Killing a seat never deletes its branch and never silently destroys uncommitted work. `seat archive` does not delete a branch and does not delete uncommitted work. |
-| F7 | Foil writes nothing into the working tree. It creates no exclude entry. Files and worktrees it creates never appear as untracked or modified files in the user's repository. |
+| F7 | Foil writes nothing into the working tree, except the planned `foil fleet merge` (section 6.1), which merges a branch into a checkout. It creates no exclude entry. Files and worktrees it creates never appear as untracked or modified files in the user's repository. |
 | F8 | A launched seat whose exact tmux window exists and whose runner is still running is alive, and its state is `working` while a turn runs, `paused` after failed turns (F43), and `idle` otherwise. The other states are `dead` (the window is gone, or the runner has exited, and the seat wasn't killed), `killed` (stopped with `foil seat kill`, or a joined lead that left), and `joined` (the lead seat `foil seat join lead` wrote, with no window; no tmux fact is read for it). Whether the runner has exited is tmux's `#{pane_dead}` fact, not a reading of the pane. Which alive state a seat is in comes from its runner's record (section 7.5), and a record that is missing or unreadable reads as `idle`. A seat window stays after its runner exits, so the pane can still be read. |
 | F9 | `seat resume` restarts `dead` seats and resumes `paused` ones, never `killed` or `joined` ones; without NAME it does both for every seat. A paused seat's resume writes `run/turns/<seat>.resume`, and its runner retries at once (F43). A dead seat's resume launches a new runner with the harness and model recorded on the seat at its last launch, and with that harness's preset. It does not read the template's list to choose again, it does not apply fleet memory, and it does not overwrite the seat's harness or model. When the runner record says the session exists (`started`) and its session id still matches the seat's registry session id (or the registry has none, as with an `output` preset), the first turn is the preset's `turn` argv on that session; otherwise it is `start`. For a `generated` preset that start uses the registry session when the runner record already carries that same unused id (F44), or when the registry session differs from the runner's; otherwise it uses a fresh id. A renew that is not yet adopted forces `start` even when the runner record still names an older started session, including an `output` preset's learned id (F44). Either way the first prompt says `You were restarted. Check before you repeat a merge, push, post or send.`, and the items that were in flight when the runner stopped are delivered again. A seat with no worktree resumes where F45 runs it. A seat that cannot be restarted is named in the error and does not stop the others. A killed name stays reserved until `seat archive`. A name that has been removed from `seats` is unknown, not killed. |
 | F43 | A launched seat's tmux window runs Foil's runner, `python -P -m foil.runner PLAN`, which runs that seat's turns one at a time from `run/plans/<seat>.json`. The first turn runs the preset's `start` argv with the first prompt (F24). Every later turn runs its `turn` argv with the seat's session id and a wake prompt. A turn's stdin is `/dev/null`, its stdout and stderr reach the pane as written, and Foil keeps no copy of them (N5). The runner adds one line before each turn, `foil: turn started (start)` or `(turn)`, and one after it, `foil: turn ended (exit <code>)`. Between turns the runner checks about once a second for new items: mail in the seat's mailbox and `room/v2` files whose `wakes` names the seat, by the rules F41 uses for a mailbox, that are not in the delivered set. After the first new item it waits 1 second more for others, marks them all in flight, and starts the next turn. When deciding what is new, Foil reads at most the first 8 KiB of each candidate to parse front matter; a file whose front matter does not close in that window is skipped. The wake prompt lists each item as `time from path`, oldest first, up to 50 items, and then `...and N more: run foil mail list, and foil board list 'room/*/*.md' for posts.`; it inlines the body of each listed mail item of 600 bytes or less while the inlined bodies stay within 16 KiB, reading at most 601 body bytes to decide, and ends with the line to re-read the instruction file and to read the items not inlined with `foil mail read` or `foil board read`. When a turn exits, the runner records its end and exit code, and then ends any process left in the turn's process group. Each turn runs in its own process group, recorded in the runner's record, and one turn runs at a time. A turn that exits 0 delivers its items. Delivery is at least once: a runner that stops in a turn delivers that turn's items again when it starts next. A turn whose argv cannot be run, such as a missing program, ends with exit 127. A turn that exits non-zero runs again, with the same items and any new ones, after 30 seconds, 2 minutes, and 8 minutes. The session exists once a turn exits 0 or an `output` preset's id is learned, and the record marks it `started`; the runner writes that id and `started` to the record as soon as it learns the id, before the turn ends. Until the session is started, a failed `start` runs `start` again, on a fresh id for a `generated` preset, and after that a retry runs `turn`. When the third retry fails, the seat is `paused`, and Foil mails the lead from `foil`, or `user` when the seat is the lead: `<seat> paused after 4 failed turns (exit <code>). See foil seat peek <seat> --lines 200. foil seat resume <seat> retries.` A paused runner starts no turn until `run/turns/<seat>.resume` appears, then removes that file and runs the batch with any new items. A turn that runs past its role's `turn_timeout` (section 7.2) is ended with its process group. When the session is already started, that turn is not retried and its items are delivered. When it is not, the turn is a failed turn: the items stay in flight, the next turn is `start` again, on a fresh id for a `generated` preset, after the same 30 second, 2 minute, and 8 minute waits, and the seat is `paused` after those waits with the same pause mail as any other failed turn. Either way Foil mails the same reader `<seat>'s turn passed turn_timeout and was stopped. See foil seat peek <seat> --lines 200.` When a worker's turn exits 0 and no mail from that seat, no room file from it, and no file under `board/results/` was written during the turn, Foil mails the lead `<seat> ended a turn without mail, a post, or a result. See foil seat peek <seat> --lines 200.` A spawn and a renew seed the delivered set with every item already present before the runner starts, so mail from an earlier goal is not new. The task mail is in flight for the first turn instead, so the first prompt lists it and a runner that stops in that turn delivers it again. After that only the runner writes its record. The runner never sets an identity: `FOIL_SEAT_ID` and the rest of the environment come from the plan (F5). When its window is closed, the runner ends the running turn's process group and exits. |
@@ -246,7 +289,7 @@ The info explanations F38 names, one per section or column, exactly as the page 
 
 | ID | Requirement |
 |---|---|
-| N1 | Python 3.11+ with the standard library only; no runtime dependencies. |
+| N1 | The `foil-ai` package is Python 3.11+ with the standard library only, and it has no runtime dependencies. The Bridge is a separate package and may depend on `cryptography` (section 12). |
 | N2 | External programs are limited to tmux 3.2+, git, and the harness CLIs. |
 | N3 | Supported platforms: Linux and macOS. |
 | N4 | **Lightweight:** the package source targets at most 2,500 lines of Python. The target is not a hard limit: an automated check reports the count, and going over it needs a stated reason. The exact command surface is enforced by an automated test. |
@@ -260,8 +303,10 @@ The info explanations F38 names, one per section or column, exactly as the page 
 
 ### 6.1 Command reference
 
-These are the only commands, subcommands, and flags. Every command also
-accepts `--help`, and `foil --version` prints the version.
+The table below is the command set in the binary. These are the only
+commands, subcommands, and flags it accepts. Every command also
+accepts `--help`, and `foil --version` prints the version. The planned
+rows after this table are not in the binary.
 
 | Command | Flags | Behavior |
 |---|---|---|
@@ -295,6 +340,37 @@ accepts `--help`, and `foil --version` prints the version.
 That's nine top-level commands (`init`, `seat`, `send`, `post`, `memory`, `mail`, `board`, `roster`, `view`) and
 twenty-seven actions.
 
+#### Planned commands
+
+These rows are part of section 6 so a later phase can add the command.
+They are not in the binary. The standing check reads the table above,
+which stays nine top-level commands and twenty-seven actions, until a
+phase moves a row into that table and updates the check in the same
+change. A command, subcommand, or flag in neither table is out of scope
+(section 11). Roster's `--project` in the current table is the
+project-layer switch and takes no value (F21). The planned `--project KEY`
+names which initialized project a command addresses.
+
+| Command | Phase | Flags | Behavior |
+|---|---|---|---|
+| `foil journal` | 1 | `--follow`, `--since T`, `--json` | Lists that fleet's journal, one line per fact Foil already records: spawn, turn start, turn end and its exit code, mail sent, mail delivered, retry, pause, resume, renew, kill, join, and leave, plus `decision` lines. No mail body and no turn output (N5). |
+| `foil decide TEXT` | 1 | `--why TEXT` | Appends one `decision` line attributed to the caller. Credential-shaped text is refused, as other board writes are (N5). |
+| `foil inbox` | 1 | `--all-fleets`, `--all-projects`, `--json` | Computes what needs the human, on read, from files, in one fixed order (design rule 5). |
+| `foil brief` | 1 | `--all-projects`, `--json` | One status per fleet, built from files with no model: the goal, the state, the latest journal lines, open questions, and stuck items. |
+| `foil fleet pause` | 1 | none | Runners in that fleet start no new turn, including a new seat's first turn. Mail queues. A turn already running finishes. |
+| `foil fleet resume` | 1 | none | A paused fleet's runners take the queued items. |
+| `foil mail list` | 1 | `--sent` | With `--sent`, lists mail the caller sent and a derived state for each file: `queued`, `inflight`, `delivered`, `stuck`, or `skipped`. Those names belong to this command. The log's own states are the five in section 11. The command stores no body. The phase that adds the flag defines how each derived state is read from the log. |
+| `foil answer ID [TEXT]` | 2 | none | Answers one closed question by id. The answer is mail from `user` to the asking lead and quotes that id. The Bridge's tap and a later MCP answer tool both call this command. |
+| every command | 1 | `--as CALLER` | Outside the fleet, `CALLER` is `user` or `lead`. `user` is the human even while a lead is joined. `lead` acts as the joined lead. Refused inside a fleet. |
+| every command | 1 | `--project KEY` | Addresses one initialized project by its store key. This flag takes a value. Roster's `--project` stays the valueless project-layer switch (F21). The phase that adds this flag keeps that switch, and changes this row first if one spelling cannot carry both. |
+| `foil fleet merge` | 2 | `--into BRANCH` | Merges that fleet's `foil/goal-<fleet>` branch into the checkout's current branch, or into `BRANCH`. A dirty checkout or a conflict is one refusal line. Any caller outside the fleet may run it (section 6.2). The charter leaves it for the human's tap, which runs it as `user`. |
+| `foil master start` | 2 | `--harness ID/MODEL` | Starts the master on the runner (section 13). |
+| `foil master stop` | 2 | none | Stops the master. |
+| `foil master renew` | 2 | `--harness ID/MODEL` | Replaces the master's harness. Each of its turns already starts a fresh session (design rule 10). |
+| `foil doctor` | 2, then 4 | none | Exit 0 when the checked parts are ok, 1 when a restart may fix them, 2 when something is broken, and 3 when setup is still required. Phase 2 checks the minimum the Bridge needs. Phase 4 checks the Bridge, the master's runner, each fleet's runners, and the push path, so a scheduled run from outside Foil can use it. |
+| `foil bridge` | 2 | none | Core's command for the Bridge package. When that package is missing, it prints the install line and exits non-zero. It does not start the Bridge (section 11, section 12). |
+| `foil bridge install` | 2 | none | Writes a systemd user unit or a launchd agent so the Bridge starts on boot. The unit runs the Bridge. Core still has no daemon. |
+
 ### 6.2 Authority
 
 | Caller | `init` | `seat spawn` | `seat kill` | `seat archive` | `seat kill --all` | `seat resume` / `renew` | `seat list` / `peek` | `seat join` / `leave` | `send` | `post` | `mail read` | `mail list` | `mail wait` | `board read` | `board list` | `memory add` / `list` | `memory accept` / `reject` | `roster list` / `show` | `roster add` / `update` / `remove` | `view` |
@@ -302,8 +378,11 @@ twenty-seven actions.
 | Outside the fleet | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 | Lead | no | yes | yes, not itself | yes, not itself | no | yes | yes | no | yes | yes | yes | yes | no | yes | yes | yes | yes | yes | `harness` and `model` only | no |
 | Worker | no | no | no | no | no | no | yes | no | yes | replies only | yes | yes | no | yes | yes | yes | no | no | no | no |
+| Master | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 
 The Lead row is a launched lead, and it may renew itself (F44). A joined lead is a caller outside the fleet and has that row's authority (F4). A worker's `post` needs `--re` and takes no `--members` or `--close` (F33). A caller inside the fleet may set `harness` and `model` only. `add`, `remove`, `persona`, `worktree`, `permission`, and `--project` are refused. An omitted permission on a role written outside the fleet is `auto`. The lead cannot set `permission`.
+
+The Master row matches the row for a caller outside the fleet. The master is one process per machine and sits outside every fleet (section 13). It may run every command that row allows. That authority is cooperative, as F5 states it: the check catches a mistake by an agent that follows the rules, and a hostile process is outside that check. The human's tap runs a merge, a kill, an archive, and a settings change, as `user`. The master's charter tells it to leave those actions for the tap. The charter is not a second check in the CLI. A harness `permission` of `ask` or `auto` (section 7.3) applies to that seat's own tool calls, not to a `foil` command. Planned commands use this table. A phase that needs a different caller updates the row when it adds the command.
 
 ## 7. Data design
 
@@ -589,10 +668,12 @@ the test plays the human's agent):
 - The dead-seat check's 30 seconds are tested at their real value: the test moves the recorded time of the last check to 25 and then 31 seconds ago, and does not change the interval.
 - A wait that times out shows every fleet's seat list, every pane that is left, and every double's log. A wait ends at once when a seat dies that the scenario did not expect to die.
 
-**Standing checks:** the command surface matches section 6 exactly; the
-package source size is reported against the N4 target; tmux window identity, atomic
-writes, public-safety checks (N9), and the documentation index check (D8)
-pass.
+**Standing checks:** the command surface matches the current table in
+section 6.1 exactly: nine top-level commands and twenty-seven actions.
+Planned rows stay outside that check until their phase moves them into
+that table. The package source size is reported against the N4 target;
+tmux window identity, atomic writes, public-safety checks (N9), and the
+documentation index check (D8) pass.
 
 **Live tier (optional):** the same scenarios with real harness CLIs in
 place of `fake`, judged by the same assertions, and a two-turn check per
@@ -606,11 +687,71 @@ replaces the row for the same harness and scenario.
 
 ## 11. Out of scope
 
+The binary implements the current table in section 6.1. A planned row is
+in scope for its phase and absent from the binary until that phase moves
+it into the current table.
+
+Also in scope, for the phase that builds them:
+
+- The optional Bridge, as the separate package `foil-bridge` in this repo (section 12). Core (`foil-ai`) still has no daemon, no MCP server, and no UI other than `foil view`.
+- The per-seat delivery log. For a launched seat it is `fleets/<id>/run/turns/<seat>.log`. Each line records a time, a board path, and a state: `inflight` when a turn starts with that path, `delivered` when F43 marks that path delivered, `retry` when that turn will run again, `skipped` when renew or spawn marks a path delivered with no turn seeing it, or `printed` when `foil mail wait` shows a path to a joined lead. A joined lead has no launched-seat runner file, so the phase that adds the log places `printed`. The log holds no message body and no turn output (N5). `foil mail list --sent` shows a derived state (section 6.1), not these line states.
+
+Out of scope:
+
 - Any command, subcommand, or flag not in section 6. Changing the command
   surface requires changing this document first.
 - Parsing or interpreting pane contents or a turn's output. The only exception is the session id an `output` preset prints, bounded by F12.
 - Keeping a joined lead's file tools from changing what a spawn runs. Spawn and resume read a project harness file (F20, F27), so a joined lead whose file tools may write more than the fleet's board (onboarding step 1) could set a launch command that runs outside its sandbox. The board-only setting and the joined skill's rule against writing harness files are the guards. Only `--wake` reads no project harness file (F41).
 - Remote machines and Windows. A project is one copy of the code. Several fleets may run on it. They share the effective roles, harnesses, and mapping. Each fleet has its own board, posts, registry, and an optional pair-list override. Seat worktrees stay in the same Git repository.
-- A UI or server other than `foil view`; a viewer that writes, or types into a pane; a daemon mode, or a command that installs a service; MCP; or a hosted service.
+- In core: a UI other than `foil view`; a viewer that writes, or types into a pane; a daemon; an MCP server; a hosted service. Core does not grow those. `foil bridge` and `foil bridge install` are core commands in the planned table. The page, the local process, and a later MCP endpoint belong to the Bridge package (section 12).
 - Message read receipts, usage-based dispatch, and persona catalog tools beyond `roster list` of the personas `init` copied. Usage-based dispatch includes quota detection, probes, pacing, credential rotation, and switching a running seat because it looks exhausted. Spawn-time rotation across the ordered harness list on a role is in scope. A spawn selects `entries[n % len(entries)]`, where `n` counts that role's spawns since its lists last changed (F3). That spreads later spawns, the lead's included, across the entries the role was given. It does not balance usage and it does not move a seat that is already running. Foil does not read or show a harness's token usage or quota.
 - Context monitoring. Foil does not read a seat's context use. A seat near a full context, or at a milestone the lead picks, writes a handoff file, and the lead or a caller outside the fleet replaces it (section 8).
+
+## 12. Bridge
+
+The Bridge is optional. Core never needs it (design rule 1). It is a
+separate package, `foil-bridge`, in this repo, released in lockstep with
+core and pinned to the `foil.api` major once that module exists. Core
+stays the standard library only (N1). Bridge code lives outside
+`src/foil`, so the N4 count stays the core package. The Bridge may depend
+on `cryptography` and implements Web Push encryption itself.
+
+One local process, started on boot by `foil bridge install`: a page on
+`127.0.0.1` with a token on every request, a one-time pairing for a
+phone, a watcher that checks file times, push, transcript reads, a
+supervisor for the master, and a desk terminal. It binds `127.0.0.1`
+only. The tailnet owner check from `foil view` is an extra condition
+on a request, and the token is still required. The Bridge keeps no store
+of its own (design rule 2). The page is plain ES modules and vendored
+libraries, with no Node build.
+
+The Bridge calls core. Core does not import the Bridge. When the package
+is missing, `foil bridge` prints the install line. `foil bridge install`
+is that same core command's work: it writes the boot unit and does not
+import the package. The process the unit starts is the Bridge. This
+section is the boundary. The phase that builds the Bridge fills the
+routes, the unit file's text, pairing, and push. A later phase may add
+an MCP endpoint on this process, stdio and loopback HTTP. Core still has
+no daemon, no MCP server, and no UI other than `foil view`.
+
+## 13. Master
+
+One master per machine, on any harness the settings name. It is the agent
+the human talks to, above every repo's fleets. Its store is
+`<root>/master/`: mail (the conversation), a log of what it did and what
+it plans next, watches, a mandate, and `run/`. Leads can mail `master`.
+
+It is a caller outside every fleet, and section 6.2 gives it that row.
+Foil adds no further check (F5). In ordinary use the charter keeps it a
+control plane: it talks to leads, writes no project code, and leaves
+merge, kill, archive, and settings changes for the human's tap, which
+runs them as `user`. The harness permission on the master gates the
+master's own tool calls (section 7.3), not those `foil` commands. The
+charter text and its lint are filled with the master seat.
+
+`foil master start`, `stop`, and `renew` are the planned commands. Each
+turn starts a fresh session (design rule 10). The seat name `master` is
+reserved. The phase that adds `foil.api` refuses `seat spawn --name master`
+and a `FOIL_SEAT_ID` of `master`. This document does not make the binary
+refuse that name yet. Wakes, the files a fresh turn reads, and the
+transcript command are filled with the master seat.
