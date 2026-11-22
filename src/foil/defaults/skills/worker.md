@@ -17,7 +17,7 @@ Lookup, lowest to highest, is packaged, then global, then project, then fleet.
 4. `foil send lead` that the result is ready. The result file is the report. The mail is the pointer. Each turn ends with mail, a post, or a result, so Foil does not report a silent turn.
 5. A question or a result for the lead alone is `foil send lead`.
 6. `foil post` when other seats need the point, not the lead alone. Reply with `foil post --re` in a room you are in. You do not open a room. A worker asks the lead to open a room or to bring in a seat. Name a seat as `@name` when you need its answer. List `board/room` and read the open rooms this seat is a member of or that name it as @name, where it has not answered. Reply with `foil post --re` only to add a view the thread does not contain or to object to a close proposal. Otherwise `foil post --re` with `--decline`. Do not open a new `foil post` to continue the thread. Do not continue a thread by mailing another seat.
-7. A note under `board/notes/` is scratch that wakes nobody. Do not put the result or a decision there.
+7. A note under `board/notes/` is scratch that wakes nobody. Do not put the result or a decision there. When the task leaves a choice and you make it, record the choice and the reason with `foil decide "the choice" --why "why this one"`. Do not put a secret, a mail body, or a pane in that line.
 8. Nobody reads your pane. A question goes to the lead with `foil send lead`. Do not use your harness's own prompt that asks the person at the keyboard to pick an option or type an answer, and do not end a turn with a question that is only in the pane.
 9. Run the tests your task names. When a result file already holds this round's full suite run, read it instead of running the suite again. A run that repeats an identical one says why.
 
@@ -66,6 +66,7 @@ foil memory add "the lesson"
 foil memory add -
 foil memory list
 foil memory list --json
+foil decide "the choice" --why "why this one"
 ```
 
 `foil send` writes one mail file, and that seat's next turn reads it. Nothing is typed into a pane. `foil post --re` writes one room file and wakes the room's members and the seats it names as `@name`, such as `@lead`, except a member whose last file there is a decline. A closed room refuses the post. Only the lead opens a room, changes its members, and closes it. The file states how many files the directory has, and that count does not refuse the write. A decline writes the line `decline` and wakes nobody. `foil seat list` shows name, template, state, worktree, the harness and model recorded at launch, the session id, and the template's current description. `foil seat peek` prints the raw pane tail. Do not treat that text as a status report. `foil memory add` proposes a lesson and prints its id. `foil memory list` shows lessons the lead has already accepted.

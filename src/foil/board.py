@@ -11,6 +11,7 @@ from pathlib import Path
 
 from foil.board_ops import front_fields, split_front_matter
 from foil.errors import FoilError, shown
+from foil.journal import sent
 from foil.store import (
     SAFE_ID,
     actor,
@@ -211,11 +212,11 @@ def send_mail(toplevel: Path, to: str, text: str) -> None:
             raise FoilError("foil: a joined lead asks in its own chat")
         if sender != "lead":
             raise FoilError("foil: only the lead may send to user")
-        write_mail(toplevel, to, text, sender=sender)
-        return
-    if find_seat(toplevel, to) is None:
+    elif find_seat(toplevel, to) is None:
         raise FoilError(f"foil: unknown seat '{shown(to)}'")
-    write_mail(toplevel, to, text, sender=sender)
+    path = write_mail(toplevel, to, text, sender=sender)
+    fleet = fleet_dir(toplevel)
+    sent(fleet, fleet / "board", sender, to, path)
 
 
 def _listing(directory: Path) -> int:

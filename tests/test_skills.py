@@ -49,6 +49,8 @@ FLAGS = {
     ("roster", "update"): {"--project", "--as"},
     ("roster", "remove"): {"--project", "--as"},
     ("view",): {"--port", *_SHARED},
+    ("journal",): {"--follow", "--since", "--json", *_SHARED},
+    ("decide",): {"--why", *_SHARED},
 }
 
 ROLE_COMMANDS = {
@@ -93,6 +95,7 @@ ROLE_COMMANDS = {
         ("roster", "list"),
         ("roster", "show"),
         ("roster", "update"),
+        ("decide",),
     },
     "worker.md": {
         ("send",),
@@ -105,6 +108,7 @@ ROLE_COMMANDS = {
         ("seat", "peek"),
         ("memory", "add"),
         ("memory", "list"),
+        ("decide",),
     },
 }
 

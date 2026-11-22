@@ -19,6 +19,7 @@ from typing import Any
 from foil.board import items_for, write_mail_at
 from foil.board_ops import body_for_inline, front_fields
 from foil.errors import FoilError
+from foil.journal import note, sent
 from foil.store import MAX_BYTES, SAFE_ID, SCHEMA_VERSION, read_json, write_json
 
 MAX_PLAN_BYTES = 256 * 1024
@@ -267,8 +268,13 @@ class Runner:
             save_record(self.board, self.seat, self.record)
 
     def mail(self, to: str, text: str) -> None:
-        with contextlib.suppress(FoilError, OSError):
-            write_mail_at(self.board, to, text, "foil")
+        """Best-effort notice. A journal or mail failure leaves the turn loop running."""
+
+        try:
+            path = write_mail_at(self.board, to, text, "foil")
+            sent(self.board.parent, self.board, "foil", to, path)
+        except (FoilError, OSError):
+            return
 
     def stop(self, *_args: Any) -> None:
         """The window is closing: end the turn's process group, then exit."""
@@ -299,6 +305,7 @@ class Runner:
         argv = [values.get(token, token) for token in self.plan[kind]]
         learn = bool(self.plan["session_key"]) and not session
         print(f"foil: turn started ({kind})", flush=True)
+        note(self.board.parent, "turn_start", seat=self.seat, kind=kind)
         try:
             child = subprocess.Popen(
                 argv,
@@ -311,6 +318,7 @@ class Runner:
         except OSError as exc:
             print(f"foil: could not run {argv[0]}: {exc.strerror or exc}", flush=True)
             print(f"foil: turn ended (exit {CANNOT_RUN})", flush=True)
+            note(self.board.parent, "turn_end", seat=self.seat, exit=CANNOT_RUN)
             return CANNOT_RUN
         self.child = child
         self.record["pgid"] = child.pid
@@ -332,6 +340,7 @@ class Runner:
         self.child = None
         self.record["pgid"] = 0
         print(f"foil: turn ended (exit {code})", flush=True)
+        note(self.board.parent, "turn_end", seat=self.seat, exit=code)
         return code
 
     def _relay(self, child: subprocess.Popen) -> None:
@@ -439,13 +448,19 @@ class Runner:
             if code == 0:
                 self.record["started"] = True
             if code == 0 or (code == -1 and self.record["started"]):
-                self.record["delivered"] = sorted(
-                    set(self.record["delivered"]) | set(self.record["inflight"])
-                )
+                already = set(self.record["delivered"])
+                delivered = [
+                    path
+                    for path in self.record["inflight"]
+                    if path.startswith("mail/") and path not in already
+                ]
+                self.record["delivered"] = sorted(already | set(self.record["inflight"]))
                 self.record["inflight"] = []
                 self.record["failures"] = 0
                 first, restarted = None, False
                 self.save()
+                for path in delivered:
+                    note(self.board.parent, "mail_delivered", seat=self.seat, path=path)
                 self._after(code, started)
                 continue
             if code == -1:
@@ -466,6 +481,7 @@ class Runner:
             if self.record["failures"] > len(waits):
                 self.record["paused"] = True
                 self.save()
+                note(self.board.parent, "pause", seat=self.seat, exit=code)
                 self.mail(
                     self.plan["reader"],
                     f"{self.seat} paused after {self.record['failures']} failed turns "
@@ -473,8 +489,10 @@ class Runner:
                     f"foil seat resume {self.seat} retries.",
                 )
                 continue
+            wait = waits[self.record["failures"] - 1]
             self.save()
-            deadline = time.monotonic() + waits[self.record["failures"] - 1]
+            note(self.board.parent, "retry", seat=self.seat, exit=code, wait=wait)
+            deadline = time.monotonic() + wait
             while time.monotonic() < deadline:
                 self._renew()
                 time.sleep(min(POLL, max(0.0, deadline - time.monotonic())))

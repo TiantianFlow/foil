@@ -213,6 +213,17 @@ def _build_parser() -> argparse.ArgumentParser:
     view.add_argument("--port", metavar="N")
     _shared(view)
 
+    journal = sub.add_parser("journal", help="List this fleet's journal")
+    journal.add_argument("--follow", action="store_true")
+    journal.add_argument("--since", metavar="T")
+    journal.add_argument("--json", action="store_true")
+    _shared(journal)
+
+    decide = sub.add_parser("decide", help="Record one decision in the journal")
+    decide.add_argument("TEXT", metavar="TEXT")
+    decide.add_argument("--why", metavar="TEXT", required=True)
+    _shared(decide)
+
     return parser
 
 
@@ -486,6 +497,29 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
                 all_lessons=args.all,
                 as_json=args.json,
             )
+        return 0
+    if args.command == "journal":
+        api.journal(
+            project,
+            fleet,
+            caller,
+            inside=inside,
+            pinned=pinned,
+            since=args.since,
+            follow=args.follow,
+            as_json=args.json,
+        )
+        return 0
+    if args.command == "decide":
+        api.decide(
+            project,
+            fleet,
+            caller,
+            args.TEXT,
+            inside=inside,
+            pinned=pinned,
+            why=args.why,
+        )
         return 0
     action = args.roster_command
     layer = getattr(args, "project", False)

@@ -7,6 +7,7 @@ Notable changes to Foil, newest first.
 ### Added
 
 - `foil.api` is one function per command. Each takes the project, the fleet, and the caller and returns that command's JSON value. `foil.api.VERSION` is `1`. The CLI parses and calls it. Two calls in one process can name different projects and fleets, because the call binds those on its thread instead of writing `FOIL_FLEET` into the process environment. `--as user` or `--as lead` selects the caller outside the fleet. `user` is the human even while a lead is joined. `--project KEY` addresses another initialized project. `seat peek` and `mail wait` accept `--json` and print the same value the function returns. `seat spawn --name master` is reserved, and a `FOIL_SEAT_ID` of `master` is an unknown seat. (#112)
+- `foil journal` lists this fleet's append-only journal at `fleets/<id>/run/journal.log`. One JSON line per fact Foil already records: spawn, turn start, turn end, mail sent, mail delivered, retry, pause, resume, renew, kill, join, and leave. A line names the seat, the path, or the exit, and never a mail body or turn output. At 64 KiB the file rotates to `journal.log.1`, and a reader sees that file and then the active one. `--follow` streams new lines, `--since T` keeps facts at or after a UTC timestamp, and `--json` prints the same objects the function returns. `foil decide TEXT --why REASON` appends one `decision` line (the caller, the choice, and the reason). Each of those is one line of at most 400 characters, and credential-shaped text is refused with nothing written. The lead and worker skills say when to record a choice. (#113)
 
 ### Fixed
 
@@ -15,8 +16,10 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
-- Requirements describe the meta-harness. One agent, the master, is who you talk to, and the `foil` CLI stays usable on its own. The optional Bridge is in scope as a separate package. Core still has no daemon, no MCP server, and no UI besides `foil view`. The delivery log is in scope and records paths and states only. The binary's nine top-level commands and twenty-seven actions are unchanged. Later commands are named by phase and are not in this binary. (#111)
+- Requirements describe the meta-harness. One agent, the master, is who you talk to, and the `foil` CLI stays usable on its own. The optional Bridge is in scope as a separate package. Core still has no daemon, no MCP server, and no UI besides `foil view`. The delivery log is in scope and records paths and states only. That change left the binary's nine top-level commands and twenty-seven actions as they were. Later commands are named by phase. (#111)
 - Packaged Python is 10377 lines, above the N4 2500-line target (0.7.0 was 9380). The `foil.api` module and the call scope are the growth. The command bodies moved out of `cli.py` so concurrent in-process calls do not share a process-global identity. The count is reported, not enforced. (#112)
+- The command surface is eleven top-level commands and twenty-nine actions. `journal` and `decide` are the two new actions. (#113)
+- Packaged Python is 10710 lines, above the N4 2500-line target (the #112 count was 10377). The journal module and one line at each fact the runner and the lifecycle already record are the growth. The count is reported, not enforced. (#113)
 
 ## [0.7.0] - 2026-11-11
 

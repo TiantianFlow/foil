@@ -21,6 +21,7 @@ from foil import __version__
 from foil.board import ensure_board, items_for, write_mail
 from foil.errors import FoilError, shown
 from foil.guard import hook_environment
+from foil.journal import note, sent
 from foil.presets import (
     BUILTIN_IDS,
     TURN_TIMEOUT,
@@ -60,6 +61,7 @@ from foil.store import (
     SAFE_ID,
     SCHEMA_VERSION,
     SEAT_FIELDS,
+    actor,
     create_exclusive,
     ensure_registry,
     exclusive_lock,
@@ -1082,6 +1084,10 @@ def spawn_seat(
         _drop_mail(mailed)
         _drop_spawn_worktree(root, worktree, branch)
         raise
+    fleet = fleet_dir(root)
+    note(fleet, "spawn", seat=seat)
+    if mailed is not None:
+        sent(fleet, _board(root), actor(root), seat, mailed)
     if seat == "lead" and not in_seat():
         print(_supervisor_note(root, worktree, branch))
 
@@ -1156,7 +1162,14 @@ def kill_seats(
             _remove_leftover(registry, root, seat_name, window)
         _clear_turn_markers(root, seat_name)
 
-        def apply(fresh: dict, seat_name: str = seat_name, window: str = window) -> None:
+        killed: list[str] = []
+
+        def apply(
+            fresh: dict,
+            seat_name: str = seat_name,
+            window: str = window,
+            killed: list[str] = killed,
+        ) -> None:
             current = fresh["seats"].get(seat_name)
             if current is None:
                 if not all_seats:
@@ -1166,9 +1179,13 @@ def kill_seats(
                 if not all_seats:
                     raise FoilError(f"foil: seat '{shown(seat_name)}' changed")
                 return
+            if current.get("state") != "killed":
+                killed.append(seat_name)
             current["state"] = "killed"
 
         update_registry(root, apply)
+        for name in killed:
+            note(fleet_dir(root), "kill", seat=name)
 
 
 def _end_turn(root: Path, seat: str) -> None:
@@ -1305,17 +1322,20 @@ def resume_seats(root: Path, name: str | None) -> int:
             raise FoilError(f"foil: seat '{name}' is killed")
         if state == "paused":
             _resume_paused(root, name)
+            note(fleet_dir(root), "resume", seat=name)
         elif state != "dead":
             print(f"foil: seat '{name}' is {state}")
             return 0
         else:
             _restart(root, registry, name)
+            note(fleet_dir(root), "resume", seat=name)
         return 0
     failures: list[str] = []
     for seat_name in sorted(registry["seats"]):
         state = _shown_state(root, registry, seat_name, registry["seats"][seat_name])
         if state == "paused":
             _resume_paused(root, seat_name)
+            note(fleet_dir(root), "resume", seat=seat_name)
             continue
         if state != "dead":
             continue
@@ -1324,6 +1344,8 @@ def resume_seats(root: Path, name: str | None) -> int:
         except FoilError as exc:
             reason = str(exc).removeprefix("foil: ")
             failures.append(f"foil: seat '{seat_name}' not resumed: {reason}")
+            continue
+        note(fleet_dir(root), "resume", seat=seat_name)
     if not failures:
         return 0
     print("\n".join(failures), file=sys.stderr)
@@ -1432,6 +1454,7 @@ def renew_seat(root: Path, name: str) -> None:
             instruction=instruction,
         )
         write_bytes(record_path(_board(root), name, ".renew"), json.dumps(present).encode())
+    note(fleet_dir(root), "renew", seat=name)
     print(f"renewed seat '{name}' on {entry_label(chosen)}")
 
 
