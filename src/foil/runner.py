@@ -449,14 +449,9 @@ class Runner:
                 self._after(code, started)
                 continue
             if code == -1:
-                # Session never started: keep the batch and try start again.
-                self.record["failures"] = 0
-                first = "start"
-                if not self.plan["session_key"] and self.plan["session_id"]:
-                    self.record["session_id"] = str(uuid.uuid4())
-                self.save()
+                # No session yet: keep the batch and count a failed turn (F43).
                 self._after(code, started)
-                continue
+                first = "start"
             self.record["failures"] += 1
             if self.record["started"]:
                 first = "turn"

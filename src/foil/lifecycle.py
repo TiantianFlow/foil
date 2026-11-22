@@ -400,9 +400,64 @@ def _worktree(toplevel: Path, seat: str, base: str = "") -> tuple[str, str]:
             toplevel, ["worktree", "add", "-b", branch, str(destination), *([base] if base else [])]
         )
         if created.returncode != 0:
+            # A hook can fail after git has already registered the new checkout.
+            _drop_spawn_worktree(toplevel, str(destination), branch)
             raise FoilError("foil: could not create worktree")
         return str(destination), branch
     raise FoilError("foil: could not name worktree")
+
+
+def _checked_out(root: Path, path: Path, branch: str) -> bool:
+    """Whether git lists ``path`` as the checkout of ``branch``."""
+
+    listed = _git(root, ["worktree", "list", "--porcelain"])
+    if listed.returncode != 0:
+        return False
+    current = ""
+    ref = ""
+    wanted = f"refs/heads/{branch}"
+    for line in listed.stdout.splitlines():
+        if not line:
+            current, ref = "", ""
+        elif line.startswith("worktree "):
+            current, ref = line.removeprefix("worktree "), ""
+        elif line.startswith("branch "):
+            ref = line.removeprefix("branch ")
+        if not current or ref != wanted:
+            continue
+        try:
+            if Path(current).resolve() == path:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def _drop_spawn_worktree(root: Path, worktree: str, branch: str) -> None:
+    """Remove the worktree and branch this failed spawn created (F6).
+
+    The branch is deleted only after git has removed that checkout, so a
+    branch this attempt did not check out is left alone.
+    """
+
+    if not worktree:
+        return
+    destination = Path(worktree)
+    parent = (foil_root(root) / "worktrees").resolve()
+    try:
+        if destination.is_symlink():
+            return
+        resolved = destination.resolve()
+    except OSError:
+        return
+    if resolved.parent != parent or branch != f"foil/{resolved.name}":
+        return
+    if not _checked_out(root, resolved, branch):
+        return
+    removed = _git(root, ["worktree", "remove", "--force", str(resolved)])
+    if removed.returncode != 0:
+        return
+    _git(root, ["branch", "-D", branch])
 
 
 def _session_name(toplevel: Path, fleet: str | None = None) -> str:
@@ -956,12 +1011,14 @@ def spawn_seat(
         worktree, branch = _worktree(root, seat, goal)
     else:
         worktree, branch = "", ""
-    seeded = empty_record()
-    seeded["delivered"] = _present(root, seat)
-    mailed = write_mail(root, seat, task) if task is not None else None
-    if mailed is not None:
-        seeded["inflight"].append(mailed.relative_to(_board(root)).as_posix())
+    mailed: Path | None = None
+    window = ""
     try:
+        seeded = empty_record()
+        seeded["delivered"] = _present(root, seat)
+        if task is not None:
+            mailed = write_mail(root, seat, task)
+            seeded["inflight"].append(mailed.relative_to(_board(root)).as_posix())
         window = _open(
             root,
             registry,
@@ -978,50 +1035,49 @@ def spawn_seat(
             task=mailed,
             branch=branch if seat == "lead" else "",
         )
-    except Exception:
-        _drop_mail(mailed)
-        raise
-    record = {key: "" for key in SEAT_FIELDS}
-    record.update(
-        {
-            "name": seat,
-            "template": loaded["name"],
-            "harness": chosen["id"],
-            "model": model,
-            "window_id": window,
-            "worktree": worktree,
-            "branch": branch,
-            "session_id": native,
-        }
-    )
-    session = str(registry.get("tmux_session") or "")
+        record = {key: "" for key in SEAT_FIELDS}
+        record.update(
+            {
+                "name": seat,
+                "template": loaded["name"],
+                "harness": chosen["id"],
+                "model": model,
+                "window_id": window,
+                "worktree": worktree,
+                "branch": branch,
+                "session_id": native,
+            }
+        )
+        session = str(registry.get("tmux_session") or "")
 
-    def apply(fresh: dict) -> None:
-        existing = fresh["seats"].get(seat)
-        if existing is not None and not (seat == "lead" and existing.get("state") == "killed"):
-            raise FoilError(f"foil: seat '{shown(seat)}' already exists")
-        fresh["seats"][seat] = record
-        fresh["rotation"][role] = {
-            "list": key,
-            "next": max(rotation_index(fresh, role, key), count) + 1,
-        }
-        if session:
-            fresh["tmux_session"] = session
-        if loaded["name"] == "lead":
-            fresh["lead"] = "lead"
+        def apply(fresh: dict) -> None:
+            existing = fresh["seats"].get(seat)
+            if existing is not None and not (seat == "lead" and existing.get("state") == "killed"):
+                raise FoilError(f"foil: seat '{shown(seat)}' already exists")
+            fresh["seats"][seat] = record
+            fresh["rotation"][role] = {
+                "list": key,
+                "next": max(rotation_index(fresh, role, key), count) + 1,
+            }
+            if session:
+                fresh["tmux_session"] = session
+            if loaded["name"] == "lead":
+                fresh["lead"] = "lead"
 
-    try:
         update_registry(root, apply)
     except Exception:
-        TmuxController().abandon_window(
-            TmuxTarget(
-                session_name=str(registry.get("tmux_session") or ""),
-                window_name=seat,
-                session_id=None,
-                window_id=window,
-            )
-        )
+        if window:
+            with contextlib.suppress(Exception):
+                TmuxController().abandon_window(
+                    TmuxTarget(
+                        session_name=str(registry.get("tmux_session") or ""),
+                        window_name=seat,
+                        session_id=None,
+                        window_id=window,
+                    )
+                )
         _drop_mail(mailed)
+        _drop_spawn_worktree(root, worktree, branch)
         raise
     if seat == "lead" and not os.environ.get("FOIL_SEAT_ID", "").strip():
         print(_supervisor_note(root, worktree, branch))

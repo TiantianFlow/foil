@@ -4,6 +4,11 @@ Notable changes to Foil, newest first.
 
 ## [Unreleased]
 
+### Fixed
+
+- A first turn that hits `turn_timeout` before a session exists now waits 30 seconds, 2 minutes, and 8 minutes, then the seat is paused. This resolves the 0.7.0 limitation where that turn retried immediately and never paused. The items stay in flight and the next turn is `start` on a fresh generated id. (#110)
+- A failed spawn now removes the worktree and branch that attempt created, and still removes the task mail. This resolves the 0.7.0 limitation that a failed spawn could leave them behind. Kill and archive still keep the branch and the worktree. (#110)
+
 ## [0.7.0] - 2026-11-11
 
 `foil --version` prints 0.7.0.

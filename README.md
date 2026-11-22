@@ -249,7 +249,7 @@ Foil never interprets what is on a seat's screen or in a turn's output. `foil se
 
 `foil view` has no login. Your project folders are private to you, but a port on `127.0.0.1` is open to every account on the machine, so while the viewer runs anyone logged in can read it, including every project's pane text and board files. It hides launch-command tokens that look like credentials, as a best effort. On a machine other people log in to, stop it when you are done. The tailnet check guards only the tailnet name: an account on this machine can still read the page on `127.0.0.1`.
 
-A seat's turn runs with no one to answer it. A harness that wants a person mid-turn (a login, an update, an approval under `ask`) ends that turn or fails it; Foil retries a failed turn three times, then pauses the seat and mails the reason. A turn that runs longer than the role's `turn_timeout`, four hours by default, is ended and not retried, and Foil mails the reader that it was stopped. Mail that arrives during a turn waits for the next one.
+A seat's turn runs with no one to answer it. A harness that wants a person mid-turn (a login, an update, an approval under `ask`) ends that turn or fails it; Foil retries a failed turn three times, then pauses the seat and mails the reason. A turn that runs longer than the role's `turn_timeout`, four hours by default, is ended, and Foil mails the reader that it was stopped. Before a session exists, Foil retries that turn after 30 seconds, 2 minutes, and 8 minutes, then pauses the seat. Once a session exists, that turn's items are delivered and the seat waits for the next mail. Mail that arrives during a turn waits for the next one.
 
 ## Learn more
 
