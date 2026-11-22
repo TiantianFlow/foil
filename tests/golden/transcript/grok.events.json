@@ -1,0 +1,30 @@
+[
+  {
+    "role": "user",
+    "kind": "message",
+    "text": "Check status.",
+    "tool": "",
+    "usage": null
+  },
+  {
+    "role": "assistant",
+    "kind": "message",
+    "text": "Looking.",
+    "tool": "",
+    "usage": null
+  },
+  {
+    "role": "tool",
+    "kind": "tool",
+    "text": "{\"path\":\"board/status.md\"}\n{\"output\":\"done\"}",
+    "tool": "read",
+    "usage": null
+  },
+  {
+    "role": "assistant",
+    "kind": "thought",
+    "text": "The file is short.",
+    "tool": "",
+    "usage": null
+  }
+]

@@ -1,0 +1,6 @@
+{"method":"session/update","params":{"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"Check "}}}}
+{"method":"session/update","params":{"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"status."}}}}
+{"method":"session/update","params":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Looking."}}}}
+{"method":"session/update","params":{"update":{"sessionUpdate":"tool_call","toolCallId":"call_1","title":"read","kind":"read","rawInput":{"path":"board/status.md"}}}}
+{"method":"session/update","params":{"update":{"sessionUpdate":"tool_call_update","toolCallId":"call_1","status":"completed","rawOutput":{"output":"done"}}}}
+{"method":"session/update","params":{"update":{"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"The file is short."}}}}

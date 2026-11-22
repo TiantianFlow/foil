@@ -1,0 +1,12 @@
+{
+  "session": "ses_fixture1",
+  "messages": [
+    {"id": "msg_a", "role": "user", "time": 1},
+    {"id": "msg_b", "role": "assistant", "time": 2, "tokens": {"input": 6, "output": 3}}
+  ],
+  "parts": [
+    {"id": "prt_a", "message": "msg_a", "type": "text", "text": "Name the file."},
+    {"id": "prt_b", "message": "msg_b", "type": "text", "text": "board/status.md"},
+    {"id": "prt_c", "message": "msg_b", "type": "tool", "tool": "read", "input": {"path": "board/status.md"}, "output": "status.md"}
+  ]
+}

@@ -31,7 +31,7 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/bridge_cmd.py` | `foil bridge`, `foil bridge install`, and `foil doctor`. It writes the boot file and the desk token and does not import the Bridge package. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |
 
-`addons/bridge` is the `foil-bridge` package. Core does not import it. The Bridge process imports `bridge_cmd` for the desk token and `foil.api` only to read `VERSION`. It calls `foil.view.tailnet` for the same tailnet check `foil view` uses. Pairing credentials are files under the store. The process keeps no copy of a fleet's files.
+`addons/bridge` is the `foil-bridge` package. Core does not import it. The Bridge process imports `bridge_cmd` for the desk token and `foil.api` only to read `VERSION`. It calls `foil.view.tailnet` for the same tailnet check `foil view` uses. Pairing credentials are files under the store. The process keeps no copy of a fleet's files. `foil-bridge transcript` reads a harness's own session file, masks credential-shaped text, and falls back to the live pane. That parse is for display. Core does not read a transcript.
 
 ### Module layers
 

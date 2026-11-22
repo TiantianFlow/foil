@@ -1,0 +1,33 @@
+[
+  {
+    "role": "user",
+    "kind": "message",
+    "text": "Say ready.",
+    "tool": "",
+    "usage": null
+  },
+  {
+    "role": "assistant",
+    "kind": "message",
+    "text": "Ready.",
+    "tool": "",
+    "usage": null
+  },
+  {
+    "role": "tool",
+    "kind": "tool",
+    "text": "true",
+    "tool": "shell",
+    "usage": null
+  },
+  {
+    "role": "assistant",
+    "kind": "usage",
+    "text": "",
+    "tool": "",
+    "usage": {
+      "input": 1,
+      "output": 1
+    }
+  }
+]
