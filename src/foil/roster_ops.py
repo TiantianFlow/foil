@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -27,7 +29,7 @@ from foil.presets import (
     template_permission,
 )
 from foil.project import foil_root, store_root
-from foil.store import SAFE_ID, in_seat, write_bytes
+from foil.store import SAFE_ID, fleet_dir, in_seat, write_bytes
 
 _PROTECTED_ROLES = {"lead", "implementer", "reviewer"}
 _TEMPLATE_FIELDS = {"harness", "model", "persona", "worktree", "permission"}
@@ -109,6 +111,42 @@ def _layer(toplevel: Path, *, project: bool) -> Path:
     if project:
         return foil_root(toplevel)
     return store_root()
+
+
+def content_revision(paths: list[Path]) -> str:
+    """SHA-256 of the files a roster write replaces, in the order given.
+
+    A missing file contributes nothing after its separator, so a new layer
+    still has a revision.
+    """
+
+    digest = hashlib.sha256()
+    for path in paths:
+        if path.is_symlink():
+            raise FoilError("foil: refusing symlink")
+        digest.update(b"\0")
+        if path.is_file():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def write_revision(toplevel: Path, *, project: bool = False, fleet_memory: bool = False) -> str:
+    """The revision ``--base`` checks for this write."""
+
+    if fleet_memory:
+        return content_revision([fleet_dir(toplevel) / "overrides.toml"])
+    root = _layer(toplevel, project=project)
+    return content_revision([root / "roles.toml", root / "mapping.toml"])
+
+
+def _check_base(
+    toplevel: Path, base: str | None, *, project: bool, fleet_memory: bool
+) -> None:
+    if base is None:
+        return
+    current = write_revision(toplevel, project=project, fleet_memory=fleet_memory)
+    if base != current:
+        raise FoilError(f"foil: roster changed, current revision {current}")
 
 
 def _roles_at(root: Path) -> list[dict] | None:
@@ -404,7 +442,14 @@ def roster_list_payload(toplevel: Path) -> dict:
     loaded, available = roster_rows(toplevel)
     missing = {"error": "invalid template", "preset": "invalid", "description": ""}
     templates = [row if row is not None else {"role": name, **missing} for name, row in loaded]
-    return {"templates": templates, "personas": available}
+    payload = {
+        "templates": templates,
+        "personas": available,
+        "revision": write_revision(toplevel, fleet_memory=in_seat()),
+    }
+    with contextlib.suppress(FoilError):
+        payload["project_revision"] = write_revision(toplevel, project=True)
+    return payload
 
 
 def show_roster_list(payload: dict, *, as_json: bool) -> None:
@@ -454,7 +499,7 @@ def roster_show_payload(toplevel: Path, role: str) -> dict:
     }
     preset = [preset_source(toplevel, str(entry["id"])) for entry in entries]
     description = read_description(template)
-    return {
+    payload = {
         "role": role,
         "harness": [{"id": entry["id"], "model": entry["model"]} for entry in entries],
         "persona": template.get("persona", ""),
@@ -464,7 +509,11 @@ def roster_show_payload(toplevel: Path, role: str) -> dict:
         "layer": _role_layer(toplevel, role),
         "mapping": _mapping_layer(toplevel, role),
         "description": description,
+        "revision": write_revision(toplevel, fleet_memory=in_seat()),
     }
+    with contextlib.suppress(FoilError):
+        payload["project_revision"] = write_revision(toplevel, project=True)
+    return payload
 
 
 def show_roster_template(payload: dict, *, as_json: bool) -> None:
@@ -516,6 +565,7 @@ def _add_listed(
     from_file: str | None,
     in_fleet: bool,
     project: bool,
+    base: str | None = None,
 ) -> None:
     root = _layer(toplevel, project=project)
     roles_path = root / "roles.toml"
@@ -563,6 +613,7 @@ def _add_listed(
         maps.append({"role": role, "id": entry["id"], "model": entry["model"]})
     original_roles = roles_path.read_bytes() if roles_path.is_file() else None
     original_maps = maps_path.read_bytes() if maps_path.is_file() else None
+    _check_base(toplevel, base, project=project, fleet_memory=False)
     _save_roles_at(root, roles)
     _save_maps_at(root, maps)
     try:
@@ -581,6 +632,7 @@ def add_template(
     from_file: str | None = None,
     in_fleet: bool = False,
     project: bool = False,
+    base: str | None = None,
 ) -> None:
     """Create a template from a TOML file or from the persona of the same name."""
     if not SAFE_ID.fullmatch(role):
@@ -589,7 +641,9 @@ def add_template(
     listed = _roles_at(_layer(toplevel, project=project))
     if listed is not None and any(item["id"] == role for item in listed):
         raise FoilError(f"foil: template '{role}' already exists")
-    _add_listed(toplevel, role, from_file=from_file, in_fleet=in_fleet, project=project)
+    _add_listed(
+        toplevel, role, from_file=from_file, in_fleet=in_fleet, project=project, base=base
+    )
 
 
 def _effective_role(toplevel: Path, role: str) -> dict:
@@ -620,6 +674,7 @@ def _update_listed(
     *,
     in_fleet: bool,
     project: bool,
+    base: str | None = None,
 ) -> None:
     root = _layer(toplevel, project=project)
     roles_path = root / "roles.toml"
@@ -676,6 +731,7 @@ def _update_listed(
             raise FoilError("foil: permission is outside the fleet only")
     # A first project harness or model write is a mapping list and no role row.
     mapping_only = project and field in {"harness", "model"} and row is None
+    _check_base(toplevel, base, project=project, fleet_memory=False)
     if not mapping_only:
         _save_roles_at(root, roles)
     if field in {"harness", "model"} or maps_path.is_file():
@@ -689,7 +745,9 @@ def _update_listed(
     print(f"foil: updated template '{role}': {field} = {value}")
 
 
-def _remember(toplevel: Path, role: str, field: str, value: str) -> None:
+def _remember(
+    toplevel: Path, role: str, field: str, value: str, *, base: str | None = None
+) -> None:
     """An in-fleet harness or model edit: this fleet's overrides, not the mapping."""
 
     template = load_template(toplevel, role)
@@ -697,6 +755,7 @@ def _remember(toplevel: Path, role: str, field: str, value: str) -> None:
     _formatted_value(field, value)
     entries = _new_entries(role, field, value, current)
     _check_entries(toplevel, entries)
+    _check_base(toplevel, base, project=False, fleet_memory=True)
     remember_entries(toplevel, role, entries)
     shown_value = value if field == "model" else ",".join(entry_label(e) for e in entries)
     print(f"foil: fleet memory: {role} {field} = {shown_value}")
@@ -710,6 +769,7 @@ def update_template(
     *,
     in_fleet: bool = False,
     project: bool = False,
+    base: str | None = None,
 ) -> None:
     """Update one field in a template."""
     if not SAFE_ID.fullmatch(role):
@@ -720,13 +780,17 @@ def update_template(
         raise FoilError(f"foil: invalid field '{shown(field)}'. Valid fields: {fields}")
 
     if field in {"harness", "model"} and in_fleet:
-        _remember(toplevel, role, field, value)
+        _remember(toplevel, role, field, value, base=base)
         return
 
-    _update_listed(toplevel, role, field, value, in_fleet=in_fleet, project=project)
+    _update_listed(
+        toplevel, role, field, value, in_fleet=in_fleet, project=project, base=base
+    )
 
 
-def remove_template(toplevel: Path, role: str, *, project: bool = False) -> None:
+def remove_template(
+    toplevel: Path, role: str, *, project: bool = False, base: str | None = None
+) -> None:
     """Delete a template. ``--project`` drops the project rows and leaves the global role."""
     if not SAFE_ID.fullmatch(role):
         raise FoilError(f"foil: unknown template '{shown(role)}'")
@@ -739,6 +803,7 @@ def remove_template(toplevel: Path, role: str, *, project: bool = False) -> None
     if project:
         if not has_role and not has_map:
             raise FoilError(f"foil: unknown template '{role}'")
+        _check_base(toplevel, base, project=True, fleet_memory=False)
         if has_role:
             _save_roles_at(root, [item for item in (roles or []) if item["id"] != role])
         if has_map:
@@ -754,6 +819,7 @@ def remove_template(toplevel: Path, role: str, *, project: bool = False) -> None
     if not has_role:
         raise FoilError(f"foil: unknown template '{role}'")
     _in_use(toplevel, role)
+    _check_base(toplevel, base, project=False, fleet_memory=False)
     _save_roles_at(root, [item for item in (roles or []) if item["id"] != role])
     _save_maps_at(root, [item for item in maps if item["role"] != role])
     print(f"foil: removed template '{role}'")

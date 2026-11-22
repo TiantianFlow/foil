@@ -5,6 +5,7 @@
 
 [[harness]]
 id = "claude"
+transcript = "claude"
 unverified = ["start", "turn", "permission-auto"]
 # AskUserQuestion is off: nobody reads a turn while it runs. The tool list is
 # variadic, so the prompt comes before it and a flag always follows it.
@@ -20,6 +21,7 @@ auto = ["--permission-mode", "auto"]
 
 [[harness]]
 id = "codex"
+transcript = "codex"
 unverified = ["start", "turn", "session-key", "permission-auto", "wake-queue"]
 start = ["codex", "exec", "{permission}", "--json", "--model", "{model}", "{prompt}"]
 turn = ["codex", "exec", "{permission}", "--json", "--model", "{model}", "resume", "{session_id}", "{prompt}"]
@@ -37,6 +39,7 @@ auto = ["--dangerously-bypass-approvals-and-sandbox"]
 
 [[harness]]
 id = "gemini"
+transcript = "gemini"
 unverified = ["start", "turn", "skip-trust", "permission-auto"]
 start = ["gemini", "-p", "{prompt}", "--session-id", "{session_id}", "--skip-trust", "--model", "{model}"]
 turn = ["gemini", "-p", "{prompt}", "--resume", "{session_id}", "--skip-trust", "--model", "{model}"]
@@ -50,6 +53,7 @@ auto = ["--approval-mode", "yolo"]
 
 [[harness]]
 id = "opencode"
+transcript = "opencode"
 unverified = ["start", "turn", "session-key", "permission-auto", "set-env-question-deny"]
 start = ["opencode", "run", "{permission}", "--format", "json", "--model", "{model}", "{prompt}"]
 turn = ["opencode", "run", "{permission}", "--format", "json", "--session", "{session_id}", "--model", "{model}", "{prompt}"]
@@ -66,6 +70,7 @@ auto = ["--auto"]
 
 [[harness]]
 id = "grok"
+transcript = "grok"
 unverified = ["start", "turn", "permission-auto"]
 start = ["grok", "-p", "{prompt}", "--session-id", "{session_id}", "--model", "{model}"]
 turn = ["grok", "-p", "{prompt}", "--resume", "{session_id}", "--model", "{model}"]
@@ -79,6 +84,7 @@ auto = ["--always-approve"]
 
 [[harness]]
 id = "fake"
+transcript = "fake"
 start = ["foil-fake", "--session", "{session_id}", "{prompt}"]
 turn = ["foil-fake", "--resume", "{session_id}", "{prompt}"]
 session_id = "generated"

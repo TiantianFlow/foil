@@ -28,6 +28,7 @@ _PRESET_KEYS = {
     "set_env",
     "unverified",
     "models",
+    "transcript",
 }
 _TEMPLATE_KEYS = {"harness", "model", "persona", "worktree", "permission"}
 _ENTRY_KEYS = {"id", "model"}
@@ -46,6 +47,7 @@ _PRESET_SAME = (
     "set_env",
     "unverified",
     "models",
+    "transcript",
 )
 # Variables Foil sets itself, which a preset's set_env may not replace.
 _RESERVED_ENV_PREFIXES = ("FOIL_", "GIT_")
@@ -136,6 +138,9 @@ def _preset_from_table(raw: dict[str, Any], label: str = "harnesses.toml") -> di
         not isinstance(item, str) or not item or item.startswith("-") for item in models
     ):
         _fail("preset")
+    transcript = raw.get("transcript", "")
+    if not isinstance(transcript, str) or (transcript and not SAFE_ID.fullmatch(transcript)):
+        _fail("preset")
     return {
         "id": harness_id,
         "start": start,
@@ -151,6 +156,7 @@ def _preset_from_table(raw: dict[str, Any], label: str = "harnesses.toml") -> di
         "set_env": set_env,
         "unverified": _strings(raw.get("unverified", []), "preset"),
         "models": list(models),
+        "transcript": transcript,
     }
 
 

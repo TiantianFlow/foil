@@ -217,6 +217,10 @@ def send_mail(toplevel: Path, to: str, text: str) -> None:
     path = write_mail(toplevel, to, text, sender=sender)
     fleet = fleet_dir(toplevel)
     sent(fleet, fleet / "board", sender, to, path)
+    if sender == "user" and to != "lead":
+        from foil.delivery import note_pointer
+
+        note_pointer(fleet, path.relative_to(fleet / "board").as_posix(), to)
 
 
 def _listing(directory: Path) -> int:

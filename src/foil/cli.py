@@ -137,6 +137,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     mail_list_p = mail_sub.add_parser("list", help="List mail for current seat")
     mail_list_p.add_argument("--json", action="store_true")
+    mail_list_p.add_argument("--sent", action="store_true")
     _shared(mail_list_p)
 
     mail_wait_p = mail_sub.add_parser("wait", help="Wait for new mail")
@@ -196,17 +197,20 @@ def _build_parser() -> argparse.ArgumentParser:
     roster_add.add_argument("ROLE", metavar="ROLE")
     roster_add.add_argument("--from", dest="from_file", metavar="FILE")
     roster_add.add_argument("--project", action="store_true")
+    roster_add.add_argument("--base", metavar="REV")
     _shared(roster_add, key=False)
 
     roster_update = roster_sub.add_parser("update", help="Update a template field")
     roster_update.add_argument("ROLE", metavar="ROLE")
     roster_update.add_argument("FIELD_VALUE", metavar="FIELD=VALUE")
     roster_update.add_argument("--project", action="store_true")
+    roster_update.add_argument("--base", metavar="REV")
     _shared(roster_update, key=False)
 
     roster_remove = roster_sub.add_parser("remove", help="Remove a template")
     roster_remove.add_argument("ROLE", metavar="ROLE")
     roster_remove.add_argument("--project", action="store_true")
+    roster_remove.add_argument("--base", metavar="REV")
     _shared(roster_remove, key=False)
 
     view = sub.add_parser("view", help="Serve a read-only page for every project on this host")
@@ -223,6 +227,13 @@ def _build_parser() -> argparse.ArgumentParser:
     decide.add_argument("TEXT", metavar="TEXT")
     decide.add_argument("--why", metavar="TEXT", required=True)
     _shared(decide)
+
+    fleet = sub.add_parser("fleet", help="Pause or resume a fleet's runners")
+    fleet_sub = fleet.add_subparsers(dest="fleet_command", required=True)
+    pause = fleet_sub.add_parser("pause", help="Start no new turn")
+    _shared(pause)
+    resume = fleet_sub.add_parser("resume", help="Take the queued items")
+    _shared(resume)
 
     return parser
 
@@ -453,7 +464,15 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
                 as_json=args.json,
             )
         else:
-            api.mail_list(project, fleet, caller, inside=inside, pinned=pinned, as_json=args.json)
+            api.mail_list(
+                project,
+                fleet,
+                caller,
+                inside=inside,
+                pinned=pinned,
+                as_json=args.json,
+                sent=args.sent,
+            )
         return 0
     if args.command == "board":
         if args.board_command == "read":
@@ -521,6 +540,12 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
             why=args.why,
         )
         return 0
+    if args.command == "fleet":
+        if args.fleet_command == "pause":
+            api.fleet_pause(project, fleet, caller, inside=inside, pinned=pinned)
+        else:
+            api.fleet_resume(project, fleet, caller, inside=inside, pinned=pinned)
+        return 0
     action = args.roster_command
     layer = getattr(args, "project", False)
     if action == "list":
@@ -538,6 +563,7 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
             inside=inside, pinned=pinned,
             from_file=args.from_file,
             project_layer=layer,
+            base=args.base,
         )
     elif action == "update":
         api.roster_update(
@@ -548,12 +574,38 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
             args.FIELD_VALUE,
             inside=inside, pinned=pinned,
             project_layer=layer,
+            base=args.base,
         )
     else:
         api.roster_remove(
-            project, fleet, caller, args.ROLE, inside=inside, pinned=pinned, project_layer=layer
+            project,
+            fleet,
+            caller,
+            args.ROLE,
+            inside=inside,
+            pinned=pinned,
+            project_layer=layer,
+            base=args.base,
         )
     return 0
+
+
+def _paused_notice(call: _Call | None) -> None:
+    """A joined lead hears that the fleet is paused on its next command."""
+
+    if call is None or call.inside or call.caller != _LEAD or call.project is None:
+        return
+    try:
+        if not is_initialized(call.project):
+            return
+        from foil.delivery import tell_paused
+        from foil.store import fleet_dir
+
+        line = tell_paused(fleet_dir(call.project, call.fleet))
+    except (FoilError, OSError):
+        return
+    if line:
+        print(line, file=sys.stderr)
 
 
 def _notice(args: argparse.Namespace) -> None:
@@ -583,6 +635,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         with bound(call.project, call.fleet, call.caller, inside=call.inside, pinned=call.pinned):
             code = _run(args, call)
             sys.stdout.flush()
+            _paused_notice(call)
             _notice(args)
             return code
     except FoilError as exc:
@@ -591,6 +644,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             with bound(
                 call.project, call.fleet, call.caller, inside=call.inside, pinned=call.pinned
             ):
+                _paused_notice(call)
                 _notice(args)
         elif args is not None:
             _notice(args)

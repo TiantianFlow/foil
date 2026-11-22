@@ -397,6 +397,9 @@ def show_mail_wait(result: dict, *, as_json: bool) -> None:
     for item in items:
         line = f"{item['time']} {item['from']} {item['path']}"
         print(f"{item['fleet']} {line}" if item.get("fleet") else line)
+    for item in result.get("pointers") or []:
+        line = f"The human mailed {item['to']} directly: {item['time']} {item['path']}"
+        print(f"{item['fleet']} {line}" if item.get("fleet") else line)
 
 
 def mail_wait(
@@ -449,12 +452,54 @@ def mail_wait(
         if fleet is not None:
             row["fleet"] = fleet
         items.append(row)
+        with in_fleet(fleet):
+            _printed(root, item["path"])
+    pointers = _listed_pointers(root, fleets) if items else []
     result = {"items": items, "quiet": quiet}
+    if pointers:
+        result["pointers"] = pointers
     show_mail_wait(result, as_json=as_json)
     sys.stdout.flush()
     if wake_argv and items:
         _wake(wake_argv, session, [item for _fleet, item in found])
     return result
+
+
+def _printed(root: Path, item_path: str) -> None:
+    """``mail wait`` showed this path to a joined lead."""
+
+    if actor(root) != "lead" or not joined(root):
+        return
+    board = (fleet_dir(root) / "board").resolve()
+    try:
+        relative = Path(item_path).resolve().relative_to(board).as_posix()
+    except (OSError, ValueError):
+        return
+    from foil.delivery import note as deliver
+
+    deliver(fleet_dir(root), "lead", relative, "printed")
+
+
+def _listed_pointers(root: Path, fleets: list[str | None]) -> list[dict[str, str]]:
+    """Pointers ride along on a real wake. They do not end a wait by themselves."""
+
+    from foil.delivery import list_pointers, pending_pointers
+
+    listed: list[dict[str, str]] = []
+    for fleet in fleets:
+        with in_fleet(fleet):
+            if actor(root) != "lead" or not joined(root):
+                continue
+            pending = pending_pointers(fleet_dir(root))
+            if not pending:
+                continue
+            list_pointers(fleet_dir(root), [item["path"] for item in pending])
+            for item in pending:
+                row = dict(item)
+                if fleet is not None:
+                    row["fleet"] = fleet
+                listed.append(row)
+    return listed
 
 
 def notice(root: Path) -> None:

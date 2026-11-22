@@ -17,6 +17,7 @@ from pathlib import Path
 
 from foil.board import post_room, send_mail
 from foil.board_ops import board_list_payload, board_read_payload, show_board_list, show_board_read
+from foil.delivery import pause_fleet, resume_fleet
 from foil.errors import FoilError
 from foil.joined import join_lead, leave_lead, mail_wait
 from foil.journal import check_line, check_since, note, read_log, show_log, stream
@@ -32,7 +33,14 @@ from foil.lifecycle import (
     show_seat_list,
     spawn_seat,
 )
-from foil.mail_ops import mail_read_payload, mail_rows, show_mail_list, show_mail_read
+from foil.mail_ops import (
+    mail_read_payload,
+    mail_rows,
+    sent_rows,
+    show_mail_list,
+    show_mail_read,
+    show_sent,
+)
 from foil.memory import (
     accept_lesson,
     add_lesson,
@@ -90,6 +98,8 @@ _ALLOWED = {
     "view": {_OUTSIDE},
     "journal": {_OUTSIDE, _LEAD, _WORKER},
     "decide": {_OUTSIDE, _LEAD, _WORKER},
+    "fleet-pause": {_OUTSIDE, _LEAD},
+    "fleet-resume": {_OUTSIDE, _LEAD},
 }
 
 
@@ -383,12 +393,17 @@ def mail_list(
     *,
     inside: bool = False, pinned: bool = True,
     as_json: bool = False,
+    sent: bool = False,
 ) -> list:
     _authorize("mail-list", caller=caller, inside=inside)
     _root(project)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
-        rows = mail_rows()
-        show_mail_list(rows, as_json=as_json)
+        if sent:
+            rows = sent_rows()
+            show_sent(rows, as_json=as_json)
+        else:
+            rows = mail_rows()
+            show_mail_list(rows, as_json=as_json)
     return rows
 
 
@@ -558,6 +573,7 @@ def roster_add(
     inside: bool = False, pinned: bool = True,
     from_file: str | None = None,
     project_layer: bool = False,
+    base: str | None = None,
 ) -> dict:
     _authorize("roster-add", caller=caller, inside=inside)
     if project_layer and inside:
@@ -566,7 +582,9 @@ def roster_add(
         raise FoilError("foil: roles are outside the fleet only")
     root = _roster_root(project, project_layer=project_layer)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
-        add_template(root, role, from_file=from_file, in_fleet=inside, project=project_layer)
+        add_template(
+            root, role, from_file=from_file, in_fleet=inside, project=project_layer, base=base
+        )
     return {"ok": True}
 
 
@@ -579,6 +597,7 @@ def roster_update(
     *,
     inside: bool = False, pinned: bool = True,
     project_layer: bool = False,
+    base: str | None = None,
 ) -> dict:
     _authorize("roster-update", caller=caller, inside=inside)
     if "=" not in field_value:
@@ -592,7 +611,9 @@ def roster_update(
         raise FoilError("foil: roles are outside the fleet only")
     root = _roster_root(project, project_layer=project_layer)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
-        update_template(root, role, field, value, in_fleet=inside, project=project_layer)
+        update_template(
+            root, role, field, value, in_fleet=inside, project=project_layer, base=base
+        )
     return {"ok": True}
 
 
@@ -604,6 +625,7 @@ def roster_remove(
     *,
     inside: bool = False, pinned: bool = True,
     project_layer: bool = False,
+    base: str | None = None,
 ) -> dict:
     _authorize("roster-remove", caller=caller, inside=inside)
     if project_layer and inside:
@@ -612,7 +634,7 @@ def roster_remove(
         raise FoilError("foil: roles are outside the fleet only")
     root = _roster_root(project, project_layer=project_layer)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
-        remove_template(root, role, project=project_layer)
+        remove_template(root, role, project=project_layer, base=base)
     return {"ok": True}
 
 
@@ -658,6 +680,39 @@ def decide(
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         note(fleet_dir(root), "decision", by=caller, text=choice, why=reason)
     return {"ok": True}
+
+
+def fleet_pause(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _authorize("fleet-pause", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        # The joined lead just ran this command, so the next one is not the first notice.
+        pause_fleet(fleet_dir(root), told=caller == "lead" and not inside)
+    print("foil: fleet paused")
+    return {"paused": True}
+
+
+def fleet_resume(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _authorize("fleet-resume", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        resume_fleet(fleet_dir(root))
+    print("foil: fleet resumed")
+    return {"paused": False}
 
 
 def view(
