@@ -20,6 +20,7 @@ from foil.project import checkout_for_key, foil_root
 from foil.store import fleet_dir, fleet_ids, load_registry
 from foil_bridge import home
 from foil_bridge.controls import needs_confirm, next_roles
+from foil_bridge.terminal import attach_command, owned_worktree
 from foil_bridge.transcript import LEVELS, NOTE, event_line, mask, read
 
 FILE_CAP = 64 * 1024
@@ -94,9 +95,12 @@ def _fleet(described: dict[str, str], checkout: Path) -> dict[str, Any]:
     directory = fleet_dir(checkout, fleet)
     goal, state, paused, decisions, questions = _status_view(checkout, project, fleet, directory)
     try:
-        rows = seat_rows(checkout, load_registry(checkout, fleet), fleet=fleet)
+        registry = load_registry(checkout, fleet)
+        rows = seat_rows(checkout, registry, fleet=fleet)
+        session = str(registry.get("tmux_session") or "")
     except (FoilError, OSError):
         rows = []
+        session = ""
     seats = []
     incoming = outgoing = 0
     for row in rows:
@@ -136,6 +140,7 @@ def _fleet(described: dict[str, str], checkout: Path) -> dict[str, Any]:
         "roles": next_roles(checkout, fleet),
         "pause_confirm": needs_confirm(checkout, fleet, "pause"),
         "resume_confirm": needs_confirm(checkout, fleet, "resume-fleet"),
+        "attach": attach_command(session),
     }
 
 
@@ -175,7 +180,9 @@ def _file(described: dict[str, str], checkout: Path) -> dict[str, Any] | None:
 def _seat(described: dict[str, str], checkout: Path, level: str) -> dict[str, Any] | None:
     project, fleet, name = described["project"], described["fleet"], described["path"]
     try:
-        rows = seat_rows(checkout, load_registry(checkout, fleet), fleet=fleet)
+        registry = load_registry(checkout, fleet)
+        rows = seat_rows(checkout, registry, fleet=fleet, owned=True)
+        session = str(registry.get("tmux_session") or "")
     except (FoilError, OSError):
         return None
     row = next((item for item in rows if item["name"] == name), None)
@@ -215,6 +222,8 @@ def _seat(described: dict[str, str], checkout: Path, level: str) -> dict[str, An
         "missing": missing,
         "diff": _diff(checkout, row["branch"], _base(checkout, name, row["branch"], lead)),
         "chat": {"project": project, "fleet": fleet, "seat": name},
+        "worktree": _owned_path(row.get("worktree") or ""),
+        "attach": attach_command(session, row["window_id"] if row.get("owned") else ""),
         "actions": [
             {
                 "op": "resume",
@@ -230,6 +239,11 @@ def _seat(described: dict[str, str], checkout: Path, level: str) -> dict[str, An
             {"op": "archive", "label": "Archive", "confirm": True},
         ],
     }
+
+
+def _owned_path(text: str) -> str:
+    path = owned_worktree(text)
+    return "" if path is None else str(path)
 
 
 def _lines(conversation: dict[str, Any]) -> list[str]:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import contextlib
 import errno
 import json
@@ -20,7 +22,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from foil.bridge_cmd import bridge_port, ensure_desk_token
 from foil.errors import FoilError
 from foil.project import store_root
-from foil_bridge import auth, chat, controls, evidence, home, push, tailnet
+from foil_bridge import auth, chat, controls, evidence, home, push, tailnet, terminal
 from foil_bridge.pages import (
     asset,
     desk_html,
@@ -40,6 +42,7 @@ _SHELL = {
     "/desk.css": ("desk.css", "text/css", "max-age=0"),
     "/home.js": ("home.js", "text/javascript", "max-age=0"),
     "/seat.js": ("seat.js", "text/javascript", "max-age=0"),
+    "/term.js": ("term.js", "text/javascript", "max-age=0"),
     "/controls.js": ("controls.js", "text/javascript", "max-age=0"),
     "/offline": ("offline.html", "text/html", "max-age=0"),
 }
@@ -48,6 +51,19 @@ _PAGE_POLICY = (
     "connect-src 'self'; manifest-src 'self'; worker-src 'self'; "
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
+
+
+def _websocket(headers: object) -> bool:
+    upgrade = str(getattr(headers, "get", lambda *_args: "")("Upgrade", ""))
+    connection = str(getattr(headers, "get", lambda *_args: "")("Connection", ""))
+    return upgrade.lower() == "websocket" and "upgrade" in connection.lower()
+
+
+def _websocket_key(key: str) -> bool:
+    try:
+        return len(base64.b64decode(key, validate=True)) == 16
+    except (binascii.Error, ValueError):
+        return False
 
 
 def host_name(host: str) -> str:
@@ -95,6 +111,10 @@ class BridgeServer(ThreadingTCPServer):
     node: tuple[str, str] | None
     watch: Watcher
     stopped: threading.Event
+
+    def shutdown(self) -> None:
+        terminal.end_sessions()
+        super().shutdown()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -180,7 +200,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _authed(self, method: str, path: str, identity: auth.Identity) -> None:
         if path == "/v1/terminal":
-            self._send(404, b"")
+            self._terminal()
             return
         if path == "/" and method in {"GET", "HEAD"}:
             self._send(200, home_html(identity.token), "text/html", policy=_PAGE_POLICY)
@@ -290,6 +310,35 @@ class Handler(BaseHTTPRequestHandler):
             self._send(405, b"")
             return
         self._send(404, b"")
+
+    def _terminal(self) -> None:
+        if self.command != "GET" or not _websocket(self.headers):
+            self._send(404, b"")
+            return
+        if not self._origin_ok():
+            self._send(403, b"")
+            return
+        key = self.headers.get("Sec-WebSocket-Key", "")
+        if self.headers.get("Sec-WebSocket-Version") != "13" or not _websocket_key(key):
+            self._send(400, b"")
+            return
+        raw = (parse_qs(urlsplit(self.path).query).get("path") or [""])[-1]
+        directory = terminal.owned_worktree(raw)
+        if directory is None or not terminal.acquire():
+            self._send(403, b"")
+            return
+        try:
+            self.send_response(101, "Switching Protocols")
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Sec-WebSocket-Accept", terminal.accept_key(key))
+            self.end_headers()
+            self.close_connection = True
+            terminal.session(self.rfile, self.wfile, self.connection, directory)
+        except Exception:
+            self.close_connection = True
+        finally:
+            terminal.release()
 
     def _qr(self, path: str, identity: auth.Identity) -> None:
         if identity.kind != "desk":

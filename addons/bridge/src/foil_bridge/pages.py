@@ -60,8 +60,9 @@ def _meter(totals: dict[str, int]) -> str:
     return f'<p class="mono">in {totals["input"]} out {totals["output"]}</p>'
 
 
-def _shell(token: str, body: str) -> bytes:
+def _shell(token: str, body: str, *, wide: bool = False) -> bytes:
     style = quote(token, safe="")
+    main = '<main class="desk-page">' if wide else "<main>"
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -71,7 +72,7 @@ def _shell(token: str, body: str) -> bytes:
 <link rel="stylesheet" href="desk.css?token={style}">
 </head>
 <body>
-<main>
+{main}
 <p class="mark">Foil</p>
 {body}
 </main>
@@ -81,7 +82,7 @@ def _shell(token: str, body: str) -> bytes:
 
 
 def evidence_html(model: dict[str, Any], token: str) -> bytes:
-    """One read-only evidence page. Text in ``model`` is already masked."""
+    """One evidence page. Text in ``model`` is already masked."""
 
     kind = model["kind"]
     if kind == "fleets":
@@ -93,7 +94,8 @@ def evidence_html(model: dict[str, Any], token: str) -> bytes:
     else:
         inner = _seat_html(model, token)
     note = html.escape(model["note"])
-    return _shell(token, _crumbs(model, token) + inner + f'<p class="quiet">{note}</p>')
+    body = _crumbs(model, token) + inner + f'<p class="quiet">{note}</p>'
+    return _shell(token, body, wide=kind == "seat")
 
 
 def _fleets_html(model: dict[str, Any], token: str) -> str:
@@ -133,6 +135,7 @@ def _fleet_html(model: dict[str, Any], token: str) -> str:
         f"<h2>Seats</h2>{seats}"
         f"<h2>Tokens</h2>{_meter(model['tokens'])}"
         f"<h2>Board</h2>{files}"
+        f"{_attach_html(model.get('attach') or '')}"
     )
 
 
@@ -165,6 +168,7 @@ def _control_script(token: str) -> str:
     return (
         '<p id="control-error" class="quiet"></p></section>'
         f'<script src="controls.js?token={script}" type="module"></script>'
+        f'<script src="term.js?token={script}" type="module"></script>'
     )
 
 
@@ -263,6 +267,40 @@ def _files(rows: list[dict[str, str]], token: str) -> str:
     return "<ul>" + items + "</ul>"
 
 
+def _attach_html(command: str) -> str:
+    if not command:
+        return "<h2>Attach</h2><p>No session yet.</p>"
+    shown = html.escape(command)
+    value = html.escape(command, quote=True)
+    return (
+        "<h2>Attach</h2>"
+        f'<p class="mono">{shown}</p>'
+        f'<button type="button" data-copy="{value}">Copy attach command</button>'
+    )
+
+
+def _terminal_html(model: dict[str, Any]) -> str:
+    path = model.get("worktree") or ""
+    attach = _attach_html(model.get("attach") or "")
+    if path:
+        shown = html.escape(path)
+        value = html.escape(path, quote=True)
+        body = (
+            f'<p id="term-path" class="mono">{shown}</p>'
+            '<p class="quiet">Your shell in this worktree. Nothing is typed into the seat.</p>'
+            '<p id="term-note" class="quiet"></p>'
+            '<button type="button" id="term-open">Open terminal</button>'
+            '<button type="button" id="term-close" hidden>Close</button>'
+            '<pre id="term-screen" hidden tabindex="0" aria-label="Terminal"></pre>'
+        )
+        return f'<aside id="term" data-path="{value}"><h2>Terminal</h2>{body}{attach}</aside>'
+    return (
+        '<aside id="term"><h2>Terminal</h2>'
+        "<p>This seat has no worktree Foil owns.</p>"
+        f"{attach}</aside>"
+    )
+
+
 def _file_html(model: dict[str, Any]) -> str:
     body = model["file"]
     if body["error"]:
@@ -332,16 +370,20 @@ def _seat_html(model: dict[str, Any], token: str) -> str:
         f'<script src="seat.js?token={script}" type="module"></script>'
     )
     diff = model["diff"]
-    parts.append("<h2 id=\"diff\">Diff</h2>")
+    diff_parts = ['<div class="span"><h2 id="diff">Diff</h2>']
     if diff["base"] and diff["branch"]:
-        parts.append(
+        diff_parts.append(
             f'<p class="mono">{html.escape(diff["base"])}...{html.escape(diff["branch"])}</p>'
         )
     if diff["text"]:
-        parts.append(f'<pre class="tail">{html.escape(diff["text"])}</pre>')
+        diff_parts.append(f'<pre class="tail">{html.escape(diff["text"])}</pre>')
     if diff["note"]:
-        parts.append(f"<p>{html.escape(diff['note'])}</p>")
-    return "".join(parts)
+        diff_parts.append(f"<p>{html.escape(diff['note'])}</p>")
+    diff_parts.append("</div>")
+    talk = "".join(parts)
+    terminal = _terminal_html(model)
+    diff_html = "".join(diff_parts)
+    return f'<div class="desk"><div class="talk">{talk}</div>{terminal}{diff_html}</div>'
 
 
 def manifest(token: str) -> bytes:
