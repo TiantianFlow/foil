@@ -88,7 +88,7 @@ A background wait prints what is new but leaves it new, so a wake your harness d
 
 Stop re-arming the wait after three quiet timeouts in a row, and tell the human the fleet is quiet. A seat that dies while you wait becomes mail from `foil` that names it.
 
-A scheduled check is for when no session of yours is running: your harness's scheduler or cron runs `foil mail wait --all-fleets --timeout 0` later, which prints what is new, marks it seen, and exits, with `no new mail` when nothing is new. Each check that starts a session resends your whole context, so pick the interval from the work's phase:
+A scheduled check is for when no session of yours is running: your harness's scheduler or cron runs `foil mail wait --all-fleets --timeout 0` later, which prints what is new, marks it seen, and exits, with `no new mail` when nothing is new. Because it marks items seen, a later `foil mail wait --timeout 0` no longer shows them. A cron line therefore appends its output to a log file, and your next session reads that log before anything else. Each check that starts a session resends your whole context, so pick the interval from the work's phase:
 
 - Every five to ten minutes only while a seat is mid-task on a change you are driving, and for a few hours at most.
 - Once the work waits on something long, such as a soak, a baseline, a long test run, or the human, hourly, then every few hours or daily. Each time a check finds nothing new, stretch the interval.

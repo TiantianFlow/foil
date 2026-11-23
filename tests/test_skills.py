@@ -580,6 +580,7 @@ SCHEDULE_RULES = (
     "Give every schedule an end condition",
     "delete the schedule once it holds",
     "Tell the human the interval and the end condition",
+    "your next session reads that log before anything else",
 )
 
 

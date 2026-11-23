@@ -156,7 +156,7 @@ To check on the fleets while nobody is in a conversation, schedule `foil mail wa
 0 * * * * cd REPO && PATH=YOUR_PATH foil mail wait --all-fleets --timeout 0 >> HOME_DIR/foil-inbox.log 2>&1
 ```
 
-Read that log, or give it to your agent, when you come back. An agent that schedules its own checks follows the same rule, as the joined skill says.
+Read that log, or give it to your agent, when you come back. An agent that schedules its own checks follows the same rule, as the joined skill (`skills/joined.md`) says.
 
 ### If nothing happens
 
