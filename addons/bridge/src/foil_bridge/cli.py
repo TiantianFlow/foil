@@ -15,6 +15,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args[:1] == ["transcript"]:
         return _run(_transcript, args[1:])
+    if args == ["mcp"]:
+        return _run(_mcp, None)
     if args:
         print("foil-bridge: unexpected argument", file=sys.stderr)
         return 2
@@ -57,6 +59,12 @@ def _serve() -> int:
     from foil_bridge.server import serve
 
     return serve()
+
+
+def _mcp() -> int:
+    from foil_bridge.mcp import serve_stdio
+
+    return serve_stdio()
 
 
 def _transcript(argv: list[str]) -> int:
