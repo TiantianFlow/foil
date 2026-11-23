@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from foil.answer import question_cards
-from foil.api import answer, fleet_merge, init, roster_update, seat_spawn, send
+from foil.api import answer, fleet_merge, init, roster_update, send
 from foil.board import mail_name
 from foil.board_ops import split_front_matter
 from foil.errors import FoilError
@@ -26,7 +26,8 @@ from foil.master import (
     turn_running,
 )
 from foil.project import checkout_for_key, store_root
-from foil.store import MAX_BYTES
+from foil.store import MAX_BYTES, SAFE_ID
+from foil_bridge import controls
 
 BODY_CAP = 8 * 1024
 _KEY = re.compile(r"[a-z]+")
@@ -44,19 +45,35 @@ _ACTIONS = {
     "settings": {"role", "field", "value"},
     "fleet": {"project", "fleet"},
     "merge": {"project", "fleet"},
+    "spawn": {"project", "fleet", "role"},
+    "resume": {"project", "fleet", "seat"},
+    "renew": {"project", "fleet", "seat"},
+    "kill": {"project", "fleet", "seat"},
+    "archive": {"project", "fleet", "seat"},
 }
 _OPTIONAL = {
     "init": set(),
     "settings": {"project", "layer"},
     "fleet": {"task"},
     "merge": {"into"},
+    "spawn": {"task"},
+    "resume": set(),
+    "renew": set(),
+    "kill": set(),
+    "archive": set(),
 }
 _LABEL = {
     "init": "Init this repository",
     "settings": "Apply this setting",
     "fleet": "Start this fleet",
     "merge": "Merge this fleet",
+    "spawn": "Spawn this role",
+    "resume": "Resume this seat",
+    "renew": "Renew this seat",
+    "kill": "Kill this seat",
+    "archive": "Archive this seat",
 }
+_CARD_FLEET = {"fleet", "merge", "spawn", "resume", "renew", "kill", "archive"}
 
 
 def _cap(text: str) -> str:
@@ -95,9 +112,13 @@ def parse_card(body: str) -> tuple[dict[str, str] | None, str]:
     allowed = _ACTIONS[action] | _OPTIONAL[action]
     if not _ACTIONS[action] <= set(fields) <= allowed:
         return None, body
-    if action in {"fleet", "merge"} and not _SAFE.fullmatch(fields["fleet"]):
+    if action in _CARD_FLEET and not _SAFE.fullmatch(fields.get("fleet", "")):
         return None, body
     if "project" in fields and not _PROJECT.fullmatch(fields["project"]):
+        return None, body
+    if "seat" in fields and not SAFE_ID.fullmatch(fields["seat"]):
+        return None, body
+    if "role" in fields and not SAFE_ID.fullmatch(fields["role"]):
         return None, body
     if action == "settings":
         layer = fields.get("layer", "global")
@@ -267,14 +288,15 @@ def links_in(text: str, *, project: str = "", fleet: str = "") -> list[dict[str,
 def _card_view(fields: dict[str, str]) -> dict[str, Any]:
     action = fields["action"]
     shown = []
-    order = ("dir", "project", "fleet", "role", "field", "value", "layer", "task", "into")
+    order = ("dir", "project", "fleet", "role", "seat", "field", "value", "layer", "task", "into")
     for key in order:
         if key not in fields:
             continue
         if key == "layer" and fields[key] == "global" and "project" not in fields:
             continue
         shown.append({"key": key, "value": fields[key]})
-    return {"action": action, "label": _LABEL[action], "fields": shown}
+    flags = controls.card_flags(fields)
+    return {"action": action, "label": _LABEL[action], "fields": shown, **flags}
 
 
 def snapshot() -> dict[str, Any]:
@@ -366,9 +388,7 @@ def _mail(name: str) -> tuple[Path, str]:
     return path, sender[1]
 
 
-def run_card(name: str) -> None:
-    """Run the card in one master message. The file is read again here."""
-
+def _parsed(name: str) -> dict[str, str]:
     path, sender = _mail(name)
     if sender != "master":
         raise FoilError("foil: unknown card")
@@ -380,7 +400,22 @@ def run_card(name: str) -> None:
     parsed, _prose = parse_card(body)
     if parsed is None:
         raise FoilError("foil: unknown card")
+    return parsed
+
+
+def run_card(name: str, *, confirm: bool = False) -> None:
+    """Run the card in one master message. The file is read again here.
+
+    A kill or an archive is not an action. This request never runs one.
+    """
+
+    parsed = _parsed(name)
     action = parsed["action"]
+    if action in {"kill", "archive"}:
+        raise FoilError("foil: confirm this")
+    needs = action in {"fleet", "spawn", "resume", "renew"}
+    if needs and controls.card_flags(parsed)["confirm"] and not confirm:
+        raise FoilError("foil: confirm this")
     with contextlib.redirect_stdout(io.StringIO()):
         if action == "init":
             init(None, "main", "user", directory=parsed["dir"])
@@ -396,11 +431,26 @@ def run_card(name: str) -> None:
                 project_layer=layer,
             )
         elif action == "fleet":
-            checkout = checkout_for_key(parsed["project"])
-            task = parsed.get("task")
-            seat_spawn(checkout, parsed["fleet"], "user", "lead", task=task)
+            controls.invoke_card(parsed)
         elif action == "merge":
             checkout = checkout_for_key(parsed["project"])
             fleet_merge(checkout, parsed["fleet"], "user", into=parsed.get("into"))
+        elif action in {"spawn", "resume", "renew"}:
+            controls.invoke_card(parsed)
         else:
             raise FoilError("foil: unknown card")
+
+
+def run_control_card(body: dict) -> None:
+    """A kill or archive card. It runs only from this path, and only confirmed."""
+
+    if set(body) - {"id", "confirm"} or not isinstance(body.get("id"), str):
+        raise FoilError("foil: control is invalid")
+    if "confirm" in body and not isinstance(body["confirm"], bool):
+        raise FoilError("foil: control is invalid")
+    parsed = _parsed(body["id"])
+    if parsed["action"] not in {"kill", "archive"}:
+        raise FoilError("foil: unknown card")
+    if body.get("confirm") is not True:
+        raise FoilError("foil: confirm this")
+    controls.invoke_card(parsed)

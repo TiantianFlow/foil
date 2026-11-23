@@ -11,6 +11,11 @@ conversation opens a read-only page: the project's fleets, one fleet,
 a board file, or a seat's conversation and the diff of its branch.
 A seat's page is also a chat with that seat. Mail is sent as you, and
 each message shows its delivery state.
+A fleet page can pause or resume that fleet, spawn a role, or start a
+new goal as a new fleet. A seat page can resume, renew, kill, or
+archive that seat. Each one calls `foil.api` as you. Kill, archive, and
+anything that fleet's mandate does not cover ask first. A kill or an
+archive the master requests stays a card until you confirm it.
 The page, the token, and `foil doctor` are specified in
 [the requirements](../../docs/requirements.md).
 

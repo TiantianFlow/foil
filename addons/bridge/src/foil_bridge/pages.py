@@ -126,6 +126,7 @@ def _fleet_html(model: dict[str, Any], token: str) -> str:
         f"<h1>{html.escape(model['title'])}</h1>"
         f"<h2>Goal</h2><p>{html.escape(model['goal'] or 'None.')}</p>"
         f"<h2>State</h2><p>{html.escape(state)}</p>"
+        f"{_fleet_controls(model, token)}"
         f"<h2>Decisions</h2>{decisions}"
         f"<h2>Journal</h2>{journal}"
         f"<h2>Questions</h2>{questions}"
@@ -133,6 +134,91 @@ def _fleet_html(model: dict[str, Any], token: str) -> str:
         f"<h2>Tokens</h2>{_meter(model['tokens'])}"
         f"<h2>Board</h2>{files}"
     )
+
+
+def _button(
+    label: str, op: str, *, confirm: bool = False, role: str = "", seat: str = ""
+) -> str:
+    parts = [f' data-op="{html.escape(op, quote=True)}"']
+    if role:
+        parts.append(f' data-role="{html.escape(role, quote=True)}"')
+    if seat:
+        parts.append(f' data-seat="{html.escape(seat, quote=True)}"')
+    if confirm:
+        parts.append(' data-confirm="yes"')
+    return f'<button type="button"{"".join(parts)}>{html.escape(label)}</button>'
+
+
+def _control_open(project: str, fleet: str) -> str:
+    project_attr = html.escape(project, quote=True)
+    fleet_attr = html.escape(fleet, quote=True)
+    return (
+        f'<section id="controls" data-project="{project_attr}" data-fleet="{fleet_attr}">'
+        "<h2>Controls</h2>"
+        '<p class="quiet">A tap runs as you. Kill, archive, and anything this '
+        "fleet's mandate does not cover ask first.</p>"
+    )
+
+
+def _control_script(token: str) -> str:
+    script = quote(token, safe="")
+    return (
+        '<p id="control-error" class="quiet"></p></section>'
+        f'<script src="controls.js?token={script}" type="module"></script>'
+    )
+
+
+def _fleet_controls(model: dict[str, Any], token: str) -> str:
+    project = model["crumbs"][1]["label"]
+    fleet = model["crumbs"][2]["label"]
+    if model["paused"]:
+        toggle = _button("Resume fleet", "resume-fleet", confirm=bool(model["resume_confirm"]))
+    else:
+        toggle = _button("Pause", "pause", confirm=bool(model["pause_confirm"]))
+    roles = model["roles"]
+    if not roles:
+        listing = "<p>None.</p>"
+    else:
+        items = []
+        for row in roles:
+            if row["note"]:
+                detail = html.escape(row["note"])
+                button = ""
+            else:
+                shown = row["model"] or "harness default"
+                detail = html.escape(f"{row['harness']} / {shown}")
+                button = _button(
+                    f"Spawn {row['role']}",
+                    "spawn",
+                    role=row["role"],
+                    confirm=bool(row["confirm"]),
+                )
+            items.append(f"<li>{html.escape(row['role'])} <span>{detail}</span> {button}</li>")
+        listing = "<ul>" + "".join(items) + "</ul>"
+    goal = (
+        '<p><label>Fleet <input id="goal-fleet" maxlength="128"></label> '
+        '<label>Goal <input id="goal-task" maxlength="4000"></label> '
+        + _button("Start a new goal", "fleet")
+        + "</p>"
+    )
+    return (
+        _control_open(project, fleet)
+        + toggle
+        + "<h2>Spawn</h2>"
+        + listing
+        + "<h2>New goal</h2>"
+        + goal
+        + _control_script(token)
+    )
+
+
+def _seat_controls(model: dict[str, Any], token: str) -> str:
+    chat = model["chat"]
+    buttons = "".join(
+        _button(row["label"], row["op"], confirm=bool(row["confirm"]), seat=chat["seat"])
+        for row in model["actions"]
+    )
+    return _control_open(chat["project"], chat["fleet"]) + buttons + _control_script(token)
 
 
 def _lines(rows: list[str]) -> str:
@@ -207,6 +293,7 @@ def _seat_html(model: dict[str, Any], token: str) -> str:
         f"<h1>{html.escape(model['title'])}</h1>",
         f'<p class="crumbs">{html.escape(model["seat"]["template"])} '
         f'{html.escape(model["seat"]["state"])}</p>',
+        _seat_controls(model, token),
         f'<p class="crumbs">{" ".join(levels)}</p>',
         f'<p class="mono">{html.escape(format_id)} {html.escape(source)}</p>',
     ]

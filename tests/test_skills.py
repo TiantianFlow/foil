@@ -121,13 +121,15 @@ ROLE_COMMANDS = {
     },
     "master.md": {
         ("init",),
-        ("seat", "spawn"),
         ("seat", "list"),
+        ("seat", "renew"),
         ("send",),
         ("mail", "read"),
         ("board", "read"),
         ("brief",),
         ("inbox",),
+        ("fleet", "pause"),
+        ("fleet", "resume"),
     },
 }
 

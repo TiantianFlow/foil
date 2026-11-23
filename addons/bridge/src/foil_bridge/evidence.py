@@ -1,4 +1,4 @@
-"""Read-only pages the home links to. Display only. Nothing is written."""
+"""Pages the home links to. The GET writes nothing. Controls are a separate POST."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from foil.lifecycle import seat_rows
 from foil.project import checkout_for_key, foil_root
 from foil.store import fleet_dir, fleet_ids, load_registry
 from foil_bridge import home
+from foil_bridge.controls import needs_confirm, next_roles
 from foil_bridge.transcript import LEVELS, NOTE, event_line, mask, read
 
 FILE_CAP = 64 * 1024
@@ -132,6 +133,9 @@ def _fleet(described: dict[str, str], checkout: Path) -> dict[str, Any]:
             for rel in board_listing(directory / "board")
         ],
         "tokens": {"input": incoming, "output": outgoing},
+        "roles": next_roles(checkout, fleet),
+        "pause_confirm": needs_confirm(checkout, fleet, "pause"),
+        "resume_confirm": needs_confirm(checkout, fleet, "resume-fleet"),
     }
 
 
@@ -211,6 +215,20 @@ def _seat(described: dict[str, str], checkout: Path, level: str) -> dict[str, An
         "missing": missing,
         "diff": _diff(checkout, row["branch"], _base(checkout, name, row["branch"], lead)),
         "chat": {"project": project, "fleet": fleet, "seat": name},
+        "actions": [
+            {
+                "op": "resume",
+                "label": "Resume",
+                "confirm": needs_confirm(checkout, fleet, "resume"),
+            },
+            {
+                "op": "renew",
+                "label": "Renew",
+                "confirm": needs_confirm(checkout, fleet, "renew"),
+            },
+            {"op": "kill", "label": "Kill", "confirm": True},
+            {"op": "archive", "label": "Archive", "confirm": True},
+        ],
     }
 
 

@@ -95,7 +95,7 @@ function showCard(item, row) {
   button.type = "button";
   button.textContent = acted.has(row.id) ? "Done." : row.card.label;
   button.disabled = acted.has(row.id);
-  button.addEventListener("click", () => act(row.id, button));
+  button.addEventListener("click", () => act(row, button));
   card.append(button);
   item.append(card);
 }
@@ -166,11 +166,16 @@ async function reply(row, text, card) {
   }
 }
 
-async function act(id, button) {
+async function act(row, button) {
+  const card = row.card;
+  if (card.confirm && !window.confirm(card.label + "?")) return;
+  const path = card.route === "control" ? "/v1/control" : "/v1/act";
+  const payload = { id: row.id };
+  if (card.confirm) payload.confirm = true;
   button.disabled = true;
   try {
-    await post("/v1/act", { id });
-    acted.add(id);
+    await post(path, payload);
+    acted.add(row.id);
     button.textContent = "Done.";
   } catch (error) {
     button.disabled = false;

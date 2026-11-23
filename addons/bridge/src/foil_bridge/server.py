@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from foil.bridge_cmd import bridge_port, ensure_desk_token
 from foil.errors import FoilError
 from foil.project import store_root
-from foil_bridge import auth, chat, evidence, home, push, tailnet
+from foil_bridge import auth, chat, controls, evidence, home, push, tailnet
 from foil_bridge.pages import (
     asset,
     desk_html,
@@ -40,6 +40,7 @@ _SHELL = {
     "/desk.css": ("desk.css", "text/css", "max-age=0"),
     "/home.js": ("home.js", "text/javascript", "max-age=0"),
     "/seat.js": ("seat.js", "text/javascript", "max-age=0"),
+    "/controls.js": ("controls.js", "text/javascript", "max-age=0"),
     "/offline": ("offline.html", "text/html", "max-age=0"),
 }
 _PAGE_POLICY = (
@@ -237,6 +238,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/v1/act" and method == "POST":
             self._act()
+            return
+        if path == "/v1/control" and method == "POST":
+            self._control()
             return
         if path == "/v1/push" and method in {"GET", "HEAD"}:
             self._call(lambda: push.view(push.owner_id(identity.kind, identity.id)))
@@ -509,10 +513,27 @@ class Handler(BaseHTTPRequestHandler):
     def _act(self) -> None:
         body = self._json()
         name = body.get("id") if isinstance(body, dict) else None
-        if not isinstance(name, str):
+        if not isinstance(name, str) or not isinstance(body, dict):
             self._error(FoilError("foil: unknown card"))
             return
-        self._call(lambda: home.run_card(name) or {"ok": True})
+        if "confirm" in body and not isinstance(body["confirm"], bool):
+            self._error(FoilError("foil: unknown card"))
+            return
+        confirm = body.get("confirm") is True
+        self._call(lambda: home.run_card(name, confirm=confirm) or {"ok": True})
+
+    def _control(self) -> None:
+        if self._length(64 * 1024) is None:
+            self._error(FoilError("foil: task text is too long"))
+            return
+        body = self._json(64 * 1024)
+        if not isinstance(body, dict):
+            self._error(FoilError("foil: control is invalid"))
+            return
+        if "id" in body:
+            self._call(lambda: home.run_control_card(body) or {"ok": True})
+            return
+        self._call(lambda: controls.apply(body) or {"ok": True})
 
     def _evidence(self, token: str) -> None:
         query = parse_qs(urlsplit(self.path).query)
