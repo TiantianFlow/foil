@@ -208,22 +208,28 @@ def talk(text: str, stop: threading.Event) -> str:
 
 
 def _reply_names(record: dict, name: str) -> list[str] | None:
-    """Master mail names from the finished turn that read ``name``.
+    """Master mail from every finished turn that read ``name``.
 
-    None means that turn has not finished. An empty list means it wrote none.
+    None means the file is not delivered, or no finished turn lists it.
+    An empty list means those turns wrote none.
     """
 
     if name not in record.get("delivered", []):
         return None
-    found: list[str] | None = None
+    found: list[str] = []
+    seen = False
     for item in record.get("reads", []):
         if not isinstance(item, dict) or item.get("open"):
             continue
         names = item.get("names")
         if not isinstance(names, list) or name not in names:
             continue
+        seen = True
         wrote = item.get("wrote")
-        found = [mail for mail in wrote if isinstance(mail, str)] if isinstance(wrote, list) else []
+        if isinstance(wrote, list):
+            found.extend(mail for mail in wrote if isinstance(mail, str))
+    if not seen:
+        return None
     return found
 
 

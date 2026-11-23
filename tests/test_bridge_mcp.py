@@ -111,12 +111,13 @@ def _mail(sender: str, body: str, stamp: str, suffix: str = "0123abcd") -> str:
     return name
 
 
-def _observe(name: str, wrote: list[str]) -> None:
+def _observe(name: str, wrote: list[str], *, deliver: bool = True) -> None:
     from foil.master import load_record, save_record
 
     root = directory()
     record = load_record(root)
-    record["delivered"] = sorted(set(record["delivered"]) | {name})
+    if deliver:
+        record["delivered"] = sorted(set(record["delivered"]) | {name})
     record["reads"].append({"names": [name], "wrote": list(wrote), "open": False})
     save_record(root, record)
 
@@ -416,6 +417,37 @@ def test_talk_returns_only_the_turn_that_read_this_file(
         mcp.talk("still here", threading.Event())
     watcher.join(5)
     assert any("still here" in item["body"] for item in snapshot()["messages"])
+
+
+def test_talk_keeps_a_reply_from_an_earlier_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mcp, "WAIT", 2)
+    box: list[str] = []
+    error: list[BaseException] = []
+
+    def call() -> None:
+        try:
+            box.append(mcp.talk(USER, threading.Event()))
+        except Exception as exc:
+            error.append(exc)
+
+    thread = threading.Thread(target=call)
+    thread.start()
+    folder = directory() / "mail"
+    deadline = time.time() + 5
+    while time.time() < deadline and not list(folder.glob("*-user-*.md")):
+        time.sleep(0.01)
+    users = list(folder.glob("*-user-*.md"))
+    assert users
+    reply = _mail("master", "Ship it.", "20261123T150001Z", "aaaa1111")
+    _observe(users[0].name, [reply], deliver=False)
+    time.sleep(0.3)
+    assert thread.is_alive()
+    _observe(users[0].name, [])
+    thread.join(5)
+    assert error == []
+    assert box == ["Ship it.\n"]
 
 
 def test_cancel_keeps_the_message(monkeypatch: pytest.MonkeyPatch) -> None:

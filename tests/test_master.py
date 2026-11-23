@@ -470,6 +470,98 @@ def test_a_turn_records_the_mail_it_read(
         assert turn["wrote"] == log.read_text(encoding="utf-8").splitlines()
         assert planted not in turn["wrote"]
         assert written.name in record["delivered"]
+        assert set(turn["wrote"]) <= set(record["delivered"])
+        time.sleep(2.2)
+        later = load_record(root)
+        names = {name for item in later["reads"] for name in item["names"]}
+        assert set(turn["wrote"]).isdisjoint(names)
+    finally:
+        with contextlib.suppress(OSError):
+            os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=10)
+
+
+def test_a_failed_attempt_keeps_its_reply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = directory()
+    mail = root / "mail"
+    script = tmp_path / "retry.py"
+    log = tmp_path / "wrote.txt"
+    attempts = tmp_path / "attempts"
+    script.write_text(
+        "\n".join(
+            [
+                "import sys",
+                "from pathlib import Path",
+                f"folder = Path({str(mail)!r})",
+                f"log = Path({str(log)!r})",
+                f"attempts = Path({str(attempts)!r})",
+                "count = int(attempts.read_text(encoding='utf-8')) if attempts.is_file() else 0",
+                "attempts.write_text(str(count + 1), encoding='utf-8')",
+                "if count:",
+                "    sys.exit(0)",
+                "name = '20261123T150100Z-master-aaaa1111.md'",
+                "folder.mkdir(parents=True, exist_ok=True)",
+                "text = (",
+                "    '---\\ncontract: mail/v1\\nfrom: master\\nto: master\\n'",
+                "    'time: 2026-11-23T15:01:00Z\\n---\\n\\nShip it.\\n'",
+                ")",
+                "(folder / name).write_text(text, encoding='utf-8')",
+                "log.write_text(name, encoding='utf-8')",
+                "sys.exit(1)",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    plan = {
+        "kind": "master",
+        "start": [sys.executable, str(script), "{prompt}", "{session_id}"],
+        "session_key": "",
+        "cwd": str(root.resolve()),
+        "env": {"FOIL_MASTER": "1"},
+        "env_forward": [],
+        "harness": "probe",
+        "model": "",
+        "turn_timeout": 30,
+        "retry": [0, 0, 0],
+        "root": str(root.resolve()),
+    }
+    path = root / "run" / "plan.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(plan), encoding="utf-8")
+    process = subprocess.Popen(
+        [sys.executable, "-P", "-m", "foil.runner", str(path)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    try:
+        _until(lambda: load_record(root)["baselined"])
+        written = deliver("hello from the human", None)
+
+        def ready() -> bool:
+            record = load_record(root)
+            turns = [
+                item
+                for item in record["reads"]
+                if written.name in item["names"] and not item["open"]
+            ]
+            return len(turns) >= 2 and written.name in record["delivered"]
+
+        _until(ready)
+        record = load_record(root)
+        turns = [item for item in record["reads"] if written.name in item["names"]]
+        reply = log.read_text(encoding="utf-8").strip()
+        assert [item["wrote"] for item in turns] == [[reply], []]
+        assert all(reply not in item["names"] for item in turns)
+        assert reply in record["delivered"]
+        time.sleep(2.2)
+        names = {name for item in load_record(root)["reads"] for name in item["names"]}
+        assert reply not in names
     finally:
         with contextlib.suppress(OSError):
             os.killpg(process.pid, signal.SIGTERM)
