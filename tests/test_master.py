@@ -94,7 +94,11 @@ def test_charter_is_a_control_plane() -> None:
     assert "cites a path" in text
     assert "short messages" in text
     assert "shell that can run `foil`" in text
-    assert "`foil seat spawn lead --as user --project KEY --task TEXT`" in text
+    assert "`foil fleet pause --as user --project KEY`" in text
+    assert "`foil fleet resume --as user --project KEY`" in text
+    assert "`foil seat renew lead --as user --project KEY`" in text
+    assert "`kill`" in text
+    assert "`archive`" in text
     assert "inbox: KEY FLEET goal" in text
     assert "cites the reviewer's result file" in text
     assert "merge card" in text

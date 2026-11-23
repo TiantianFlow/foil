@@ -10,6 +10,7 @@ import json
 import re
 import threading
 from collections.abc import Iterator
+from urllib.parse import urlencode
 
 import pytest
 from foil_bridge.server import open_server
@@ -17,8 +18,12 @@ from playwright.sync_api import Browser, expect, sync_playwright
 
 from foil import api
 from foil.bridge_cmd import read_desk_token
+from foil.delivery import fleet_paused
+from foil.lifecycle import TmuxController
+from foil.store import fleet_dir
 from tests.test_answer import _lead_mail, _question
-from tests.test_bridge_home import _master_mail, _short_repo
+from tests.test_bridge_evidence import _registry, _seat
+from tests.test_bridge_home import _key, _master_mail, _short_repo
 
 
 @pytest.fixture(scope="module")
@@ -125,6 +130,76 @@ def test_home_answers_on_a_tap_and_leaves_a_card_until_then(
                 ])"""
             )
             assert ready is True
+        finally:
+            context.close()
+            server.stopped.set()
+            server.watch.stop()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+        assert errors == []
+
+
+def test_pause_is_one_tap_and_kill_asks(
+    monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> None:
+    monkeypatch.setattr("foil_bridge.tailnet.tailnet", lambda: None)
+    monkeypatch.setattr(TmuxController, "matches_window", lambda *args, **kwargs: False)
+    killed: list = []
+
+    def _kill(*args, **kwargs):
+        killed.append((args, kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr("foil_bridge.controls.seat_kill", _kill)
+    with _short_repo(monkeypatch) as repo:
+        key = _key(repo)
+        board = fleet_dir(repo, "main") / "board"
+        board.mkdir(parents=True, exist_ok=True)
+        (board / "status.md").write_text(
+            "## Mandate\n\nMay decide: pause.\n", encoding="utf-8"
+        )
+        _registry(repo, "main", {"lead": _seat("lead", "")})
+        server = open_server(0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+        token = read_desk_token()
+        origin = f"http://127.0.0.1:{port}"
+        context = browser.new_context()
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        try:
+            fleet = urlencode({"target": f"projects/{key}/fleets/main", "token": token})
+            page.goto(f"{origin}/evidence?{fleet}")
+            page.get_by_role("button", name="Pause").click()
+            expect(page.get_by_role("button", name="Resume fleet")).to_be_visible()
+            assert fleet_paused(fleet_dir(repo, "main")) is True
+            seat = urlencode(
+                {"target": f"projects/{key}/fleets/main/seats/lead", "token": token}
+            )
+            page.goto(f"{origin}/evidence?{seat}")
+            asked: list[str] = []
+
+            def _ask(dialog) -> None:
+                asked.append(dialog.message)
+                dialog.dismiss()
+
+            page.on("dialog", _ask)
+            page.get_by_role("button", name="Kill").click()
+            assert asked == ["Kill?"]
+            assert killed == []
+            page.remove_listener("dialog", _ask)
+
+            def _allow(dialog) -> None:
+                dialog.accept()
+
+            page.on("dialog", _allow)
+            page.get_by_role("button", name="Kill").click()
+            expect(page.get_by_role("button", name="Kill")).to_be_visible()
+            assert killed and killed[0][0][2] == "user"
+            assert killed[0][1]["name"] == "lead"
         finally:
             context.close()
             server.stopped.set()

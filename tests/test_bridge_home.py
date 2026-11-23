@@ -191,7 +191,7 @@ def test_action_card_runs_only_on_the_tap(
             calls.append((args, kwargs))
             return {"ok": True}
 
-        monkeypatch.setattr("foil_bridge.home.seat_spawn", _spawn)
+        monkeypatch.setattr("foil_bridge.controls.seat_spawn", _spawn)
         fleet_mail = _master_mail(
             "master",
             f"card: fleet\nproject: {key}\nfleet: side\n\nA second fleet.\n",
@@ -240,6 +240,17 @@ def test_action_card_runs_only_on_the_tap(
                 token=token,
                 headers=_origin(port),
                 body={"id": fleet_mail.name},
+            )
+            assert status == 400, body
+            assert json.loads(body)["error"] == "foil: confirm this"
+            assert calls == []
+            status, body = _request(
+                port,
+                "POST",
+                "/v1/act",
+                token=token,
+                headers=_origin(port),
+                body={"id": fleet_mail.name, "confirm": True},
             )
             assert status == 200, body
             assert calls and calls[0][0][2] == "user"
