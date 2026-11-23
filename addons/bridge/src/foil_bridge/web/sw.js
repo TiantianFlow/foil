@@ -13,6 +13,34 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+self.addEventListener("push", (event) => {
+  let label = "Foil";
+  let card = "";
+  try {
+    const data = event.data ? event.data.json() : {};
+    if (data && typeof data.label === "string" && data.label) label = data.label;
+    if (data && typeof data.card === "string") card = data.card;
+  } catch (error) {
+    label = "Foil";
+  }
+  event.waitUntil(
+    self.registration.showNotification(label, {
+      body: "",
+      tag: card || "foil",
+      data: { card },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const card = (event.notification.data && event.notification.data.card) || "";
+  const url = new URL("/", self.location.origin);
+  if (token) url.searchParams.set("token", token);
+  if (card) url.searchParams.set("card", card);
+  event.waitUntil(self.clients.openWindow(url.href));
+});
+
 self.addEventListener("fetch", (event) => {
   if (event.request.mode !== "navigate") return;
   event.respondWith(

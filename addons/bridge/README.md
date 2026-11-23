@@ -5,7 +5,8 @@ only. Core does not import this package. `foil bridge` looks for the
 `foil-bridge` program on `PATH`, and `foil bridge install` writes the
 boot unit.
 
-The home is the conversation with the master. A path in that
+The home is the conversation with the master. A notification stays off
+until a kind is turned on. It is a label and the id of the card it opens. A path in that
 conversation opens a read-only page: the project's fleets, one fleet,
 a board file, or a seat's conversation and the diff of its branch.
 The page, the token, and `foil doctor` are specified in

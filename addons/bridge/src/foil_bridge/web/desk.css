@@ -85,6 +85,7 @@ a { color: var(--copper); }
   margin: 0.7rem 0;
 }
 .card button { margin-right: 0.4rem; }
+.card[aria-current="true"] { outline: 2px solid var(--copper); }
 label { display: block; margin-top: 0.8rem; }
 textarea {
   display: block;

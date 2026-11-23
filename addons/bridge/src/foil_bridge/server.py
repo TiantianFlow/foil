@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import json
 import os
@@ -20,7 +21,7 @@ from foil import view as foil_view
 from foil.bridge_cmd import bridge_port, ensure_desk_token
 from foil.errors import FoilError
 from foil.project import store_root
-from foil_bridge import auth, evidence, home
+from foil_bridge import auth, evidence, home, push
 from foil_bridge.pages import (
     asset,
     desk_html,
@@ -231,6 +232,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/act" and method == "POST":
             self._act()
             return
+        if path == "/v1/push" and method in {"GET", "HEAD"}:
+            self._call(lambda: push.view(push.owner_id(identity.kind, identity.id)))
+            return
+        if path == "/v1/push" and method == "POST":
+            self._subscribe(identity)
+            return
+        if path == "/v1/push/settings" and method == "POST":
+            self._push_settings()
+            return
+        if path == "/v1/push/card" and method in {"GET", "HEAD"}:
+            self._push_card()
+            return
         if path == "/v1/session" and method in {"GET", "HEAD"}:
             if identity.kind == "desk":
                 self._json_ok({"kind": "desk"})
@@ -283,6 +296,7 @@ class Handler(BaseHTTPRequestHandler):
     def _revoke(self, identity: auth.Identity, identifier: str) -> None:
         result = auth.revoke(identity, identifier)
         if result == "ok":
+            push.drop(identifier)
             self._json_ok({"id": identifier, "revoked": True})
             return
         if result == "forbidden":
@@ -437,6 +451,29 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._call(lambda: home.post_answer(project, fleet, question_id, text) or {"ok": True})
 
+    def _subscribe(self, identity: auth.Identity) -> None:
+        body = self._json(8192)
+        if not isinstance(body, dict):
+            self._error(FoilError("foil: push subscription is invalid"))
+            return
+        owner = push.owner_id(identity.kind, identity.id)
+        self._call(lambda: push.save_subscription(owner, body))
+
+    def _push_settings(self) -> None:
+        body = self._json()
+        if not isinstance(body, dict):
+            self._error(FoilError("foil: push setting is invalid"))
+            return
+        self._call(lambda: push.update_settings(body))
+
+    def _push_card(self) -> None:
+        card = (parse_qs(urlsplit(self.path).query).get("id") or [""])[-1]
+        described = push.describe_card(card)
+        if described is None:
+            self._send(404, b"")
+            return
+        self._json_ok(described)
+
     def _act(self) -> None:
         body = self._json()
         name = body.get("id") if isinstance(body, dict) else None
@@ -507,11 +544,24 @@ def open_server(port: int | None = None) -> BridgeServer:
     server.stopped = threading.Event()
     server.watch = Watcher(server.root, interval())
     server.watch.start()
+    server.push_thread = threading.Thread(
+        target=_push_loop, args=(server.stopped,), name="foil-bridge-push", daemon=True
+    )
+    server.push_thread.start()
     if not server.watch.ready.wait(5):
+        server.stopped.set()
         server.watch.stop()
         server.server_close()
+        server.push_thread.join(timeout=2)
         raise FoilError("foil: bridge watcher did not start")
     return server
+
+
+def _push_loop(stopped: threading.Event) -> None:
+    while not stopped.is_set():
+        with contextlib.suppress(Exception):
+            push.deliver()
+        stopped.wait(interval())
 
 
 def serve() -> int:
@@ -535,5 +585,6 @@ def serve() -> int:
             server.watch.stop()
             server.shutdown()
             server.server_close()
+            server.push_thread.join(timeout=2)
         signal.signal(signal.SIGTERM, previous)
     return 0
