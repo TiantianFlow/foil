@@ -272,7 +272,11 @@ def test_interrupt_reaches_the_foreground_command(
             client = _open(server.server_address[1], _token(), owned)
             _until(client, b"ready")
             pid = _reported(report)
+            # ready is printed before sleep is exec'd. A Ctrl-C in that gap
+            # is handled by the shell, and sleep then runs for the full wait.
+            child = _command(pid, b"sleep")
             client.send(b"\x03")
+            _gone(child)
             _gone(pid)
             client.close()
 
@@ -709,6 +713,26 @@ def _cwd(pid: int) -> str:
 def _names(pid: int) -> set[str]:
     raw = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
     return {part.split(b"=", 1)[0].decode() for part in raw if part}
+
+
+def _command(pid: int, name: bytes, timeout: float = 3) -> int:
+    """The child whose argv starts with ``name``. The signal must hit that command."""
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            kids = Path(f"/proc/{pid}/task/{pid}/children").read_text().split()
+        except OSError:
+            kids = []
+        for kid in kids:
+            try:
+                cmd = Path(f"/proc/{kid}/cmdline").read_bytes()
+            except OSError:
+                continue
+            if cmd.startswith(name + b"\0"):
+                return int(kid)
+        time.sleep(0.01)
+    raise AssertionError(pid)
 
 
 def _gone(pid: int, timeout: float = 3) -> None:
