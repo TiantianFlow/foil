@@ -148,7 +148,7 @@ foil seat list --all-fleets
 FOIL_FLEET=docs foil send lead "the answer"
 ```
 
-`--all-fleets` 打印的每一行都以它的舰队开头。等那个舰队的 `status.md` 写着 `state: done` 再合并目标分支。
+`--all-fleets` 打印的每一行都以它的舰队开头。那个舰队的 `status.md` 写着 `state: done` 时，用 `foil fleet merge` 合并目标分支。工作区不干净或发生冲突时，命令只拒绝一行，检出保持原样。
 
 没人在对话里时，要查看各个舰队，可以定时运行 `foil mail wait --all-fleets --timeout 0`。它打印新到的内容、标为已读，然后退出；没有新内容时打印 `no new mail`。例如每 30 分钟一次的 crontab 行，`REPO`、`YOUR_PATH` 和 `HOME_DIR` 按下面查看器服务那样填写：
 

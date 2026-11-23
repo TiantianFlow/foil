@@ -24,7 +24,8 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/board_ops.py` | Reads and lists board files. Paths must stay inside the project folder's `board/`. |
 | `src/foil/memory.py` | Stores project lessons as JSON files. |
 | `src/foil/runner.py` | Runs inside each seat's window and runs that seat's turns one at a time from its plan: the first prompt, the wake prompts, retries, pauses, and the runner record. It does not choose the argv. A master plan runs the same process with a fresh session every turn. |
-| `src/foil/master.py` | The store-level master: `<root>/master/`, `foil master start`, `stop`, and `renew`, mail to `master`, and the seed for each turn. It does not import the Bridge. |
+| `src/foil/master.py` | The store-level master: `<root>/master/`, `foil master start`, `stop`, and `renew`, mail to `master`, and the seed for each turn. A done goal adds that fleet's finish block to the prompt. It does not import the Bridge. |
+| `src/foil/merge.py` | `foil fleet merge`: the goal branch into the checkout. A refusal is one line and an inbox record. The finish block cites the reviewer's result file. |
 | `src/foil/journal.py` | Appends one fact per line to a fleet's journal, and lists or follows that file. It stores no mail body and no turn output. |
 | `src/foil/delivery.py` | Appends the per-seat delivery log, the lead's pointers, and the fleet pause flag. A line is a time, a board path, and a state. It stores no mail body and no turn output. |
 | `src/foil/guard.py` | Writes the seat-only `pre-commit` and `pre-push` hooks, and runs their checks for private text and the worktree boundary before the repository's own hook. |
@@ -63,6 +64,7 @@ flowchart TB
 
   runner["<b>runner.py</b><br/>runs inside each tmux window<br/>one turn at a time · wake prompts · retries"]
   masterpy["<b>master.py</b><br/>store mailbox · start · stop · renew"]
+  mergepy["<b>merge.py</b><br/>goal branch into the checkout"]
   journal["<b>journal.py</b><br/>one fact per line · no body"]
   delivery["<b>delivery.py</b><br/>path and state · pause · pointers"]
 
@@ -118,6 +120,9 @@ flowchart TB
   view --> delivery
   delivery --> store
   api --> masterpy
+  api --> mergepy
+  masterpy --> mergepy
+  mergepy --> store
   masterpy --> presets
   masterpy --> tmuxmod
   masterpy --> store
@@ -147,7 +152,7 @@ flowchart TB
   classDef base fill:#e5e7eb,stroke:#374151,color:#1f2937
   classDef apart fill:#fde68a,stroke:#b45309,color:#1f2937
   class cli,api entry
-  class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,view,journal,delivery,masterpy core
+  class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,view,journal,delivery,masterpy,mergepy core
   class presets,tmuxmod,store,project,scope base
   class runner apart
 ```
@@ -213,6 +218,7 @@ The project folder holds:
 - `fleets/<id>/run/turns/<seat>.json` — the runner record: the session id the next turn uses, the delivered and in-flight board paths (absent delivered paths dropped on save, and the oldest dropped if the record would exceed its size limit), when the running turn started, the last exit code, the failures in a row, whether the session has been started, whether the seat is paused, the running turn's process group, and `sessions`, an append-only list of `{id, harness, model, started}` for each session id the seat has used. Renew keeps that list and appends the new id. A record written without `sessions` loads it as empty. Spawn, resume, and renew write the record before the runner starts; after that only the runner writes it. `<seat>.resume` beside it retries a paused seat, and `<seat>.renew` asks a running seat's runner to start the new session after its current turn.
 - `fleets/<id>/run/turns/<seat>.log` — the delivery log. One JSON line per path and state: `inflight`, `delivered`, `retry`, `skipped`, or `printed`. No mail body and no turn output. At 64 KiB the file rotates to `<seat>.log.1`. `foil mail list --sent` reads a derived state from it.
 - `fleets/<id>/run/fleet.json` — whether the fleet is paused. While it is, a runner starts no turn, including a seat's first turn, and mail stays queued. A turn already running finishes. `foil fleet pause` and `foil fleet resume` write it.
+- `fleets/<id>/run/merge.json` — the last `foil fleet merge` refusal, a line and a time. `foil inbox` reads it. A successful merge deletes it. The command is what writes into the checkout.
 - `fleets/<id>/run/pointers.log` — one line when the human mails a worker directly. The lead's next wake lists it once. It wakes nobody. Same size cap as the delivery log.
 - `fleets/<id>/run/foil/<mailbox>/<file>` — the byte length and SHA-256 digest of each mail Foil itself wrote from `foil`. Mail named as from `foil` without a matching size and digest is skipped (size first), so a file written or replaced on the board cannot speak for Foil.
 - `fleets/<id>/run/seats/<name>.json` — the seen record for a mailbox a caller outside the fleet reads, `lead` or `user`: the board paths marked seen (by the join brief and `mail wait --timeout 0`; a blocking wait leaves them new), the quiet waits in a row, the seats reported dead and not seen alive since, the time of the last dead-seat check, and the join time. It is written under `run/seats/<name>.lock`.

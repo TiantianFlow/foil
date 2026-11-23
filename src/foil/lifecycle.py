@@ -1110,7 +1110,7 @@ def _supervisor_note(root: Path, worktree: str, branch: str) -> str:
             "Hear its mail to user: foil mail wait --all-fleets (in the background).",
             f"Answer it: FOIL_FLEET={fleet} foil send lead TEXT.",
             f"Progress: {status}.",
-            f"When status.md says done, merge {branch}.",
+            f"When status.md says done, run foil fleet merge ({branch}).",
         ]
     )
 

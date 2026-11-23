@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from foil.answer import question_cards
-from foil.api import answer, init, roster_update, seat_spawn, send
+from foil.api import answer, fleet_merge, init, roster_update, seat_spawn, send
 from foil.board import mail_name
 from foil.board_ops import split_front_matter
 from foil.errors import FoilError
@@ -399,5 +399,8 @@ def run_card(name: str) -> None:
             checkout = checkout_for_key(parsed["project"])
             task = parsed.get("task")
             seat_spawn(checkout, parsed["fleet"], "user", "lead", task=task)
+        elif action == "merge":
+            checkout = checkout_for_key(parsed["project"])
+            fleet_merge(checkout, parsed["fleet"], "user", into=parsed.get("into"))
         else:
-            raise FoilError("foil: fleet merge is not a command")
+            raise FoilError("foil: unknown card")

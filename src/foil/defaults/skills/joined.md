@@ -101,7 +101,7 @@ foil seat list --all-fleets
 FOIL_FLEET=docs foil send lead "the answer"
 ```
 
-Each line `foil mail wait --all-fleets` prints starts with its fleet. Merge a goal branch once that fleet's `status.md` says `state: done`. To check on the fleets while nobody is in a conversation, use the README recipe for a scheduled check.
+Each line `foil mail wait --all-fleets` prints starts with its fleet. Merge a done goal with `foil fleet merge` once that fleet's `status.md` says `state: done`. To check on the fleets while nobody is in a conversation, use the README recipe for a scheduled check.
 
 ## The viewer
 

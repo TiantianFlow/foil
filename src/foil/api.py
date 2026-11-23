@@ -57,6 +57,7 @@ from foil.memory import (
     reject_lesson,
     show_lessons,
 )
+from foil.merge import merge_goal
 from foil.project import foil_root, is_initialized, refuse_legacy_layout
 from foil.roster_ops import (
     add_template,
@@ -110,6 +111,7 @@ _ALLOWED = {
     "decide": {_OUTSIDE, _LEAD, _WORKER},
     "fleet-pause": {_OUTSIDE, _LEAD},
     "fleet-resume": {_OUTSIDE, _LEAD},
+    "fleet-merge": {_OUTSIDE},
     "inbox": {_OUTSIDE, _LEAD},
     "brief": {_OUTSIDE, _LEAD},
     "master-start": {_OUTSIDE},
@@ -764,6 +766,23 @@ def fleet_resume(
         resume_fleet(fleet_dir(root))
     print("foil: fleet resumed")
     return {"paused": False}
+
+
+def fleet_merge(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+    into: str | None = None,
+) -> dict:
+    _authorize("fleet-merge", caller=caller, inside=inside)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        merged = merge_goal(root, fleet_id(), into=into)
+    print(f"foil: merged {merged['branch']} into {merged['into']}")
+    return {"merged": True, **merged}
 
 
 def _fleets(root: Path, *, all_fleets: bool) -> list[str]:
