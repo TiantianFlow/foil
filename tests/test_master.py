@@ -22,6 +22,7 @@ from foil.master import (
     deliver,
     directory,
     drop_removed,
+    due_checks,
     empty_record,
     load_record,
     open_read,
@@ -120,6 +121,10 @@ def test_charter_is_a_control_plane() -> None:
     assert "Write that bullet before you take the step" in text
     assert "# Removed watches" in text
     assert "you do not pick a side" in text
+    assert "check: <id> <time> <what>" in text
+    assert "would nudge the docs lead because" in text
+    assert "## Act" in text
+    assert "You do not edit `## Act`." in text
     for forbidden in ("foil seat kill", "foil seat archive", "git push", "foil fleet merge"):
         assert forbidden not in text
 
@@ -653,7 +658,7 @@ def test_removing_a_watch_is_in_the_next_turn(
     root = directory()
     root.mkdir(parents=True)
     (root / "watches.md").write_text(
-        "- ci 2026-11-23T12:00:00Z the review\n", encoding="utf-8"
+        "- ci 2099-01-01T00:00:00Z the review\n", encoding="utf-8"
     )
     log = _probe(tmp_path, "probe")
     try:
@@ -665,7 +670,7 @@ def test_removing_a_watch_is_in_the_next_turn(
         _until(lambda: len(_lines(log)) == 1)
         prompt = _lines(log)[0][1]
         assert "# Removed watches" in prompt
-        assert "- ci 2026-11-23T12:00:00Z the review" in prompt
+        assert "- ci 2099-01-01T00:00:00Z the review" in prompt
         _until(lambda: read_removed(directory()) == [])
         assert "ci" not in (directory() / "watches.md").read_text(encoding="utf-8")
     finally:
@@ -710,3 +715,139 @@ def test_the_log_shows_the_next_step_before_it_runs(
         _until(marker.exists)
     finally:
         _stop()
+
+
+def test_a_future_watch_does_not_start_a_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = directory()
+    root.mkdir(parents=True)
+    (root / "watches.md").write_text(
+        "- ci 2099-01-01T00:00:00Z the review\n", encoding="utf-8"
+    )
+    log = _probe(tmp_path, "probe")
+    try:
+        assert main(["master", "start", "--harness", "probe"]) == 0
+        _until(lambda: load_record(directory())["baselined"])
+        time.sleep(2.2)
+        assert _lines(log) == []
+        assert due_checks(directory()) == []
+    finally:
+        _stop()
+
+
+def test_a_due_check_starts_one_turn_and_a_new_time_starts_another(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = directory()
+    root.mkdir(parents=True)
+    (root / "watches.md").write_text(
+        "- ci 2020-01-01T00:00:00Z the review\n", encoding="utf-8"
+    )
+    log = _probe(tmp_path, "probe")
+    try:
+        assert main(["master", "start", "--harness", "probe"]) == 0
+        _until(lambda: len(_lines(log)) == 1)
+        assert "check: ci 2020-01-01T00:00:00Z the review" in _lines(log)[0][1]
+        time.sleep(2.2)
+        assert len(_lines(log)) == 1
+        assert "ci\x1f2020-01-01T00:00:00Z" in load_record(directory())["seen_checks"]
+        (directory() / "watches.md").write_text(
+            "- ci 2020-01-02T00:00:00Z the review\n", encoding="utf-8"
+        )
+        _until(lambda: len(_lines(log)) == 2)
+        assert "check: ci 2020-01-02T00:00:00Z the review" in _lines(log)[1][1]
+    finally:
+        _stop()
+
+
+def test_observe_refuses_until_that_kind_acts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from foil.delivery import fleet_paused
+    from foil.store import fleet_dir
+
+    repo = _repo(tmp_path, monkeypatch)
+    registry = foil_root(repo) / "fleets" / "main" / "run" / "registry.json"
+    payload = json.loads(registry.read_text(encoding="utf-8"))
+    payload["seats"] = {
+        "lead": {
+            "name": "lead",
+            "template": "lead",
+            "harness": "fake",
+            "window_id": "",
+            "state": "dead",
+            "worktree": "",
+            "branch": "",
+            "session_id": "",
+        }
+    }
+    registry.write_text(json.dumps(payload), encoding="utf-8")
+    root = directory()
+    root.mkdir(parents=True)
+    (root / "mandate.md").write_text("Be careful.\n\n## Notes\nstay\n", encoding="utf-8")
+    fleet = fleet_dir(repo)
+    assert main(["fleet", "pause"]) == 0
+    assert main(["fleet", "resume"]) == 0
+    capsys.readouterr()
+    monkeypatch.setenv("FOIL_MASTER", "1")
+    assert main(["fleet", "pause"]) == 1
+    assert capsys.readouterr().err == "foil: observe pause\n"
+    assert not fleet_paused(fleet)
+    assert main(["master", "mode", "pause", "act"]) == 0
+    assert capsys.readouterr().out == "foil: pause act\n"
+    mandate = (root / "mandate.md").read_text(encoding="utf-8")
+    assert mandate.startswith("Be careful.\n")
+    assert "## Notes\nstay\n" in mandate
+    assert "- pause\n" in mandate
+    assert main(["fleet", "pause"]) == 0
+    assert fleet_paused(fleet)
+    capsys.readouterr()
+    assert main(["fleet", "resume"]) == 1
+    assert capsys.readouterr().err == "foil: observe resume\n"
+    assert fleet_paused(fleet)
+    assert main(["master", "mode", "resume", "act"]) == 0
+    capsys.readouterr()
+    assert main(["fleet", "resume"]) == 0
+    assert not fleet_paused(fleet)
+    assert main(["send", "lead", "look at the docs"]) == 1
+    assert capsys.readouterr().err == "foil: observe nudge\n"
+    mail = fleet / "board" / "mail" / "lead"
+    assert not mail.exists() or list(mail.glob("*.md")) == []
+    assert main(["master", "mode", "nudge", "act"]) == 0
+    capsys.readouterr()
+    assert main(["send", "lead", "look at the docs"]) == 0
+    assert list(mail.glob("*.md"))
+    assert main(["seat", "renew", "lead"]) == 1
+    assert capsys.readouterr().err == "foil: observe renew\n"
+    assert main(["master", "mode", "renew", "act"]) == 0
+    capsys.readouterr()
+    assert main(["seat", "renew", "lead"]) == 1
+    assert capsys.readouterr().err == "foil: write board/handoffs/lead.md first\n"
+    mandate = (root / "mandate.md").read_text(encoding="utf-8")
+    assert "Be careful." in mandate and "## Notes\nstay" in mandate
+
+
+def test_mode_refuses_an_unknown_value_a_symlink_and_a_seat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    assert main(["master", "mode", "nudge", "maybe"]) == 1
+    assert capsys.readouterr().err == "foil: unknown mode 'maybe'\n"
+    root = directory()
+    root.mkdir(parents=True, exist_ok=True)
+    target = tmp_path / "words.md"
+    target.write_text("Be careful.\n", encoding="utf-8")
+    mandate = root / "mandate.md"
+    if mandate.exists() or mandate.is_symlink():
+        mandate.unlink()
+    mandate.symlink_to(target)
+    assert main(["master", "mode", "nudge", "act"]) == 1
+    assert capsys.readouterr().err == "foil: refusing symlink\n"
+    assert target.read_text(encoding="utf-8") == "Be careful.\n"
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["master", "mode", "nudge", "act"]) == 1
+    assert capsys.readouterr().err == "foil: not allowed\n"
+    assert repo.is_dir()

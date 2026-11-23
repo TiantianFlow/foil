@@ -394,6 +394,11 @@ def test_home_shows_the_next_step_and_remove_clears_a_watch(
             page.get_by_role("button", name="Remove").click()
             expect(page.locator("#watches")).to_contain_text("None.")
             assert "ci" not in (root / "watches.md").read_text(encoding="utf-8")
+            nudge = page.locator("#modes p").filter(has_text="nudge")
+            expect(nudge).to_contain_text("observe")
+            nudge.get_by_role("button", name="Act").click()
+            expect(page.locator("#modes p").filter(has_text="nudge")).to_contain_text("act")
+            assert "- nudge\n" in (root / "mandate.md").read_text(encoding="utf-8")
         finally:
             context.close()
             server.stopped.set()

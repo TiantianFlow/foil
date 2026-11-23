@@ -13,12 +13,14 @@ from pathlib import Path
 from typing import Any
 
 from foil.answer import question_cards
-from foil.api import answer, fleet_merge, init, master_unwatch, roster_update, send
+from foil.api import answer, fleet_merge, init, master_mode, master_unwatch, roster_update, send
 from foil.board import mail_name
 from foil.board_ops import split_front_matter
 from foil.errors import FoilError
 from foil.inbox import fleet_groups
 from foil.master import (
+    KINDS,
+    acting,
     conversation,
     directory,
     load_record,
@@ -403,6 +405,11 @@ def shown_watches(root: Path) -> list[dict[str, str]]:
     return [{**item, "on": mask(item["on"])} for item in watch_items(root)]
 
 
+def shown_modes(root: Path) -> list[dict[str, str]]:
+    live = acting(root)
+    return [{"kind": kind, "mode": "act" if kind in live else "observe"} for kind in KINDS]
+
+
 def shown_fleets() -> list[dict[str, Any]]:
     groups = []
     for group in fleet_groups():
@@ -482,6 +489,7 @@ def snapshot() -> dict[str, Any]:
         "fleets": shown_fleets(),
         "log": master_log(root),
         "watches": shown_watches(root),
+        "modes": shown_modes(root),
     }
 
 
@@ -489,6 +497,13 @@ def remove_watch(watch_id: str) -> dict[str, bool]:
     """The Remove button. The same code as `foil master unwatch`."""
 
     master_unwatch(None, "main", "user", watch_id)
+    return {"ok": True}
+
+
+def switch_mode(kind: str, mode: str) -> dict[str, bool]:
+    """The Act or Observe button. The same code as `foil master mode`."""
+
+    master_mode(None, "main", "user", kind, mode)
     return {"ok": True}
 
 

@@ -291,6 +291,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/watch" and method == "POST":
             self._watch()
             return
+        if path == "/v1/mode" and method == "POST":
+            self._mode()
+            return
         if path == "/v1/act" and method == "POST":
             self._act()
             return
@@ -730,6 +733,20 @@ class Handler(BaseHTTPRequestHandler):
             self._error(FoilError("foil: unknown watch"))
             return
         self._call(lambda: home.remove_watch(watch_id))
+
+    def _mode(self) -> None:
+        body = self._json()
+        kind = body.get("kind") if isinstance(body, dict) else None
+        mode = body.get("mode") if isinstance(body, dict) else None
+        if (
+            not isinstance(body, dict)
+            or set(body) != {"kind", "mode"}
+            or not isinstance(kind, str)
+            or not isinstance(mode, str)
+        ):
+            self._error(FoilError("foil: unknown mode"))
+            return
+        self._call(lambda: home.switch_mode(kind, mode))
 
     def _act(self) -> None:
         body = self._json()

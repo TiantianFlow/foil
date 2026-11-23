@@ -171,6 +171,33 @@ function showWatches(rows) {
   }
 }
 
+function showModes(rows) {
+  const box = document.querySelector("#modes");
+  box.replaceChildren();
+  for (const row of rows) {
+    const item = document.createElement("p");
+    item.textContent = row.kind + "  " + row.mode + " ";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = row.mode === "act" ? "Observe" : "Act";
+    button.addEventListener("click", () => switchMode(row, item));
+    item.append(button);
+    box.append(item);
+  }
+}
+
+async function switchMode(row, item) {
+  try {
+    await post("/v1/mode", {
+      kind: row.kind,
+      mode: row.mode === "act" ? "observe" : "act",
+    });
+    await load();
+  } catch (error) {
+    line(item, error.message, "quiet");
+  }
+}
+
 async function removeWatch(id, item) {
   try {
     await post("/v1/watch", { id });
@@ -209,6 +236,7 @@ async function load() {
   showFleets(body.fleets || []);
   showPlan(body.log || { fleets: [] });
   showWatches(body.watches || []);
+  showModes(body.modes || []);
   const questions = document.querySelector("#questions");
   const field = document.activeElement;
   const typing = field && field.tagName === "TEXTAREA" && questions.contains(field);
