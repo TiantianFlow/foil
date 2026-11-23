@@ -51,7 +51,7 @@ A lower layer does not import a higher one.
 
 | Layer | What it is |
 |---|---|
-| Surfaces | What a person uses. The Bridge's page, its push, and an MCP client. |
+| Surfaces | What a person uses. The Bridge's page, its push, a webhook, and an MCP client. |
 | Bridge | The optional package. Section 12. |
 | Core | The `foil-ai` package: the CLI, `foil.api`, and the runner. `foil.api` is one function per operation. Each takes the project, the fleet, and the caller, and returns a plain value. `foil.api.VERSION` is `1`. `caller` is `user`, `lead`, or a seat id. `inside` is true when that caller is a seat: a launched lead is `lead` with `inside` true, and a joined lead is `lead` with `inside` false. `user` is the human even while a lead is joined. The CLI parses and calls those functions. It reads `FOIL_PROJECT`, `FOIL_FLEET`, and `FOIL_SEAT_ID` only while it resolves that call, and it does not write them. The runner and the guard are separate entry points and may still read their process environment. `FOIL_HOME` and `XDG_DATA_HOME` stay process-global, and so do the harness session variables. |
 | Agents | The master, leads, and workers. |
@@ -909,6 +909,60 @@ ignoring the switches, and an empty 404 when it is not current. The
 label there is for that one card. The notification's label is the one
 that counted the group.
 
+The Bridge also POSTs a webhook beside Web Push, on the same events.
+The body is a JSON object with exactly two keys, `kind` and `count`.
+`kind` is `needs_you`. `count` is how many of those events are current.
+The body has no question text, no mail body, no goal, no pane, no path,
+no seat, and no card id. The record of what was sent stores, for each
+URL, the card ids that URL accepted. It does not store the fleet's text.
+
+The events are an open question whose owner is not `master`, a seat that
+is dead or paused, mail that has stayed undelivered past the limit in
+section 6.1, a fleet whose state is `done`, the master being down, or
+this process having been down. They are not sent for unread mail from
+the human, a chat reply, a blocked fleet, a paused fleet, or a turn that
+is running. The push switches do not gate this. One POST carries every
+current event as `count`. It is not split by kind or by project.
+
+`enabled` and `urls` are in `<root>/bridge/webhook/settings`, mode 0600.
+A missing file, a missing key, or a value of the wrong shape is off:
+`enabled` false and `urls` empty. All of it starts off. A stored `urls`
+list keeps the first 8 strings that are endpoints, in order, and drops
+a duplicate or a string that is not one. `POST /v1/webhook` names
+`enabled`, `urls`, or both. `enabled` is a boolean. `urls` replaces the
+list. Any other key, a value of the wrong type, a list of more than 8,
+a duplicate, or a string that is not an endpoint is 400
+`foil: webhook setting is invalid` and nothing is written. An endpoint
+is the same rule as a push endpoint. The response is `enabled` and
+`urls`. That POST is the confirmation (design rule 11).
+`GET /v1/webhook` returns the same shape and does not include the card
+ids. A symlink at the settings path is left in place and the error is
+`foil: refusing symlink`. The directory is mode 0700.
+
+The process checks on the same thread as push, so a slow POST does not
+stall the event stream. It sends at most one round per 60 seconds, and
+a round 60 seconds later is allowed. A round POSTs the same body to
+each URL that has not accepted every current card. A URL that answers
+2xx is marked for those card ids. A URL that does not is not marked,
+and it is not removed. The next try waits 60 seconds and goes only to
+URLs that have not accepted. One URL accepting does not mark the
+others. The request is not followed to another URL. It waits at most 3
+seconds. Its `Content-Type` is `application/json` and its `User-Agent`
+is `foil-bridge`. It sets no `Authorization` header.
+
+While `enabled` is on, this process writes
+`<root>/bridge/webhook/heartbeat` with `{"t":<unix>}` when that file is
+older than 30 seconds, even when no URL is configured. When the
+previous stamp is more than 120 seconds behind, the next check has one
+bridge-down event. Turning `enabled` on writes a fresh stamp and clears
+a stored gap, and that check does not notify for the gap. A stamp more
+than 120 seconds old clears any `down/bridge` card already marked sent,
+so a URL that accepted the previous outage is told about this one. The
+event is kept until each configured URL has accepted it. A later gap is
+a new outage and can be sent again, still at most once per 60 seconds.
+The master is down by the same rule as push. A master that has never
+started is not down.
+
 Once a second, or every `FOIL_BRIDGE_INTERVAL` seconds when that value is
 a positive number up to 60, the process records the modification time of
 each regular file under the store except `<root>/bridge/` and except a
@@ -1348,6 +1402,15 @@ header the client sent when it is one of the three, otherwise the version
 The versions are those three. `initialize` answers with the client's
 version when it is one of them, otherwise `2025-11-25`. Capabilities are
 `tools` with `listChanged` false. The server name is `foil-bridge`.
+`instructions` are: You are the human's voice to the master, not the
+master itself. This is the same master as the Foil app. talk_to_master
+writes to that conversation as the human and returns the master's reply.
+brief, inbox, fleet, and agent_transcript are reads. answer answers one
+closed question by id. Kill, archive, merge, and settings stay cards in
+the app. The text a client loads is `docs/mcp-client.md`. It says the
+same, and that a webhook is only a wake: the client pulls the detail
+and does not treat the body as fleet data.
+
 Methods are `initialize`, `ping`, `tools/list`, and `tools/call`.
 `notifications/initialized` and `notifications/cancelled` are accepted.
 Any other method is code `-32601`. An unknown tool name is code `-32602`,

@@ -25,6 +25,10 @@ The page, the token, and `foil doctor` are specified in
 
 `foil-bridge mcp` speaks MCP on stdio. `POST /mcp` on the running Bridge
 is the same protocol and requires the bearer token from the desk file.
+The setup for a local client and a remote one, and the skill that client
+loads, are in [docs/mcp.md](../../docs/mcp.md). A webhook beside Web Push
+POSTs `{"kind": "needs_you", "count": N}` when something needs you. It
+stays off until enabled. The body has no fleet data.
 `talk_to_master` writes the master's mailbox as you and returns the reply.
 `brief`, `inbox`, `fleet`, and `agent_transcript` are reads.
 `agent_transcript` is a summary unless a level is set, and it masks

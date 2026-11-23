@@ -358,6 +358,12 @@ def _reasons(enabled: dict[str, bool], gap: bool) -> list[Reason]:
     return [item for item in found if _card_ok(item.card)]
 
 
+def current_reasons(enabled: dict[str, bool], *, gap: bool) -> list[Reason]:
+    """Events worth a wake. Each item is a kind and a card id, with no fleet text."""
+
+    return _reasons(enabled, gap)
+
+
 def _state() -> dict[str, Any]:
     stored = _read_json(_push_dir() / "state", limit=4 * 1024 * 1024)
     sent: dict[str, list[str]] = {}
