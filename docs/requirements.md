@@ -1327,7 +1327,9 @@ a request does not have to follow `initialize`, and the response sets no
 token check. The bearer is the desk token, the one line in
 `<root>/bridge/desk` (mode 0600), or a device token, in
 `Authorization`. A query `token` does not authenticate this route. A
-missing or unknown bearer is 401 with an empty body. `Accept` must list
+missing or unknown bearer is 401 with an empty body. A request
+refused before its body is read sends `Connection: close`, so those
+bytes are not the next request. `Accept` must list
 both `application/json` and `text/event-stream`, or the response is 406.
 `Content-Type` must be `application/json`; a missing or other value is 400.
 A body over 64 KiB, a body that
@@ -1349,8 +1351,9 @@ version when it is one of them, otherwise `2025-11-25`. Capabilities are
 Methods are `initialize`, `ping`, `tools/list`, and `tools/call`.
 `notifications/initialized` and `notifications/cancelled` are accepted.
 Any other method is code `-32601`. An unknown tool name is code `-32602`,
-message `unknown tool`. A tool that fails is a result with `isError` true
-and that command's line.
+message `unknown tool`. A `tools/call` whose id is already in flight is
+code `-32600`, message `request id is in use`, and does not run. A tool
+that fails is a result with `isError` true and that command's line.
 
 The tools are these and no others. None of them kills, archives, merges,
 or changes a setting.

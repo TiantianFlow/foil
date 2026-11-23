@@ -440,20 +440,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def _mcp(self, method: str) -> None:
         if self._bearer() is None:
-            self._send(401, b"")
+            self._mcp_closed(401, method)
             return
         if not self._host_ok():
-            self._send(403, b"")
+            self._mcp_closed(403, method)
             return
         if self.headers.get("Origin") is not None and not self._origin_ok():
-            self._send(403, b"")
+            self._mcp_closed(403, method)
             return
         if method != "POST":
-            self._send(405, b"")
+            self._mcp_closed(405, method)
             return
         length = self._length(mcp.MAX_BODY)
         if length is None:
-            self._send(400, b"")
+            self._mcp_closed(400, "POST")
             return
         raw = self.rfile.read(length) if length else b""
         version = self.headers.get("MCP-Protocol-Version")
@@ -486,6 +486,16 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(chosen, str) and chosen in mcp.VERSIONS:
                 return chosen
         return mcp.VERSIONS[0]
+
+    def _mcp_closed(self, code: int, method: str) -> None:
+        """Refuse before the body is read.
+
+        A keep-alive connection would otherwise treat the unread POST body as
+        the next request. GET and HEAD have no body.
+        """
+
+        extra = (("Connection", "close"),) if method not in {"GET", "HEAD"} else ()
+        self._send(code, b"", extra=extra)
 
     def _bearer(self) -> auth.Identity | None:
         """The ``Authorization`` bearer. A query token does not count."""

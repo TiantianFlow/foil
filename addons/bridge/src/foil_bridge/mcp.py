@@ -193,10 +193,18 @@ def _master_body(path) -> str | None:
 
 
 def talk(text: str, stop: threading.Event) -> str:
-    """Write as ``user``, then wait for the next message from ``master``."""
+    """Write as ``user``, then wait for the next message from ``master``.
 
-    with _TALK:
+    A cancel while this call waits behind another returns before the write.
+    """
+
+    while not _TALK.acquire(timeout=0.05):
+        if stop.is_set():
+            raise FoilError("foil-bridge: cancelled")
+    try:
         return _talk(text, stop)
+    finally:
+        _TALK.release()
 
 
 def _talk(text: str, stop: threading.Event) -> str:
@@ -355,18 +363,21 @@ class Session:
         if event is not None:
             event.set()
 
-    def _arm(self, request_id: object) -> threading.Event:
+    def _arm(self, request_id: object) -> threading.Event | None:
         event = threading.Event()
         with self._lock:
+            if request_id in self._waiting:
+                return None
             if request_id in self._cancelled:
                 event.set()
             self._waiting[request_id] = event
         return event
 
-    def _disarm(self, request_id: object) -> None:
+    def _disarm(self, request_id: object, event: threading.Event) -> None:
         with self._lock:
-            self._waiting.pop(request_id, None)
-            self._cancelled.discard(request_id)
+            if self._waiting.get(request_id) is event:
+                self._waiting.pop(request_id, None)
+                self._cancelled.discard(request_id)
 
     def receive(self, message: dict[str, Any]) -> dict[str, Any] | None:
         method = message.get("method")
@@ -408,13 +419,15 @@ class Session:
         if not isinstance(name, str) or name not in _NAMES:
             return _error(request_id, -32602, "unknown tool")
         stop = self._arm(request_id)
+        if stop is None:
+            return _error(request_id, -32600, "request id is in use")
         try:
             try:
                 value = _invoke(name, params.get("arguments", {}), stop)
             except Exception:
                 return _error(request_id, -32603, "internal error")
         finally:
-            self._disarm(request_id)
+            self._disarm(request_id, stop)
         return _result(request_id, value)
 
     def _notify(self, method: str, params: dict[str, Any]) -> None:

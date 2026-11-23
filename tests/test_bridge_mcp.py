@@ -520,3 +520,131 @@ def test_agent_transcript_is_a_masked_summary(
 
 def test_reply_cap() -> None:
     assert mcp._cap("x" * (mcp.REPLY_CAP + 5)).endswith("\n... truncated\n")
+
+
+def test_a_refused_post_does_not_become_the_next_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _serving(monkeypatch) as server:
+        port = server.server_address[1]
+        desk = read_desk_token()
+        connection = HTTPConnection("127.0.0.1", port, timeout=3)
+        connection.request(
+            "POST",
+            "/mcp",
+            body=json.dumps(_message("ping")).encode(),
+            headers=dict(ACCEPT),
+        )
+        response = connection.getresponse()
+        assert response.status == 401
+        assert response.read() == b""
+        assert response.getheader("Connection") == "close"
+        connection.request(
+            "POST",
+            "/mcp",
+            body=json.dumps(_message("ping")).encode(),
+            headers={**ACCEPT, "Authorization": f"Bearer {desk}"},
+        )
+        response = connection.getresponse()
+        assert response.status == 200
+        assert json.loads(response.read())["result"] == {}
+        connection.close()
+
+
+def test_an_overlapping_call_keeps_the_first_cancel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mcp, "WAIT", 5)
+    with _serving(monkeypatch) as server:
+        port = server.server_address[1]
+        desk = read_desk_token()
+        box: list[tuple[int, bytes]] = []
+
+        def call() -> None:
+            box.append(
+                _post(
+                    port,
+                    _message("tools/call", 7, name="talk_to_master", arguments={"text": USER}),
+                    token=desk,
+                )
+            )
+
+        thread = threading.Thread(target=call)
+        thread.start()
+        folder = directory() / "mail"
+        deadline = time.time() + 5
+        while time.time() < deadline and not (
+            folder.is_dir() and any("-user-" in path.name for path in folder.glob("*.md"))
+        ):
+            time.sleep(0.01)
+        status, body = _post(
+            port,
+            _message("tools/call", 7, name="brief", arguments={}),
+            token=desk,
+        )
+        assert status == 200
+        assert json.loads(body)["error"]["code"] == -32600
+        assert json.loads(body)["error"]["message"] == "request id is in use"
+        status, body = _post(
+            port,
+            _message("notifications/cancelled", None, requestId=7),
+            token=desk,
+        )
+        assert status == 202 and body == b""
+        thread.join(5)
+        assert not thread.is_alive()
+        assert _result(box[0][1])["isError"] is True
+        assert "cancelled" in _result(box[0][1])["content"][0]["text"]
+        assert len(list(folder.glob("*-user-*.md"))) == 1
+
+
+def test_a_queued_talk_can_be_cancelled_before_it_writes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mcp, "WAIT", 5)
+    with _serving(monkeypatch) as server:
+        port = server.server_address[1]
+        desk = read_desk_token()
+        first: list[tuple[int, bytes]] = []
+        second: list[tuple[int, bytes]] = []
+
+        def call(box: list[tuple[int, bytes]], request_id: int, text: str) -> None:
+            box.append(
+                _post(
+                    port,
+                    _message(
+                        "tools/call", request_id, name="talk_to_master", arguments={"text": text}
+                    ),
+                    token=desk,
+                )
+            )
+
+        lead = threading.Thread(target=call, args=(first, 21, USER))
+        lead.start()
+        folder = directory() / "mail"
+        deadline = time.time() + 5
+        while time.time() < deadline and not (
+            folder.is_dir() and any("-user-" in path.name for path in folder.glob("*.md"))
+        ):
+            time.sleep(0.01)
+        queued = threading.Thread(target=call, args=(second, 22, "second"))
+        queued.start()
+        time.sleep(0.2)
+        status, body = _post(
+            port,
+            _message("notifications/cancelled", None, requestId=22),
+            token=desk,
+        )
+        assert status == 202 and body == b""
+        queued.join(2)
+        assert not queued.is_alive()
+        assert _result(second[0][1])["isError"] is True
+        assert "cancelled" in _result(second[0][1])["content"][0]["text"]
+        assert len(list(folder.glob("*-user-*.md"))) == 1
+        _post(
+            port,
+            _message("notifications/cancelled", None, requestId=21),
+            token=desk,
+        )
+        lead.join(5)
+        assert not lead.is_alive()
