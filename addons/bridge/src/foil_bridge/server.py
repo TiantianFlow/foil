@@ -22,7 +22,18 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from foil.bridge_cmd import bridge_port, ensure_desk_token
 from foil.errors import FoilError
 from foil.project import store_root
-from foil_bridge import auth, chat, controls, evidence, home, push, settings, tailnet, terminal
+from foil_bridge import (
+    auth,
+    chat,
+    controls,
+    evidence,
+    home,
+    push,
+    quote,
+    settings,
+    tailnet,
+    terminal,
+)
 from foil_bridge.pages import (
     asset,
     desk_html,
@@ -46,6 +57,7 @@ _SHELL = {
     "/seat.js": ("seat.js", "text/javascript", "max-age=0"),
     "/term.js": ("term.js", "text/javascript", "max-age=0"),
     "/controls.js": ("controls.js", "text/javascript", "max-age=0"),
+    "/quote.js": ("quote.js", "text/javascript", "max-age=0"),
     "/offline": ("offline.html", "text/html", "max-age=0"),
 }
 _PAGE_POLICY = (
@@ -257,6 +269,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/v1/chat" and method == "POST":
             self._post_chat()
+            return
+        if path == "/v1/quote" and method == "POST":
+            self._quote()
             return
         if path == "/v1/answer" and method == "POST":
             self._answer()
@@ -523,6 +538,25 @@ class Handler(BaseHTTPRequestHandler):
             self._error(FoilError("foil: message text is empty"))
             return
         self._call(lambda: chat.post(project, fleet, seat, text) or {"ok": True})
+
+    def _quote(self) -> None:
+        if self._length(64 * 1024) is None:
+            self._error(FoilError("foil: quote text is too long"))
+            return
+        body = self._json(64 * 1024)
+        if not isinstance(body, dict):
+            self._error(FoilError("foil: quote text is empty"))
+            return
+        self._call(
+            lambda: quote.deliver(
+                body.get("project"),
+                body.get("fleet"),
+                body.get("path"),
+                body.get("start"),
+                body.get("end"),
+                body.get("text"),
+            )
+        )
 
     def _send_message(self) -> None:
         if self._length(64 * 1024) is None:

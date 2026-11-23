@@ -59,6 +59,7 @@ from foil.memory import (
 )
 from foil.merge import merge_goal
 from foil.project import foil_root, is_initialized, refuse_legacy_layout
+from foil.quote import parse_lines, send_quote
 from foil.roster_ops import (
     add_template,
     remove_template,
@@ -386,6 +387,32 @@ def send(
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         send_mail(root, to, body)
     return {"ok": True}
+
+
+def quote(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    path: str,
+    lines: str,
+    text: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+    read_text=None,
+) -> dict:
+    """Quote ``lines`` of ``path`` and mail the seat that owns them.
+
+    ``read_text`` expands ``-`` after the refusal. The mail is ``send``.
+    """
+
+    _authorize("send", caller=caller, inside=inside)
+    body = text if read_text is None else read_text(text)
+    start, end = parse_lines(lines)
+    root = _root(project)
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        owner = send_quote(root, path, start, end, body)
+    return {"ok": True, "to": owner}
 
 
 def post(

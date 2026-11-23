@@ -157,7 +157,7 @@ foil seat peek implementer-1 --lines 40
 
 `foil seat peek` on a dead seat prints the pane that was left when the process exited, including an error from a harness that exited at launch, when that window still carries this seat's markers. A dead seat whose window is already gone, a window that now belongs to another seat, and a killed seat cannot be peeked. The text is still the pane, not a status.
 
-`foil send` writes one mail file, and that seat's next turn reads it. Nothing is typed into a pane.
+`foil send` writes one mail file, and that seat's next turn reads it. Nothing is typed into a pane. A mail that names a path and a line range is a correction of those lines. Read that path and answer the sentence under the quote.
 
 <!-- launched -->
 `foil send user` is your mail to the human: an acknowledgement, an answer, or a pointer to a question. It wakes nobody. The human reads it at the next check-in. The question itself goes in `status.md` `questions`, as Questions for the human says.

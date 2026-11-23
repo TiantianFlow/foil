@@ -95,7 +95,7 @@ def evidence_html(model: dict[str, Any], token: str) -> bytes:
     elif kind == "fleet":
         inner = _fleet_html(model, token)
     elif kind == "file":
-        inner = _file_html(model)
+        inner = _file_html(model, token)
     else:
         inner = _seat_html(model, token)
     note = html.escape(model["note"])
@@ -124,7 +124,10 @@ def _fleet_html(model: dict[str, Any], token: str) -> str:
     state = model["state"] or "—"
     if model["paused"]:
         state = f"{state}, fleet paused"
-    decisions = _lines(model["decisions"])
+    project, fleet = _quote_ids(model)
+    decisions = _quote_html(
+        project, fleet, "status.md#decisions", model["decisions"], token
+    ) or "<p>None.</p>"
     journal = _lines(model["journal"])
     questions = _questions(model["questions"], token)
     seats = _seats(model["seats"], token)
@@ -306,16 +309,49 @@ def _terminal_html(model: dict[str, Any]) -> str:
     )
 
 
-def _file_html(model: dict[str, Any]) -> str:
+def _quote_ids(model: dict[str, Any]) -> tuple[str, str]:
+    crumbs = model["crumbs"]
+    return crumbs[1]["label"], crumbs[2]["label"]
+
+
+def _quote_html(
+    project: str, fleet: str, path: str, lines: list[str], token: str
+) -> str:
+    """Numbered lines and a sentence. Empty when there is nothing to send."""
+
+    if not lines:
+        return ""
+    items = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
+    project_attr = html.escape(project, quote=True)
+    fleet_attr = html.escape(fleet, quote=True)
+    path_attr = html.escape(path, quote=True)
+    script = quote(token, safe="")
+    return (
+        f'<section data-quote data-project="{project_attr}" data-fleet="{fleet_attr}" '
+        f'data-path="{path_attr}">'
+        f'<ol class="pick">{items}</ol>'
+        "<form>"
+        '<label>Lines <input data-start type="number" min="1" inputmode="numeric"> '
+        '– <input data-end type="number" min="1" inputmode="numeric"></label>'
+        '<label>Sentence <textarea rows="2"></textarea></label>'
+        '<button type="submit">Send</button>'
+        '<p data-note class="quiet"></p>'
+        "</form></section>"
+        f'<script src="quote.js?token={script}" type="module"></script>'
+    )
+
+
+def _file_html(model: dict[str, Any], token: str) -> str:
     body = model["file"]
     if body["error"]:
         shown = f"<p>{html.escape(body['error'])}</p>"
     else:
         extra = "<p>truncated</p>" if body["truncated"] else ""
+        project, fleet = _quote_ids(model)
         shown = (
             f'<p class="quiet">{body["size"]} bytes</p>'
-            f'<pre class="tail">{html.escape(body["text"])}</pre>'
-            f"{extra}"
+            + _quote_html(project, fleet, body["path"], body["text"].splitlines(), token)
+            + extra
         )
     return f"<h1>{html.escape(model['title'])}</h1>{shown}"
 
@@ -381,7 +417,15 @@ def _seat_html(model: dict[str, Any], token: str) -> str:
             f'<p class="mono">{html.escape(diff["base"])}...{html.escape(diff["branch"])}</p>'
         )
     if diff["text"]:
-        diff_parts.append(f'<pre class="tail">{html.escape(diff["text"])}</pre>')
+        diff_parts.append(
+            _quote_html(
+                chat["project"],
+                chat["fleet"],
+                "branch:" + diff["branch"],
+                diff["text"].splitlines(),
+                token,
+            )
+        )
     if diff["note"]:
         diff_parts.append(f"<p>{html.escape(diff['note'])}</p>")
     diff_parts.append("</div>")
