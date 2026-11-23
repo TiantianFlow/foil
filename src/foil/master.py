@@ -806,6 +806,8 @@ def _render_act(text: str, kinds: set[str]) -> str:
 def set_mode(kind: str, mode: str) -> None:
     """Record one proactive kind as act or observe. The human's other words stay."""
 
+    if os.environ.get("FOIL_MASTER") == "1" and not in_seat():
+        raise FoilError("foil: the master does not set the mode")
     if kind not in KINDS or mode not in {"observe", "act"}:
         raise FoilError(f"foil: unknown mode '{shown(kind if kind not in KINDS else mode)}'")
     root = directory()

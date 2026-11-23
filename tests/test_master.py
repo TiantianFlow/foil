@@ -125,6 +125,7 @@ def test_charter_is_a_control_plane() -> None:
     assert "would nudge the docs lead because" in text
     assert "## Act" in text
     assert "You do not edit `## Act`." in text
+    assert "`foil master mode` is refused." in text
     for forbidden in ("foil seat kill", "foil seat archive", "git push", "foil fleet merge"):
         assert forbidden not in text
 
@@ -792,12 +793,22 @@ def test_observe_refuses_until_that_kind_acts(
     assert main(["fleet", "pause"]) == 0
     assert main(["fleet", "resume"]) == 0
     capsys.readouterr()
+
+    def switch(kind: str) -> None:
+        monkeypatch.delenv("FOIL_MASTER")
+        assert main(["master", "mode", kind, "act"]) == 0
+        assert capsys.readouterr().out == f"foil: {kind} act\n"
+        monkeypatch.setenv("FOIL_MASTER", "1")
+
     monkeypatch.setenv("FOIL_MASTER", "1")
     assert main(["fleet", "pause"]) == 1
     assert capsys.readouterr().err == "foil: observe pause\n"
     assert not fleet_paused(fleet)
-    assert main(["master", "mode", "pause", "act"]) == 0
-    assert capsys.readouterr().out == "foil: pause act\n"
+    held = (root / "mandate.md").read_text(encoding="utf-8")
+    assert main(["master", "mode", "pause", "act"]) == 1
+    assert capsys.readouterr().err == "foil: the master does not set the mode\n"
+    assert (root / "mandate.md").read_text(encoding="utf-8") == held
+    switch("pause")
     mandate = (root / "mandate.md").read_text(encoding="utf-8")
     assert mandate.startswith("Be careful.\n")
     assert "## Notes\nstay\n" in mandate
@@ -808,22 +819,19 @@ def test_observe_refuses_until_that_kind_acts(
     assert main(["fleet", "resume"]) == 1
     assert capsys.readouterr().err == "foil: observe resume\n"
     assert fleet_paused(fleet)
-    assert main(["master", "mode", "resume", "act"]) == 0
-    capsys.readouterr()
+    switch("resume")
     assert main(["fleet", "resume"]) == 0
     assert not fleet_paused(fleet)
     assert main(["send", "lead", "look at the docs"]) == 1
     assert capsys.readouterr().err == "foil: observe nudge\n"
     mail = fleet / "board" / "mail" / "lead"
     assert not mail.exists() or list(mail.glob("*.md")) == []
-    assert main(["master", "mode", "nudge", "act"]) == 0
-    capsys.readouterr()
+    switch("nudge")
     assert main(["send", "lead", "look at the docs"]) == 0
     assert list(mail.glob("*.md"))
     assert main(["seat", "renew", "lead"]) == 1
     assert capsys.readouterr().err == "foil: observe renew\n"
-    assert main(["master", "mode", "renew", "act"]) == 0
-    capsys.readouterr()
+    switch("renew")
     assert main(["seat", "renew", "lead"]) == 1
     assert capsys.readouterr().err == "foil: write board/handoffs/lead.md first\n"
     mandate = (root / "mandate.md").read_text(encoding="utf-8")
