@@ -288,6 +288,9 @@ def test_doctor_is_clear_when_the_page_answers_401(
             "token: ok",
             "listen: up",
             "tailscale: not installed",
+            "master: not started",
+            "runners: none",
+            "push: off",
         ]
 
 

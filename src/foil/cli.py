@@ -269,8 +269,12 @@ def _build_parser() -> argparse.ArgumentParser:
     master_unwatch = master_sub.add_parser("unwatch", help="Remove one watch")
     master_unwatch.add_argument("ID")
     _shared(master_unwatch)
+    master_mode = master_sub.add_parser("mode", help="Set one proactive kind to act or observe")
+    master_mode.add_argument("KIND")
+    master_mode.add_argument("MODE")
+    _shared(master_mode)
 
-    doctor = sub.add_parser("doctor", help="Check the Bridge")
+    doctor = sub.add_parser("doctor", help="Check the Bridge, the runners, and push")
     _shared(doctor)
 
     bridge = sub.add_parser("bridge", help="The local Bridge")
@@ -652,6 +656,10 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
         elif args.master_command == "unwatch":
             api.master_unwatch(
                 project, fleet, caller, args.ID, inside=inside, pinned=pinned
+            )
+        elif args.master_command == "mode":
+            api.master_mode(
+                project, fleet, caller, args.KIND, args.MODE, inside=inside, pinned=pinned
             )
         else:
             api.master_renew(

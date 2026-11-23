@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import stat
+import time
 from pathlib import Path
 
 import pytest
@@ -258,3 +261,173 @@ def test_bridge_program_version_and_pin(
     monkeypatch.setattr("foil.api.VERSION", 2)
     assert bridge_main([]) == 1
     assert capsys.readouterr().err == "foil-bridge: needs foil.api 1\n"
+
+
+def _private(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    os.chmod(path, 0o600)
+
+
+def test_doctor_codes_for_the_master_the_runners_and_push(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    from foil.master import directory
+    from foil.project import foil_root
+    from foil.runner import record_path
+    from foil.store import fleet_dir
+    from tests.test_spawn import _repo
+
+    class Denied(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(401)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            return
+
+    repo = _repo(tmp_path, monkeypatch)
+    key = foil_root(repo).name
+    registry = foil_root(repo) / "fleets" / "main" / "run" / "registry.json"
+    original = registry.read_text(encoding="utf-8")
+    owned = {"yes": False}
+
+    def matches(self, fleet_id: str, seat: str, session: str, window_id: str) -> bool:
+        del self, fleet_id, seat, session, window_id
+        return owned["yes"]
+
+    monkeypatch.setattr("foil.tmux.TmuxController.matches_window", matches)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Denied)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        binary = _stub(tmp_path / "bin", "#!/bin/sh\nprintf 'foil-bridge 0.1.0\\n'\n")
+        (binary.parent / "git").symlink_to("/usr/bin/git")
+        _isolate(monkeypatch, tmp_path, str(binary))
+        monkeypatch.setenv("FOIL_BRIDGE_PORT", str(server.server_address[1]))
+        assert main(["bridge", "install"]) == 0
+        capsys.readouterr()
+
+        def report() -> tuple[int, list[str]]:
+            code = main(["doctor"])
+            return code, capsys.readouterr().out.splitlines()
+
+        code, lines = report()
+        assert code == 0
+        assert lines[-3:] == [
+            "master: not started",
+            f"runner: {key} main none",
+            "push: off",
+        ]
+
+        registry.write_text("{", encoding="utf-8")
+        code, lines = report()
+        assert code == 2
+        assert f"runner: {key} main broken" in lines
+
+        registry.write_text(original, encoding="utf-8")
+        os.chmod(registry, 0o600)
+        payload = json.loads(original)
+        payload["seats"] = {
+            "lead": {
+                "name": "lead",
+                "template": "lead",
+                "harness": "fake",
+                "window_id": "@1",
+                "state": "dead",
+                "worktree": "",
+                "branch": "",
+                "session_id": "",
+            }
+        }
+        registry.write_text(json.dumps(payload), encoding="utf-8")
+        os.chmod(registry, 0o600)
+        code, lines = report()
+        assert code == 1
+        assert f"runner: {key} main down" in lines
+
+        owned["yes"] = True
+        board = fleet_dir(repo, "main") / "board"
+        _private(record_path(board, "lead"), json.dumps({"schema_version": 1, "paused": True}))
+        code, lines = report()
+        assert code == 1
+        assert f"runner: {key} main paused" in lines
+
+        registry.write_text(original, encoding="utf-8")
+        os.chmod(registry, 0o600)
+        code, lines = report()
+        assert code == 0
+        assert f"runner: {key} main none" in lines
+
+        run = directory() / "run"
+        run.mkdir(parents=True)
+        window = run / "window.json"
+        record = run / "record.json"
+        window.write_text(
+            json.dumps(
+                {"schema_version": 1, "window_id": "@9", "session_name": "foil-master"}
+            ),
+            encoding="utf-8",
+        )
+        owned["yes"] = False
+        code, lines = report()
+        assert code == 1
+        assert "master: down" in lines
+
+        owned["yes"] = True
+        _private(record, json.dumps({"schema_version": 1, "paused": True}))
+        code, lines = report()
+        assert code == 1
+        assert "master: paused" in lines
+
+        record.unlink()
+        window.unlink()
+        window.symlink_to(tmp_path / "elsewhere.json")
+        code, lines = report()
+        assert code == 2
+        assert "master: broken" in lines
+        window.unlink()
+
+        push = directory().parent / "bridge" / "push"
+        settings = push / "settings"
+        settings.parent.mkdir(parents=True)
+        settings.symlink_to(tmp_path / "settings")
+        code, lines = report()
+        assert code == 2
+        assert "push: broken" in lines
+        settings.unlink()
+
+        _private(settings, "{}\n")
+        os.chmod(settings, 0o644)
+        code, lines = report()
+        assert code == 2
+        assert "push: broken" in lines
+
+        _private(settings, json.dumps({"down": True}) + "\n")
+        code, lines = report()
+        assert code == 3
+        assert "push: waiting" in lines
+
+        vapid = base64.urlsafe_b64encode(b"\x00" * 32).decode().rstrip("=")
+        _private(push / "vapid", json.dumps({"d": vapid}) + "\n")
+        code, lines = report()
+        assert code == 1
+        assert "push: stale" in lines
+
+        _private(push / "heartbeat", json.dumps({"t": int(time.time()) - 200}) + "\n")
+        code, lines = report()
+        assert code == 1
+        assert "push: stale" in lines
+
+        _private(push / "heartbeat", json.dumps({"t": int(time.time())}) + "\n")
+        code, lines = report()
+        assert code == 0
+        assert lines[-1] == "push: ok"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)

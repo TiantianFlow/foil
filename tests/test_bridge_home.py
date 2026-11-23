@@ -376,3 +376,32 @@ def test_the_home_shows_the_plan_and_remove_drops_a_watch(
         status, body = _request(port, "GET", "/v1/home", token=token)
         ids = [item["id"] for item in json.loads(body)["watches"]]
         assert ids == ["token"]
+        assert payload["modes"] == [
+            {"kind": "nudge", "mode": "observe"},
+            {"kind": "pause", "mode": "observe"},
+            {"kind": "resume", "mode": "observe"},
+            {"kind": "renew", "mode": "observe"},
+        ]
+        status, body = _request(
+            port,
+            "POST",
+            "/v1/mode",
+            token=token,
+            headers=_origin(port),
+            body={"kind": "nudge"},
+        )
+        assert status == 400 and b"unknown mode" in body
+        status, body = _request(
+            port,
+            "POST",
+            "/v1/mode",
+            token=token,
+            headers=_origin(port),
+            body={"kind": "nudge", "mode": "act"},
+        )
+        assert status == 200
+        assert "- nudge\n" in (root / "mandate.md").read_text(encoding="utf-8")
+        status, body = _request(port, "GET", "/v1/home", token=token)
+        modes = {item["kind"]: item["mode"] for item in json.loads(body)["modes"]}
+        assert modes["nudge"] == "act"
+        assert modes["pause"] == "observe"

@@ -1,7 +1,8 @@
 """The master: one runner per store, above every fleet (section 13).
 
 The process is the seat runner. Each turn is a new session. A wake is mail
-in the store mailbox, or an inbox identity that was not in the last set.
+in the store mailbox, an inbox identity that was not in the last set, a
+removed watch, or a watch whose check time has arrived.
 """
 
 from __future__ import annotations
@@ -79,6 +80,7 @@ _WATCH_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _WATCH_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _ON_CAP = 200
 _READ = object()
+KINDS = ("nudge", "pause", "resume", "renew")
 
 
 def directory() -> Path:
@@ -269,6 +271,7 @@ def empty_record() -> dict[str, Any]:
         "pgid": 0,
         "sessions": [],
         "seen_inbox": [],
+        "seen_checks": [],
         "baselined": False,
         "reads": [],
     }
@@ -285,7 +288,7 @@ def load_record(root: Path) -> dict[str, Any]:
         return record
     for key, default in record.items():
         value = stored.get(key, default)
-        if key in {"delivered", "inflight", "seen_inbox"}:
+        if key in {"delivered", "inflight", "seen_inbox", "seen_checks"}:
             value = (
                 [item for item in value if isinstance(item, str)]
                 if isinstance(value, list)
@@ -724,6 +727,118 @@ def watch_items(root: Path) -> list[dict[str, str]]:
     return found
 
 
+def due_checks(root: Path, now: datetime | None = None) -> list[dict[str, str]]:
+    """Watch lines whose check time has arrived. An unreadable file is none."""
+
+    moment = now or datetime.now(UTC)
+    found = []
+    for item in watch_items(root):
+        try:
+            when = datetime.strptime(item["check"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        except ValueError:
+            continue
+        if when <= moment:
+            found.append(item)
+    return found
+
+
+def check_key(item: dict[str, str]) -> str:
+    return f"{item['id']}\x1f{item['check']}"
+
+
+def remember_checks(root: Path, record: dict[str, Any], prompted: list[dict[str, str]]) -> None:
+    """Keep due checks a successful turn was given, while the line is unchanged."""
+
+    current = {item["id"]: item["check"] for item in watch_items(root)}
+    keys = set(record.get("seen_checks") or [])
+    keys.update(check_key(item) for item in prompted)
+    record["seen_checks"] = sorted(
+        key for key in keys if current.get(key.partition("\x1f")[0]) == key.partition("\x1f")[2]
+    )
+
+
+def _act_kinds(text: str) -> set[str]:
+    found: set[str] = set()
+    section = False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            section = line == "## Act"
+            continue
+        if section and line.startswith("- "):
+            kind = line[2:].strip()
+            if kind in KINDS:
+                found.add(kind)
+    return found
+
+
+def acting(root: Path | None = None) -> set[str]:
+    """Kinds the human switched to act. A missing or unreadable file is none."""
+
+    path = (root or directory()) / "mandate.md"
+    if path.is_symlink() or not path.is_file():
+        return set()
+    try:
+        return _act_kinds(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return set()
+
+
+def _render_act(text: str, kinds: set[str]) -> str:
+    kept: list[str] = []
+    index = 0
+    lines = text.splitlines()
+    while index < len(lines):
+        if lines[index] == "## Act":
+            index += 1
+            while index < len(lines) and not lines[index].startswith("## "):
+                index += 1
+            continue
+        kept.append(lines[index])
+        index += 1
+    while kept and not kept[-1]:
+        kept.pop()
+    block = ["## Act", ""]
+    block.extend(f"- {kind}" for kind in KINDS if kind in kinds)
+    body = "\n".join(kept + ["", *block] if kept else block)
+    return body + "\n"
+
+
+def set_mode(kind: str, mode: str) -> None:
+    """Record one proactive kind as act or observe. The human's other words stay."""
+
+    if os.environ.get("FOIL_MASTER") == "1" and not in_seat():
+        raise FoilError("foil: the master does not set the mode")
+    if kind not in KINDS or mode not in {"observe", "act"}:
+        raise FoilError(f"foil: unknown mode '{shown(kind if kind not in KINDS else mode)}'")
+    root = directory()
+    _ensure(root)
+    path = root / "mandate.md"
+    with exclusive_lock(_run(root) / "mandate.lock"):
+        if path.is_symlink():
+            raise FoilError("foil: refusing symlink")
+        try:
+            text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        except (OSError, UnicodeDecodeError) as exc:
+            raise FoilError("foil: mandate cannot be read") from exc
+        kinds = _act_kinds(text)
+        if mode == "act":
+            kinds.add(kind)
+        else:
+            kinds.discard(kind)
+        write_bytes(path, _render_act(text, kinds).encode())
+    print(f"foil: {kind} {mode}")
+
+
+def observe(kind: str) -> None:
+    """Refuse a proactive command while the master has not been switched to act."""
+
+    if os.environ.get("FOIL_MASTER") != "1" or in_seat():
+        return
+    if kind in acting():
+        return
+    raise FoilError(f"foil: observe {kind}")
+
+
 def removed_path(root: Path) -> Path:
     return _run(root) / "removed.json"
 
@@ -827,6 +942,7 @@ def seed(
     mail: list[Path],
     new_ids: list[str],
     removed: Any = _READ,
+    checks: list[dict[str, str]] | None = None,
 ) -> str:
     """The whole prompt for one fresh session."""
 
@@ -867,10 +983,13 @@ def seed(
             body = ""
         parts += [f"--- {path.name}", _cap(body, BODY_CAP).rstrip("\n")]
     parts += ["", "# Wake"]
-    if not mail and not new_ids:
+    due = checks or []
+    if not mail and not new_ids and not due:
         parts.append("(none)")
     for path in mail:
         parts.append(f"mail: {path.name}")
+    for item in due:
+        parts.append(f"check: {item['id']} {item['check']} {item['on']}")
     for item in new_ids:
         project, fleet, subject = (item.split("\x1f") + ["", ""])[:3]
         parts.append(f"inbox: {project} {fleet} {subject}")
@@ -1015,12 +1134,17 @@ class MasterRunner:
             ]
             removed = read_removed(self.root)
             wake_removed = removed if removed else []
+            seen_checks = set(self.record["seen_checks"])
+            fresh_checks = [
+                item for item in due_checks(self.root) if check_key(item) not in seen_checks
+            ]
             if (
                 not pending
                 and not new_mail
                 and not fresh_ids
                 and not self.record["failures"]
                 and not wake_removed
+                and not fresh_checks
             ):
                 if current is not None and set(current) != seen:
                     self.record["seen_inbox"] = sorted(set(current))
@@ -1042,7 +1166,7 @@ class MasterRunner:
             self._mail_before = master_mail_names(self.root)
             open_read(self.record, [path.name for path in batch])
             self.save()
-            prompt = seed(self.root, batch, fresh_ids, removed)
+            prompt = seed(self.root, batch, fresh_ids, removed, fresh_checks)
             self._removed_ids = [item["id"] for item in wake_removed]
             code = self._turn(prompt, session)
             self.record["turn_started"] = None
@@ -1058,6 +1182,7 @@ class MasterRunner:
                 self.record["failures"] = 0
                 if current is not None:
                     self.record["seen_inbox"] = sorted(set(current))
+                remember_checks(self.root, self.record, fresh_checks)
                 self.record["started"] = True
                 self.save()
                 drop_removed(self.root, self._removed_ids)

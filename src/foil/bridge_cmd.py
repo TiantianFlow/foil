@@ -7,13 +7,16 @@ only needs to report that it is missing.
 
 from __future__ import annotations
 
+import base64
 import http.client
+import json
 import os
 import re
 import secrets
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from foil.errors import FoilError
@@ -381,6 +384,175 @@ def _tailscale_line(port: int) -> tuple[str, int]:
     return "tailscale: serve not set", 3
 
 
+def _owner_only(path: Path) -> bool:
+    try:
+        return os.stat(path).st_mode & 0o777 == 0o600
+    except OSError:
+        return False
+
+
+def _json_object(path: Path) -> dict | None | bool:
+    """None when missing, False when unusable, else the object."""
+
+    if path.is_symlink() or not path.is_file():
+        return None if not path.exists() else False
+    try:
+        if path.stat().st_size > 8192:
+            return False
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    return data if isinstance(data, dict) else False
+
+
+def _vapid_ok(data: dict) -> bool:
+    raw = data.get("d")
+    if not isinstance(raw, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", raw):
+        return False
+    try:
+        decoded = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+    except ValueError:
+        return False
+    return len(decoded) == 32
+
+
+def _stamp(path: Path) -> str:
+    """fresh, stale, missing, or broken."""
+
+    if path.is_symlink():
+        return "broken"
+    data = _json_object(path)
+    if data is None:
+        return "missing"
+    if data is False:
+        return "broken"
+    moment = data.get("t")
+    if isinstance(moment, bool) or not isinstance(moment, int | float):
+        return "broken"
+    if time.time() - float(moment) > 120:
+        return "stale"
+    return "fresh"
+
+
+def _push_line() -> tuple[str, int]:
+    root = bridge_root()
+    push = root / "push"
+    hook = root / "webhook"
+    paths = (
+        push / "settings",
+        push / "vapid",
+        push / "subscriptions",
+        push / "heartbeat",
+        hook / "settings",
+        hook / "heartbeat",
+    )
+    if any(path.is_symlink() for path in paths):
+        return "push: broken", 2
+    subscriptions = paths[2]
+    if subscriptions.exists() and not subscriptions.is_dir():
+        return "push: broken", 2
+    settings = _json_object(paths[0])
+    webhook = _json_object(paths[4])
+    if settings is False or webhook is False:
+        return "push: broken", 2
+    for path, data in ((paths[0], settings), (paths[4], webhook)):
+        if data is not None and not _owner_only(path):
+            return "push: broken", 2
+    kinds_on = False
+    down = False
+    if isinstance(settings, dict):
+        for name in ("question", "seat", "delivery", "done", "down"):
+            if settings.get(name) is True:
+                kinds_on = True
+        down = settings.get("down") is True
+    hook_on = isinstance(webhook, dict) and webhook.get("enabled") is True
+    if not kinds_on and not hook_on:
+        return "push: off", 0
+    vapid = _json_object(paths[1])
+    if vapid is None:
+        return "push: waiting", 3
+    if vapid is False or not _vapid_ok(vapid) or not _owner_only(paths[1]):
+        return "push: broken", 2
+    for required, path in ((down, paths[3]), (hook_on, paths[5])):
+        if not required:
+            continue
+        state = _stamp(path)
+        if state == "broken":
+            return "push: broken", 2
+        if state in {"missing", "stale"}:
+            return "push: stale", 1
+    return "push: ok", 0
+
+
+def _master_line() -> tuple[str, int]:
+    from foil.master import _alive, _load_window, directory, load_record
+
+    root = directory()
+    run = root / "run"
+    if (run / "window.json").is_symlink() or (run / "record.json").is_symlink():
+        return "master: broken", 2
+    window = _load_window(root)
+    if not str(window.get("window_id") or "").startswith("@"):
+        return "master: not started", 0
+    if not _alive(window):
+        return "master: down", 1
+    if load_record(root).get("paused"):
+        return "master: paused", 1
+    return "master: ok", 0
+
+
+def _fleet_runner(key: str, checkout: Path, fleet: str) -> tuple[str, int]:
+    from foil.errors import FoilError
+    from foil.runner import load_record
+    from foil.store import fleet_dir, load_registry
+    from foil.tmux import TmuxController, TmuxError
+
+    try:
+        registry = load_registry(checkout, fleet)
+    except (FoilError, OSError):
+        return f"runner: {key} {fleet} broken", 2
+    launched = [
+        (name, seat)
+        for name, seat in sorted(registry["seats"].items())
+        if seat.get("state") not in {"killed", "joined"}
+    ]
+    if not launched:
+        return f"runner: {key} {fleet} none", 0
+    down = False
+    paused = False
+    fleet_id = str(registry.get("fleet_id") or fleet)
+    session = str(registry.get("tmux_session") or "")
+    for name, seat in launched:
+        try:
+            owned = TmuxController().matches_window(
+                fleet_id, name, session, seat.get("window_id") or ""
+            )
+        except TmuxError:
+            owned = False
+        if not owned:
+            down = True
+            continue
+        if load_record(fleet_dir(checkout, fleet) / "board", name).get("paused"):
+            paused = True
+    if down:
+        return f"runner: {key} {fleet} down", 1
+    if paused:
+        return f"runner: {key} {fleet} paused", 1
+    return f"runner: {key} {fleet} ok", 0
+
+
+def _runner_lines() -> list[tuple[str, int]]:
+    from foil.inbox import projects
+    from foil.store import fleet_ids
+
+    lines = [
+        _fleet_runner(key, checkout, fleet)
+        for key, checkout in projects()
+        for fleet in fleet_ids(checkout)
+    ]
+    return lines or [("runners: none", 0)]
+
+
 def doctor_report() -> tuple[int, list[str]]:
     binary = bridge_binary()
     rows = [
@@ -389,6 +561,9 @@ def doctor_report() -> tuple[int, list[str]]:
         _token_line(),
         _listen_line(bridge_port()),
         _tailscale_line(bridge_port()),
+        _master_line(),
+        *_runner_lines(),
+        _push_line(),
     ]
     code = 0
     for _line, severity in rows:

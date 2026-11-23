@@ -118,6 +118,7 @@ _ALLOWED = {
     "master-stop": {_OUTSIDE},
     "master-renew": {_OUTSIDE},
     "master-unwatch": {_OUTSIDE},
+    "master-mode": {_OUTSIDE},
     "doctor": {_OUTSIDE},
     "bridge": {_OUTSIDE},
 }
@@ -267,6 +268,10 @@ def seat_renew(
     pinned: bool = True,
 ) -> dict:
     _authorize("renew", caller=caller, inside=inside)
+    if name == "lead":
+        from foil.master import observe
+
+        observe("renew")
     root = _root(project)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         renew_seat(root, name)
@@ -377,6 +382,10 @@ def send(
     """``read_text`` expands ``-`` after the refusal. Callers pass the message."""
 
     _authorize("send", caller=caller, inside=inside)
+    if to == "lead":
+        from foil.master import observe
+
+        observe("nudge")
     body = text if read_text is None else read_text(text)
     if to == "master":
         from foil.master import deliver
@@ -773,6 +782,9 @@ def fleet_pause(
     pinned: bool = True,
 ) -> dict:
     _authorize("fleet-pause", caller=caller, inside=inside)
+    from foil.master import observe
+
+    observe("pause")
     root = _root(project)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         # The joined lead just ran this command, so the next one is not the first notice.
@@ -790,6 +802,9 @@ def fleet_resume(
     pinned: bool = True,
 ) -> dict:
     _authorize("fleet-resume", caller=caller, inside=inside)
+    from foil.master import observe
+
+    observe("resume")
     root = _root(project)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         resume_fleet(fleet_dir(root))
@@ -894,6 +909,24 @@ def master_unwatch(
 
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         unwatch(watch_id)
+    return {"ok": True}
+
+
+def master_mode(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    kind: str,
+    mode: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _authorize("master-mode", caller=caller, inside=inside)
+    from foil.master import set_mode
+
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        set_mode(kind, mode)
     return {"ok": True}
 
 

@@ -56,6 +56,7 @@ FLAGS = {
     ("master", "start"): {"--harness", *_SHARED},
     ("master", "stop"): set(_SHARED),
     ("master", "renew"): {"--harness", *_SHARED},
+    ("master", "mode"): set(_SHARED),
     ("fleet", "pause"): set(_SHARED),
     ("fleet", "resume"): set(_SHARED),
     ("fleet", "merge"): {"--into", *_SHARED},
@@ -130,6 +131,7 @@ ROLE_COMMANDS = {
         ("inbox",),
         ("fleet", "pause"),
         ("fleet", "resume"),
+        ("master", "mode"),
         ("roster", "list"),
         ("roster", "show"),
     },
@@ -548,7 +550,11 @@ def test_no_skill_types_into_a_pane() -> None:
         text = (SKILLS / name).read_text(encoding="utf-8")
         assert "folder-trust" not in text, name
         assert "send-keys" not in text, name
-        assert "nudge" not in text.lower(), name
+        # The observe kind is named nudge. A leftover "nudge" would be a pane poke.
+        remaining = text.lower()
+        for phrase in ("`nudge`", "would nudge", "- nudge"):
+            remaining = remaining.replace(phrase, "")
+        assert "nudge" not in remaining, name
     source = ROOT / "src" / "foil"
     for path in source.rglob("*.py"):
         text = path.read_text(encoding="utf-8")

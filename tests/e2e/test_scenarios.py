@@ -348,6 +348,18 @@ def test_scenario_4a_launched_lead_asks_the_human(
         assert main(["send", "lead", "use blue"]) == 0
         _wait(repo, lambda: "The answer is blue." in _status(repo))
         window = load_registry(repo)["seats"]["lead"]["window_id"]
+
+        def turn_finished() -> bool:
+            result = subprocess.run(
+                ["tmux", "capture-pane", "-p", "-t", window, "-S", "-40"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            # Status is written before the runner prints the second end line.
+            return result.stdout.count("foil: turn ended (exit 0)") >= 2
+
+        _wait(repo, turn_finished)
         captured = subprocess.run(
             ["tmux", "capture-pane", "-p", "-t", window, "-S", "-40"],
             check=True,
