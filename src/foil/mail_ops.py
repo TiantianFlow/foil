@@ -192,7 +192,10 @@ def undelivered(board: Path | None = None) -> list[dict[str, str]]:
             if fields.get("contract") != "mail/v1":
                 continue
             relative = path.resolve().relative_to(root.resolve()).as_posix()
-            state = _sent_state(root, recipient, relative, when)
+            try:
+                state = _sent_state(root, recipient, relative, when)
+            except (FoilError, OSError, ValueError):
+                continue
             if state != "stuck":
                 continue
             found.append(

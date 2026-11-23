@@ -131,12 +131,18 @@ def empty_record() -> dict[str, Any]:
 
 
 def load_record(board: Path, seat: str) -> dict[str, Any]:
-    """The runner's record. A missing or unreadable one is empty (F8)."""
+    """The runner's record. A missing or unreadable one is empty (F8).
+
+    A symlink at ``run`` or ``turns`` is not followed.
+    """
 
     record = empty_record()
+    path = record_path(board, seat)
     try:
-        stored = read_json(record_path(board, seat))
-    except FoilError:
+        if path.parent.is_symlink() or path.parent.parent.is_symlink():
+            return record
+        stored = read_json(path)
+    except (FoilError, OSError):
         return record
     for key, default in record.items():
         value = stored.get(key, default)

@@ -329,7 +329,7 @@ rows after this table are not in the binary.
 | `foil seat renew NAME` | none | Gives the seat a fresh session after its handoff, with the same name, worktree, and branch and the role's next harness entry (F44). |
 | `foil seat join lead` | `--harness ID`, `--session ID`, `--take` | Makes the calling session the fleet's lead, a seat with no window, and prints a short brief (F42). Outside the fleet only. |
 | `foil seat leave` | none | Ends the join after the lead writes `board/handoffs/lead.md` (F42). Outside the fleet only. |
-| `foil seat list` | `--json`, `--archived`, `--all-fleets` | Lists seats (F10). Without `--archived`, human output is `<name>\t<template>\t<state>\t<worktree>\t<harness>[/<model>]\t<session>\t<description>`, with `-` for no session id, and JSON adds `harness`, `model`, `session_id`, `turn_started`, `last_exit`, and `description`. `--all-fleets` lists every fleet of the project that has a registry, in fleet id order, each human line led by the fleet id and a tab, and JSON adds `fleet`; it takes no `--archived`. `--archived` lists the prose files in `run/archive/`, newest first, and does not probe tmux. Human output is `<name>\t<template>\t<state>\t<worktree>\t<harness>[/<model>]\t<branch>`. JSON is the nine stored fields plus `archived`, the file name. |
+| `foil seat list` | `--json`, `--archived`, `--all-fleets` | Lists seats (F10). Without `--archived`, human output is `<name>\t<template>\t<state>\t<worktree>\t<harness>[/<model>]\t<session>\t<description>`, with `-` for no session id, and JSON adds `harness`, `model`, `session_id`, `turn_started`, `last_exit`, and `description`. `--all-fleets` lists every fleet of the project that has a registry, in fleet id order. A symlink at `run`, or a registry that cannot be looked up, is not one of those fleets. Each human line is led by the fleet id and a tab, and JSON adds `fleet`; it takes no `--archived`. `--archived` lists the prose files in `run/archive/`, newest first, and does not probe tmux. Human output is `<name>\t<template>\t<state>\t<worktree>\t<harness>[/<model>]\t<branch>`. JSON is the nine stored fields plus `archived`, the file name. |
 | `foil seat peek NAME` | `--lines N` (default 40), `--json` | Prints the pane tail (F11). A dead seat whose window still exists and still carries this seat's markers is printed the same way. A killed seat, a dead seat whose window is gone, or a stored window id that now names another window is an error. `--json` prints `{"name","text"}`. Human output stays the pane text. |
 | `foil send TO TEXT` | none; `TEXT` = `-` reads stdin | Writes mail and types nothing (F13, F14). The recipient's runner starts its next turn with it; a joined lead hears through `mail wait`. `TO` of `user` is a launched lead's mail to the human. |
 | `foil post [TEXT]` | `--re PATH`, `--decline`, `--members NAMES`, `--close`; `TEXT` = `-` reads stdin | Writes a `room/v2` file and types nothing. Without `--re` it opens a room whose members are the caller and NAMES, or every seat that is not killed without `--members`; only the lead and a caller outside the fleet open one. A post wakes the room's members and the seats it names as `@name`, except a member whose last file there is a decline, and lists them in `wakes` (F33). `--members` with `--re` sets the members and wakes only the ones it adds. `--close` with `--re` closes the room, and a closed room refuses later posts. `--decline` requires `--re`, takes no TEXT, writes a child whose body is `decline`, and wakes nobody. An empty `--re` is one stderr line and writes nothing. |
@@ -352,8 +352,8 @@ rows after this table are not in the binary.
 | `foil decide TEXT` | `--why TEXT` | `--why` is required. Appends one `decision` line whose `by` is the caller. `TEXT` and `--why` are one line each, at most 400 characters, and neither may be empty (`foil: decision text is empty`, `foil: decision text is too long`, `foil: decision text must be one line`, and the same three for `decision reason`). Credential-shaped text is refused and nothing is written (`foil: credential-shaped text refused`), as other board writes are (N5). |
 | `foil fleet pause` | none | Runners in that fleet start no new turn, including a new seat's first turn (F43). Mail queues. A turn already running finishes. Prints `foil: fleet paused`. |
 | `foil fleet resume` | none | Clears the pause. The runners take the queued items on their next check. Prints `foil: fleet resumed`. |
-| `foil inbox` | `--all-fleets`, `--all-projects`, `--json` | Computes what needs the human, on read, from files, in one fixed order (design rule 5). It writes nothing. With no flag, the current fleet. `--all-fleets` is every fleet of this project that has a registry. `--all-projects` is every fleet of every project in the store and needs no checkout. A project whose recorded checkout is missing, or no longer maps to that folder, is skipped. It wins when `--all-fleets` is also set. A worker is refused (`foil: not allowed`). Sources, highest rank first: `status/v1` questions and unread mail in `board/mail/user/` (absent from that mailbox's seen record); dead and paused seats; undelivered mail (section 7.5); `state: blocked` when that file has no question; a paused fleet and `state: done`. One item per subject. Undelivered mail addressed to a dead or paused seat is part of that seat's item and is not listed again. Unread mail that is also undelivered stays one mail item. Within a rank the order is project key, then fleet id, then source order: questions in file order, then oldest mail; dead seats by name, then paused seats by name; undelivered mail oldest first; a paused fleet before a done goal. Each item has `id`, `project`, `fleet`, `subject`, `kind`, `rank`, `since`, `title`, `options`, `recommended`, `from`, and `evidence`. `rank` is 0 for a question or mail, 1 for a seat, 2 for undelivered mail, 3 for blocked, and 4 for a paused fleet or a done goal. A question's `id` is its mapping `id` when that is a safe id and unique in the fleet, otherwise `q<n>` with `n` from 1 in file order, and its subject is `question:` plus that id. Other subjects are `mail:<board-relative path>`, `seat:<name>`, `status`, `fleet`, and `goal`, and those items use the subject as `id`. `since` is `updated` for a question, blocked, or done when that value is `YYYY-MM-DDTHH:MM:SSZ`; the file-name time for mail; the latest journal `pause` time for a paused seat; otherwise empty. `from` is `owner` when it is `human` or `master`, or the mail sender. `evidence` is the question's `evidence`, the mail path, or the folded paths joined by `, `. Human output is one line, `<kind>`, `<since>`, `<id>`, and `<title>`, tab-separated. An empty `since` prints `-`. `--all-fleets` puts `<fleet>` before that, and `--all-projects` puts `<project>` and `<fleet>` before it. `--json` prints the array. No mail body and no turn output (N5). A question mapping supplies `title` from `ask`, plus `options`, `recommended`, `from`, and `evidence`. A plain string is a question with no options. Front matter outside the subset in section 7.4 is one question item whose title is that front matter, raw, and no field from it is used. |
-| `foil brief` | `--all-projects`, `--json` | One status per fleet, built from files with no model. It writes nothing. With no flag, the current fleet. `--all-projects` is every fleet of every project and needs no checkout. A project whose recorded checkout is missing, or no longer maps to that folder, is skipped. A worker is refused (`foil: not allowed`). The goal is the text after `Done when:` in the `## Mandate` section, or else that section's first non-empty line, or else the body's first non-empty line. `state` is `working`, `blocked`, or `done`, or empty when `status.md` is missing or its front matter was refused. The block also says whether the fleet is paused, then the latest five journal lines, oldest first, the open questions, and the stuck items: a dead or paused seat, undelivered mail, and blocked with no question. Human output is those lines, with `project <key>` before `fleet <id>` when more than one fleet is listed. `--json` prints the same records. No mail body and no turn output (N5). |
+| `foil inbox` | `--all-fleets`, `--all-projects`, `--json` | Computes what needs the human, on read, from files, in one fixed order (design rule 5). It writes nothing. With no flag, the current fleet. `--all-fleets` is every fleet of this project that has a registry. A symlink at `run`, or a registry that cannot be looked up, is not one of those fleets. `--all-projects` is every fleet of every project in the store and needs no checkout. A project whose recorded checkout is missing, or no longer maps to that folder, is skipped. It wins when `--all-fleets` is also set. A worker is refused (`foil: not allowed`). Sources, highest rank first: `status/v1` questions and unread mail in `board/mail/user/` (absent from that mailbox's seen record); dead and paused seats; undelivered mail (section 7.5); `state: blocked` when that file has no question; a paused fleet and `state: done`. One item per subject. Undelivered mail addressed to a dead or paused seat is part of that seat's item and is not listed again. Unread mail that is also undelivered stays one mail item. Within a rank the order is project key, then fleet id, then source order: questions in file order, then oldest mail; dead seats by name, then paused seats by name; undelivered mail oldest first; a paused fleet before a done goal. Each item has `id`, `project`, `fleet`, `subject`, `kind`, `rank`, `since`, `title`, `options`, `recommended`, `from`, and `evidence`. `rank` is 0 for a question or mail, 1 for a seat, 2 for undelivered mail, 3 for blocked, and 4 for a paused fleet or a done goal. A question's `id` is its mapping `id` when that is a safe id and unique in the fleet, otherwise `q<n>` with `n` from 1 in file order, and its subject is `question:` plus that id. Other subjects are `mail:<board-relative path>`, `seat:<name>`, `status`, `fleet`, and `goal`, and those items use the subject as `id`. `since` is `updated` for a question, blocked, or done when that value is `YYYY-MM-DDTHH:MM:SSZ`; the file-name time for mail; the latest journal `pause` time for a paused seat; otherwise empty. `from` is `owner` when it is `human` or `master`, or the mail sender. `evidence` is the question's `evidence`, the mail path, or the folded paths joined by `, `. Human output is one line, `<kind>`, `<since>`, `<id>`, and `<title>`, tab-separated. An empty `since` prints `-`. `--all-fleets` puts `<fleet>` before that, and `--all-projects` puts `<project>` and `<fleet>` before it. `--json` prints the array. No mail body and no turn output (N5). A question mapping supplies `title` from `ask`, plus `options`, `recommended`, `from`, and `evidence`. A plain string is a question with no options. Front matter outside the subset in section 7.4 is one question item whose title is that front matter, raw, and no field from it is used. |
+| `foil brief` | `--all-projects`, `--json` | One status per fleet, built from files with no model. It writes nothing. With no flag, the current fleet. `--all-projects` is every fleet of every project and needs no checkout. A project whose recorded checkout is missing, or no longer maps to that folder, is skipped. A worker is refused (`foil: not allowed`). The goal is the text after `Done when:` in the `## Mandate` section, or else that section's first non-empty line, or else the body's first non-empty line. `state` is `working`, `blocked`, or `done`, or empty when `status.md` is missing or its front matter was refused. The block also says whether the fleet is paused, then the latest five journal lines, oldest first, the open questions, and the stuck items: a dead or paused seat, undelivered mail, and blocked with no question. A journal that cannot be read, including a symlink, a file that cannot be opened, or a file larger than its 64 KiB cap, contributes no lines, and the rest of the brief stays. A symlink at `run` is refused the same way. `status.md` larger than 1 MiB contributes no goal. Human output is those lines, with `project <key>` before `fleet <id>` when more than one fleet is listed. `--json` prints the same records. No mail body and no turn output (N5). |
 | `foil master start` | `--harness ID/MODEL` | Starts the master on the runner (section 13). Outside the fleet only (`foil: not allowed` inside). With no `--harness`, uses the recorded harness, or the first installed eligible harness when none is recorded. A running master that is not paused is `foil: master is running`. A running paused master is resumed: `foil: master resumed`. Otherwise prints `foil: master started (<id>[/<model>])`. |
 | `foil master stop` | none | Stops the master's window. Outside the fleet only. A master that is not running is `foil: master is not running`. Otherwise prints `foil: master stopped`. |
 | `foil master renew` | `--harness ID/MODEL` | Replaces the master's harness for the next turn. Each turn already starts a fresh session (design rule 10). Outside the fleet only. With no `--harness`, keeps the recorded harness, or the first installed eligible harness when none is recorded. A running master takes the new argv after its current turn. Prints `foil: master harness <id>[/<model>]`. |
@@ -726,7 +726,7 @@ Out of scope:
 - Keeping a joined lead's file tools from changing what a spawn runs. Spawn and resume read a project harness file (F20, F27), so a joined lead whose file tools may write more than the fleet's board (onboarding step 1) could set a launch command that runs outside its sandbox. The board-only setting and the joined skill's rule against writing harness files are the guards. Only `--wake` reads no project harness file (F41).
 - Remote machines and Windows. A project is one copy of the code. Several fleets may run on it. They share the effective roles, harnesses, and mapping. Each fleet has its own board, posts, registry, and an optional pair-list override. Seat worktrees stay in the same Git repository.
 - In core: a UI other than `foil view`; a viewer that writes, or types into a pane; a daemon; an MCP server; a hosted service. Core does not grow those. `foil bridge` and `foil bridge install` are core commands. The page, the local process, and a later MCP endpoint belong to the Bridge package (section 12).
-- Message read receipts, usage-based dispatch, and persona catalog tools beyond `roster list` of the personas `init` copied. Usage-based dispatch includes quota detection, probes, pacing, credential rotation, and switching a running seat because it looks exhausted. Spawn-time rotation across the ordered harness list on a role is in scope. A spawn selects `entries[n % len(entries)]`, where `n` counts that role's spawns since its lists last changed (F3). That spreads later spawns, the lead's included, across the entries the role was given. It does not balance usage and it does not move a seat that is already running. Foil does not read or show a harness's token usage or quota.
+- Message read receipts, usage-based dispatch, and persona catalog tools beyond `roster list` of the personas `init` copied. Usage-based dispatch includes quota detection, probes, pacing, credential rotation, and switching a running seat because it looks exhausted. Spawn-time rotation across the ordered harness list on a role is in scope. A spawn selects `entries[n % len(entries)]`, where `n` counts that role's spawns since its lists last changed (F3). That spreads later spawns, the lead's included, across the entries the role was given. It does not balance usage and it does not move a seat that is already running. Core does not read a harness's token usage or quota, and it does not dispatch on either. The Bridge may sum usage events already in a transcript and show that total (section 12). It does not read a quota, and the total changes no seat.
 - Context monitoring. Foil does not read a seat's context use. A seat near a full context, or at a milestone the lead picks, writes a handoff file, and the lead or a caller outside the fleet replaces it (section 8).
 
 ## 12. Bridge
@@ -766,6 +766,8 @@ the token and the time it was created, not the secret. Those directories
 are mode 0700. The files are the pairing credentials (design rule 2).
 The process copies no fleet file. The home reads the master's mail and
 the fleets' questions to answer one request, and it does not keep them.
+The evidence page reads a board file, the journal, a branch diff, and a
+transcript the same way, and it does not keep them.
 `foil-bridge transcript` reads a harness file for display and does not
 serve it. Push, the master supervisor, and the desk terminal are later
 phases on this same process.
@@ -890,14 +892,78 @@ no action card.
 
 A path in a message is a link when it resolves under the store:
 `projects/<key>` when that project folder has `project.json`,
-`projects/<key>/fleets/<id>` when that fleet has a registry, or
-`projects/<key>/fleets/<id>/board/<file>` when that file is a regular
-file and not a symlink. A message that carries `project` and `fleet`,
-and a question's `evidence` when that value is only a path, also link
-`board/<file>` in that fleet when the file exists. A path with `..`
-does not resolve. A trailing `.` is not part of the path. `GET /evidence?target=` returns the page for a
-resolved target and 404 otherwise. The page names the kind, the project,
-the fleet, and the store-relative path. It does not return the file.
+`projects/<key>/fleets/<id>` when that fleet has a registry and
+`run` is not a symlink,
+`projects/<key>/fleets/<id>/board/<file>` when that file is in the
+fleet's board listing, or `projects/<key>/fleets/<id>/seats/<name>`
+when that seat is in the registry and `run` is not a symlink. The listing skips a symlink, a name
+that starts with `.`, and a name that is not UTF-8, on every path
+component. A board path is a link only when that listing contains the
+file. A path is not a link when any component is a symlink. A message that carries
+`project` and `fleet`, and a question's `evidence` when that value is
+only a path, also link `board/<file>` in that fleet when the file is
+in that listing. A path with `..` does not resolve. A trailing `.` is
+not part of the path.
+
+`GET /evidence?target=` returns that target's read-only page, and 404
+when it does not resolve or the project's recorded checkout no longer
+maps to the store folder. `level` is `summary` (the default),
+`messages`, `tools`, or `all`. Any other level is `summary`. The page
+writes nothing. Before text from a file, a journal line, a diff, or a
+transcript is shown, the credential masker runs. The page ends with
+`Secrets are masked as a best effort.`
+
+A project page lists each fleet that has a registry, in id order. A fleet whose `run` is a symlink, or whose registry cannot be looked up, is not in that list. It shows each listed fleet with
+that fleet's top inbox item: its rank, its kind, and its title. A fleet
+with no inbox item says `No inbox item.` An empty project says
+`No fleet.`
+
+A fleet page shows the goal and the state `foil brief` would, and
+`, fleet paused` when the fleet is paused. It shows the `decisions`
+list from `status.md` when that front matter parses, or `None.` when
+it has none. It shows the latest 40 journal lines, or `None.` when the
+log is empty or cannot be read. A board that is a symlink, or a
+`status.md` that is a symlink or cannot be opened, contributes no goal,
+questions, or decisions, and the rest of the page stays. It shows the open questions,
+each seat's name, role,
+state, branch, and token total, the fleet's token total, and the board
+listing. A seat's name links to that seat. A board path links to that
+file.
+
+A file page shows the path, the size, and the first 64 KiB as text,
+with invalid bytes replaced. The read includes the rest of the line
+that crosses 64 KiB, up to 8 KiB more, the masker runs, and the page
+then shows the first 64 KiB of that masked text. A longer file says
+`truncated`. A listed file that cannot be read is one line, `This file
+cannot be read.`, and the rest of the page stays. The open does not
+follow a symlink and does not block on a pipe.
+
+A seat page shows the conversation from `foil-bridge transcript` for
+that seat, project, and fleet, at `level`. The runner record is not
+read through a symlink at `run` or `turns`, and a record that cannot be
+opened leaves the page up. It names the format id and
+`file` or `pane`. `pane` means the session file was missing, unreadable,
+or the format is unknown, and the page says `Live pane.` Tool names,
+tool text, thoughts, and usage lines follow the same level rules as the
+command. `omitted N` and `truncated` appear when the command would print
+them. When the file and the pane both fail, the page says
+`foil-bridge: no transcript for '<seat>'` and still shows the seat.
+The token meter is `in N out M`, the sum of usage events before the
+level filter. The fleet meter is the sum of its seats. A seat that
+cannot be read counts as zero. That total reads usage from session
+files only and does not open the live pane. The meter is display only:
+it is not stored, and it does not change a seat.
+
+The same page shows the diff of the seat's branch against its base.
+A seat with no branch says `This seat has no branch.` The lead's base
+is the checkout's current branch, or that commit when `HEAD` is
+detached. Another seat's base is the lead's recorded branch when that
+ref exists, and otherwise the checkout's current branch. The diff is
+`git diff --no-textconv <base>...<branch>`. The read stops after 64 KiB
+plus the rest of that line, up to 8 KiB more, the masker runs, and the
+page shows the first 64 KiB. A longer diff says `truncated`. A textconv
+filter is not run. An empty diff says `No changes.` A ref git cannot diff
+says `No diff.` The page names the base and the branch.
 
 Every one of these routes needs the token. A `POST` needs the matching
 `Origin`. A `foil.api` error is 400 with `{"error"}` and the command's
@@ -1009,7 +1075,7 @@ and exits 1. A fleet id that is not a fleet id is
 
 Before anything is printed, credential-shaped text is replaced with `[hidden]`. The shapes are the key names and value prefixes the board-write refusal uses (N5), plus a `Bearer` token and HTTP userinfo. An assignment of such a key hides the rest of that line, and a JSON value of such a key is hidden too. This is a best effort. Human output ends with `Secrets are masked as a best effort.` JSON sets `masked` to true and `note` to that sentence.
 
-`summary` keeps the last 20 user and assistant messages. A message longer than 200 characters is cut and marked with `…`. Human output adds `omitted N` when messages were dropped. `messages` prints every user and assistant message. `tools` adds a line per tool with its name and no input or output. `all` adds tool input and output, thoughts, system messages, and one usage line per response (`usage: in N out M`). Human output is one header, `seat`, the format id, and `file` or `pane`, tab-separated, then one line per event. Runs of whitespace in an event line become one space. A truncated file adds `truncated` to that header. `--json` prints `seat`, `project`, `fleet`, `format`, `source`, `level`, `masked`, `note`, `truncated`, `omitted`, and `events`. An event has `role`, `kind`, `text`, `tool`, and `usage`. `usage` is null or `{"input","output"}`. `kind` is `message`, `tool`, `usage`, `thought`, or `pane`.
+`summary` keeps the last 20 user and assistant messages. A message longer than 200 characters is cut and marked with `…`. Human output adds `omitted N` when messages were dropped. `messages` prints every user and assistant message. `tools` adds a line per tool with its name and no input or output. `all` adds tool input and output, thoughts, system messages, and one usage line per response (`usage: in N out M`). Human output is one header, `seat`, the format id, and `file` or `pane`, tab-separated, then one line per event. Runs of whitespace in an event line become one space. A truncated file adds `truncated` to that header. `--json` prints `seat`, `project`, `fleet`, `format`, `source`, `level`, `masked`, `note`, `truncated`, `omitted`, `tokens`, and `events`. `tokens` is `{"input","output"}`, the sum of usage events before the level filter, and it is display only. An event has `role`, `kind`, `text`, `tool`, and `usage`. `usage` is null or `{"input","output"}`. `kind` is `message`, `tool`, `usage`, `thought`, or `pane`.
 
 Phase 4 adds the master's runner, each fleet's runners, and the push path to
 `foil doctor`. A later phase may add an MCP endpoint on this process,

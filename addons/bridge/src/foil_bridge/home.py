@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ from foil.master import (
     turn_running,
 )
 from foil.project import checkout_for_key, store_root
+from foil.store import MAX_BYTES
 
 BODY_CAP = 8 * 1024
 _KEY = re.compile(r"[a-z]+")
@@ -33,7 +35,8 @@ _PROJECT = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,200}")
 _STORE = re.compile(
     r"projects/[A-Za-z0-9][A-Za-z0-9-]{0,200}"
     r"(?:/fleets/[A-Za-z0-9][A-Za-z0-9_-]{0,127}"
-    r"(?:/board/[A-Za-z0-9][A-Za-z0-9._/-]{0,240})?)?"
+    r"(?:/board/[A-Za-z0-9][A-Za-z0-9._/-]{0,240}"
+    r"|/seats/[A-Za-z0-9][A-Za-z0-9._-]{0,127})?)?"
 )
 _BOARD = re.compile(r"(?<![\w./-])board/(?P<rest>[A-Za-z0-9][A-Za-z0-9._/-]{0,240})")
 _ACTIONS = {
@@ -110,27 +113,75 @@ def parse_card(body: str) -> tuple[dict[str, str] | None, str]:
 
 
 def _within(relative: str) -> Path | None:
-    if relative.startswith("/") or ".." in relative.split("/"):
-        return None
-    root = store_root()
-    path = root / relative
-    if path.is_symlink():
-        return None
     try:
+        if relative.startswith("/") or ".." in relative.split("/") or "\x00" in relative:
+            return None
+        root = store_root()
+        path = root / relative
+        if path.is_symlink():
+            return None
         resolved = path.resolve()
         base = root.resolve()
-    except OSError:
+    except (OSError, ValueError):
         return None
     if not resolved.is_relative_to(base):
         return None
     return path
 
 
+def _unlinked(relative: str) -> bool:
+    current = store_root()
+    for part in relative.split("/"):
+        current = current / part
+        try:
+            if current.is_symlink():
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def _registry_file(fleet: Path) -> bool:
+    """True when this fleet's registry is a real file under a real ``run``."""
+
+    run = fleet / "run"
+    registry = run / "registry.json"
+    try:
+        return not run.is_symlink() and not registry.is_symlink() and registry.is_file()
+    except OSError:
+        return False
+
+
+def _seat_known(fleet: Path, name: str) -> bool:
+    registry = fleet / "run" / "registry.json"
+    if not _registry_file(fleet):
+        return False
+    try:
+        if registry.stat().st_size > MAX_BYTES:
+            return False
+        payload = json.loads(registry.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    seats = payload.get("seats") if isinstance(payload, dict) else None
+    if isinstance(seats, dict):
+        return name in seats
+    if isinstance(seats, list):
+        return any(isinstance(item, dict) and item.get("name") == name for item in seats)
+    return False
+
+
 def describe(target: str) -> dict[str, str] | None:
     """The kind of one store-relative target, or None when it does not resolve."""
 
+    try:
+        return _describe(target)
+    except (OSError, ValueError):
+        return None
+
+
+def _describe(target: str) -> dict[str, str] | None:
     path = _within(target)
-    if path is None:
+    if path is None or not _unlinked(target):
         return None
     parts = target.split("/")
     if (
@@ -139,6 +190,13 @@ def describe(target: str) -> dict[str, str] | None:
         and parts[4] == "board"
         and path.is_file()
     ):
+        relative = "/".join(parts[5:])
+        fleet = store_root() / "/".join(parts[:4])
+        # Imported here so evidence can import this module.
+        from foil_bridge.evidence import board_listing
+
+        if relative not in board_listing(fleet / "board"):
+            return None
         return {
             "target": target,
             "kind": "file",
@@ -146,9 +204,22 @@ def describe(target: str) -> dict[str, str] | None:
             "fleet": parts[3],
             "path": "/".join(parts[4:]),
         }
+    if (
+        len(parts) == 6
+        and parts[2] == "fleets"
+        and parts[4] == "seats"
+        and _SAFE.fullmatch(parts[5])
+        and _seat_known(store_root() / "/".join(parts[:4]), parts[5])
+    ):
+        return {
+            "target": target,
+            "kind": "seat",
+            "project": parts[1],
+            "fleet": parts[3],
+            "path": parts[5],
+        }
     if len(parts) == 4 and parts[2] == "fleets" and path.is_dir():
-        registry = path / "run" / "registry.json"
-        if registry.is_symlink() or not registry.is_file():
+        if not _registry_file(path):
             return None
         return {
             "target": target,

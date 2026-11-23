@@ -373,6 +373,22 @@ def test_brief_output_from_the_fixture_is_byte_stable(
     assert _SECRET not in raw
 
 
+def test_a_journal_symlink_leaves_the_rest_of_the_brief(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _alive(monkeypatch, set())
+    fleet = foil_root(repo) / "fleets" / "main"
+    shutil.copytree(FIXTURE, fleet, dirs_exist_ok=True)
+    log = fleet / "run" / "journal.log"
+    log.unlink()
+    log.symlink_to(tmp_path / "elsewhere.log")
+    (tmp_path / "elsewhere.log").write_text("password=hunter2\n", encoding="utf-8")
+    record = collect_brief(repo, ["main"], "demo")[0]
+    assert record["journal"] == []
+    assert record["goal"]
+
+
 def test_the_viewer_shows_a_mapping_ask(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

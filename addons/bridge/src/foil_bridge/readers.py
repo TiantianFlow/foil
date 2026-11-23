@@ -721,7 +721,7 @@ def _grok_path(root: Path, session_id: str, cwd: str) -> Path | None:
         if contained(root, marker) and marker.is_file():
             try:
                 recorded = marker.read_text(encoding="utf-8").strip()
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 recorded = ""
         if not recorded:
             recorded = unquote(group.name)
