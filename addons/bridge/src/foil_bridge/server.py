@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from foil.bridge_cmd import bridge_port, ensure_desk_token
 from foil.errors import FoilError
 from foil.project import store_root
-from foil_bridge import auth, chat, controls, evidence, home, push, tailnet, terminal
+from foil_bridge import auth, chat, controls, evidence, home, push, settings, tailnet, terminal
 from foil_bridge.pages import (
     asset,
     desk_html,
@@ -31,6 +31,7 @@ from foil_bridge.pages import (
     icon_png,
     manifest,
     pair_page,
+    settings_html,
 )
 from foil_bridge.qr import svg
 from foil_bridge.watch import Watcher
@@ -41,6 +42,7 @@ _SHELL = {
     "/sw.js": ("sw.js", "text/javascript", "max-age=0"),
     "/desk.css": ("desk.css", "text/css", "max-age=0"),
     "/home.js": ("home.js", "text/javascript", "max-age=0"),
+    "/settings.js": ("settings.js", "text/javascript", "max-age=0"),
     "/seat.js": ("seat.js", "text/javascript", "max-age=0"),
     "/term.js": ("term.js", "text/javascript", "max-age=0"),
     "/controls.js": ("controls.js", "text/javascript", "max-age=0"),
@@ -211,6 +213,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/evidence" and method in {"GET", "HEAD"}:
             self._evidence(identity.token)
             return
+        if path == "/settings" and method in {"GET", "HEAD"}:
+            self._send(200, settings_html(identity.token), "text/html", policy=_PAGE_POLICY)
+            return
         if path == "/manifest.webmanifest" and method in {"GET", "HEAD"}:
             self._send(
                 200, manifest(identity.token), "application/manifest+json", cache="max-age=0"
@@ -258,6 +263,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/v1/act" and method == "POST":
             self._act()
+            return
+        if path == "/v1/settings" and method in {"GET", "HEAD"}:
+            self._settings_get()
+            return
+        if path == "/v1/settings" and method == "POST":
+            self._settings_post()
             return
         if path == "/v1/control" and method == "POST":
             self._control()
@@ -481,7 +492,11 @@ class Handler(BaseHTTPRequestHandler):
         self._json_ok(body)
 
     def _error(self, exc: FoilError) -> None:
-        self._send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
+        body: dict[str, Any] = {"error": str(exc)}
+        diff = getattr(exc, "diff", None)
+        if isinstance(diff, dict):
+            body["diff"] = diff
+        self._send(400, json.dumps(body).encode(), "application/json")
 
     def _chat(self) -> None:
         query = parse_qs(urlsplit(self.path).query)
@@ -558,6 +573,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, b"")
             return
         self._json_ok(described)
+
+    def _settings_get(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        project = (query.get("project") or [""])[-1]
+        fleet = (query.get("fleet") or [""])[-1]
+        self._call(lambda: settings.view(project, fleet))
+
+    def _settings_post(self) -> None:
+        body = self._json()
+        if not isinstance(body, dict):
+            self._error(FoilError("foil: settings change is invalid"))
+            return
+        self._call(lambda: settings.apply(body))
 
     def _act(self) -> None:
         body = self._json()

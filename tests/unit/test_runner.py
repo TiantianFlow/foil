@@ -455,7 +455,7 @@ def test_timeouts_before_a_session_pause_after_the_retry_waits(tmp_path: Path) -
             for path in (board / "mail" / "lead").glob("*-foil-*.md")
         ]
         assert any("turn_timeout" in text for text in notices)
-        assert any("paused after 4 failed turns (exit -1)" in text for text in notices)
+        assert any("paused after 4 failed turns (exit -1)" in text for text in notices), notices
     finally:
         os.killpg(runner.pid, signal.SIGKILL)
         runner.wait()

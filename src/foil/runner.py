@@ -595,15 +595,16 @@ class Runner:
                 first = "start"
             waits = self.plan["retry"]
             if self.record["failures"] > len(waits):
-                self.record["paused"] = True
-                self.save()
-                note(self.board.parent, "pause", seat=self.seat, exit=code)
+                # The notice is on disk before paused is visible.
                 self.mail(
                     self.plan["reader"],
                     f"{self.seat} paused after {self.record['failures']} failed turns "
                     f"(exit {code}). See foil seat peek {self.seat} --lines 200. "
                     f"foil seat resume {self.seat} retries.",
                 )
+                self.record["paused"] = True
+                self.save()
+                note(self.board.parent, "pause", seat=self.seat, exit=code)
                 continue
             wait = waits[self.record["failures"] - 1]
             self.save()

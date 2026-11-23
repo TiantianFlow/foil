@@ -27,6 +27,11 @@ def home_html(token: str) -> bytes:
     return page.replace("__TOKEN__", quote(token, safe="")).encode()
 
 
+def settings_html(token: str) -> bytes:
+    page = asset("settings.html").decode()
+    return page.replace("__TOKEN__", quote(token, safe="")).encode()
+
+
 def _href(token: str, target: str, level: str = "") -> str:
     query = {"target": target, "token": token}
     if level:
