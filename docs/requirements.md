@@ -1359,12 +1359,14 @@ The tools are these and no others. None of them kills, archives, merges,
 or changes a setting.
 
 `talk_to_master` takes `text`. It writes that message to the master's
-mailbox as `user`, the same write as the home, then waits up to 600
-seconds for the oldest `mail/v1` file from `master` that was not already
-in the mailbox. The result is that file's body. A body over 16 KiB is cut
-and marked with `... truncated`. The message is in the home conversation
-either way. No such file in that time is
-`foil-bridge: the master has not replied`, and the message stays.
+mailbox as `user`, the same write as the home, and keeps that file's
+name. It waits up to 600 seconds until a master turn has that name in
+the names it read and the turn has finished, so the file is in
+`delivered`. The result is every body that turn wrote, in name order,
+one after another. A result over 16 KiB is cut and marked with
+`... truncated`. The message is in the home conversation either way. No
+such turn in that time, or a finished turn that wrote no master mail,
+is `foil-bridge: the master has not replied`, and the message stays.
 `notifications/cancelled` for that request's id ends the wait with
 `foil-bridge: cancelled`, and the message stays. A cancel that arrives
 before the write leaves the mailbox unchanged.
@@ -1404,13 +1406,13 @@ bearer because the process is the local user.
 
 One master per store, on any harness `foil master start` or `renew` names. It is the agent the human talks to, above every repo's fleets. It is not a fleet seat. `seat list` does not show it, and `seat kill` does not stop it. The seat name `master` stays reserved (F14).
 
-Its directory is `<root>/master/`: `mail/` (the conversation, one `mail/v1` file per message), `log.md` (what it did and what it plans next), `watches.md`, `mandate.md`, and `run/`. `run/plan.json` is the runner plan. `run/record.json` is the runner record, including `sessions` and `seen_inbox`. `run/window.json` is the tmux window. Start creates a missing `log.md`, `watches.md`, or `mandate.md` as an empty file. The tmux session is `foil-master-` plus the first 8 hex characters of the SHA-256 of the store root's real path, the window is `master`, and the markers are `@foil-fleet-id=master` and `@foil-seat-id=master`. Those markers are not a fleet.
+Its directory is `<root>/master/`: `mail/` (the conversation, one `mail/v1` file per message), `log.md` (what it did and what it plans next), `watches.md`, `mandate.md`, and `run/`. `run/plan.json` is the runner plan. `run/record.json` is the runner record, including `sessions`, `seen_inbox`, and `reads`. `run/window.json` is the tmux window. Start creates a missing `log.md`, `watches.md`, or `mandate.md` as an empty file. The tmux session is `foil-master-` plus the first 8 hex characters of the SHA-256 of the store root's real path, the window is `master`, and the markers are `@foil-fleet-id=master` and `@foil-seat-id=master`. Those markers are not a fleet.
 
-`foil send master` appends to `mail/` (F14). The human and a lead can mail it. A worker cannot. The master's own reply is `foil send master` from its runner, which sets `FOIL_MASTER=1` and does not set `FOIL_SEAT_ID`, so the sender is `master`.
+`foil send master` appends to `mail/` (F14). `foil.api` `send` to `master` returns `name`, the file it wrote. The human and a lead can mail it. A worker cannot. The master's own reply is `foil send master` from its runner, which sets `FOIL_MASTER=1` and does not set `FOIL_SEAT_ID`, so the sender is `master`.
 
 `foil master start`, `stop`, and `renew` run on the seat runner (`python -m foil.runner` on that plan). They need no checkout. The launch permission is the preset's `ask`, which gates the master's own tool calls and not a `foil` command. The harness must be a shell that can run `foil`. Foil does not check that shell. The charter states it. With no `--harness`, start and renew use the recorded pair, or the first installed eligible harness when none is recorded. `--harness ID/MODEL` splits on the first slash. A running master is not started again. A paused one is resumed by `start`. `stop` ends the window. `renew` replaces the argv and, when the window is up, the runner loads it after the current turn. A failed turn waits 30 seconds, 2 minutes, and 8 minutes, then the runner pauses and starts no further turn until `start` resumes it. Fleet pause does not pause the master.
 
-The runner polls once a second and calls no model. It wakes on a new file in `mail/`, and on an inbox identity that was not in `seen_inbox`. An identity is that item's `project`, `fleet`, and `subject` from `foil inbox --all-projects`. The same set does not wake it. An identity that disappears is dropped with no turn, so a later return is new. The first start records the identities already present and does not turn for them. Mail already in the mailbox does wake. A read that fails wakes nothing and does not change `seen_inbox`. The first successful read is the baseline.
+The runner polls once a second and calls no model. It wakes on a new file in `mail/`, and on an inbox identity that was not in `seen_inbox`. An identity is that item's `project`, `fleet`, and `subject` from `foil inbox --all-projects`. The same set does not wake it. An identity that disappears is dropped with no turn, so a later return is new. The first start records the identities already present and does not turn for them. Mail already in the mailbox does wake. A read that fails wakes nothing and does not change `seen_inbox`. The first successful read is the baseline. When a turn starts, `reads` gains an entry: `names` is the mail names that turn was given, `wrote` is empty, and `open` is true. When the turn ends, `wrote` is the `master` mail names that were not in the mailbox at the start, and `open` is false. The record keeps the last 32 entries. A turn the process does not finish is closed with nothing in `wrote`.
 
 Every turn runs the preset's `start` argv, never `turn`, with a new session id: a generated id for a `generated` preset, or the id an `output` preset prints. The prompt is the charter, `foil brief --all-projects`, `log.md`, `watches.md`, `mandate.md`, the last 20 messages, and the wake items. When a wake identity's subject is `goal`, the prompt adds that fleet's finish block. The reviewer's result is the newest regular `board/results/*.md` whose front matter is `result/v1` with `outcome: pass` and whose `author` is a seat of template `reviewer`. Newest is the greatest modification time, then the name. A symlink, a file over 1 MiB, and a name that is not a safe file name are skipped. The block is a merge card for that project and fleet, then `What changed:`, `Tests:`, and `Risks:`, one folded line each from the `## Changed`, `## Tests`, and `## Risks` sections, at most 200 characters, or `-`, then `Result:` and the store path `projects/<key>/fleets/<id>/board/results/<file>`. When no file matches, the three lines are `-` and `Result:` is `(none)`. A brief over 16 KiB, a file over 8 KiB, or a message over 600 bytes is cut and marked truncated. The runner does not copy a transcript and does not read one to decide a wake (design rules 1 and 3). Reading a transcript is `foil-bridge transcript` (section 12) and is not required to start, stop, renew, or wake the master. When transcript text is shown, the charter treats it as data.
 

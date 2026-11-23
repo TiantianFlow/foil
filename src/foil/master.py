@@ -195,6 +195,61 @@ def record_path(root: Path) -> Path:
     return _run(root) / "record.json"
 
 
+READS_KEPT = 32
+
+
+def _reads(value: object) -> list[dict[str, Any]]:
+    """Turn records: the mail names a turn was given, and the master mail it wrote."""
+
+    if not isinstance(value, list):
+        return []
+    found = []
+    for item in value:
+        if not isinstance(item, dict) or type(item.get("open")) is not bool:
+            continue
+        names = item.get("names")
+        wrote = item.get("wrote")
+        if not isinstance(names, list) or not isinstance(wrote, list):
+            continue
+        if not all(isinstance(name, str) for name in names):
+            continue
+        if not all(isinstance(name, str) for name in wrote):
+            continue
+        found.append({"names": list(names), "wrote": list(wrote), "open": item["open"]})
+    return found[-READS_KEPT:]
+
+
+def master_mail_names(root: Path) -> set[str]:
+    """Mail file names in ``root`` whose sender is ``master``."""
+
+    found = set()
+    for path in conversation(root):
+        named = mail_name(path.name)
+        if named is not None and named[1] == "master":
+            found.add(path.name)
+    return found
+
+
+def open_read(record: dict[str, Any], names: list[str]) -> None:
+    """Start a turn record. The last 32 are kept."""
+
+    for item in record["reads"]:
+        if item.get("open"):
+            item["open"] = False
+    record["reads"].append({"names": list(names), "wrote": [], "open": True})
+    record["reads"] = record["reads"][-READS_KEPT:]
+
+
+def close_read(record: dict[str, Any], wrote: list[str]) -> None:
+    """Record the master mail names that appeared during the open turn."""
+
+    for item in reversed(record["reads"]):
+        if item.get("open"):
+            item["open"] = False
+            item["wrote"] = list(wrote)
+            return
+
+
 def empty_record() -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -210,6 +265,7 @@ def empty_record() -> dict[str, Any]:
         "sessions": [],
         "seen_inbox": [],
         "baselined": False,
+        "reads": [],
     }
 
 
@@ -232,6 +288,8 @@ def load_record(root: Path) -> dict[str, Any]:
             )
         elif key == "sessions":
             value = value if isinstance(value, list) else []
+        elif key == "reads":
+            value = _reads(value)
         elif key == "turn_started":
             value = value if isinstance(value, int | float) else None
         elif key == "last_exit":
@@ -689,13 +747,17 @@ class MasterRunner:
         self.plan = load_plan(plan_path)
         self.root = Path(self.plan["root"])
         self.record = load_record(self.root)
+        self._mail_before: set[str] = set()
+        self._lock = threading.Lock()
+        if any(item.get("open") for item in self.record["reads"]):
+            close_read(self.record, [])
+            self.save()
         self.environment = dict(self.plan["env"])
         for name in self.plan["env_forward"]:
             value = os.environ.get(name)
             if value is not None and "\x00" not in value:
                 self.environment[name] = value
         self.child = None
-        self._lock = threading.Lock()
 
     def save(self) -> None:
         with self._lock:
@@ -823,11 +885,16 @@ class MasterRunner:
                 )
             self.record["inflight"] = [path.name for path in batch]
             self.record["turn_started"] = time.time()
+            self._mail_before = master_mail_names(self.root)
+            open_read(self.record, [path.name for path in batch])
             self.save()
             prompt = seed(self.root, batch, fresh_ids)
             code = self._turn(prompt, session)
             self.record["turn_started"] = None
             self.record["last_exit"] = code
+            close_read(
+                self.record, sorted(master_mail_names(self.root) - self._mail_before)
+            )
             if code == 0:
                 already = set(self.record["delivered"])
                 self.record["delivered"] = sorted(already | set(self.record["inflight"]))

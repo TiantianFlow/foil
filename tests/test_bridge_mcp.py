@@ -92,10 +92,11 @@ def _raw(port: int, token: str, body: bytes) -> tuple[int, bytes]:
     return status, data
 
 
-def _mail(sender: str, body: str, stamp: str) -> None:
+def _mail(sender: str, body: str, stamp: str, suffix: str = "0123abcd") -> str:
     folder = directory() / "mail"
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{stamp}-{sender}-0123abcd.md"
+    name = f"{stamp}-{sender}-{suffix}.md"
+    path = folder / name
     path.write_text(
         "---\n"
         "contract: mail/v1\n"
@@ -107,14 +108,27 @@ def _mail(sender: str, body: str, stamp: str) -> None:
         f"{body}\n",
         encoding="utf-8",
     )
+    return name
+
+
+def _observe(name: str, wrote: list[str]) -> None:
+    from foil.master import load_record, save_record
+
+    root = directory()
+    record = load_record(root)
+    record["delivered"] = sorted(set(record["delivered"]) | {name})
+    record["reads"].append({"names": [name], "wrote": list(wrote), "open": False})
+    save_record(root, record)
 
 
 def _when_user_writes(body: str) -> None:
     folder = directory() / "mail"
     deadline = time.time() + 5
     while time.time() < deadline:
-        if folder.is_dir() and any("-user-" in path.name for path in folder.glob("*.md")):
-            _mail("master", body, "20261123T150000Z")
+        users = list(folder.glob("*-user-*.md")) if folder.is_dir() else []
+        if users:
+            master = _mail("master", body, "20261123T150000Z")
+            _observe(users[0].name, [master])
             return
         time.sleep(0.01)
     raise AssertionError("user message was not written")
@@ -348,6 +362,60 @@ def test_talk_to_master_shows_on_the_home_and_a_missing_reply_stays(
         status, home = _request(port, "GET", "/v1/home", token=desk)
         messages = json.loads(home)["messages"]
         assert any(item["from"] == "user" and "still here" in item["body"] for item in messages)
+
+
+def test_talk_returns_only_the_turn_that_read_this_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mcp, "WAIT", 2)
+    box: list[str] = []
+    error: list[BaseException] = []
+
+    def call() -> None:
+        try:
+            box.append(mcp.talk(USER, threading.Event()))
+        except Exception as exc:
+            error.append(exc)
+
+    thread = threading.Thread(target=call)
+    thread.start()
+    folder = directory() / "mail"
+    deadline = time.time() + 5
+    while time.time() < deadline and not list(folder.glob("*-user-*.md")):
+        time.sleep(0.01)
+    users = list(folder.glob("*-user-*.md"))
+    assert users
+    stale = _mail("master", "from the previous turn", "20261123T140000Z", "cccc3333")
+    _observe("20261123T130000Z-user-aaaaaaaa.md", [stale])
+    time.sleep(0.3)
+    assert thread.is_alive()
+    first = _mail("master", "Ship it.", "20261123T150001Z", "aaaa1111")
+    second = _mail("master", "Also this.", "20261123T150002Z", "bbbb2222")
+    _observe(users[0].name, [first, second])
+    thread.join(5)
+    assert error == []
+    assert box == ["Ship it.\nAlso this.\n"]
+    shown = snapshot()["messages"]
+    assert any(item["from"] == "user" and USER in item["body"] for item in shown)
+    assert any("from the previous turn" in item["body"] for item in shown)
+
+    def empty() -> None:
+        seen = {path.name for path in users}
+        limit = time.time() + 5
+        while time.time() < limit:
+            fresh = [path for path in folder.glob("*-user-*.md") if path.name not in seen]
+            if fresh:
+                _observe(fresh[0].name, [])
+                return
+            time.sleep(0.01)
+        raise AssertionError("second message was not written")
+
+    watcher = threading.Thread(target=empty, daemon=True)
+    watcher.start()
+    with pytest.raises(FoilError, match="has not replied"):
+        mcp.talk("still here", threading.Event())
+    watcher.join(5)
+    assert any("still here" in item["body"] for item in snapshot()["messages"])
 
 
 def test_cancel_keeps_the_message(monkeypatch: pytest.MonkeyPatch) -> None:

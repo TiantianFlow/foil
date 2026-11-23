@@ -21,7 +21,7 @@ from foil.board_ops import split_front_matter
 from foil.errors import FoilError, shown
 from foil.inbox import collect_brief, projects
 from foil.lifecycle import seat_rows
-from foil.master import conversation, directory
+from foil.master import directory, load_record
 from foil.store import FLEET_ID, fleet_ids, load_registry
 from foil_bridge import __version__
 from foil_bridge.home import post_answer, post_message
@@ -193,7 +193,7 @@ def _master_body(path) -> str | None:
 
 
 def talk(text: str, stop: threading.Event) -> str:
-    """Write as ``user``, then wait for the next message from ``master``.
+    """Write as ``user``, then wait for the turn that reads that file.
 
     A cancel while this call waits behind another returns before the write.
     """
@@ -207,24 +207,43 @@ def talk(text: str, stop: threading.Event) -> str:
         _TALK.release()
 
 
+def _reply_names(record: dict, name: str) -> list[str] | None:
+    """Master mail names from the finished turn that read ``name``.
+
+    None means that turn has not finished. An empty list means it wrote none.
+    """
+
+    if name not in record.get("delivered", []):
+        return None
+    found: list[str] | None = None
+    for item in record.get("reads", []):
+        if not isinstance(item, dict) or item.get("open"):
+            continue
+        names = item.get("names")
+        if not isinstance(names, list) or name not in names:
+            continue
+        wrote = item.get("wrote")
+        found = [mail for mail in wrote if isinstance(mail, str)] if isinstance(wrote, list) else []
+    return found
+
+
 def _talk(text: str, stop: threading.Event) -> str:
     if stop.is_set():
         raise FoilError("foil-bridge: cancelled")
-    before = {path.name for path in conversation(directory())}
-    post_message(text)
+    name = post_message(text)
     deadline = time.monotonic() + WAIT
     root = directory()
     while True:
-        found = []
-        for path in conversation(root):
-            if path.name in before:
-                continue
-            body = _master_body(path)
-            if body is not None:
-                found.append((path.name, body))
-        if found:
-            found.sort()
-            return _cap(found[0][1])
+        wrote = _reply_names(load_record(root), name)
+        if wrote is not None:
+            bodies = []
+            for mail in sorted(wrote):
+                body = _master_body(root / "mail" / mail)
+                if body is not None:
+                    bodies.append(body if body.endswith("\n") else f"{body}\n")
+            if not bodies:
+                raise FoilError("foil-bridge: the master has not replied")
+            return _cap("".join(bodies))
         if stop.is_set():
             raise FoilError("foil-bridge: cancelled")
         if time.monotonic() >= deadline:

@@ -14,7 +14,18 @@ from pathlib import Path
 import pytest
 
 from foil.cli import main
-from foil.master import MasterRunner, charter_text, deliver, directory, load_record, seed
+from foil.master import (
+    READS_KEPT,
+    MasterRunner,
+    charter_text,
+    close_read,
+    deliver,
+    directory,
+    empty_record,
+    load_record,
+    open_read,
+    seed,
+)
 from foil.project import foil_root, store_root
 from tests.test_spawn import _repo
 
@@ -362,3 +373,104 @@ def test_a_failed_inbox_read_does_not_drop_seen_ids(
     prompt = json.loads(log.read_text(encoding="utf-8"))[1]
     assert "question:two" in prompt
     assert "question:one" not in prompt.split("# Wake", 1)[1]
+
+
+def test_reads_keep_the_last_32() -> None:
+    record = empty_record()
+    for index in range(READS_KEPT + 8):
+        open_read(record, [f"{index}.md"])
+        close_read(record, [])
+    assert len(record["reads"]) == READS_KEPT
+    assert record["reads"][0]["names"] == ["8.md"]
+    assert record["reads"][-1]["names"] == [f"{READS_KEPT + 7}.md"]
+    assert all(item["open"] is False for item in record["reads"])
+
+
+def test_a_turn_records_the_mail_it_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = directory()
+    mail = root / "mail"
+    script = tmp_path / "reply.py"
+    log = tmp_path / "wrote.txt"
+    script.write_text(
+        "\n".join(
+            [
+                "import sys",
+                "from pathlib import Path",
+                f"folder = Path({str(mail)!r})",
+                f"log = Path({str(log)!r})",
+                "users = list(folder.glob('*-user-*.md')) if folder.is_dir() else []",
+                "if not users:",
+                "    sys.exit(0)",
+                "names = []",
+                "for index, body in enumerate(('Ship it.', 'Also this.')):",
+                "    name = f'20261123T15010{index}Z-master-{index:08x}.md'",
+                "    text = (",
+                "        '---\\ncontract: mail/v1\\nfrom: master\\nto: master\\n'",
+                "        'time: 2026-11-23T15:01:00Z\\n---\\n\\n' + body + '\\n'",
+                "    )",
+                "    (folder / name).write_text(text, encoding='utf-8')",
+                "    names.append(name)",
+                "log.write_text('\\n'.join(names), encoding='utf-8')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    plan = {
+        "kind": "master",
+        "start": [sys.executable, str(script), "{prompt}", "{session_id}"],
+        "session_key": "",
+        "cwd": str(root.resolve()),
+        "env": {"FOIL_MASTER": "1"},
+        "env_forward": [],
+        "harness": "probe",
+        "model": "",
+        "turn_timeout": 30,
+        "retry": [0, 0, 0],
+        "root": str(root.resolve()),
+    }
+    path = root / "run" / "plan.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(plan), encoding="utf-8")
+    process = subprocess.Popen(
+        [sys.executable, "-P", "-m", "foil.runner", str(path)],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    try:
+        _until(lambda: load_record(root)["baselined"])
+        mail.mkdir(parents=True, exist_ok=True)
+        planted = "20261123T140000Z-master-cccc3333.md"
+        (mail / planted).write_text(
+            "---\ncontract: mail/v1\nfrom: master\nto: master\n"
+            "time: 2026-11-23T14:00:00Z\n---\n\nfrom the previous turn\n",
+            encoding="utf-8",
+        )
+        written = deliver("hello from the human", None)
+
+        def ready() -> bool:
+            record = load_record(root)
+            return any(
+                not item["open"] and written.name in item["names"] and item["wrote"]
+                for item in record["reads"]
+            )
+
+        _until(ready)
+        record = load_record(root)
+        turn = next(
+            item
+            for item in record["reads"]
+            if written.name in item["names"] and not item["open"]
+        )
+        assert turn["wrote"] == log.read_text(encoding="utf-8").splitlines()
+        assert planted not in turn["wrote"]
+        assert written.name in record["delivered"]
+    finally:
+        with contextlib.suppress(OSError):
+            os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=10)

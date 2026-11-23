@@ -381,8 +381,10 @@ def send(
         from foil.master import deliver
 
         with _enter(project, fleet, caller, inside=inside, pinned=pinned):
-            deliver(body, project if project is not None and is_initialized(project) else None)
-        return {"ok": True}
+            written = deliver(
+                body, project if project is not None and is_initialized(project) else None
+            )
+        return {"ok": True, "name": written.name}
     root = _root(project)
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         send_mail(root, to, body)

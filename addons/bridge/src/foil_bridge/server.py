@@ -648,7 +648,11 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(text, str):
             self._error(FoilError("foil: message text is empty"))
             return
-        self._call(lambda: home.post_message(text) or {"ok": True})
+        def send_home() -> dict[str, bool]:
+            home.post_message(text)
+            return {"ok": True}
+
+        self._call(send_home)
 
     def _answer(self) -> None:
         body = self._json()
