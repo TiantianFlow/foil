@@ -736,13 +736,40 @@ the fleets' questions to answer one request, and it does not keep them.
 The evidence page reads a board file, the journal, a branch diff, and a
 transcript the same way, and it does not keep them.
 `foil-bridge transcript` reads a harness file for display and does not
-serve it. The master supervisor and the desk terminal are later phases
-on this same process.
-`/v1/terminal` is 404 after the token check and 401 without one.
+serve it. The master supervisor is a later phase on this same process.
+
+`GET /v1/terminal` is the desk terminal. A missing or unknown token is
+401 with an empty body. A request that does not ask to upgrade to a
+websocket is 404 after the token check. The upgrade needs
+`Sec-WebSocket-Version: 13`, a 16-byte `Sec-WebSocket-Key`, and the same
+`Origin` a `POST` needs, because the terminal takes input. A missing or
+other `Origin` is 403. A bad key or version is 400. `path` is refused
+with 403 and an empty body unless it is a worktree Foil owns. At most 8
+terminals are open; another upgrade is 403. When the checks pass, the
+response is `101` and each binary frame is bytes from the shell or bytes
+for the shell. Bytes for the shell are written in order. A full PTY does
+not drop the rest of a frame. At most 1 MiB of that input is waiting, and
+a further frame is left unwritten. The shell is `SHELL` when that value
+is an absolute path of an executable file, and `/bin/sh` otherwise. Its
+working directory is
+that worktree. It is given `TERM=dumb`, `PAGER=cat`, and `GIT_PAGER=cat`,
+so a diff prints into the view. The process does not receive
+`FOIL_SEAT_ID`, `TMUX`, or `TMUX_PANE`, and its argv is the shell alone.
+Nothing calls tmux and nothing is sent to a seat's pane. Closing the
+socket closes the PTY and ends that process group. Stopping the Bridge
+ends those process groups as well. The PTY is that shell's controlling
+terminal. Nothing about the terminal is written to disk.
+
+A worktree Foil owns is a real directory, not a symlink, directly under
+`<root>/projects/<key>/worktrees`, whose resolved path is the `worktree`
+recorded for a seat in that project. `projects`, the project folder,
+`worktrees`, and the directory are not symlinks. Any other path is
+refused, including the project checkout.
 
 A `POST` also needs an `Origin` of `http://` plus the `Host` on loopback,
 or `http://` or `https://` plus the `Host` on the tailnet name. A missing
-or other `Origin` is 403. A read does not need `Origin`.
+or other `Origin` is 403. A read does not need `Origin`. The terminal
+upgrade does, as specified above.
 
 `foil bridge install` creates the desk token when the file is missing and
 does not rotate an existing one. It prints four lines: the unit path, the
@@ -1046,7 +1073,10 @@ default`. A role whose next entry cannot be chosen shows that
 command's line and no Spawn button. Under New goal, a fleet id and an
 optional goal start a new fleet by spawning `lead` there. The button
 does not ask first; the server asks, with `foil: confirm this`, when
-that fleet's mandate does not cover `fleet`.
+that fleet's mandate does not cover `fleet`. The page also shows the
+tmux attach command for that fleet, `tmux attach -t '=<session>'` from
+the registry, or `No session yet.` when the session is missing or not a
+safe id. A button copies the command. Copying does not start a process.
 
 A file page shows the path, the size, and the first 64 KiB as text,
 with invalid bytes replaced. The read includes the rest of the line
@@ -1075,6 +1105,20 @@ it is not stored, and it does not change a seat.
 The same page has Controls for that seat: Resume, Renew, Kill, and
 Archive. Kill and Archive ask before the request. Resume and Renew ask
 only when the mandate does not cover them.
+
+The same page can open a terminal beside the conversation when that
+seat's recorded worktree is one Foil owns. On a wide window the terminal
+sits beside the conversation. The view shows that path. Opening it
+starts the PTY above. Closing the view, or leaving the page, closes the
+socket. A seat with no such worktree says `This seat has no worktree
+Foil owns.` The page says the shell runs in that worktree and that
+nothing is typed into the seat.
+
+The same page still shows the tmux attach command. It is the fleet's
+command, plus ` \; select-window -t <id>` only when the window id is
+`@` and digits and that window still carries this fleet's and this
+seat's markers. A button copies the command. Copying does not start the
+terminal and does not attach to the pane.
 
 The same page shows the diff of the seat's branch against its base.
 A seat with no branch says `This seat has no branch.` The lead's base

@@ -103,6 +103,26 @@ textarea {
   margin: 0.4rem 0 0;
 }
 .mono { font: 0.9rem/1.4 ui-monospace, monospace; }
+main.desk-page { max-width: 72rem; }
+.desk { display: grid; gap: 0 2rem; }
+.span { grid-column: 1 / -1; }
+#term h2 { margin-top: 0.35rem; }
+#term-screen {
+  min-height: 12rem;
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  background: #1c1712;
+  color: #f3ecdf;
+  padding: 0.6rem;
+  margin: 0.6rem 0 0;
+}
+#term-screen:focus { outline: 2px solid var(--copper); outline-offset: 2px; }
+@media (min-width: 64rem) {
+  .desk { grid-template-columns: minmax(0, 1.1fr) minmax(16rem, 0.9fr); align-items: start; }
+}
 .crumbs {
   margin: 0.2rem 0 0.6rem;
   font: 13px/1.4 ui-sans-serif, system-ui, sans-serif;
