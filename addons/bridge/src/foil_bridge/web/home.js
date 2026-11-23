@@ -1,5 +1,6 @@
 const token = new URLSearchParams(location.search).get("token") || "";
 const acted = new Set();
+const refused = new Map();
 
 function headers(extra) {
   const result = { Authorization: "Bearer " + token };
@@ -95,8 +96,10 @@ function showCard(item, row) {
   button.type = "button";
   button.textContent = acted.has(row.id) ? "Done." : row.card.label;
   button.disabled = acted.has(row.id);
-  button.addEventListener("click", () => act(row, button));
+  button.addEventListener("click", () => act(row, button, card));
   card.append(button);
+  const prior = refused.get(row.id);
+  if (prior) showRefusal(card, prior);
   item.append(card);
 }
 
@@ -110,9 +113,11 @@ function showWorking(working) {
 async function readError(response) {
   try {
     const body = await response.json();
-    return body.error || "This machine refused the page.";
+    const error = new Error(body.error || "This machine refused the page.");
+    error.diff = body.diff || null;
+    return error;
   } catch {
-    return "This machine refused the page.";
+    return new Error("This machine refused the page.");
   }
 }
 
@@ -148,7 +153,7 @@ async function post(path, payload) {
     headers: headers({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(await readError(response));
+  if (!response.ok) throw await readError(response);
   return response.json();
 }
 
@@ -166,7 +171,15 @@ async function reply(row, text, card) {
   }
 }
 
-async function act(row, button) {
+function showRefusal(node, error) {
+  line(node, error.message, "quiet");
+  if (!error.diff) return;
+  line(node, "before: " + error.diff.before, "quiet");
+  line(node, "now: " + error.diff.now, "quiet");
+  line(node, "after: " + error.diff.after, "quiet");
+}
+
+async function act(row, button, node) {
   const card = row.card;
   if (card.confirm && !window.confirm(card.label + "?")) return;
   const path = card.route === "control" ? "/v1/control" : "/v1/act";
@@ -175,11 +188,14 @@ async function act(row, button) {
   button.disabled = true;
   try {
     await post(path, payload);
+    refused.delete(row.id);
     acted.add(row.id);
     button.textContent = "Done.";
   } catch (error) {
     button.disabled = false;
-    button.textContent = error.message;
+    button.textContent = card.label;
+    refused.set(row.id, error);
+    showRefusal(node, error);
   }
 }
 

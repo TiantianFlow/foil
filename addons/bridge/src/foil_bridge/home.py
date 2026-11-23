@@ -27,7 +27,7 @@ from foil.master import (
 )
 from foil.project import checkout_for_key, store_root
 from foil.store import MAX_BYTES, SAFE_ID
-from foil_bridge import controls
+from foil_bridge import controls, settings
 
 BODY_CAP = 8 * 1024
 _KEY = re.compile(r"[a-z]+")
@@ -53,7 +53,7 @@ _ACTIONS = {
 }
 _OPTIONAL = {
     "init": set(),
-    "settings": {"project", "layer"},
+    "settings": {"project", "layer", "before", "after", "base"},
     "fleet": {"task"},
     "merge": {"into"},
     "spawn": {"task"},
@@ -129,6 +129,11 @@ def parse_card(body: str) -> tuple[dict[str, str] | None, str]:
         if layer == "global" and "project" in fields:
             return None, body
         fields["layer"] = layer
+        base = fields.get("base")
+        if base is not None and not re.fullmatch(r"[0-9a-f]{64}", base):
+            return None, body
+        if "after" in fields and fields["after"] != fields["value"]:
+            return None, body
     prose = "\n".join(lines[index + 1 :]) if index < len(lines) else ""
     return {"action": action, **fields}, prose
 
@@ -285,11 +290,38 @@ def links_in(text: str, *, project: str = "", fleet: str = "") -> list[dict[str,
     return found
 
 
+def _settings_pair(fields: dict[str, str]) -> tuple[str, str]:
+    """The change the card proposes. A missing before is the value on disk."""
+
+    after = fields.get("after") or fields["value"]
+    if "before" in fields:
+        return fields["before"], after
+    try:
+        before = settings.current_value(
+            fields["role"],
+            fields["field"],
+            layer=fields.get("layer", "global"),
+            project=fields.get("project", ""),
+        )
+    except FoilError:
+        before = ""
+    return before, after
+
+
 def _card_view(fields: dict[str, str]) -> dict[str, Any]:
     action = fields["action"]
     shown = []
+    skip = {"base"}
+    if action == "settings":
+        before, after = _settings_pair(fields)
+        if before:
+            shown.append({"key": "before", "value": before})
+        shown.append({"key": "after", "value": after})
+        skip.update({"before", "after", "value"})
     order = ("dir", "project", "fleet", "role", "seat", "field", "value", "layer", "task", "into")
     for key in order:
+        if key in skip:
+            continue
         if key not in fields:
             continue
         if key == "layer" and fields[key] == "global" and "project" not in fields:
@@ -420,16 +452,30 @@ def run_card(name: str, *, confirm: bool = False) -> None:
         if action == "init":
             init(None, "main", "user", directory=parsed["dir"])
         elif action == "settings":
-            layer = parsed.get("layer") == "project"
-            checkout = checkout_for_key(parsed["project"]) if layer else None
-            roster_update(
-                checkout,
-                "main",
-                "user",
-                parsed["role"],
-                f"{parsed['field']}={parsed['value']}",
-                project_layer=layer,
-            )
+            layer_name = parsed.get("layer", "global")
+            project_layer = layer_name == "project"
+            checkout = checkout_for_key(parsed["project"]) if project_layer else None
+            before, after = _settings_pair(parsed)
+            try:
+                roster_update(
+                    checkout,
+                    "main",
+                    "user",
+                    parsed["role"],
+                    f"{parsed['field']}={parsed['value']}",
+                    project_layer=project_layer,
+                    base=parsed.get("base"),
+                )
+            except FoilError as exc:
+                settings.reraise_stale(
+                    exc,
+                    role=parsed["role"],
+                    field=parsed["field"],
+                    before=before,
+                    after=after,
+                    layer=layer_name,
+                    project=parsed.get("project", ""),
+                )
         elif action == "fleet":
             controls.invoke_card(parsed)
         elif action == "merge":

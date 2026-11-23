@@ -130,6 +130,8 @@ ROLE_COMMANDS = {
         ("inbox",),
         ("fleet", "pause"),
         ("fleet", "resume"),
+        ("roster", "list"),
+        ("roster", "show"),
     },
 }
 

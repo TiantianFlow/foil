@@ -24,6 +24,7 @@ from foil.store import fleet_dir
 from tests.test_answer import _lead_mail, _question
 from tests.test_bridge_evidence import _registry, _seat
 from tests.test_bridge_home import _key, _master_mail, _short_repo
+from tests.test_bridge_settings import _harness, _list, _update
 
 
 @pytest.fixture(scope="module")
@@ -200,6 +201,92 @@ def test_pause_is_one_tap_and_kill_asks(
             expect(page.get_by_role("button", name="Kill")).to_be_visible()
             assert killed and killed[0][0][2] == "user"
             assert killed[0][1]["name"] == "lead"
+        finally:
+            context.close()
+            server.stopped.set()
+            server.watch.stop()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+        assert errors == []
+
+
+def test_a_dragged_harness_order_applies_on_the_tap(
+    monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> None:
+    monkeypatch.setattr("foil_bridge.tailnet.tailnet", lambda: None)
+    with _short_repo(monkeypatch) as repo:
+        _update(repo, "main", "user", "reviewer", "harness=claude,codex")
+        key = _key(repo)
+        server = open_server(0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+        token = read_desk_token()
+        origin = f"http://127.0.0.1:{port}"
+        context = browser.new_context()
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        try:
+            page.goto(f"{origin}/settings?project={key}&token={token}")
+            items = page.locator("ol[data-role=reviewer] li")
+            expect(items).to_have_count(2)
+            expect(items.nth(0)).to_contain_text("claude")
+            apply = page.get_by_role("button", name="Apply this order")
+            items.nth(1).drag_to(items.nth(0))
+            apply.click()
+            expect(apply).to_be_hidden()
+            assert _harness(_list(repo, "main", "user"), "reviewer") == "codex,claude"
+            _update(repo, "main", "user", "reviewer", "harness=gemini,claude")
+            items.nth(1).drag_to(items.nth(0))
+            apply.click()
+            expect(page.get_by_text("now: gemini,claude")).to_be_visible()
+            assert _harness(_list(repo, "main", "user"), "reviewer") == "gemini,claude"
+        finally:
+            context.close()
+            server.stopped.set()
+            server.watch.stop()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+        assert errors == []
+
+
+def test_a_stale_settings_card_shows_the_diff_on_the_home(
+    monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> None:
+    monkeypatch.setattr("foil_bridge.tailnet.tailnet", lambda: None)
+    with _short_repo(monkeypatch) as repo:
+        revision = _list(repo, "main", "user")["revision"]
+        _update(repo, "main", "user", "lead", "permission=ask")
+        _master_mail(
+            "master",
+            "card: settings\n"
+            "role: lead\n"
+            "field: permission\n"
+            "value: auto\n"
+            "before: ask\n"
+            "after: auto\n"
+            f"base: {revision}\n"
+            "\n"
+            "Too late.\n",
+        )
+        server = open_server(0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+        token = read_desk_token()
+        origin = f"http://127.0.0.1:{port}"
+        context = browser.new_context()
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        try:
+            page.goto(f"{origin}/?token={token}")
+            page.get_by_role("button", name="Apply this setting").click()
+            expect(page.get_by_text("now: ask")).to_be_visible()
+            assert api.roster_show(repo, "main", "user", "lead")["permission"] == "ask"
         finally:
             context.close()
             server.stopped.set()
