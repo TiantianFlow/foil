@@ -579,7 +579,7 @@ SCHEDULE_RULES = (
     "schedule one check for then instead of a repeating one",
     "Give every schedule an end condition",
     "delete the schedule once it holds",
-    "Tell the human the interval and the end condition",
+    "Tell the human the interval, the end condition, and the log file",
     "your next session reads that log before anything else",
 )
 

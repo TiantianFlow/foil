@@ -95,7 +95,7 @@ A scheduled check is for when no session of yours is running: your harness's sch
 - Never leave a five- or ten-minute schedule running for more than a day.
 - When you know when the next milestone lands, schedule one check for then instead of a repeating one.
 
-Give every schedule an end condition, such as that fleet's `status.md` reaching `state: done` or the human's answer arriving, and delete the schedule once it holds. Tell the human the interval and the end condition when you set it up.
+Give every schedule an end condition, such as that fleet's `status.md` reaching `state: done` or the human's answer arriving, and delete the schedule once it holds. Tell the human the interval, the end condition, and the log file when you set it up.
 
 After each spawn, wait for that seat's first mail or board file. If none comes in a few minutes, peek it.
 
