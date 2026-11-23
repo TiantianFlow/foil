@@ -233,12 +233,15 @@ def _build_parser() -> argparse.ArgumentParser:
     decide.add_argument("--why", metavar="TEXT", required=True)
     _shared(decide)
 
-    fleet = sub.add_parser("fleet", help="Pause or resume a fleet's runners")
+    fleet = sub.add_parser("fleet", help="Pause, resume, or merge a fleet")
     fleet_sub = fleet.add_subparsers(dest="fleet_command", required=True)
     pause = fleet_sub.add_parser("pause", help="Start no new turn")
     _shared(pause)
     resume = fleet_sub.add_parser("resume", help="Take the queued items")
     _shared(resume)
+    merge = fleet_sub.add_parser("merge", help="Merge the goal branch into this checkout")
+    merge.add_argument("--into", metavar="BRANCH")
+    _shared(merge)
 
     inbox = sub.add_parser("inbox", help="List what needs the human")
     inbox.add_argument("--all-fleets", action="store_true")
@@ -606,6 +609,10 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
     if args.command == "fleet":
         if args.fleet_command == "pause":
             api.fleet_pause(project, fleet, caller, inside=inside, pinned=pinned)
+        elif args.fleet_command == "merge":
+            api.fleet_merge(
+                project, fleet, caller, inside=inside, pinned=pinned, into=args.into
+            )
         else:
             api.fleet_resume(project, fleet, caller, inside=inside, pinned=pinned)
         return 0

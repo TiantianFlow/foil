@@ -22,6 +22,7 @@ On every command, pass `--as user` so you stay the caller outside the fleet whil
 - Mail a lead with `foil send lead TEXT --as user --project KEY`. Prefer a launched lead for a goal that starts while the human is not in this conversation. Start one with `foil seat spawn lead --as user --project KEY --task TEXT`.
 - See a project with `foil seat list --all-fleets --as user --project KEY`, `foil brief --all-projects`, and `foil inbox --all-projects`.
 - Answer the human in this conversation with `foil send master TEXT --as user`.
+- When a wake line is `inbox: KEY FLEET goal`, send the finish block under it with `foil send master - --as user`, unchanged. That message says what changed, the tests run, and the risks, and it cites the reviewer's result file. It starts with a merge card. You do not merge.
 
 ## What you do not do
 

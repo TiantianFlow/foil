@@ -7,6 +7,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -21,6 +22,7 @@ from foil.master import deliver, directory, empty_record, renew, save_record
 from foil.project import foil_root, store_root
 from tests.test_answer import _STATUS, _lead_mail, _question
 from tests.test_bridge_http import _origin, _request, _serving
+from tests.test_init import _identity_environ
 from tests.test_mail_board_ops import _init_git_repository
 
 
@@ -64,6 +66,22 @@ def _master_mail(sender: str, body: str, stamp: str = "20261122T120000Z") -> Pat
 
 def _key(repo: Path) -> str:
     return foil_root(repo).name
+
+
+def _goal_ahead(repo: Path) -> None:
+    """One commit on the current branch, then one more on ``foil/goal-main``."""
+
+    env = _identity_environ()
+    (repo / "base.txt").write_text("base\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "base.txt"], check=True, env=env)
+    subprocess.run(["git", "-C", str(repo), "commit", "-m", "base"], check=True, env=env)
+    subprocess.run(
+        ["git", "-C", str(repo), "checkout", "-b", "foil/goal-main"], check=True, env=env
+    )
+    (repo / "from-goal.txt").write_text("from the goal\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "from-goal.txt"], check=True, env=env)
+    subprocess.run(["git", "-C", str(repo), "commit", "-m", "goal"], check=True, env=env)
+    subprocess.run(["git", "-C", str(repo), "checkout", "-"], check=True, env=env)
 
 
 def test_history_survives_renew(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,6 +181,8 @@ def test_action_card_runs_only_on_the_tap(
             f"card: merge\nproject: {key}\nfleet: main\n\nMerge when it is done.\n",
             stamp="20261122T120002Z",
         )
+        _goal_ahead(repo)
+        assert not (repo / "from-goal.txt").exists()
         assert api.roster_show(repo, "main", "user", "lead")["permission"] == "auto"
         assert not (store_root() / "projects" / foil_root(other).name / "project.json").is_file()
         calls: list[tuple] = []
@@ -211,8 +231,8 @@ def test_action_card_runs_only_on_the_tap(
                 headers=_origin(port),
                 body={"id": "20261122T120002Z-master-0123abcd.md"},
             )
-            assert status == 400
-            assert json.loads(body)["error"] == "foil: fleet merge is not a command"
+            assert status == 200, body
+            assert (repo / "from-goal.txt").read_text(encoding="utf-8") == "from the goal\n"
             status, body = _request(
                 port,
                 "POST",

@@ -18,6 +18,7 @@ from foil.journal import read_log
 from foil.journal import render as render_event
 from foil.lifecycle import seat_rows
 from foil.mail_ops import undelivered
+from foil.merge import recorded_refusal
 from foil.project import foil_root, project_record, store_root
 from foil.store import SAFE_ID, fleet_dir, fleet_ids, load_registry
 
@@ -32,6 +33,7 @@ _RANKS = {
     "blocked": 3,
     "paused": 4,
     "done": 4,
+    "merge": 4,
 }
 _STUCK = {"seat", "undelivered", "blocked"}
 _FIELDS = (
@@ -374,6 +376,20 @@ def fleet_items(root: Path, fleet: str, project: str) -> list[dict[str, Any]]:
                 subject="goal",
                 title="done",
                 since=updated,
+                project=project,
+                fleet=fleet,
+            )
+        )
+    refused = recorded_refusal(directory)
+    if refused is not None:
+        line, stamp = refused
+        items.append(
+            _item(
+                "merge",
+                id="merge",
+                subject="merge",
+                title=line,
+                since=_stamp(stamp),
                 project=project,
                 fleet=fleet,
             )

@@ -148,7 +148,7 @@ foil seat list --all-fleets
 FOIL_FLEET=docs foil send lead "the answer"
 ```
 
-Each line `--all-fleets` prints starts with its fleet. Merge a goal branch once that fleet's `status.md` says `state: done`.
+Each line `--all-fleets` prints starts with its fleet. Merge a done goal with `foil fleet merge` once that fleet's `status.md` says `state: done`. A dirty checkout or a conflict is one refusal, and the checkout stays as it was.
 
 To check on the fleets while nobody is in a conversation, schedule `foil mail wait --all-fleets --timeout 0`. It prints what is new, marks it seen, and exits; with nothing new it prints `no new mail`. For example, a crontab line every 30 minutes, with `REPO`, `YOUR_PATH`, and `HOME_DIR` filled in as for the viewer service below:
 

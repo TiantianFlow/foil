@@ -24,6 +24,7 @@ from typing import Any
 from foil.board import mail_name
 from foil.errors import FoilError, shown
 from foil.inbox import collect_brief_projects, collect_projects, format_brief
+from foil.merge import finish_block
 from foil.presets import (
     TURN_TIMEOUT,
     expand_argv,
@@ -31,7 +32,7 @@ from foil.presets import (
     load_preset,
     model_warning,
 )
-from foil.project import common_dir, project_key, store_root
+from foil.project import checkout_for_key, common_dir, project_key, store_root
 from foil.runner import (
     POLL,
     RunnerError,
@@ -670,6 +671,13 @@ def seed(root: Path, mail: list[Path], new_ids: list[str]) -> str:
     for item in new_ids:
         project, fleet, subject = (item.split("\x1f") + ["", ""])[:3]
         parts.append(f"inbox: {project} {fleet} {subject}")
+        if subject != "goal" or not project or not fleet:
+            continue
+        try:
+            block = finish_block(checkout_for_key(project), fleet, project)
+        except (FoilError, OSError):
+            continue
+        parts += ["finish:", block]
     return "\n".join(parts) + "\n"
 
 

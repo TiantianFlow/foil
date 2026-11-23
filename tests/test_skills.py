@@ -56,6 +56,9 @@ FLAGS = {
     ("master", "start"): {"--harness", *_SHARED},
     ("master", "stop"): set(_SHARED),
     ("master", "renew"): {"--harness", *_SHARED},
+    ("fleet", "pause"): set(_SHARED),
+    ("fleet", "resume"): set(_SHARED),
+    ("fleet", "merge"): {"--into", *_SHARED},
 }
 
 ROLE_COMMANDS = {
@@ -76,6 +79,7 @@ ROLE_COMMANDS = {
         ("roster", "update"),
         ("roster", "remove"),
         ("view",),
+        ("fleet", "merge"),
     },
     "lead.md": {
         # The roster-before-init sentence names `foil init`.
@@ -155,7 +159,7 @@ def _invocations(text: str) -> list[str]:
 def _command(tokens: list[str]) -> tuple[str, ...]:
     if tokens[:2] == ["foil", "seat"]:
         return ("seat", tokens[2])
-    if tokens[1:2] in (["memory"], ["mail"], ["board"], ["roster"], ["master"]):
+    if tokens[1:2] in (["memory"], ["mail"], ["board"], ["roster"], ["master"], ["fleet"]):
         return (tokens[1], tokens[2])
     return (tokens[1],)
 

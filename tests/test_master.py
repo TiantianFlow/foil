@@ -95,6 +95,10 @@ def test_charter_is_a_control_plane() -> None:
     assert "short messages" in text
     assert "shell that can run `foil`" in text
     assert "`foil seat spawn lead --as user --project KEY --task TEXT`" in text
+    assert "inbox: KEY FLEET goal" in text
+    assert "cites the reviewer's result file" in text
+    assert "merge card" in text
+    assert "You do not merge." in text
     for forbidden in ("foil seat kill", "foil seat archive", "git push", "foil fleet merge"):
         assert forbidden not in text
 
