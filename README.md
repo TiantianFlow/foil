@@ -150,13 +150,13 @@ FOIL_FLEET=docs foil send lead "the answer"
 
 Each line `--all-fleets` prints starts with its fleet. Merge a done goal with `foil fleet merge` once that fleet's `status.md` says `state: done`. A dirty checkout or a conflict is one refusal, and the checkout stays as it was.
 
-To check on the fleets while nobody is in a conversation, schedule `foil mail wait --all-fleets --timeout 0`. It prints what is new, marks it seen, and exits; with nothing new it prints `no new mail`. For example, a crontab line every 30 minutes, `REPO` is the checkout, `YOUR_PATH` is your `PATH`, and `HOME_DIR` is your home directory:
+To check on the fleets while nobody is in a conversation, schedule `foil mail wait --all-fleets --timeout 0`. It prints what is new, marks it seen, and exits; with nothing new it prints `no new mail`. Pick the interval from the work's phase. Every five to ten minutes is only for a few hours while a fleet is mid-task on something you are driving. Once the work waits on something long, such as a soak, a baseline, or a long test run, check hourly, then every few hours or daily, and never leave a five- or ten-minute schedule running for more than a day. Give the schedule an end condition, such as that fleet's `status.md` reaching `state: done`, and delete it once that holds. For example, a crontab line every hour, `REPO` is the checkout, `YOUR_PATH` is your `PATH`, and `HOME_DIR` is your home directory:
 
 ```sh
-*/30 * * * * cd REPO && PATH=YOUR_PATH foil mail wait --all-fleets --timeout 0 >> HOME_DIR/foil-inbox.log 2>&1
+0 * * * * cd REPO && PATH=YOUR_PATH foil mail wait --all-fleets --timeout 0 >> HOME_DIR/foil-inbox.log 2>&1
 ```
 
-Read that log, or give it to your agent, when you come back.
+Read that log, or give it to your agent, when you come back. An agent that schedules its own checks follows the same rule, as the joined skill says.
 
 ### If nothing happens
 

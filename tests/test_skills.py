@@ -570,6 +570,59 @@ def test_joined_lead_stops_waiting_after_quiet_timeouts() -> None:
     assert "quiet waits in a row" in f41
 
 
+SCHEDULE_RULES = (
+    "pick the interval from the work's phase",
+    "Every five to ten minutes only while a seat is mid-task on a change you are driving",
+    "and for a few hours at most.",
+    "hourly, then every few hours or daily",
+    "Never leave a five- or ten-minute schedule running for more than a day.",
+    "schedule one check for then instead of a repeating one",
+    "Give every schedule an end condition",
+    "delete the schedule once it holds",
+    "Tell the human the interval and the end condition",
+)
+
+
+def test_joined_lead_reads_the_scheduled_check_rule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue 157: the rule is in the joined lead's own file, not only in the README."""
+    from foil.lifecycle import init_project
+
+    text = (SKILLS / "joined.md").read_text(encoding="utf-8")
+    section = text.split("## Hearing from the fleet", 1)[1].split("\n## ", 1)[0]
+    for phrase in SCHEDULE_RULES:
+        assert phrase in section, phrase
+    assert "foil mail wait --all-fleets --timeout 0" in section
+    assert "README recipe" not in text
+    repo = tmp_path.resolve()
+    subprocess.run(["git", "-C", str(repo), "init", "--quiet"], check=True, capture_output=True)
+    monkeypatch.chdir(repo)
+    init_project(str(repo))
+    joined = _joined_instruction(repo)
+    for phrase in SCHEDULE_RULES:
+        assert phrase in joined, phrase
+    lead = (SKILLS / "lead.md").read_text(encoding="utf-8")
+    assert "end your turn instead of polling" in lead
+    assert "double the wait" in lead
+
+
+def test_readme_scheduled_check_is_hourly_with_an_end_condition() -> None:
+    """Issue 157: the published recipe is not a fixed half-hour poll with no end."""
+
+    for name, phrases in (
+        ("README.md", ("Pick the interval from the work's phase", "more than a day",
+                       "end condition", "delete it once that holds")),
+        ("README.zh-CN.md",
+         ("间隔按工作所处的阶段来定", "不要连续跑超过一天", "结束条件", "删掉它")),
+    ):
+        text = (ROOT / name).read_text(encoding="utf-8")
+        assert "*/30 * * * *" not in text, name
+        assert "0 * * * * cd REPO && PATH=YOUR_PATH foil mail wait --all-fleets --timeout 0" in text
+        for phrase in phrases:
+            assert phrase in text, (name, phrase)
+
+
 def test_the_lead_checks_a_method_that_comes_with_the_goal() -> None:
     """A method in the goal is a proposal; the lead verifies results and chooses."""
 
