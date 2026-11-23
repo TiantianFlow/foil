@@ -23,6 +23,14 @@ command.
 The page, the token, and `foil doctor` are specified in
 [the requirements](../../docs/requirements.md).
 
+`foil-bridge mcp` speaks MCP on stdio. `POST /mcp` on the running Bridge
+is the same protocol and requires the bearer token from the desk file.
+`talk_to_master` writes the master's mailbox as you and returns the reply.
+`brief`, `inbox`, `fleet`, and `agent_transcript` are reads.
+`agent_transcript` is a summary unless a level is set, and it masks
+credential-shaped text. `answer` answers one closed question. There is no
+kill, archive, merge, or settings tool.
+
 `foil-bridge transcript SEAT` prints one seat's conversation. It is a
 summary unless `--level` says otherwise, and it masks text that looks
 like a credential. The requirements say where each harness keeps the file.

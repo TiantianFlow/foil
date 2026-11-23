@@ -28,6 +28,7 @@ from foil_bridge import (
     controls,
     evidence,
     home,
+    mcp,
     push,
     quote,
     settings,
@@ -153,6 +154,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         self._handle("POST")
 
+    def do_DELETE(self) -> None:
+        path = unquote(urlsplit(self.path).path) or "/"
+        if path == "/mcp":
+            self._handle("DELETE")
+            return
+        self.send_error(501, f"Unsupported method ({self.command!r})")
+
     def _handle(self, method: str) -> None:
         try:
             self._route(method)
@@ -168,6 +176,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/v1/pair" and method == "POST":
             self._pair_post()
+            return
+        if path == "/mcp":
+            self._mcp(method)
             return
         identity = self._identity(query)
         if identity is None:
@@ -427,6 +438,76 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionError, OSError):
             return
 
+    def _mcp(self, method: str) -> None:
+        if self._bearer() is None:
+            self._mcp_closed(401, method)
+            return
+        if not self._host_ok():
+            self._mcp_closed(403, method)
+            return
+        if self.headers.get("Origin") is not None and not self._origin_ok():
+            self._mcp_closed(403, method)
+            return
+        if method != "POST":
+            self._mcp_closed(405, method)
+            return
+        length = self._length(mcp.MAX_BODY)
+        if length is None:
+            self._mcp_closed(400, "POST")
+            return
+        raw = self.rfile.read(length) if length else b""
+        version = self.headers.get("MCP-Protocol-Version")
+        kind = self.headers.get("Content-Type", "")
+        if version is not None and version not in mcp.VERSIONS:
+            self._send(400, b"")
+            return
+        if kind.split(";", 1)[0].strip().lower() != "application/json":
+            self._send(400, b"")
+            return
+        if not mcp.accepts(self.headers.get("Accept", "")):
+            self._send(406, b"")
+            return
+        status, payload = mcp.http_post(raw)
+        protocol = (("MCP-Protocol-Version", self._mcp_version(version, status, payload)),)
+        if status == 202:
+            self._send(202, b"", extra=protocol)
+            return
+        self._send(status, payload, "application/json", extra=protocol)
+
+    def _mcp_version(self, sent: str | None, status: int, payload: bytes) -> str:
+        if sent in mcp.VERSIONS:
+            return sent
+        if status == 200:
+            try:
+                result = json.loads(payload).get("result")
+            except json.JSONDecodeError:
+                result = None
+            chosen = result.get("protocolVersion") if isinstance(result, dict) else None
+            if isinstance(chosen, str) and chosen in mcp.VERSIONS:
+                return chosen
+        return mcp.VERSIONS[0]
+
+    def _mcp_closed(self, code: int, method: str) -> None:
+        """Refuse before the body is read.
+
+        A keep-alive connection would otherwise treat the unread POST body as
+        the next request. GET and HEAD have no body.
+        """
+
+        extra = (("Connection", "close"),) if method not in {"GET", "HEAD"} else ()
+        self._send(code, b"", extra=extra)
+
+    def _bearer(self) -> auth.Identity | None:
+        """The ``Authorization`` bearer. A query token does not count."""
+
+        header = self.headers.get("Authorization", "")
+        if not header.startswith("Bearer "):
+            return None
+        token = header[7:].strip()
+        if not token:
+            return None
+        return auth.identify(token)
+
     def _identity(self, query: Mapping[str, list[str]]) -> auth.Identity | None:
         header = self.headers.get("Authorization", "")
         if header.startswith("Bearer "):
@@ -567,7 +648,11 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(text, str):
             self._error(FoilError("foil: message text is empty"))
             return
-        self._call(lambda: home.post_message(text) or {"ok": True})
+        def send_home() -> dict[str, bool]:
+            home.post_message(text)
+            return {"ok": True}
+
+        self._call(send_home)
 
     def _answer(self) -> None:
         body = self._json()
@@ -673,6 +758,7 @@ class Handler(BaseHTTPRequestHandler):
         policy: str = "",
         cache: str = "no-store",
         force: bool = False,
+        extra: tuple[tuple[str, str], ...] = (),
     ) -> None:
         if self.command == "HEAD" and not force:
             payload = b""
@@ -687,6 +773,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        for name, value in extra:
+            self.send_header(name, value)
         self.end_headers()
         if payload and self.command != "HEAD":
             self.wfile.write(payload)

@@ -6,7 +6,8 @@ Foil's core is a lightweight command-line tool for fleets of CLI coding
 agents in tmux, and the base of a meta-harness. One agent, the master, is
 who you talk to. It runs every fleet on the machine and can show the
 evidence behind what it says. You reach it from a phone or a desk through
-the optional Bridge, a separate package. The `foil` command stays usable
+the optional Bridge, a separate package, and from an MCP client on that
+process. The `foil` command stays usable
 on its own. Core never needs the Bridge or the master, and it serves no page.
 The Bridge is the page.
 
@@ -50,7 +51,7 @@ A lower layer does not import a higher one.
 
 | Layer | What it is |
 |---|---|
-| Surfaces | What a person uses. The Bridge's page, its push, and a later MCP client. |
+| Surfaces | What a person uses. The Bridge's page, its push, and an MCP client. |
 | Bridge | The optional package. Section 12. |
 | Core | The `foil-ai` package: the CLI, `foil.api`, and the runner. `foil.api` is one function per operation. Each takes the project, the fleet, and the caller, and returns a plain value. `foil.api.VERSION` is `1`. `caller` is `user`, `lead`, or a seat id. `inside` is true when that caller is a seat: a launched lead is `lead` with `inside` true, and a joined lead is `lead` with `inside` false. `user` is the human even while a lead is joined. The CLI parses and calls those functions. It reads `FOIL_PROJECT`, `FOIL_FLEET`, and `FOIL_SEAT_ID` only while it resolves that call, and it does not write them. The runner and the guard are separate entry points and may still read their process environment. `FOIL_HOME` and `XDG_DATA_HOME` stay process-global, and so do the harness session variables. |
 | Agents | The master, leads, and workers. |
@@ -694,7 +695,7 @@ Out of scope:
 - Parsing or interpreting pane contents or a turn's output. The only exception is the session id an `output` preset prints, bounded by F12.
 - Keeping a joined lead's file tools from changing what a spawn runs. Spawn and resume read a project harness file (F20, F27), so a joined lead whose file tools may write more than the fleet's board (onboarding step 1) could set a launch command that runs outside its sandbox. The board-only setting and the joined skill's rule against writing harness files are the guards. Only `--wake` reads no project harness file (F41).
 - Remote machines and Windows. A project is one copy of the code. Several fleets may run on it. They share the effective roles, harnesses, and mapping. Each fleet has its own board, posts, registry, and an optional pair-list override. Seat worktrees stay in the same Git repository.
-- In core: a UI; a viewer that writes, or types into a pane; a daemon; an MCP server; a hosted service. Core does not grow those. `foil bridge` and `foil bridge install` are core commands. The page, the local process, and a later MCP endpoint belong to the Bridge package (section 12).
+- In core: a UI; a viewer that writes, or types into a pane; a daemon; an MCP server; a hosted service. Core does not grow those. `foil bridge` and `foil bridge install` are core commands. The page, the local process, and the MCP endpoint belong to the Bridge package (section 12).
 - Message read receipts, usage-based dispatch, and persona catalog tools beyond `roster list` of the personas `init` copied. Usage-based dispatch includes quota detection, probes, pacing, credential rotation, and switching a running seat because it looks exhausted. Spawn-time rotation across the ordered harness list on a role is in scope. A spawn selects `entries[n % len(entries)]`, where `n` counts that role's spawns since its lists last changed (F3). That spreads later spawns, the lead's included, across the entries the role was given. It does not balance usage and it does not move a seat that is already running. Core does not read a harness's token usage or quota, and it does not dispatch on either. The Bridge may sum usage events already in a transcript and show that total (section 12). It does not read a quota, and the total changes no seat.
 - Context monitoring. Foil does not read a seat's context use. A seat near a full context, or at a milestone the lead picks, writes a handoff file, and the lead or a caller outside the fleet replaces it (section 8).
 
@@ -726,8 +727,8 @@ refused when the request carries `X-Forwarded-For`, `X-Forwarded-Host`,
 `Tailscale-User-Login`, or `Tailscale-Funnel-Request`, so a forged tailnet
 header on loopback is refused. Any other host is refused.
 
-Every request needs a token, including a read, the event stream, and
-`/v1/terminal`. A missing or unknown token is 401 with an empty body.
+Every request needs a token, including a read, the event stream,
+`/v1/terminal`, and `/mcp`. A missing or unknown token is 401 with an empty body.
 The desk token is `<root>/bridge/desk`, mode 0600, one line. A device
 token is `id.secret`. `<root>/bridge/devices/<id>` holds the SHA-256 of
 the token and the time it was created, not the secret. Those directories
@@ -770,7 +771,8 @@ refused, including the project checkout.
 A `POST` also needs an `Origin` of `http://` plus the `Host` on loopback,
 or `http://` or `https://` plus the `Host` on the tailnet name. A missing
 or other `Origin` is 403. A read does not need `Origin`. The terminal
-upgrade does, as specified above.
+upgrade does, as specified above. `POST /mcp` allows a missing `Origin`,
+and a present `Origin` follows this rule.
 
 `foil bridge install` creates the desk token when the file is missing and
 does not rotate an existing one. It prints four lines: the unit path, the
@@ -1309,21 +1311,108 @@ Before anything is printed, credential-shaped text is replaced with `[hidden]`. 
 `summary` keeps the last 20 user and assistant messages. A message longer than 200 characters is cut and marked with `…`. Human output adds `omitted N` when messages were dropped. `messages` prints every user and assistant message. `tools` adds a line per tool with its name and no input or output. `all` adds tool input and output, thoughts, system messages, and one usage line per response (`usage: in N out M`). Human output is one header, `seat`, the format id, and `file` or `pane`, tab-separated, then one line per event. Runs of whitespace in an event line become one space. A truncated file adds `truncated` to that header. `--json` prints `seat`, `project`, `fleet`, `format`, `source`, `level`, `masked`, `note`, `truncated`, `omitted`, `tokens`, and `events`. `tokens` is `{"input","output"}`, the sum of usage events before the level filter, and it is display only. An event has `role`, `kind`, `text`, `tool`, and `usage`. `usage` is null or `{"input","output"}`. `kind` is `message`, `tool`, `usage`, `thought`, or `pane`.
 
 Phase 4 adds the master's runner, each fleet's runners, and the push path to
-`foil doctor`. A later phase may add an MCP endpoint on this process,
-stdio and loopback HTTP. Core still has no daemon, no MCP server, and no
-UI.
+`foil doctor`. Core still has no daemon, no MCP server, and no UI.
+
+`foil-bridge mcp` is MCP on stdio. It reads one JSON-RPC message per line
+and writes one JSON-RPC message per line to stdout, and nothing else. A
+blank line is ignored. A line over 64 KiB is a parse error. Stdin closing
+ends it with status 0. An extra argument is
+`foil-bridge: unexpected argument` and exit 2. Before `initialize` has
+been answered, the only requests it accepts are `initialize` and `ping`.
+Another request until then is code `-32600`, message `expected initialize`.
+
+`POST /mcp` on this process is the same protocol. It keeps no session, so
+a request does not have to follow `initialize`, and the response sets no
+`MCP-Session-Id`. `GET`, `HEAD`, and `DELETE` on `/mcp` are 405 after the
+token check. The bearer is the desk token, the one line in
+`<root>/bridge/desk` (mode 0600), or a device token, in
+`Authorization`. A query `token` does not authenticate this route. A
+missing or unknown bearer is 401 with an empty body. A request
+refused before its body is read sends `Connection: close`, so those
+bytes are not the next request. `Accept` must list
+both `application/json` and `text/event-stream`, or the response is 406.
+`Content-Type` must be `application/json`; a missing or other value is 400.
+A body over 64 KiB, a body that
+is not JSON, a body that is not one JSON object, and an
+`MCP-Protocol-Version` other than `2025-03-26`, `2025-06-18`, or
+`2025-11-25` are 400. A missing protocol header is treated as
+`2025-03-26`. A header or size failure has an empty body. A body that is
+not JSON is code `-32700`, and a body that is not one JSON object is code
+`-32600`. A JSON object that is a bad request is 200 and that JSON-RPC
+error. A notification
+is 202 with an empty body. A request is 200 and one JSON object,
+`Content-Type: application/json`. Both carry `MCP-Protocol-Version`: the
+header the client sent when it is one of the three, otherwise the version
+`initialize` chose, otherwise `2025-03-26`.
+
+The versions are those three. `initialize` answers with the client's
+version when it is one of them, otherwise `2025-11-25`. Capabilities are
+`tools` with `listChanged` false. The server name is `foil-bridge`.
+Methods are `initialize`, `ping`, `tools/list`, and `tools/call`.
+`notifications/initialized` and `notifications/cancelled` are accepted.
+Any other method is code `-32601`. An unknown tool name is code `-32602`,
+message `unknown tool`. A `tools/call` whose id is already in flight is
+code `-32600`, message `request id is in use`, and does not run. A tool
+that fails is a result with `isError` true and that command's line.
+
+The tools are these and no others. None of them kills, archives, merges,
+or changes a setting.
+
+`talk_to_master` takes `text`. It writes that message to the master's
+mailbox as `user`, the same write as the home, and keeps that file's
+name. It waits up to 600 seconds until a master turn has that name in
+the names it read and the turn has finished, so the file is in
+`delivered`. The result is every body that turn wrote, in name order,
+one after another. A result over 16 KiB is cut and marked with
+`... truncated`. The message is in the home conversation either way. No
+such turn in that time, or a finished turn that wrote no master mail,
+is `foil-bridge: the master has not replied`, and the message stays.
+`notifications/cancelled` for that request's id ends the wait with
+`foil-bridge: cancelled`, and the message stays. A cancel that arrives
+before the write leaves the mailbox unchanged.
+
+`brief` takes no arguments. It is `foil brief --all-projects` as `user`,
+and the result is that command's JSON. `inbox` takes no arguments. It is
+`foil inbox --all-projects` as `user`, and the result is that command's
+JSON. `fleet` takes an optional `project` and an optional `fleet`. With
+neither, every fleet in the store. With `project`, that project's fleets.
+`fleet` without `project` is `foil-bridge: fleet needs a project`. Each
+row has `project`, `fleet`, `goal`, `state`, `paused`, and `seats`. A
+seat has `name`, `template`, `state`, and `branch`. `agent_transcript`
+takes `seat` and optional `project`, `fleet`, and `level`. `level`
+defaults to `summary`. It is `foil-bridge transcript` at that level,
+masked, and the result is that command's JSON. `answer` takes `project`,
+`fleet`, `id`, and `text`. It is `foil answer` as `user`. The result is
+`answered`. A later answer for an id that already has one writes nothing,
+and the first text stays.
+
+An argument a tool does not take is `foil-bridge: unexpected argument`.
+A missing argument is `foil-bridge: <name> is required`.
+
+A remote client reaches this process through `tailscale serve`. The owner
+check holds for a user-owned node: Serve keeps the request's `Host` as
+the tailnet name, sets `X-Forwarded-Host` to that name, and sets
+`Tailscale-User-Login` to the requester. The request is served only when
+that login is the node's own. A person the node is shared with has a
+different login and is refused. A tagged source sends no login and is
+refused. The check cannot hold for a tagged machine: the node has no user
+login, this process records no owner, and every forwarded request is
+refused. It cannot hold for Funnel: Funnel sets `Tailscale-Funnel-Request`
+and no login, and those requests are refused. The bearer is required on
+every request this route serves, including the owner's. Stdio has no
+bearer because the process is the local user.
 
 ## 13. Master
 
 One master per store, on any harness `foil master start` or `renew` names. It is the agent the human talks to, above every repo's fleets. It is not a fleet seat. `seat list` does not show it, and `seat kill` does not stop it. The seat name `master` stays reserved (F14).
 
-Its directory is `<root>/master/`: `mail/` (the conversation, one `mail/v1` file per message), `log.md` (what it did and what it plans next), `watches.md`, `mandate.md`, and `run/`. `run/plan.json` is the runner plan. `run/record.json` is the runner record, including `sessions` and `seen_inbox`. `run/window.json` is the tmux window. Start creates a missing `log.md`, `watches.md`, or `mandate.md` as an empty file. The tmux session is `foil-master-` plus the first 8 hex characters of the SHA-256 of the store root's real path, the window is `master`, and the markers are `@foil-fleet-id=master` and `@foil-seat-id=master`. Those markers are not a fleet.
+Its directory is `<root>/master/`: `mail/` (the conversation, one `mail/v1` file per message), `log.md` (what it did and what it plans next), `watches.md`, `mandate.md`, and `run/`. `run/plan.json` is the runner plan. `run/record.json` is the runner record, including `sessions`, `seen_inbox`, and `reads`. `run/window.json` is the tmux window. Start creates a missing `log.md`, `watches.md`, or `mandate.md` as an empty file. The tmux session is `foil-master-` plus the first 8 hex characters of the SHA-256 of the store root's real path, the window is `master`, and the markers are `@foil-fleet-id=master` and `@foil-seat-id=master`. Those markers are not a fleet.
 
-`foil send master` appends to `mail/` (F14). The human and a lead can mail it. A worker cannot. The master's own reply is `foil send master` from its runner, which sets `FOIL_MASTER=1` and does not set `FOIL_SEAT_ID`, so the sender is `master`.
+`foil send master` appends to `mail/` (F14). `foil.api` `send` to `master` returns `name`, the file it wrote. The human and a lead can mail it. A worker cannot. The master's own reply is `foil send master` from its runner, which sets `FOIL_MASTER=1` and does not set `FOIL_SEAT_ID`, so the sender is `master`.
 
 `foil master start`, `stop`, and `renew` run on the seat runner (`python -m foil.runner` on that plan). They need no checkout. The launch permission is the preset's `ask`, which gates the master's own tool calls and not a `foil` command. The harness must be a shell that can run `foil`. Foil does not check that shell. The charter states it. With no `--harness`, start and renew use the recorded pair, or the first installed eligible harness when none is recorded. `--harness ID/MODEL` splits on the first slash. A running master is not started again. A paused one is resumed by `start`. `stop` ends the window. `renew` replaces the argv and, when the window is up, the runner loads it after the current turn. A failed turn waits 30 seconds, 2 minutes, and 8 minutes, then the runner pauses and starts no further turn until `start` resumes it. Fleet pause does not pause the master.
 
-The runner polls once a second and calls no model. It wakes on a new file in `mail/`, and on an inbox identity that was not in `seen_inbox`. An identity is that item's `project`, `fleet`, and `subject` from `foil inbox --all-projects`. The same set does not wake it. An identity that disappears is dropped with no turn, so a later return is new. The first start records the identities already present and does not turn for them. Mail already in the mailbox does wake. A read that fails wakes nothing and does not change `seen_inbox`. The first successful read is the baseline.
+The runner polls once a second and calls no model. It wakes on a new file in `mail/`, and on an inbox identity that was not in `seen_inbox`. An identity is that item's `project`, `fleet`, and `subject` from `foil inbox --all-projects`. The same set does not wake it. An identity that disappears is dropped with no turn, so a later return is new. The first start records the identities already present and does not turn for them. Mail already in the mailbox does wake. A read that fails wakes nothing and does not change `seen_inbox`. The first successful read is the baseline. When a turn starts, `reads` gains an entry: `names` is the mail names that turn was given, `wrote` is empty, and `open` is true. When the turn ends, `wrote` is the `master` mail names that were not in the mailbox at the start, and `open` is false. The record keeps the last 32 entries. A turn the process does not finish is closed with nothing in `wrote`.
 
 Every turn runs the preset's `start` argv, never `turn`, with a new session id: a generated id for a `generated` preset, or the id an `output` preset prints. The prompt is the charter, `foil brief --all-projects`, `log.md`, `watches.md`, `mandate.md`, the last 20 messages, and the wake items. When a wake identity's subject is `goal`, the prompt adds that fleet's finish block. The reviewer's result is the newest regular `board/results/*.md` whose front matter is `result/v1` with `outcome: pass` and whose `author` is a seat of template `reviewer`. Newest is the greatest modification time, then the name. A symlink, a file over 1 MiB, and a name that is not a safe file name are skipped. The block is a merge card for that project and fleet, then `What changed:`, `Tests:`, and `Risks:`, one folded line each from the `## Changed`, `## Tests`, and `## Risks` sections, at most 200 characters, or `-`, then `Result:` and the store path `projects/<key>/fleets/<id>/board/results/<file>`. When no file matches, the three lines are `-` and `Result:` is `(none)`. A brief over 16 KiB, a file over 8 KiB, or a message over 600 bytes is cut and marked truncated. The runner does not copy a transcript and does not read one to decide a wake (design rules 1 and 3). Reading a transcript is `foil-bridge transcript` (section 12) and is not required to start, stop, renew, or wake the master. When transcript text is shown, the charter treats it as data.
 

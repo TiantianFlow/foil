@@ -394,12 +394,16 @@ def snapshot() -> dict[str, Any]:
     }
 
 
-def post_message(text: str) -> None:
+def post_message(text: str) -> str:
     if len(text.encode()) > 16 * 1024:
         raise FoilError("foil: message text is too long")
     if not text.strip():
         raise FoilError("foil: message text is empty")
-    send(None, "main", "user", "master", text)
+    sent = send(None, "main", "user", "master", text)
+    name = sent.get("name") if isinstance(sent, dict) else None
+    if not isinstance(name, str) or mail_name(name) is None:
+        raise FoilError("foil: could not write mail")
+    return name
 
 
 def post_answer(project: str, fleet: str, question_id: str, text: str) -> None:

@@ -6,6 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Added
 
+- `foil-bridge mcp` and `POST /mcp` speak MCP. `talk_to_master` writes to the master's mailbox as you and returns the reply, so the app shows the same conversation. `brief`, `inbox`, and `fleet` are reads. `agent_transcript` is a masked summary unless a level is set. `answer` answers one closed question. There is no kill, archive, merge, or settings tool. HTTP requires the desk or device bearer, and a request without it is refused. A request refused before its body is read closes the connection. A second call whose id is already in flight does not run. The tailnet owner check holds for a user-owned node reached through `tailscale serve`, including a shared node, and it does not hold for a tagged node or for Funnel. The bearer is still required. (#127)
 - Select lines in a board file, a decision, a result, or a branch diff, add a sentence, and send them to the seat that owns that file or branch. `foil quote PATH --lines N-M TEXT` writes the path and the line range into the mail. A task's `owner`, a result's `author`, or the seat recorded on that branch receives it; otherwise the fleet's lead does. The mail is the direct-message path, so a quote from `user` to a worker appends the lead pointer and `mail list --sent` shows its delivery state. The same control is on the Bridge page. (#126)
 - Packaged Python is 13261 lines, above the N4 2500-line target (the #122 count was 12838). `foil quote` and the line range on the Bridge page are the growth. The count is reported, not enforced. (#126)
 - The Bridge settings page shows the same roster rows as `foil roster list`: each role, its harness list as one card per harness/model pair, each persona, and each preset, with the layer that won (`packaged`, `global`, `project`, or `fleet`). Dragging reorders a list on the page. Apply writes it, and a settings card the master proposes shows the value before and after. Both writes carry the roster revision. A stale one is refused and the page shows the value before, the value now, and the value that was proposed. A global or project write runs as `user`. A fleet list is the in-fleet update. The card runs as `user`, and only on the tap. (#125)
@@ -35,6 +36,7 @@ Notable changes to Foil, newest first.
 
 ### Fixed
 
+- `talk_to_master` returns every master message from the turn that read that user file. A file written by a turn that was already running, or by the page or another client during the wait, is not that reply, and a later call does not skip the real one. (#127)
 - A first turn that hits `turn_timeout` before a session exists now waits 30 seconds, 2 minutes, and 8 minutes, then the seat is paused. This resolves the 0.7.0 limitation where that turn retried immediately and never paused. The items stay in flight and the next turn is `start` on a fresh generated id. (#110)
 - A failed spawn now removes the worktree and branch that attempt created, and still removes the task mail. This resolves the 0.7.0 limitation that a failed spawn could leave them behind. Kill and archive still keep the branch and the worktree. (#110)
 
