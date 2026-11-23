@@ -17,11 +17,10 @@ from socketserver import ThreadingTCPServer
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from foil import view as foil_view
 from foil.bridge_cmd import bridge_port, ensure_desk_token
 from foil.errors import FoilError
 from foil.project import store_root
-from foil_bridge import auth, evidence, home, push
+from foil_bridge import auth, chat, evidence, home, push, tailnet
 from foil_bridge.pages import (
     asset,
     desk_html,
@@ -40,6 +39,7 @@ _SHELL = {
     "/sw.js": ("sw.js", "text/javascript", "max-age=0"),
     "/desk.css": ("desk.css", "text/css", "max-age=0"),
     "/home.js": ("home.js", "text/javascript", "max-age=0"),
+    "/seat.js": ("seat.js", "text/javascript", "max-age=0"),
     "/offline": ("offline.html", "text/html", "max-age=0"),
 }
 _PAGE_POLICY = (
@@ -226,6 +226,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/send" and method == "POST":
             self._send_message()
             return
+        if path == "/v1/chat" and method in {"GET", "HEAD"}:
+            self._chat()
+            return
+        if path == "/v1/chat" and method == "POST":
+            self._post_chat()
+            return
         if path == "/v1/answer" and method == "POST":
             self._answer()
             return
@@ -356,8 +362,8 @@ class Handler(BaseHTTPRequestHandler):
     def _host_ok(self) -> bool:
         host = self.headers.get("Host") or ""
         name = host_name(host)
-        if name in foil_view.LOOPBACK:
-            return not any(field in self.headers for field in foil_view.PROXIED)
+        if name in tailnet.LOOPBACK:
+            return not any(field in self.headers for field in tailnet.PROXIED)
         node = self.server.node
         if node is None or name != node[0]:
             return False
@@ -371,7 +377,7 @@ class Handler(BaseHTTPRequestHandler):
         if not origin or not host:
             return False
         name = host_name(host)
-        if name in foil_view.LOOPBACK:
+        if name in tailnet.LOOPBACK:
             return origin == f"http://{host}"
         node = self.server.node
         if node is not None and name == node[0]:
@@ -423,6 +429,32 @@ class Handler(BaseHTTPRequestHandler):
 
     def _error(self, exc: FoilError) -> None:
         self._send(400, json.dumps({"error": str(exc)}).encode(), "application/json")
+
+    def _chat(self) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        project = (query.get("project") or [""])[-1]
+        fleet = (query.get("fleet") or [""])[-1]
+        seat = (query.get("seat") or [""])[-1]
+        self._call(lambda: chat.thread(project, fleet, seat))
+
+    def _post_chat(self) -> None:
+        if self._length(64 * 1024) is None:
+            self._error(FoilError("foil: message text is too long"))
+            return
+        body = self._json(64 * 1024)
+        if not isinstance(body, dict):
+            self._error(FoilError("foil: message text is empty"))
+            return
+        project, fleet, seat, text = (
+            body.get("project"),
+            body.get("fleet"),
+            body.get("seat"),
+            body.get("text"),
+        )
+        if not all(isinstance(item, str) for item in (project, fleet, seat, text)):
+            self._error(FoilError("foil: message text is empty"))
+            return
+        self._call(lambda: chat.post(project, fleet, seat, text) or {"ok": True})
 
     def _send_message(self) -> None:
         if self._length(64 * 1024) is None:
@@ -540,7 +572,7 @@ def open_server(port: int | None = None) -> BridgeServer:
             raise FoilError(f"foil: port {bind} is in use") from None
         raise FoilError(f"foil: could not listen on 127.0.0.1:{bind}") from None
     server.root = store_root()
-    server.node = foil_view.tailnet()
+    server.node = tailnet.tailnet()
     server.stopped = threading.Event()
     server.watch = Watcher(server.root, interval())
     server.watch.start()

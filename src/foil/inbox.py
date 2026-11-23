@@ -143,7 +143,7 @@ def _questions(fields: dict[str, Any] | None, raw: str | None) -> list[dict[str,
 
 
 def shown_questions(text: str) -> list[str]:
-    """Question titles for the viewer. A refused file is one raw line."""
+    """Question titles for a page. A refused file is one raw line."""
 
     front = parse_front(text)
     found = _questions(front.fields, front.raw)

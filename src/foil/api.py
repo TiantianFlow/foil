@@ -106,7 +106,6 @@ _ALLOWED = {
     "roster-add": {_OUTSIDE, _LEAD},
     "roster-update": {_OUTSIDE, _LEAD},
     "roster-remove": {_OUTSIDE, _LEAD},
-    "view": {_OUTSIDE},
     "journal": {_OUTSIDE, _LEAD, _WORKER},
     "decide": {_OUTSIDE, _LEAD, _WORKER},
     "fleet-pause": {_OUTSIDE, _LEAD},
@@ -888,24 +887,6 @@ def brief(
         records = collect_brief(root, [fleet_id()], _project_key(root))
         show_brief(records, projects_named=False, as_json=as_json)
     return records
-
-
-def view(
-    project: Path | None,
-    fleet: str,
-    caller: str,
-    *,
-    inside: bool = False, pinned: bool = True,
-    port: str | None = None,
-) -> dict:
-    if inside:
-        raise FoilError("foil: view is outside the fleet only")
-    _authorize("view", caller=caller, inside=inside)
-    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
-        from foil.view import serve
-
-        code = serve(port)
-    return {"code": code}
 
 
 def _outside(command: str, *, inside: bool) -> None:

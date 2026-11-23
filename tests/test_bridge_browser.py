@@ -32,7 +32,7 @@ def browser() -> Iterator[Browser]:
 def test_pair_once_and_revoke(
     monkeypatch: pytest.MonkeyPatch, browser: Browser
 ) -> None:
-    monkeypatch.setattr("foil.view.tailnet", lambda: None)
+    monkeypatch.setattr("foil_bridge.tailnet.tailnet", lambda: None)
     server = open_server(0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -88,7 +88,7 @@ def test_pair_once_and_revoke(
 def test_home_answers_on_a_tap_and_leaves_a_card_until_then(
     monkeypatch: pytest.MonkeyPatch, browser: Browser
 ) -> None:
-    monkeypatch.setattr("foil.view.tailnet", lambda: None)
+    monkeypatch.setattr("foil_bridge.tailnet.tailnet", lambda: None)
     with _short_repo(monkeypatch) as repo:
         _question(repo)
         _master_mail(

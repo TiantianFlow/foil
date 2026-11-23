@@ -105,12 +105,7 @@ Each line `foil mail wait --all-fleets` prints starts with its fleet. Merge a do
 
 ## The viewer
 
-`foil view` serves one read-only page for every project on this machine. Give the human the address it prints. While it runs, anyone logged in to this machine can read it. To keep it running, write a launchd agent or a `systemd --user` unit from the README section "Keep the viewer running", show the human the file, and load it only after they agree.
-
-```text
-foil view
-foil view --port 8790
-```
+The page is the Bridge. When `foil-bridge` is on `PATH`, run `foil bridge install`, show the human the address it prints, and load the unit only after they agree. The page needs the token in that address. To open it from another device, use the `tailscale serve` line the command prints. On a seat's page the human can mail that seat. A worker's lead is told on its next wake, and that notice wakes nobody. A joined lead's mail lands when its session is waiting. A question can be answered in that session or on the page; the first answer is the one both show.
 
 ## Leaving
 

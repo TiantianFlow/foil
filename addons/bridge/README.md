@@ -9,6 +9,8 @@ The home is the conversation with the master. A notification stays off
 until a kind is turned on. It is a label and the id of the card it opens. A path in that
 conversation opens a read-only page: the project's fleets, one fleet,
 a board file, or a seat's conversation and the diff of its branch.
+A seat's page is also a chat with that seat. Mail is sent as you, and
+each message shows its delivery state.
 The page, the token, and `foil doctor` are specified in
 [the requirements](../../docs/requirements.md).
 

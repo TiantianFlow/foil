@@ -163,8 +163,8 @@ def _preset_from_table(raw: dict[str, Any], label: str = "harnesses.toml") -> di
 def _set_env(raw: Any, forwarded: list[str]) -> dict[str, str]:
     """Fixed values a preset sets for every launch, such as a harness's own config.
 
-    They are not secrets: they are written to the plan, shown by the viewer,
-    and scanned like any other plan text. A name the preset also forwards, or
+    They are not secrets: they are written to the plan and scanned like any
+    other plan text. A name the preset also forwards, or
     a variable Foil sets itself, is refused.
     """
 

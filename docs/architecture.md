@@ -29,11 +29,10 @@ Foil is a Python 3.11+ program with no runtime dependencies. It uses Git, tmux, 
 | `src/foil/journal.py` | Appends one fact per line to a fleet's journal, and lists or follows that file. It stores no mail body and no turn output. |
 | `src/foil/delivery.py` | Appends the per-seat delivery log, the lead's pointers, and the fleet pause flag. A line is a time, a board path, and a state. It stores no mail body and no turn output. |
 | `src/foil/guard.py` | Writes the seat-only `pre-commit` and `pre-push` hooks, and runs their checks for private text and the worktree boundary before the repository's own hook. |
-| `src/foil/view.py` | Serves `foil view`, one read-only page on `127.0.0.1` for every project in the store, each under `/projects/<key>/`. It calls the same readers as `seat list`, `seat peek`, `roster list`, and `memory list`, and writes nothing. At start it reads `tailscale status --json` once, so a request that `tailscale serve` forwards from the owner's login can load under the tailnet name. |
 | `src/foil/bridge_cmd.py` | `foil bridge`, `foil bridge install`, and `foil doctor`. It writes the boot file and the desk token and does not import the Bridge package. |
 | `src/foil/errors.py` | Carries the one-line errors the CLI prints. |
 
-`addons/bridge` is the `foil-bridge` package. Core does not import it. The Bridge process imports `bridge_cmd` for the desk token and calls `foil.api` as `user` for a message, an answer, and an action card. It calls `foil.view.tailnet` for the same tailnet check `foil view` uses. Pairing credentials are files under the store. The home reads the master's mail on each request and keeps no copy of a fleet's files. Web Push is sent from this process. The payload is a label and a card id. Encryption and VAPID signing use `cryptography` inside this package. `foil-bridge transcript` reads a harness's own session file, masks credential-shaped text, and falls back to the live pane. That parse is for display. Core does not read a transcript.
+`addons/bridge` is the `foil-bridge` package. Core does not import it. The Bridge process imports `bridge_cmd` for the desk token and calls `foil.api` as `user` for a message, an answer, a seat chat, and an action card. It reads `tailscale status --json` once at start, in this package. Pairing credentials are files under the store. The home reads the master's mail on each request and keeps no copy of a fleet's files. Web Push is sent from this process. The payload is a label and a card id. Encryption and VAPID signing use `cryptography` inside this package. `foil-bridge transcript` reads a harness's own session file, masks credential-shaped text, and falls back to the live pane. That parse is for display. Core does not read a transcript.
 
 ### Module layers
 
@@ -52,7 +51,6 @@ flowchart TB
   board_ops["<b>board_ops.py</b><br/>read and list board files"]
   roster_ops["<b>roster_ops.py</b><br/>list · show · add · update · remove"]
   memory["<b>memory.py</b><br/>lessons"]
-  view["<b>view.py</b><br/>read-only page on 127.0.0.1"]
   bridge_cmd["<b>bridge_cmd.py</b><br/>boot file · desk token · doctor"]
 
   presets["<b>presets.py</b><br/>templates · harness presets · argv"]
@@ -90,15 +88,8 @@ flowchart TB
   api --> roster_ops
   api --> memory
   api --> project
-  api --> view
   api --> bridge_cmd
   bridge_cmd --> project
-  view --> lifecycle
-  view --> roster_ops
-  view --> memory
-  view --> presets
-  view --> store
-  view --> project
   lifecycle --> presets
   lifecycle --> board
   lifecycle --> tmuxmod
@@ -117,7 +108,6 @@ flowchart TB
   board --> delivery
   mail_ops --> delivery
   joined --> delivery
-  view --> delivery
   delivery --> store
   api --> masterpy
   api --> mergepy
@@ -152,7 +142,7 @@ flowchart TB
   classDef base fill:#e5e7eb,stroke:#374151,color:#1f2937
   classDef apart fill:#fde68a,stroke:#b45309,color:#1f2937
   class cli,api entry
-  class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,view,journal,delivery,masterpy,mergepy core
+  class lifecycle,board,mail_ops,joined,board_ops,roster_ops,memory,journal,delivery,masterpy,mergepy core
   class presets,tmuxmod,store,project,scope base
   class runner apart
 ```
@@ -208,7 +198,7 @@ The project folder holds:
 
 - `fleets/<id>/` — one fleet. `overrides.toml` is the harness and model memory: a role's rows replace its mapping rows in that fleet. The lead instruction names that file and says to re-read it before spawn. `board/` holds mail, notes, tasks, results, status, and `room/` posts. `mail list` does not follow a symlink at `board/mail`. `run/` holds the registry and generated files. `FOIL_FLEET` selects the directory and defaults to `main`; a fleet id is letters, digits, `_`, and `-` only. Spawn reads the shared mapping, then applies that fleet's override as the harness model flag. Resume keeps the recorded pair. `foil init` moves a 0.4 project-root `board/` and `run/` under `fleets/main/` when those fleet copies are absent or empty, and rewrites those absolute prefixes inside that fleet's `run/`. It does not import `templates/<role>.toml`.
 - `memory/<id>.json` — lessons. They belong to the project and stay when seats are killed.
-- `fleets/<id>/board/room/<thread>/` — one thread. `foil post` writes `room/v2` files here. The root file is `<thread>/<thread>.md`. A reply is a child in that directory. `wakes` lists the seats the post wakes. A decline's `wakes` is empty. Seats read mail, notes, tasks, results, status, and room files with `foil board read` and `foil board list`. Apart from `contract`, `wakes`, and `from`, which decide what wakes a seat, and the `questions` and `decisions` that `foil view` shows, Foil parses front matter only to print a file. `foil inbox` and `foil brief` also read `status/v1` `state` and `questions`. A question may be a string or one flat mapping. Front matter outside that subset is shown raw, and neither command writes a file or calls a model.
+- `fleets/<id>/board/room/<thread>/` — one thread. `foil post` writes `room/v2` files here. The root file is `<thread>/<thread>.md`. A reply is a child in that directory. `wakes` lists the seats the post wakes. A decline's `wakes` is empty. Seats read mail, notes, tasks, results, status, and room files with `foil board read` and `foil board list`. Apart from `contract`, `wakes`, and `from`, which decide what wakes a seat, and the `questions` and `decisions` a page shows, Foil parses front matter only to print a file. `foil inbox` and `foil brief` also read `status/v1` `state` and `questions`. A question may be a string or one flat mapping. Front matter outside that subset is shown raw, and neither command writes a file or calls a model.
 - `fleets/<id>/run/registry.json` — fleet id, tmux session name, lead name, and one record per seat: name, template, harness, model, window id, state, worktree, branch, and session id. The seat's `harness` and `model` are the pair from its last launch. Resume keeps them. A seat record from before `model` existed loads that field as empty. The session name is `foil-`, then up to 32 characters of the repository directory name with every non-alphanumeric run turned into a single `-` and the surrounding dashes removed, or `repo` when that leaves nothing, then `-` and the first 8 hex characters of the SHA-256 of the resolved toplevel path. The `main` fleet uses that name. Another fleet appends `-{id}` so the sessions stay separate. That derivation, the session marker `@foil-fleet-id`, and the window marker `@foil-seat-id` are a cross-version contract. They change only when a release tells you to drain the fleet with the old binary first (`foil seat kill --all`). A mid-goal upgrade works while this contract and the registry schema stay compatible. The recommended path is still between goals: kill the fleet, update, run `foil init`, then spawn the lead. Archive files are not keys in this file. The schema stays 1.
 - `fleets/<id>/run/archive/<time>-<name>.txt` — one prose record of an archived seat, written by `foil seat archive`. The fields are the nine seat fields, one per line, with the worktree path after a space. Init's path rewrite covers this directory. An old binary never reads these files and never deletes them.
 - `fleets/<id>/run/instructions/<seat>.md` — generated when that seat is spawned or resumed. It includes the text of that seat's role skill and the Foil version that wrote the file.
@@ -332,4 +322,4 @@ Dead and killed come from the registry and from the tmux window with the stored 
 
 ## What Foil does not do
 
-Foil does not parse pane contents or a turn's output, except an `output` preset's session id, and it types nothing into a pane. Apart from the fields that decide a wake and the ones `foil view` shows, it parses front matter only to print a file. It does not store harness credentials. It does not delete a worktree or a branch when a seat is killed, when a seat is archived, or when a launch fails after the worktree was created.
+Foil does not parse pane contents or a turn's output, except an `output` preset's session id, and it types nothing into a pane. Apart from the fields that decide a wake and the ones a page shows, it parses front matter only to print a file. It does not store harness credentials. It does not delete a worktree or a branch when a seat is killed, when a seat is archived, or when a launch fails after the worktree was created.

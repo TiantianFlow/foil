@@ -10,7 +10,7 @@ from foil.board import mail_name, send_mail
 from foil.board_ops import split_front_matter
 from foil.errors import FoilError, shown
 from foil.inbox import _questions, _status, projects
-from foil.store import SAFE_ID, actor, fleet_dir, fleet_ids, in_seat
+from foil.store import SAFE_ID, actor, exclusive_lock, fleet_dir, fleet_ids, in_seat
 
 
 def answer_question(root: Path, question_id: str, text: str) -> None:
@@ -31,7 +31,13 @@ def answer_question(root: Path, question_id: str, text: str) -> None:
         raise FoilError(f"foil: unknown question '{shown(question_id)}'")
     if match["from"] == "master":
         raise FoilError("foil: that question is for the master")
-    send_mail(root, "lead", f"question: {question_id}\n\n{body}\n")
+    board = fleet_dir(root) / "board"
+    with exclusive_lock(fleet_dir(root) / "run" / "answer.lock"):
+        # The first mail is the answer. A later one, from the desk or the app, writes nothing.
+        _readable_quotes(board)
+        if quoted_answer(board, question_id) is not None:
+            return
+        send_mail(root, "lead", f"question: {question_id}\n\n{body}\n")
 
 
 def _open(root: Path) -> list[dict[str, Any]]:
@@ -41,21 +47,63 @@ def _open(root: Path) -> list[dict[str, Any]]:
     return parsed or []
 
 
-def quoted_answer(board: Path, question_id: str) -> str | None:
-    """The newest mail from ``user`` whose first line quotes ``question_id``.
+def _readable_quotes(board: Path) -> None:
+    """Refuse to decide from a mailbox this process cannot trust.
 
-    None means no such mail. An empty string is a quote with no further text.
+    A symlink is not followed. A user mail file that cannot be read might
+    already be the answer, so the command writes nothing and names the failure.
     """
 
-    directory = board / "mail" / "lead"
-    if directory.is_symlink() or not directory.is_dir():
+    mail_dir = board / "mail"
+    if mail_dir.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    directory = mail_dir / "lead"
+    if directory.is_symlink():
+        raise FoilError("foil: refusing symlink")
+    if not directory.is_dir():
+        return
+    mail_root = mail_dir.resolve()
+    if not directory.resolve().is_relative_to(mail_root):
+        raise FoilError("foil: refusing symlink")
+    for path in directory.glob("*.md"):
+        named = mail_name(path.name)
+        if named is None or named[1] != "user":
+            continue
+        if path.is_symlink() or not path.resolve().is_relative_to(mail_root):
+            raise FoilError("foil: refusing symlink")
+        if not path.is_file():
+            continue
+        try:
+            path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise FoilError("foil: mail cannot be read") from exc
+
+
+def quoted_answer(board: Path, question_id: str) -> str | None:
+    """The first mail from ``user`` whose first line quotes ``question_id``.
+
+    None means no such mail. An empty string is a quote with no further text.
+    A later mail for the same id is not the answer.
+    """
+
+    mail_dir = board / "mail"
+    directory = mail_dir / "lead"
+    if (
+        mail_dir.is_symlink()
+        or directory.is_symlink()
+        or not directory.is_dir()
+        or not directory.resolve().is_relative_to(mail_dir.resolve())
+    ):
         return None
-    newest_name = ""
-    newest: str | None = None
+    mail_root = mail_dir.resolve()
+    first_name = ""
+    first: str | None = None
     prefix = f"question: {question_id}"
     for path in directory.glob("*.md"):
         named = mail_name(path.name)
         if named is None or named[1] != "user" or path.is_symlink() or not path.is_file():
+            continue
+        if not path.resolve().is_relative_to(mail_root):
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -68,12 +116,12 @@ def quoted_answer(board: Path, question_id: str) -> str | None:
         filled = [line for line in content if line.strip()]
         if not filled or filled[0] != prefix:
             continue
-        if path.name <= newest_name:
+        if first_name and path.name >= first_name:
             continue
-        newest_name = path.name
+        first_name = path.name
         rest = content[content.index(prefix) + 1 :]
-        newest = "\n".join(rest).strip()
-    return newest
+        first = "\n".join(rest).strip()
+    return first
 
 
 def question_cards() -> list[dict[str, Any]]:

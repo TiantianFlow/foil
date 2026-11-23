@@ -210,6 +210,7 @@ def _seat(described: dict[str, str], checkout: Path, level: str) -> dict[str, An
         "lines": _lines(conversation),
         "missing": missing,
         "diff": _diff(checkout, row["branch"], _base(checkout, name, row["branch"], lead)),
+        "chat": {"project": project, "fleet": fleet, "seat": name},
     }
 
 

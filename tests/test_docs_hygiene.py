@@ -204,7 +204,14 @@ def test_tracked_tree_has_no_report_or_inventory_artifacts() -> None:
     assert sorted(leftovers) == []
 
 
-REMOVED_PATHS = {"skills/operator.md", "src/foil/defaults/skills/operator.md"}
+REMOVED_PATHS = {
+    "skills/operator.md",
+    "src/foil/defaults/skills/operator.md",
+    "src/foil/view.py",
+    "tests/test_view.py",
+    "tests/test_view_browser.py",
+    "tests/e2e/test_view.py",
+}
 
 
 def _is_history(relative: str) -> bool:

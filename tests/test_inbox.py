@@ -7,13 +7,14 @@ import shutil
 from pathlib import Path
 
 import pytest
+from foil_bridge.evidence import _fleet as fleet_page
+from foil_bridge.pages import evidence_html
 
 from foil.cli import main
 from foil.inbox import _goal, collect_brief, format_brief
 from foil.lifecycle import TmuxController
 from foil.project import foil_root
 from tests.test_spawn import _repo
-from tests.test_view import _page, _serving
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "brief"
 _SECRET = "BODY-SECRET"
@@ -389,9 +390,7 @@ def test_a_journal_symlink_leaves_the_rest_of_the_brief(
     assert record["goal"]
 
 
-def test_the_viewer_shows_a_mapping_ask(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_page_shows_a_mapping_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _repo(tmp_path, monkeypatch)
     board = foil_root(repo) / "fleets" / "main" / "board"
     _status(
@@ -399,10 +398,9 @@ def test_the_viewer_shows_a_mapping_ask(
         "---\nquestions:\n  - id: reading\n    ask: Which reading?\n"
         "    options: [first, second]\n---\n",
     )
-    with _serving(repo) as port:
-        page = _page(port, "/fleets/main")
-    assert "Which reading?" in page
-    assert "Needs you" in page
+    model = fleet_page({"project": "local", "fleet": "main"}, repo)
+    html = evidence_html(model, "token").decode()
+    assert "Which reading?" in html
 
 
 def test_the_goal_is_the_mandate_done_when_then_its_first_line() -> None:

@@ -227,6 +227,23 @@ def _seat_html(model: dict[str, Any], token: str) -> str:
     if conversation.get("truncated"):
         parts.append("<p>truncated</p>")
     parts.append("<h2>Tokens</h2>" + _meter(conversation["tokens"]))
+    chat = model["chat"]
+    project = html.escape(chat["project"], quote=True)
+    fleet = html.escape(chat["fleet"], quote=True)
+    seat = html.escape(chat["seat"], quote=True)
+    script = quote(token, safe="")
+    parts.append(
+        f'<section id="chat" data-project="{project}" data-fleet="{fleet}" data-seat="{seat}">'
+        "<h2>Chat</h2>"
+        '<p id="chat-note" class="quiet"></p>'
+        '<div id="questions"></div>'
+        '<ol id="thread" class="thread"></ol>'
+        '<form id="say"><label for="message">Message</label>'
+        '<textarea id="message" name="message" rows="3"></textarea>'
+        '<button type="submit">Send</button>'
+        '<p id="say-error" class="quiet"></p></form></section>'
+        f'<script src="seat.js?token={script}" type="module"></script>'
+    )
     diff = model["diff"]
     parts.append("<h2 id=\"diff\">Diff</h2>")
     if diff["base"] and diff["branch"]:
