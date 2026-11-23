@@ -141,6 +141,16 @@ def test_a_conflict_is_one_line_and_leaves_the_checkout(
     _commit(repo, "file.txt", "goal\n", "goal")
     _git(repo, "checkout", current)
     head = _head(repo)
+    # A runner with no committer identity makes `git merge` exit before MERGE_HEAD.
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for name in (
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
     assert main(["fleet", "merge", "--into", "topic"]) == 1
     assert capsys.readouterr().err == "foil: merge conflict\n"

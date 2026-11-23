@@ -30,7 +30,7 @@ Notable changes to Foil, newest first.
 ### Changed
 
 - The command surface is eighteen top-level commands and forty-one actions. `fleet merge` is the new action. (#121)
-- Packaged Python is 14524 lines, above the N4 2500-line target (the #118 count was 14094). `foil fleet merge`, the refusal record, and the done-goal finish block are the growth. The count is reported, not enforced. (#121)
+- Packaged Python is 14542 lines, above the N4 2500-line target (the #118 count was 14094). `foil fleet merge`, the refusal record, and the done-goal finish block are the growth. The count is reported, not enforced. (#121)
 - The command surface is eighteen top-level commands and forty actions. `answer` is the new action. (#118)
 - Packaged Python is 14094 lines, above the N4 2500-line target (the #116 count was 13882). `foil answer` and the question cards are the growth. The Bridge home is the separate package. The count is reported, not enforced. (#118)
 - The command surface is seventeen top-level commands and thirty-nine actions. `doctor`, `bridge`, and `bridge install` join `master start`, `stop`, and `renew`. (#116)

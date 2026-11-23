@@ -156,6 +156,18 @@ def _merging(root: Path) -> bool:
     return _git(root, ["rev-parse", "-q", "--verify", "MERGE_HEAD"]).returncode == 0
 
 
+def _conflict(root: Path, ours: str, theirs: str) -> bool:
+    """Whether merging ``theirs`` into ``ours`` is a content conflict.
+
+    ``git merge`` exits before it writes MERGE_HEAD when the committer
+    identity is unset, which is how a conflict was reported as a generic
+    failure. The two commits answer the question without that identity.
+    """
+
+    found = _git(root, ["merge-tree", "--write-tree", "--name-only", ours, theirs])
+    return found.returncode == 1
+
+
 def _restore(root: Path, branch: str, commit: str, switched: bool) -> None:
     if _merging(root) and _git(root, ["merge", "--abort"]).returncode != 0:
         raise FoilError("foil: could not merge")
@@ -200,6 +212,12 @@ def merge_goal(root: Path, fleet: str, *, into: str | None = None) -> dict[str, 
             if _git(root, ["checkout", target]).returncode != 0:
                 _refuse(directory, f"could not check out '{shown(target)}'")
             switched = True
+        if _conflict(root, target, goal):
+            try:
+                _restore(root, current, commit, switched)
+            except FoilError:
+                _refuse(directory, "could not merge")
+            _refuse(directory, "merge conflict")
         merged = _git(root, ["merge", "--no-edit", goal])
         if merged.returncode != 0:
             conflict = _merging(root)
