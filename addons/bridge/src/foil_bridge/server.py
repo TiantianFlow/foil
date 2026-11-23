@@ -34,6 +34,7 @@ from foil_bridge import (
     settings,
     tailnet,
     terminal,
+    webhook,
 )
 from foil_bridge.pages import (
     asset,
@@ -310,6 +311,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/v1/push/card" and method in {"GET", "HEAD"}:
             self._push_card()
+            return
+        if path == "/v1/webhook" and method in {"GET", "HEAD"}:
+            self._call(webhook.view)
+            return
+        if path == "/v1/webhook" and method == "POST":
+            self._webhook()
             return
         if path == "/v1/session" and method in {"GET", "HEAD"}:
             if identity.kind == "desk":
@@ -693,6 +700,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._json_ok(described)
 
+    def _webhook(self) -> None:
+        body = self._json(32 * 1024)
+        if not isinstance(body, dict):
+            self._error(FoilError("foil: webhook setting is invalid"))
+            return
+        self._call(lambda: webhook.update(body))
+
     def _settings_get(self) -> None:
         query = parse_qs(urlsplit(self.path).query)
         project = (query.get("project") or [""])[-1]
@@ -813,6 +827,8 @@ def _push_loop(stopped: threading.Event) -> None:
     while not stopped.is_set():
         with contextlib.suppress(Exception):
             push.deliver()
+        with contextlib.suppress(Exception):
+            webhook.deliver()
         stopped.wait(interval())
 
 

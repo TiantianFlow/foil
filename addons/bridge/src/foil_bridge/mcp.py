@@ -34,6 +34,7 @@ REPLY_CAP = 16 * 1024
 WAIT = 600
 _TALK = threading.Lock()
 INSTRUCTIONS = (
+    "You are the human's voice to the master, not the master itself. "
     "This is the same master as the Foil app. talk_to_master writes to that "
     "conversation as the human and returns the master's reply. brief, inbox, "
     "fleet, and agent_transcript are reads. answer answers one closed question "

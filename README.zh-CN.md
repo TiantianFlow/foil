@@ -168,7 +168,7 @@ FOIL_FLEET=docs foil send lead "the answer"
 
 ## 桥
 
-`foil bridge install` 为本机的页面写入开机文件。从首页打开一个席位，就可以给它发信。页面只监听 `127.0.0.1`。没有令牌的请求得到空的 401。首页是和主座的对话，读的是它的邮件，所以 `foil master renew` 之后这些话还在。一个问题是一张卡片：点一个选项，或用文字回复，那条回复会以你的身份寄给主领。主座提出的初始化、设置、新舰队、合并、生成席位、恢复席位或更新席位，只有你点了才执行。一张设置卡片写明改前和改后。设置页上的行与 `foil roster list` 相同，点 Apply 才写入新的驾具顺序。修订已经变了的写入会被拒绝，页面显示前后的差异。它请求的杀死或归档也是一张卡片，确认之前不会执行。舰队页可以暂停或恢复该舰队，按角色生成席位（并显示下一次生成所用的驾具和模型），或把一个新目标开成新舰队。席位页可以恢复、更新、杀死或归档该席位。它也可以在运筹拥有的 worktree 里、在对话旁边打开你的 shell。这个 shell 随视图关闭，不会连上席位。复制附加命令仍会复制 tmux 命令。杀死、归档，以及该舰队授权没有写明的操作，都会先请你确认。主座自己暂停舰队、恢复舰队，并在交接写好后更新主领。页面也给出一个一次性的配对码。通知默认关闭，打开某一类之后才会发送。一条通知只是一个标签，例如 `login: 1 decision`，点开后到那张卡片，不含舰队里的正文。从另一台设备访问时，对该端口运行 `tailscale serve`，然后打开它打印的 https 地址。`PATH` 上没有 `foil-bridge` 时，`foil bridge` 打印安装方式，并不启动页面。`foil doctor` 为每一项检查打印一行。`foil-bridge mcp` 走标准输入输出，`POST /mcp` 走这个进程。`talk_to_master` 以你的身份写信给主座并返回主座的回复，页面上是同一段对话。这条 HTTP 需要令牌。它不能杀死、归档、合并或更改设置。
+`foil bridge install` 为本机的页面写入开机文件。从首页打开一个席位，就可以给它发信。页面只监听 `127.0.0.1`。没有令牌的请求得到空的 401。首页是和主座的对话，读的是它的邮件，所以 `foil master renew` 之后这些话还在。一个问题是一张卡片：点一个选项，或用文字回复，那条回复会以你的身份寄给主领。主座提出的初始化、设置、新舰队、合并、生成席位、恢复席位或更新席位，只有你点了才执行。一张设置卡片写明改前和改后。设置页上的行与 `foil roster list` 相同，点 Apply 才写入新的驾具顺序。修订已经变了的写入会被拒绝，页面显示前后的差异。它请求的杀死或归档也是一张卡片，确认之前不会执行。舰队页可以暂停或恢复该舰队，按角色生成席位（并显示下一次生成所用的驾具和模型），或把一个新目标开成新舰队。席位页可以恢复、更新、杀死或归档该席位。它也可以在运筹拥有的 worktree 里、在对话旁边打开你的 shell。这个 shell 随视图关闭，不会连上席位。复制附加命令仍会复制 tmux 命令。杀死、归档，以及该舰队授权没有写明的操作，都会先请你确认。主座自己暂停舰队、恢复舰队，并在交接写好后更新主领。页面也给出一个一次性的配对码。通知默认关闭，打开某一类之后才会发送。一条通知只是一个标签，例如 `login: 1 decision`，点开后到那张卡片，不含舰队里的正文。从另一台设备访问时，对该端口运行 `tailscale serve`，然后打开它打印的 https 地址。`PATH` 上没有 `foil-bridge` 时，`foil bridge` 打印安装方式，并不启动页面。`foil doctor` 为每一项检查打印一行。`foil-bridge mcp` 走标准输入输出，`POST /mcp` 走这个进程。`talk_to_master` 以你的身份写信给主座并返回主座的回复，页面上是同一段对话。这条 HTTP 需要令牌。它不能杀死、归档、合并或更改设置。[docs/mcp.md](docs/mcp.md) 说明如何在本机和通过 `tailscale serve` 与令牌从另一台机器接入。客户端加载 [docs/mcp-client.md](docs/mcp-client.md)，以你的身份说话，它不是主座。Webhook 默认关闭；开启后正文只有 `needs_you` 和一个数量，不含舰队内容，客户端再通过 MCP 拉取。
 
 ## 限制
 
@@ -188,6 +188,7 @@ FOIL_FLEET=docs foil send lead "the answer"
 
 - [docs/demo.zh-CN.md](docs/demo.zh-CN.md) — 一次真实运行，从 `foil init` 到修复被合并
 - [docs/architecture.md](docs/architecture.md) — 组件、数据流和模块边界
+- [docs/mcp.md](docs/mcp.md) — 在本机或另一台机器接入 MCP 客户端，并用 webhook 唤醒它
 - [skills/joined.md](skills/joined.md)、[skills/lead.md](skills/lead.md)、[skills/worker.md](skills/worker.md) — 每个角色运行哪些命令
 - [CONTRIBUTING.md](CONTRIBUTING.md) — 搭建与检查
 - [CHANGELOG.md](CHANGELOG.md) — 版本历史
