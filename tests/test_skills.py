@@ -48,7 +48,7 @@ FLAGS = {
     ("roster", "add"): {"--from", "--project", "--base", "--as"},
     ("roster", "update"): {"--project", "--base", "--as"},
     ("roster", "remove"): {"--project", "--base", "--as"},
-    ("view",): {"--port", *_SHARED},
+    ("bridge",): set(_SHARED),
     ("journal",): {"--follow", "--since", "--json", *_SHARED},
     ("decide",): {"--why", *_SHARED},
     ("inbox",): {"--all-fleets", "--all-projects", "--json", *_SHARED},
@@ -78,7 +78,7 @@ ROLE_COMMANDS = {
         ("roster", "add"),
         ("roster", "update"),
         ("roster", "remove"),
-        ("view",),
+        ("bridge",),
         ("fleet", "merge"),
     },
     "lead.md": {

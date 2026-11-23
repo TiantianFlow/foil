@@ -6,6 +6,7 @@ Notable changes to Foil, newest first.
 
 ### Added
 
+- A seat page on the Bridge is a chat with that seat. Mail is sent as `user`, and each message shows the delivery state `foil mail list --sent` derives. The page reads it again when the event stream reports a change. Mail to a worker appends one pointer, listed on the lead's next wake and waking nobody. A joined lead's message that has not landed shows `lands when its session is waiting`. A question can be answered on the home, on that page, or with `foil answer`. The first answer is the one every place shows; a later answer for the same id writes nothing. (#122)
 - The Bridge can send a Web Push notification to the installed page. It stays off until a kind is turned on: a question, a seat that stopped, a delivery stuck past its limit, a finished goal, or the master or the Bridge down. A notification is a label, such as `login: 1 decision`, and the id of the card it opens. It does not carry the fleet's text. At most one goes out per minute. Message encryption and VAPID signing are in the Bridge package. (#120)
 - `foil fleet merge` merges that fleet's goal branch into the checkout's current branch, or into `--into BRANCH`. A dirty checkout or a conflict is one refusal line, the checkout is left as it was, and the refusal is an inbox item until a merge succeeds. The home's merge card runs the command as `user` when the human taps it. A fleet whose `status.md` reaches `done` wakes the master with a finish block: what changed, the tests run, the risks, and the reviewer's result file, in front of a merge card. The master sends that block and does not merge. (#121)
 - The Bridge evidence page is what a path in the home opens. A project lists its fleets and each fleet's top inbox rank. A fleet shows its goal, state, decisions, journal, questions, seats, board files, and a token total. A board file shows its text. A seat shows that agent's conversation through `foil-bridge transcript`, at `summary`, `messages`, `tools`, or `all`, and falls back to the live pane when the session file is missing. Credential-shaped text is masked before display, and the page says that is a best effort. The token total is the sum of usage events, per seat and per fleet, for display only. A seat with a branch shows `git diff` of that branch against its base. `foil view` is unchanged. (#119)
@@ -23,6 +24,10 @@ Notable changes to Foil, newest first.
 - `foil.api` is one function per command. Each takes the project, the fleet, and the caller and returns that command's JSON value. `foil.api.VERSION` is `1`. The CLI parses and calls it. Two calls in one process can name different projects and fleets, because the call binds those on its thread instead of writing `FOIL_FLEET` into the process environment. `--as user` or `--as lead` selects the caller outside the fleet. `user` is the human even while a lead is joined. `--project KEY` addresses another initialized project. `seat peek` and `mail wait` accept `--json` and print the same value the function returns. `seat spawn --name master` is reserved, and a `FOIL_SEAT_ID` of `master` is an unknown seat. (#112)
 - `foil journal` lists this fleet's append-only journal at `fleets/<id>/run/journal.log`. One JSON line per fact Foil already records: spawn, turn start, turn end, mail sent, mail delivered, retry, pause, resume, renew, kill, join, and leave. A line names the seat, the path, or the exit, and never a mail body or turn output. At 64 KiB the file rotates to `journal.log.1`, and a reader sees that file and then the active one. `--follow` streams new lines, `--since T` keeps facts at or after a UTC timestamp, and `--json` prints the same objects the function returns. `foil decide TEXT --why REASON` appends one `decision` line (the caller, the choice, and the reason). Each of those is one line of at most 400 characters, and credential-shaped text is refused with nothing written. The lead and worker skills say when to record a choice. (#113)
 
+### Removed
+
+- `foil view` is gone. The page is the Bridge. The command surface is seventeen top-level commands and forty actions. (#122)
+
 ### Fixed
 
 - A first turn that hits `turn_timeout` before a session exists now waits 30 seconds, 2 minutes, and 8 minutes, then the seat is paused. This resolves the 0.7.0 limitation where that turn retried immediately and never paused. The items stay in flight and the next turn is `start` on a fresh generated id. (#110)
@@ -30,6 +35,7 @@ Notable changes to Foil, newest first.
 
 ### Changed
 
+- Packaged Python is 12838 lines, above the N4 2500-line target (the #121 count was 14542). Removing `foil view` is the drop. The count is reported, not enforced. (#122)
 - The command surface is eighteen top-level commands and forty-one actions. `fleet merge` is the new action. (#121)
 - Packaged Python is 14542 lines, above the N4 2500-line target (the #118 count was 14094). `foil fleet merge`, the refusal record, and the done-goal finish block are the growth. The count is reported, not enforced. (#121)
 - The command surface is eighteen top-level commands and forty actions. `answer` is the new action. (#118)

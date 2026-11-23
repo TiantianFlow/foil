@@ -17,7 +17,7 @@ cd foil
 uv sync --frozen --extra dev
 ```
 
-`tests/test_view_browser.py` runs the `foil view` page in headless Chromium.
+`tests/test_bridge_browser.py` runs the Bridge page in headless Chromium.
 Install that browser once:
 
 ```sh
@@ -83,11 +83,11 @@ that names another file to write.
 4. **Keep docs tidy.** List every new document in docs/README.md, name
    release plans `plan-vX.Y.Z.md`, and add notable changes to
    CHANGELOG.md under "Unreleased".
-5. **Keep the viewer in step.** Any change a person can see in
-   `foil view`, including its info text, updates the page, its tests, and
-   docs/requirements.md (F37 to F39) in the same change. That covers a new
-   command or state that changes what a fleet, a seat, or a list shows,
-   not only the features the page has today.
+5. **Keep the Bridge page in step.** Any change a person can see on the
+   Bridge page updates the page, its tests, and docs/requirements.md in
+   the same change. That covers a new command or state that changes what
+   a fleet, a seat, or a list shows, not only the features the page has
+   today.
 
 ## Before you ask for review
 
@@ -111,8 +111,8 @@ and what you did not verify.
 4. **Finish the change everywhere.** After changing a behavior or a
    message, search the READMEs, `docs/`, `skills/`, `src/`, and `tests/`
    for the old wording, and update every hit in the same change. Then
-   open `foil view` on a project that uses the change, and check that the
-   page and its info text still say what the feature now does.
+   open the Bridge on a project that uses the change, and check that the
+   page still says what the feature now does.
 5. **Test the tests.** Revert your fix and watch each new test fail.
    Assert on outcomes, such as files, branches, windows, and exit codes,
    before asserting on printed text. A test that pins today's output also

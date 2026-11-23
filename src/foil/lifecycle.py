@@ -514,8 +514,7 @@ foil mail wait [--timeout SECONDS] [--wake]
 foil roster add ROLE [--from FILE] [--project]
 foil roster update ROLE FIELD=VALUE [--project]
 foil roster remove ROLE [--project]
-foil init
-foil view [--port N]"""
+foil init"""
 
 
 def _accepted(root: Path) -> list[tuple[str, str]]:

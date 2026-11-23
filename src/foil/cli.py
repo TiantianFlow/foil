@@ -218,10 +218,6 @@ def _build_parser() -> argparse.ArgumentParser:
     roster_remove.add_argument("--base", metavar="REV")
     _shared(roster_remove, key=False)
 
-    view = sub.add_parser("view", help="Serve a read-only page for every project on this host")
-    view.add_argument("--port", metavar="N")
-    _shared(view)
-
     journal = sub.add_parser("journal", help="List this fleet's journal")
     journal.add_argument("--follow", action="store_true")
     journal.add_argument("--since", metavar="T")
@@ -327,7 +323,7 @@ def _project_for(args: argparse.Namespace, key: str | None, *, inside: bool) -> 
         return found
     if args.command == "init":
         return None
-    if args.command in {"view", "doctor", "bridge"}:
+    if args.command in {"doctor", "bridge"}:
         try:
             return _discover()
         except FoilError:
@@ -405,10 +401,6 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
             directory = str(project)
         api.init(project, fleet, caller, inside=inside, pinned=pinned, directory=directory)
         return 0
-    if args.command == "view":
-        return api.view(
-            project, fleet, caller, inside=inside, pinned=pinned, port=args.port
-        )["code"]
     if args.command == "seat":
         action = args.seat_command
         if action == "spawn":
@@ -724,7 +716,7 @@ def _paused_notice(call: _Call | None) -> None:
 def _notice(args: argparse.Namespace) -> None:
     """The joined lead's new-items line, after every other command outside the fleet (F41)."""
     quiet = (
-        args.command in {"view", "doctor", "bridge"}
+        args.command in {"doctor", "bridge"}
         or (args.command == "seat" and args.seat_command in {"join", "leave"})
         or (args.command == "mail" and args.mail_command == "wait")
     )

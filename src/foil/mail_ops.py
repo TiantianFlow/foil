@@ -106,6 +106,12 @@ def _group_alive(pgid: object) -> bool:
     return True
 
 
+def sent_state(board: Path, recipient: str, relative: str, when: str) -> str:
+    """The state `mail list --sent` derives for one path."""
+
+    return _sent_state(board, recipient, relative, when)
+
+
 def _sent_state(board: Path, recipient: str, relative: str, when: str) -> str:
     item = latest_line(board.parent, recipient, relative)
     latest = str(item["state"]) if item is not None else None

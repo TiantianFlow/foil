@@ -66,6 +66,53 @@ def test_answer_quotes_the_question_id(
     assert capsys.readouterr().err == "foil: that question is for the master\n"
     assert main(["answer", "reading"]) == 1
     assert capsys.readouterr().err == "foil: answer text is empty\n"
+    assert main(["answer", "reading", "drop"]) == 0
+    assert capsys.readouterr().out == ""
+    files = _lead_mail(repo)
+    assert len(files) == 1
+    assert "keep" in files[0].read_text(encoding="utf-8")
+    assert "drop" not in files[0].read_text(encoding="utf-8")
+
+
+def test_a_fifo_named_like_mail_does_not_block_an_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _question(repo)
+    lead = foil_root(repo) / "fleets" / "main" / "board" / "mail" / "lead"
+    lead.mkdir(parents=True)
+    os.mkfifo(lead / "20990101T000000Z-user-abcd1234.md")
+    assert main(["answer", "reading", "keep"]) == 0
+    capsys.readouterr()
+    files = [path for path in lead.iterdir() if path.is_file()]
+    assert len(files) == 1
+    assert "keep" in files[0].read_text(encoding="utf-8")
+
+
+def test_a_mailbox_that_cannot_be_trusted_writes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _question(repo)
+    board = foil_root(repo) / "fleets" / "main" / "board"
+    lead = board / "mail" / "lead"
+    lead.mkdir(parents=True)
+    bad = lead / "20990101T000000Z-user-abcd1234.md"
+    bad.write_bytes(b"\xff")
+    assert main(["answer", "reading", "keep"]) == 1
+    assert capsys.readouterr().err == "foil: mail cannot be read\n"
+    assert list(lead.glob("*.md")) == [bad]
+    assert b"keep" not in bad.read_bytes()
+
+    bad.unlink()
+    mail = board / "mail"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    mail.rename(tmp_path / "mail-real")
+    mail.symlink_to(outside)
+    assert main(["answer", "reading", "keep"]) == 1
+    assert capsys.readouterr().err == "foil: refusing symlink\n"
+    assert list(outside.rglob("*.md")) == []
 
 
 def test_the_master_does_not_answer(

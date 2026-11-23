@@ -259,11 +259,11 @@ def test_a_worker_cannot_pause_and_a_joined_lead_is_told_once(
     own = capsys.readouterr()
     assert "foil: fleet paused" in own.out
     assert "foil: fleet is paused" not in own.err
-    from foil.view import _fleet_page, _fleets_page
+    from foil_bridge.evidence import _fleet as fleet_page
+    from foil_bridge.pages import evidence_html
 
-    page = _fleet_page(repo, "main", {}, "/p")[0]
-    assert "This fleet is paused. Runners start no new turn." in page
-    assert "<small>paused</small>" in _fleets_page(repo, "/p")[0]
+    html = evidence_html(fleet_page({"project": "local", "fleet": "main"}, repo), "token").decode()
+    assert "fleet paused" in html
 
 
 def test_mail_wait_appends_printed_for_a_joined_lead(

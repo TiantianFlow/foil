@@ -72,7 +72,7 @@ flowchart TB
 
 - **你**只和自己的 Agent 对话。
 - **你的 Agent，作为主座加入**：你喜欢的任何 harness，带着它原本的界面。`foil seat join lead` 让它成为舰队的主座，一个没有窗口的席位。它规划、派人、整合，有问题就在自己的对话里问你。它用 `foil mail wait` 接收舰队的消息。运筹从不启动它，也从不往它里面打字。
-- **foil**：就是这个命令行工具。它在 tmux 里启动席位。`foil send` 为一个收件人写成一份邮件文件。`foil post` 为该房间的成员，以及用 `@名字` 点到的席位写成一份房间文件；最后一份文件是 decline 的成员不会被唤醒。主座开房间、指定和调整成员、关闭房间；工作席位只回复。有新邮件或新帖子到达时，席位的运行器开始它的下一轮，这一轮的提示列出新文件。运筹在 tmux 里启动的主座用 `foil send user` 回复你，你用 `foil mail list` 或 `foil mail wait` 读取。运筹不往任何窗口里打字。`foil master start` 在这台机器上启动一个 master，位于所有舰队之上。你和主座用 `foil send master` 给它发信。它只提议，不合并、不停止席位、不归档。它自己不跑守护进程，也从不解读席位屏幕上显示的内容。`foil view` 是一个可选的只读网页，在浏览器里看。
+- **foil**：就是这个命令行工具。它在 tmux 里启动席位。`foil send` 为一个收件人写成一份邮件文件。`foil post` 为该房间的成员，以及用 `@名字` 点到的席位写成一份房间文件；最后一份文件是 decline 的成员不会被唤醒。主座开房间、指定和调整成员、关闭房间；工作席位只回复。有新邮件或新帖子到达时，席位的运行器开始它的下一轮，这一轮的提示列出新文件。运筹在 tmux 里启动的主座用 `foil send user` 回复你，你用 `foil mail list` 或 `foil mail wait` 读取。运筹不往任何窗口里打字。`foil master start` 在这台机器上启动一个 master，位于所有舰队之上。你和主座用 `foil send master` 给它发信。它只提议，不合并、不停止席位、不归档。它自己不跑守护进程，也从不解读席位屏幕上显示的内容。桥是浏览器里的页面。
 - **实现者、审查者**：在 tmux 窗口里无界面运行的 Agent CLI，每一轮一个进程，每个都带着自己角色的指令启动。默认只有实现者拥有自己的 Git worktree 和分支。
 - **看板**：邮件、房间线程、笔记和 `status.md`，都是普通文件，放在 `foil init` 报告打印的项目目录里。这个目录在仓库之外。席位用 `foil mail` 读邮件，用 `foil board` 读板上的其他文件，包括房间线程。
 
@@ -150,7 +150,7 @@ FOIL_FLEET=docs foil send lead "the answer"
 
 `--all-fleets` 打印的每一行都以它的舰队开头。那个舰队的 `status.md` 写着 `state: done` 时，用 `foil fleet merge` 合并目标分支。工作区不干净或发生冲突时，命令只拒绝一行，检出保持原样。
 
-没人在对话里时，要查看各个舰队，可以定时运行 `foil mail wait --all-fleets --timeout 0`。它打印新到的内容、标为已读，然后退出；没有新内容时打印 `no new mail`。例如每 30 分钟一次的 crontab 行，`REPO`、`YOUR_PATH` 和 `HOME_DIR` 按下面查看器服务那样填写：
+没人在对话里时，要查看各个舰队，可以定时运行 `foil mail wait --all-fleets --timeout 0`。它打印新到的内容、标为已读，然后退出；没有新内容时打印 `no new mail`。例如每 30 分钟一次的 crontab 行，`REPO` 是检出目录，`YOUR_PATH` 是你的 `PATH`，`HOME_DIR` 是你的主目录：
 
 ```sh
 */30 * * * * cd REPO && PATH=YOUR_PATH foil mail wait --all-fleets --timeout 0 >> HOME_DIR/foil-inbox.log 2>&1
@@ -164,82 +164,11 @@ FOIL_FLEET=docs foil send lead "the answer"
 
 ## 在浏览器里查看
 
-在任意目录运行 `foil view`，它会为这台机器上的所有运筹项目提供一个只读网页，并打印网页地址。首页列出各个项目。每个项目页列出它的舰队和经验，它的设置页显示三份共用清单。每个舰队页先列出需要你处理的事（`status.md` 里的问题，以及暂停或死掉的席位），再按状态分组显示席位（`killed` 的折叠起来），然后是它的 `status.md`、带修改时间的帖子和看板文件、覆盖，以及连接命令。看板文件在单独的页面打开，每个席位页显示它的原始窗格。它不往窗格里打任何按键，也不判断进度；进度仍然看 `board/status.md`。停掉它，每个席位都保持原样。
-
-```sh
-foil view
-foil view --port 8790
-```
-
-不加 `--port` 时，它使用 7460 到 7509 之间第一个空闲端口。它只监听 `127.0.0.1`。要从另一台机器访问，用 SSH 转发端口，例如 `ssh -L 8790:127.0.0.1:8790 host`。
-
-要从你在 Tailscale 上的其他设备打开它，在它前面放上 `tailscale serve`，例如 `tailscale serve --bg 8790`，然后打开这条命令打印的 `https://` 地址。没有任何东西监听你的局域网或 tailnet 地址；Tailscale 把每个请求转发到 `127.0.0.1`。`foil view` 在启动时检查 Tailscale，所以请在 Tailscale 运行之后，以及这台机器登录另一个账号或被加上标签之后，再启动或重启它。在 tailnet 名称下，它只响应 Tailscale 标明来自这台机器所属登录账号的请求。Funnel 流量、带标签的设备和其他用户的设备都得到空的 403。请使用上面的 HTTPS 形式，或 `--http`。`tailscale serve --tcp`、`--tls-terminated-tcp` 和 `tailscale funnel --tcp` 转发原始字节，不带这个检查读取的请求头，所以它们放进来的任何人都能读到这个页面。`tailscale serve reset` 停止共享。
-
-### 让查看器一直运行
-
-运筹没有守护进程模式。macOS 上的 launchd 和 Linux 上的 `systemd --user` 可以原样运行 `foil view`，登录时启动它，失败时重启它。你的 Agent 可以替你填好这些文件。一个服务就覆盖这台机器上的所有项目。给它一个 7460-7509 之外的端口，这样临时运行的 `foil view` 不会占走它。服务运行期间，这台机器上的每个账号都能读到这个网页，只要你还登录着（见“限制”），所以只在不与他人共用的机器上设置它。把每个大写占位符换掉：
-
-- `FOIL`：`command -v foil` 打印的绝对路径。
-- `PORT`：端口。
-- `YOUR_PATH`：在你自己的终端里运行 `echo $PATH` 打印的内容。服务启动时的 `PATH` 很少，没有你的 `PATH` 就找不到 tmux 和你的 Agent CLI。
-- `HOME_DIR`：你的主目录的绝对路径。
-
-如果你设置了 `FOIL_HOME`、`XDG_DATA_HOME` 或 `TMUX_TMPDIR`，在 `PATH` 旁边加上同样的值；`TMUX_TMPDIR` 不一致时，查看器找不到席位的窗口，会把每个席位都显示为 dead。升级运筹之后重启这个服务。
-
-macOS，`~/Library/LaunchAgents/dev.foil.view.plist`：
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict>
-  <key>Label</key><string>dev.foil.view</string>
-  <key>ProgramArguments</key><array>
-    <string>FOIL</string><string>view</string><string>--port</string><string>PORT</string>
-  </array>
-  <key>WorkingDirectory</key><string>HOME_DIR</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>YOUR_PATH</string></dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
-  <key>ThrottleInterval</key><integer>30</integer>
-  <key>StandardOutPath</key><string>HOME_DIR/Library/Logs/foil-view.log</string>
-  <key>StandardErrorPath</key><string>HOME_DIR/Library/Logs/foil-view.log</string>
-</dict></plist>
-```
-
-```sh
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.foil.view.plist
-launchctl bootout gui/$(id -u)/dev.foil.view
-```
-
-第一行启动它，第二行停止它。改过文件之后，先停止再启动。它在失败后重启，最多每 30 秒一次；正常停止后不重启。
-
-Linux，`~/.config/systemd/user/foil-view.service`。把 `YOUR_PATH` 里的每个 `%` 写成 `%%`：
-
-```ini
-[Unit]
-Description=Foil viewer
-
-[Service]
-ExecStart="FOIL" view --port PORT
-WorkingDirectory=HOME_DIR
-Environment="PATH=YOUR_PATH"
-Restart=on-failure
-RestartSec=30
-
-[Install]
-WantedBy=default.target
-```
-
-```sh
-systemctl --user enable --now foil-view
-systemctl --user disable --now foil-view
-journalctl --user -u foil-view
-```
-
-它在你登录期间运行。
+页面是桥。`foil bridge install` 写入开机文件，并打印这台机器上的地址。席位页是和那个席位的对话：邮件来自你，每条消息显示它的送达状态。给工作席位发信时，主座在下一轮醒来时看到一条指针，这条指针不叫醒任何人。已加入的主座要等它的会话在等待时才收到。一个问题可以在那个会话里回答，也可以在页面上回答；先写下的那条是两边都显示的回答。
 
 ## 桥
 
-`foil bridge install` 为本机的一个页面写入开机文件。页面只监听 `127.0.0.1`。没有令牌的请求得到空的 401。首页是和主座的对话，读的是它的邮件，所以 `foil master renew` 之后这些话还在。一个问题是一张卡片：点一个选项，或用文字回复，那条回复会以你的身份寄给主领。主座提出的初始化、设置、新舰队或合并，只有你点了才执行。页面也给出一个一次性的配对码。通知默认关闭，打开某一类之后才会发送。一条通知只是一个标签，例如 `login: 1 decision`，点开后到那张卡片，不含舰队里的正文。从另一台设备访问时，对该端口运行 `tailscale serve`，然后打开它打印的 https 地址。`PATH` 上没有 `foil-bridge` 时，`foil bridge` 打印安装方式，并不启动页面。`foil doctor` 为每一项检查打印一行。
+`foil bridge install` 为本机的页面写入开机文件。从首页打开一个席位，就可以给它发信。页面只监听 `127.0.0.1`。没有令牌的请求得到空的 401。首页是和主座的对话，读的是它的邮件，所以 `foil master renew` 之后这些话还在。一个问题是一张卡片：点一个选项，或用文字回复，那条回复会以你的身份寄给主领。主座提出的初始化、设置、新舰队或合并，只有你点了才执行。页面也给出一个一次性的配对码。通知默认关闭，打开某一类之后才会发送。一条通知只是一个标签，例如 `login: 1 decision`，点开后到那张卡片，不含舰队里的正文。从另一台设备访问时，对该端口运行 `tailscale serve`，然后打开它打印的 https 地址。`PATH` 上没有 `foil-bridge` 时，`foil bridge` 打印安装方式，并不启动页面。`foil doctor` 为每一项检查打印一行。
 
 ## 限制
 
@@ -250,8 +179,6 @@ journalctl --user -u foil-view
 模板默认是 `permission = "auto"`。省略 `permission` 时，席位无人值守地运行。把 `permission` 设成 `"ask"` 不加任何参数：无界面的一轮会拒绝任何需要审批的操作，席位报告它需要什么。把 `permission` 设成 `auto` 会插入该预设的自动批准参数。对 Claude，这些参数是 `--permission-mode` 和 `auto`。对 Codex，`auto` 是 `--dangerously-bypass-approvals-and-sandbox`，它同时关掉 Codex 自己的沙箱。Claude Code 的 auto 模式仍可能拒绝某些命令。那个席位仍然是你。
 
 运筹从不解读席位屏幕上的内容，也不解读一轮的输出。`foil seat peek` 打印 tmux 原样捕获的文本。`foil seat list` 报告席位的状态，依据是它的窗口还在不在，以及它的运行器自己记录的：一轮是否正在运行、上一轮怎样结束（你自己的 Agent 则是 `joined`）。运行器只从一轮的输出里读一样东西：对自己生成会话 id 的 Codex 和 OpenCode，读第一轮 JSON 行里的 id。Agent 是否卡住、是否做完，由它们自己写在看板文件里。运筹不抓取窗格，也不往窗格里打字。
-
-`foil view` 没有登录。你的项目文件夹只有你能读，但 `127.0.0.1` 上的端口对这台机器上的每个账号都开放，所以查看器运行期间，任何登录这台机器的人都能读到它，包括每个项目的窗格文本和看板文件。它会尽力隐藏启动命令里看起来像凭据的参数。在别人也会登录的机器上，用完就停掉它。tailnet 检查只保护 tailnet 名称：这台机器上的账号仍然可以在 `127.0.0.1` 上读到这个页面。
 
 桥只监听 `127.0.0.1`，没有令牌时回答 401。tailnet 检查是附加条件，不能代替令牌。`foil bridge install` 打印的本机地址就是这台机器的令牌；配对过的手机各自保存自己的。
 

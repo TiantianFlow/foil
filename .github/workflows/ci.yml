@@ -30,7 +30,7 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
-      - name: Install Chromium for the viewer's browser tests
+      - name: Install Chromium for the Bridge browser tests
         if: matrix.suite == 'unit'
         run: uv run --no-config --frozen --isolated --extra dev playwright install --with-deps --only-shell chromium
       - name: Test

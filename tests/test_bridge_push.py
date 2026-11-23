@@ -847,7 +847,7 @@ def browser() -> Iterator[Browser]:
 def test_a_card_link_opens_that_question(
     monkeypatch: pytest.MonkeyPatch, browser: Browser
 ) -> None:
-    monkeypatch.setattr("foil.view.tailnet", lambda: None)
+    monkeypatch.setattr("foil_bridge.tailnet.tailnet", lambda: None)
     with _short_repo(monkeypatch) as repo:
         _question(repo)
         key = _key(repo)

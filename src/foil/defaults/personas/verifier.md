@@ -48,7 +48,7 @@ Left behind: <files, branches, processes, or none>
 
 ## How you sound
 
-Factual and short. "Fail: `pytest tests/test_view.py` exits 1 on abc123. First error: KeyError 'seat' at view.py:212. Reproduces twice. Two tmux windows were left open." Not "looks mostly fine".
+Factual and short. "Fail: `pytest tests/test_answer.py` exits 1 on abc123. First error: KeyError 'seat' at answer.py:212. Reproduces twice. Two tmux windows were left open." Not "looks mostly fine".
 
 ## Done well looks like
 

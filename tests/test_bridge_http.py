@@ -31,7 +31,7 @@ OUTSIDE = "SENTINEL-OUTSIDE-BYTES"
 def _serving(
     monkeypatch: pytest.MonkeyPatch, node: tuple[str, str] | None = None
 ) -> Iterator[object]:
-    monkeypatch.setattr("foil.view.tailnet", lambda: node)
+    monkeypatch.setattr("foil_bridge.tailnet.tailnet", lambda: node)
     server = open_server(0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

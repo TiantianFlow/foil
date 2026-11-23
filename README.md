@@ -72,7 +72,7 @@ flowchart TB
 
 - **You** talk only to your own agent.
 - **Your agent, joined as lead**: any harness you like, with its normal interface. `foil seat join lead` makes it the fleet's lead, a seat with no window. It plans, staffs, integrates, and asks you in its own chat. It hears from the fleet with `foil mail wait`. Foil never launches it or types into it.
-- **foil**: this command-line tool. It launches seats in tmux. `foil send` writes one mail file for one recipient. `foil post` writes one room file for that room's members and the seats it names as `@name`, except a member whose last file there is a decline. The lead opens a room with its members, changes them, and closes it; a worker only replies. A seat's runner starts its next turn when mail or a post for it arrives, and that turn's prompt lists the new files. `foil fleet pause` stops every runner in that fleet from starting a turn, including a new seat's first turn, and queues the mail until `foil fleet resume`. A turn already running finishes. A lead Foil launched in tmux answers you with `foil send user`, which you read with `foil mail list` or `foil mail wait`. Nothing is typed into a window. `foil master start` runs one master for this machine, above every fleet. You and a lead mail it with `foil send master`. It proposes; it does not merge, kill, or archive. It runs no daemon of its own and never interprets what is on a seat's screen. `foil view` is an optional read-only page in your browser.
+- **foil**: this command-line tool. It launches seats in tmux. `foil send` writes one mail file for one recipient. `foil post` writes one room file for that room's members and the seats it names as `@name`, except a member whose last file there is a decline. The lead opens a room with its members, changes them, and closes it; a worker only replies. A seat's runner starts its next turn when mail or a post for it arrives, and that turn's prompt lists the new files. `foil fleet pause` stops every runner in that fleet from starting a turn, including a new seat's first turn, and queues the mail until `foil fleet resume`. A turn already running finishes. A lead Foil launched in tmux answers you with `foil send user`, which you read with `foil mail list` or `foil mail wait`. Nothing is typed into a window. `foil master start` runs one master for this machine, above every fleet. You and a lead mail it with `foil send master`. It proposes; it does not merge, kill, or archive. It runs no daemon of its own and never interprets what is on a seat's screen. The Bridge is the page in your browser.
 - **Implementer, reviewer**: agent CLIs run headless in tmux windows, one process per turn, each started with its role's instructions. By default only the implementer gets its own Git worktree and branch.
 - **Board**: mail, room threads, notes, and `status.md`, as plain files in the project folder `foil init` prints. That folder is outside the repository. Seats read mail with `foil mail` and other board files, including room threads, with `foil board`.
 
@@ -150,7 +150,7 @@ FOIL_FLEET=docs foil send lead "the answer"
 
 Each line `--all-fleets` prints starts with its fleet. Merge a done goal with `foil fleet merge` once that fleet's `status.md` says `state: done`. A dirty checkout or a conflict is one refusal, and the checkout stays as it was.
 
-To check on the fleets while nobody is in a conversation, schedule `foil mail wait --all-fleets --timeout 0`. It prints what is new, marks it seen, and exits; with nothing new it prints `no new mail`. For example, a crontab line every 30 minutes, with `REPO`, `YOUR_PATH`, and `HOME_DIR` filled in as for the viewer service below:
+To check on the fleets while nobody is in a conversation, schedule `foil mail wait --all-fleets --timeout 0`. It prints what is new, marks it seen, and exits; with nothing new it prints `no new mail`. For example, a crontab line every 30 minutes, `REPO` is the checkout, `YOUR_PATH` is your `PATH`, and `HOME_DIR` is your home directory:
 
 ```sh
 */30 * * * * cd REPO && PATH=YOUR_PATH foil mail wait --all-fleets --timeout 0 >> HOME_DIR/foil-inbox.log 2>&1
@@ -164,82 +164,11 @@ Run `foil seat list`. Its state column says whether a seat is `working` (a turn 
 
 ## See it in a browser
 
-`foil view`, run from any directory, serves one read-only page for every Foil project on this machine and prints its address. The page lists the projects. Each project lists its fleets and lessons, and its Settings shows the three shared lists. Each fleet opens with what needs you (the questions in `status.md` and any paused or dead seat), and a paused fleet says that runners start no new turn, then its seats grouped by state (killed folded away), its `status.md`, its posts and board files with their modified times, its overrides, and its attach command. A board file opens on its own page, and each seat shows its raw pane. It types nothing into a pane and decides nothing about progress; that is still `board/status.md`. Stopping it leaves every seat as it was.
-
-```sh
-foil view
-foil view --port 8790
-```
-
-Without `--port` it takes the first free port from 7460 to 7509. It listens on `127.0.0.1` only. To reach it from another machine, forward the port over SSH, for example `ssh -L 8790:127.0.0.1:8790 host`.
-
-To open it from your other devices on Tailscale, put `tailscale serve` in front of it, for example `tailscale serve --bg 8790`, and open the `https://` address that command prints. Nothing listens on your LAN or tailnet address; Tailscale forwards each request to `127.0.0.1`. `foil view` checks Tailscale when it starts, so start or restart it after Tailscale is up, and after this machine signs in to another account or is tagged. Under the tailnet name, it serves only requests that Tailscale marks as coming from the login that owns this machine. Funnel traffic, tagged devices, and devices of other users get an empty 403. Use the HTTPS form above, or `--http`. `tailscale serve --tcp`, `--tls-terminated-tcp`, and `tailscale funnel --tcp` forward raw bytes without the headers this check reads, so anyone they let in can read the page. `tailscale serve reset` stops sharing it.
-
-### Keep the viewer running
-
-Foil has no daemon mode. launchd on macOS and `systemd --user` on Linux run `foil view` as it is, start it at login, and restart it when it fails. Your agent can fill these in for you. One service covers every project on the machine. Give it a port outside 7460-7509, so an ad hoc `foil view` never takes it. A service keeps the page readable by every account on the machine for as long as you are logged in (see Limits), so set one up only on a machine you do not share. Replace each capitalized placeholder:
-
-- `FOIL`: the absolute path that `command -v foil` prints.
-- `PORT`: the port.
-- `YOUR_PATH`: what `echo $PATH` prints in your own terminal. A service starts with a minimal `PATH`, and without yours it cannot find tmux or your agent CLIs.
-- `HOME_DIR`: your home directory's absolute path.
-
-If you set `FOIL_HOME`, `XDG_DATA_HOME`, or `TMUX_TMPDIR`, add the same value next to `PATH`; without the same `TMUX_TMPDIR`, the viewer cannot find your seats' windows and shows every seat dead. Restart the service after you upgrade Foil.
-
-macOS, `~/Library/LaunchAgents/dev.foil.view.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict>
-  <key>Label</key><string>dev.foil.view</string>
-  <key>ProgramArguments</key><array>
-    <string>FOIL</string><string>view</string><string>--port</string><string>PORT</string>
-  </array>
-  <key>WorkingDirectory</key><string>HOME_DIR</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>YOUR_PATH</string></dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
-  <key>ThrottleInterval</key><integer>30</integer>
-  <key>StandardOutPath</key><string>HOME_DIR/Library/Logs/foil-view.log</string>
-  <key>StandardErrorPath</key><string>HOME_DIR/Library/Logs/foil-view.log</string>
-</dict></plist>
-```
-
-```sh
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.foil.view.plist
-launchctl bootout gui/$(id -u)/dev.foil.view
-```
-
-The first line starts it and the second stops it. After you edit the file, stop it before you start it again. It restarts after a failure, at most once every 30 seconds, and not after a clean stop.
-
-Linux, `~/.config/systemd/user/foil-view.service`. Write each `%` in `YOUR_PATH` as `%%`:
-
-```ini
-[Unit]
-Description=Foil viewer
-
-[Service]
-ExecStart="FOIL" view --port PORT
-WorkingDirectory=HOME_DIR
-Environment="PATH=YOUR_PATH"
-Restart=on-failure
-RestartSec=30
-
-[Install]
-WantedBy=default.target
-```
-
-```sh
-systemctl --user enable --now foil-view
-systemctl --user disable --now foil-view
-journalctl --user -u foil-view
-```
-
-It runs while you are logged in.
+The page is the Bridge. `foil bridge install` writes the boot file and prints the address on this machine. A seat's page is a chat with that seat: the mail is from you, and each message shows its delivery state. A worker's lead is told on its next wake, and that notice wakes nobody. A joined lead's mail lands when its session is waiting. A question can be answered in that session or on the page; the first answer is the one both show.
 
 ## Bridge
 
-`foil bridge install` writes a boot file for a page on this machine. The page listens on `127.0.0.1` only. A request with no token gets an empty 401. The home is the conversation with the master, read from its mail, so it is still there after `foil master renew`. A question is a card: tap an option, or reply in words, and that answer is mailed to the lead as you. A card the master proposes for init, a setting, a new fleet, or a merge runs only when you tap it. The page also shows a code that pairs a phone once. Notifications stay off until you turn a kind on. A notification is a label, such as `login: 1 decision`, and it opens that card. It does not carry the fleet's text. From another device, run `tailscale serve` on that port and open the https address it prints. When `foil-bridge` is not on `PATH`, `foil bridge` prints how to install it and does not start the page. `foil doctor` prints one line per check.
+`foil bridge install` writes a boot file for the page on this machine. Open a seat from the home to mail it. The page listens on `127.0.0.1` only. A request with no token gets an empty 401. The home is the conversation with the master, read from its mail, so it is still there after `foil master renew`. A question is a card: tap an option, or reply in words, and that answer is mailed to the lead as you. A card the master proposes for init, a setting, a new fleet, or a merge runs only when you tap it. The page also shows a code that pairs a phone once. Notifications stay off until you turn a kind on. A notification is a label, such as `login: 1 decision`, and it opens that card. It does not carry the fleet's text. From another device, run `tailscale serve` on that port and open the https address it prints. When `foil-bridge` is not on `PATH`, `foil bridge` prints how to install it and does not start the page. `foil doctor` prints one line per check.
 
 ## Limits
 
@@ -250,8 +179,6 @@ Each seat's git runs Foil's `pre-commit` and `pre-push` hooks, set only in that 
 Templates default to `permission = "auto"`. An omitted permission runs the seat unattended. Setting `permission = "ask"` adds no flag: a headless turn then refuses any action that needs approval, and the seat reports what it needed. Setting `permission = "auto"` inserts that preset's auto flags. For Claude, those flags are `--permission-mode` and `auto`. For Codex, `auto` is `--dangerously-bypass-approvals-and-sandbox`, which also turns off Codex's own sandbox. Claude Code's auto mode can still refuse some commands. That seat is still you.
 
 Foil never interprets what is on a seat's screen or in a turn's output. `foil seat peek` prints the raw tmux capture. `foil seat list` reports a seat's state from whether its window exists and from its runner's own record of whether a turn is running and how the last one ended, or `joined` for your own agent. The runner reads one thing from a turn's output: for Codex and OpenCode, which make their own session id, the id from the first turn's JSON line. Agents say whether they are blocked or done in board files. Foil does not scrape a pane and types nothing into one.
-
-`foil view` has no login. Your project folders are private to you, but a port on `127.0.0.1` is open to every account on the machine, so while the viewer runs anyone logged in can read it, including every project's pane text and board files. It hides launch-command tokens that look like credentials, as a best effort. On a machine other people log in to, stop it when you are done. The tailnet check guards only the tailnet name: an account on this machine can still read the page on `127.0.0.1`.
 
 The Bridge listens only on `127.0.0.1` and answers 401 without a token. The tailnet check is extra and does not replace that token. The desk address that `foil bridge install` prints is the token for this machine; a paired phone keeps its own.
 
