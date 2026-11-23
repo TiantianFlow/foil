@@ -892,12 +892,13 @@ class MasterRunner:
             code = self._turn(prompt, session)
             self.record["turn_started"] = None
             self.record["last_exit"] = code
-            close_read(
-                self.record, sorted(master_mail_names(self.root) - self._mail_before)
-            )
+            wrote = sorted(master_mail_names(self.root) - self._mail_before)
+            close_read(self.record, wrote)
+            # `wrote` is delivered mail, including when this turn exits non-zero.
+            delivered = set(self.record["delivered"]) | set(wrote)
             if code == 0:
-                already = set(self.record["delivered"])
-                self.record["delivered"] = sorted(already | set(self.record["inflight"]))
+                delivered |= set(self.record["inflight"])
+                self.record["delivered"] = sorted(delivered)
                 self.record["inflight"] = []
                 self.record["failures"] = 0
                 if current is not None:
@@ -905,6 +906,7 @@ class MasterRunner:
                 self.record["started"] = True
                 self.save()
                 continue
+            self.record["delivered"] = sorted(delivered)
             self.record["failures"] += 1
             waits = self.plan["retry"]
             if self.record["failures"] > len(waits):
