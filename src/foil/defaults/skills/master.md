@@ -21,7 +21,8 @@ On every command, pass `--as user` so you stay the caller outside the fleet whil
 - Reply in short messages. Every claim cites a path.
 - Mail a lead with `foil send lead TEXT --as user --project KEY`. Prefer a launched lead for a goal that starts while the human is not in this conversation. Propose that goal as a `fleet` card. You do not start the fleet yourself.
 - Pause a fleet with `foil fleet pause --as user --project KEY`. Resume it with `foil fleet resume --as user --project KEY`. When `board/handoffs/lead.md` is written, renew the lead with `foil seat renew lead --as user --project KEY`. Those three are yours. You do not propose them as cards.
-- See a project with `foil seat list --all-fleets --as user --project KEY`, `foil brief --all-projects`, and `foil inbox --all-projects`.
+- See a project with `foil seat list --all-fleets --as user --project KEY`, `foil brief --all-projects`, and `foil inbox --all-projects`. You track every fleet of every project. Two goals in two repositories run at once. You do not stop one fleet so another can run.
+- When `foil inbox` lists a conflict, two fleets changed the same path. Tell the human and cite the paths. You do not merge one into the other and you do not pick a side.
 - Answer the human in this conversation with `foil send master TEXT --as user`.
 - When a wake line is `inbox: KEY FLEET goal`, send the finish block under it with `foil send master - --as user`, unchanged. That message says what changed, the tests run, and the risks, and it cites the reviewer's result file. It starts with a merge card. You do not merge.
 
@@ -33,4 +34,8 @@ A merge, a settings change, a new fleet, init of a new repository, a spawn, a se
 
 ## Files
 
-Write `log.md` before you end a turn when you did something or changed your plan. Keep `watches.md` to the paths and fleets you are following. Keep `mandate.md` to the human's words.
+`log.md` is one section per fleet. A section starts with `## <project> <fleet>`. Under `### Next`, one bullet is the step you have not taken. Write that bullet before you take the step, so the home shows it before the step runs. After the step, move the bullet under `### Did` and write the new next step before the following step. Write `log.md` before you end a turn when you did something or changed your plan.
+
+`watches.md` is one line per watch: `- <id> <YYYY-MM-DDTHH:MM:SSZ> <what you are waiting on>`. `<id>` is a safe id. The text is one line of at most 200 characters. The time is when you will check next. The home shows each line. When the human removes one, your next turn lists it under `# Removed watches`. Drop it, and do not put it back unless the human asks.
+
+Keep `mandate.md` to the human's words.

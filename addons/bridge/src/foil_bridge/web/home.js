@@ -103,6 +103,83 @@ function showCard(item, row) {
   item.append(card);
 }
 
+function showFleets(groups) {
+  const box = document.querySelector("#fleets");
+  box.replaceChildren();
+  if (!groups.length) {
+    line(box, "No fleet.", "quiet");
+    return;
+  }
+  for (const group of groups) {
+    line(box, group.project, "who");
+    const list = document.createElement("ul");
+    for (const row of group.fleets) {
+      const item = document.createElement("li");
+      const anchor = document.createElement("a");
+      const query = new URLSearchParams({ target: row.target, token });
+      anchor.href = "/evidence?" + query.toString();
+      anchor.textContent = row.fleet;
+      item.append(anchor);
+      const detail = document.createElement("span");
+      detail.textContent =
+        row.rank === null || row.rank === undefined
+          ? " No inbox item."
+          : " rank " + row.rank + " " + row.kind + ": " + row.title;
+      item.append(detail);
+      list.append(item);
+    }
+    box.append(list);
+  }
+}
+
+function showPlan(log) {
+  const box = document.querySelector("#plan");
+  box.replaceChildren();
+  const fleets = log.fleets || [];
+  if (!fleets.length) {
+    line(box, "No plan.", "quiet");
+    return;
+  }
+  for (const fleet of fleets) {
+    line(box, fleet.project + " / " + fleet.fleet, "who");
+    line(box, "Did");
+    if (!fleet.did.length) line(box, "None.", "quiet");
+    for (const item of fleet.did) line(box, item);
+    line(box, "Next");
+    if (!fleet.next.length) line(box, "None.", "quiet");
+    for (const item of fleet.next) line(box, item);
+  }
+  if (log.truncated) line(box, "truncated", "quiet");
+}
+
+function showWatches(rows) {
+  const box = document.querySelector("#watches");
+  box.replaceChildren();
+  if (!rows.length) {
+    line(box, "None.", "quiet");
+    return;
+  }
+  for (const row of rows) {
+    const item = document.createElement("p");
+    item.textContent = row.id + "  " + row.check + "  " + row.on + " ";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Remove";
+    button.addEventListener("click", () => removeWatch(row.id, item));
+    item.append(button);
+    box.append(item);
+  }
+}
+
+async function removeWatch(id, item) {
+  try {
+    await post("/v1/watch", { id });
+    await load();
+  } catch (error) {
+    line(item, error.message, "quiet");
+  }
+}
+
 function showWorking(working) {
   const section = document.querySelector("#working");
   const tail = document.querySelector("#tail");
@@ -129,6 +206,9 @@ async function load() {
   }
   const body = await response.json();
   showWorking(body.working);
+  showFleets(body.fleets || []);
+  showPlan(body.log || { fleets: [] });
+  showWatches(body.watches || []);
   const questions = document.querySelector("#questions");
   const field = document.activeElement;
   const typing = field && field.tagName === "TEXTAREA" && questions.contains(field);

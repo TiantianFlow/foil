@@ -117,6 +117,7 @@ _ALLOWED = {
     "master-start": {_OUTSIDE},
     "master-stop": {_OUTSIDE},
     "master-renew": {_OUTSIDE},
+    "master-unwatch": {_OUTSIDE},
     "doctor": {_OUTSIDE},
     "bridge": {_OUTSIDE},
 }
@@ -876,6 +877,23 @@ def master_stop(
 
     with _enter(project, fleet, caller, inside=inside, pinned=pinned):
         stop()
+    return {"ok": True}
+
+
+def master_unwatch(
+    project: Path | None,
+    fleet: str,
+    caller: str,
+    watch_id: str,
+    *,
+    inside: bool = False,
+    pinned: bool = True,
+) -> dict:
+    _authorize("master-unwatch", caller=caller, inside=inside)
+    from foil.master import unwatch
+
+    with _enter(project, fleet, caller, inside=inside, pinned=pinned):
+        unwatch(watch_id)
     return {"ok": True}
 
 

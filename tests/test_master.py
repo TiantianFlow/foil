@@ -21,9 +21,11 @@ from foil.master import (
     close_read,
     deliver,
     directory,
+    drop_removed,
     empty_record,
     load_record,
     open_read,
+    read_removed,
     seed,
 )
 from foil.project import foil_root, store_root
@@ -114,6 +116,10 @@ def test_charter_is_a_control_plane() -> None:
     assert "cites the reviewer's result file" in text
     assert "merge card" in text
     assert "You do not merge." in text
+    assert "Two goals in two repositories run at once." in text
+    assert "Write that bullet before you take the step" in text
+    assert "# Removed watches" in text
+    assert "you do not pick a side" in text
     for forbidden in ("foil seat kill", "foil seat archive", "git push", "foil fleet merge"):
         assert forbidden not in text
 
@@ -164,6 +170,8 @@ def test_seed_includes_the_charter_and_cuts_a_long_log(tmp_path: Path) -> None:
     assert "... truncated" in text
     assert "inbox: proj fleet question:one" in text
     assert "mail: " in text
+    assert "# Removed watches" in text
+    assert "(none)" in text
 
 
 def test_start_stop_and_renew(
@@ -566,3 +574,139 @@ def test_a_failed_attempt_keeps_its_reply(
         with contextlib.suppress(OSError):
             os.killpg(process.pid, signal.SIGTERM)
         process.wait(timeout=10)
+
+
+def test_unwatch_records_the_line_and_leaves_a_later_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    root = directory()
+    (root / "run").mkdir(parents=True)
+    (root / "watches.md").write_text(
+        "- ci 2026-11-23T12:00:00Z password=hunter2\n"
+        "keep this line\n"
+        "- ci 2026-11-23T13:00:00Z again\n"
+        "- next 2026-11-23T14:00:00Z the other one\n",
+        encoding="utf-8",
+    )
+    (root / "run" / "removed.json").write_text("not json\n", encoding="utf-8")
+    capsys.readouterr()
+    assert main(["master", "unwatch", "ci"]) == 0
+    assert capsys.readouterr().out == "foil: removed watch ci\n"
+    assert (root / "watches.md").read_text(encoding="utf-8") == (
+        "keep this line\n- next 2026-11-23T14:00:00Z the other one\n"
+    )
+    removed = json.loads((root / "run" / "removed.json").read_text(encoding="utf-8"))
+    assert removed == [
+        {"check": "2026-11-23T12:00:00Z", "id": "ci", "on": "password=hunter2"}
+    ]
+    assert main(["master", "unwatch", "next"]) == 0
+    drop_removed(root, ["ci"])
+    assert [item["id"] for item in read_removed(root)] == ["next"]
+    assert main(["master", "unwatch", "missing"]) == 1
+    assert capsys.readouterr().err == "foil: unknown watch 'missing'\n"
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    assert main(["master", "unwatch", "ci"]) == 1
+    assert capsys.readouterr().err == "foil: not allowed\n"
+    assert repo.is_dir()
+
+
+def test_unwatch_does_not_follow_a_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = directory()
+    root.mkdir(parents=True)
+    target = tmp_path / "elsewhere.md"
+    target.write_text("- ci 2026-11-23T12:00:00Z the review\n", encoding="utf-8")
+    (root / "watches.md").symlink_to(target)
+    assert main(["master", "unwatch", "ci"]) == 1
+    assert capsys.readouterr().err == "foil: refusing symlink\n"
+    assert "the review" in target.read_text(encoding="utf-8")
+
+
+def test_a_recorded_removal_wakes_the_first_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = directory()
+    root.mkdir(parents=True)
+    (root / "watches.md").write_text(
+        "- ci 2026-11-23T12:00:00Z the review\n", encoding="utf-8"
+    )
+    assert main(["master", "unwatch", "ci"]) == 0
+    capsys.readouterr()
+    log = _probe(tmp_path, "probe")
+    try:
+        assert main(["master", "start", "--harness", "probe"]) == 0
+        _until(lambda: len(_lines(log)) == 1)
+        assert "- ci 2026-11-23T12:00:00Z the review" in _lines(log)[0][1]
+        _until(lambda: read_removed(directory()) == [])
+    finally:
+        _stop()
+
+
+def test_removing_a_watch_is_in_the_next_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = directory()
+    root.mkdir(parents=True)
+    (root / "watches.md").write_text(
+        "- ci 2026-11-23T12:00:00Z the review\n", encoding="utf-8"
+    )
+    log = _probe(tmp_path, "probe")
+    try:
+        assert main(["master", "start", "--harness", "probe"]) == 0
+        _until(lambda: load_record(directory())["baselined"])
+        assert _lines(log) == []
+        capsys.readouterr()
+        assert main(["master", "unwatch", "ci"]) == 0
+        _until(lambda: len(_lines(log)) == 1)
+        prompt = _lines(log)[0][1]
+        assert "# Removed watches" in prompt
+        assert "- ci 2026-11-23T12:00:00Z the review" in prompt
+        _until(lambda: read_removed(directory()) == [])
+        assert "ci" not in (directory() / "watches.md").read_text(encoding="utf-8")
+    finally:
+        _stop()
+
+
+def test_the_log_shows_the_next_step_before_it_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from foil_bridge.home import snapshot
+
+    monkeypatch.chdir(tmp_path)
+    root = directory()
+    root.mkdir(parents=True)
+    marker = tmp_path / "marker"
+    script = tmp_path / "step.py"
+    logged = tmp_path / "step.log"
+    script.write_text(
+        "import json, sys, time\n"
+        "from pathlib import Path\n"
+        f"Path({str(logged)!r}).write_text(json.dumps(sys.argv), encoding='utf-8')\n"
+        f"Path({str(root / 'log.md')!r}).write_text(\n"
+        "    '## demo main\\n### Next\\n- record the choice\\n',\n"
+        "    encoding='utf-8',\n"
+        ")\n"
+        "time.sleep(3)\n"
+        f"Path({str(marker)!r}).write_text('done\\n', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    _preset(store_root(), "step", [sys.executable, str(script), "{prompt}", "{session_id}"])
+    try:
+        assert main(["master", "start", "--harness", "step"]) == 0
+        _until(lambda: load_record(directory())["baselined"])
+        assert main(["send", "master", "go"]) == 0
+
+        def shown() -> bool:
+            rows = snapshot()["log"]["fleets"]
+            return any("record the choice" in item for row in rows for item in row["next"])
+
+        _until(shown)
+        assert not marker.exists()
+        _until(marker.exists)
+    finally:
+        _stop()

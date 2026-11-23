@@ -114,7 +114,7 @@ def test_home_answers_on_a_tap_and_leaves_a_card_until_then(
         page.on("pageerror", lambda exc: errors.append(str(exc)))
         try:
             page.goto(f"{origin}/?token={token}")
-            expect(page.get_by_text("Which reading?")).to_be_visible()
+            expect(page.get_by_text("Which reading?", exact=True)).to_be_visible()
             expect(page.get_by_role("button", name="Apply this setting")).to_be_visible()
             assert api.roster_show(repo, "main", "user", "lead")["permission"] == "auto"
             page.get_by_role("button", name="keep", exact=True).click()
@@ -352,6 +352,48 @@ def test_selecting_lines_sends_them_to_the_owner(
             assert "lines: 10-11" in body
             assert "10|beta" in body
             assert [item["to"] for item in pending_pointers(fleet_dir(repo))] == ["implementer-1"]
+        finally:
+            context.close()
+            server.stopped.set()
+            server.watch.stop()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+        assert errors == []
+
+
+def test_home_shows_the_next_step_and_remove_clears_a_watch(
+    monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> None:
+    from foil.master import directory
+
+    monkeypatch.setattr("foil_bridge.tailnet.tailnet", lambda: None)
+    with _short_repo(monkeypatch):
+        root = directory()
+        root.mkdir(parents=True)
+        (root / "log.md").write_text(
+            "## demo main\n### Next\n- record the choice\n", encoding="utf-8"
+        )
+        (root / "watches.md").write_text(
+            "- ci 2026-11-23T12:00:00Z the review\n", encoding="utf-8"
+        )
+        server = open_server(0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+        token = read_desk_token()
+        origin = f"http://127.0.0.1:{port}"
+        context = browser.new_context()
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        try:
+            page.goto(f"{origin}/?token={token}")
+            expect(page.locator("#plan")).to_contain_text("record the choice")
+            expect(page.locator("#watches")).to_contain_text("the review")
+            page.get_by_role("button", name="Remove").click()
+            expect(page.locator("#watches")).to_contain_text("None.")
+            assert "ci" not in (root / "watches.md").read_text(encoding="utf-8")
         finally:
             context.close()
             server.stopped.set()

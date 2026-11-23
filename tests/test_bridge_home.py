@@ -314,3 +314,65 @@ def test_the_pane_tail_is_display_only(
         "foil.master.TmuxController.matches_window", lambda *_args, **_kwargs: False
     )
     assert snapshot()["working"]["tail"] == ""
+
+
+def test_the_home_shows_the_plan_and_remove_drops_a_watch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = directory()
+    root.mkdir(parents=True)
+    (root / "log.md").write_text(
+        "## demo main\n### Did\n- mailed the lead\n### Next\n- record the choice\n",
+        encoding="utf-8",
+    )
+    (root / "watches.md").write_text(
+        "- ci 2026-11-23T12:00:00Z the review\n"
+        "- token 2026-11-23T12:00:00Z password=hunter2\n"
+        "not a watch\n",
+        encoding="utf-8",
+    )
+    view = snapshot()
+    assert view["log"]["fleets"] == [
+        {
+            "project": "demo",
+            "fleet": "main",
+            "did": ["mailed the lead"],
+            "next": ["record the choice"],
+        }
+    ]
+    assert view["watches"][0] == {
+        "id": "ci",
+        "check": "2026-11-23T12:00:00Z",
+        "on": "the review",
+    }
+    assert "hunter2" not in view["watches"][1]["on"]
+    with _serving(monkeypatch) as server:
+        port = server.server_address[1]
+        token = read_desk_token()
+        status, body = _request(port, "GET", "/v1/home", token=token)
+        assert status == 200
+        payload = json.loads(body)
+        assert payload["log"]["fleets"][0]["next"] == ["record the choice"]
+        status, body = _request(
+            port,
+            "POST",
+            "/v1/watch",
+            token=token,
+            headers=_origin(port),
+            body={"id": "ci", "extra": True},
+        )
+        assert status == 400 and b"unknown watch" in body
+        status, body = _request(
+            port,
+            "POST",
+            "/v1/watch",
+            token=token,
+            headers=_origin(port),
+            body={"id": "ci"},
+        )
+        assert status == 200
+        assert "ci" not in (root / "watches.md").read_text(encoding="utf-8")
+        status, body = _request(port, "GET", "/v1/home", token=token)
+        ids = [item["id"] for item in json.loads(body)["watches"]]
+        assert ids == ["token"]

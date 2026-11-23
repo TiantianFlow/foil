@@ -11,7 +11,7 @@ from foil_bridge.evidence import _fleet as fleet_page
 from foil_bridge.pages import evidence_html
 
 from foil.cli import main
-from foil.inbox import _goal, collect_brief, format_brief
+from foil.inbox import _goal, collect_brief, fleet_groups, format_brief
 from foil.lifecycle import TmuxController
 from foil.project import foil_root
 from tests.test_spawn import _repo
@@ -401,6 +401,44 @@ def test_a_page_shows_a_mapping_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     model = fleet_page({"project": "local", "fleet": "main"}, repo)
     html = evidence_html(model, "token").decode()
     assert "Which reading?" in html
+
+
+def test_fleets_group_by_repo_and_sort_by_top_rank(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _repo(tmp_path, monkeypatch)
+    second = tmp_path / "other"
+    second.mkdir()
+    from tests.test_init import _init_git_repository
+
+    _init_git_repository(second)
+    monkeypatch.chdir(second)
+    assert main(["init"]) == 0
+    monkeypatch.chdir(first)
+    zeta = _fleet(first, "zeta")
+    _registry(zeta / "run" / "registry.json", {})
+    _status(
+        zeta / "board",
+        "---\ncontract: status/v1\nstate: working\nquestions:\n  - Which way?\n---\n",
+    )
+    alpha = _fleet(first, "alpha")
+    _registry(alpha / "run" / "registry.json", {})
+    _status(
+        alpha / "board",
+        "---\ncontract: status/v1\nstate: done\nquestions: []\n---\n",
+    )
+    _status(
+        foil_root(second) / "fleets" / "main" / "board",
+        "---\ncontract: status/v1\nstate: blocked\nquestions: []\n---\n",
+    )
+    groups = fleet_groups()
+    by_key = {group["project"]: group["fleets"] for group in groups}
+    first_key = foil_root(first).name
+    second_key = foil_root(second).name
+    assert [row["fleet"] for row in by_key[first_key]] == ["zeta", "alpha", "main"]
+    assert [row["rank"] for row in by_key[first_key]] == [0, 4, None]
+    assert by_key[second_key][0]["rank"] == 3
+    assert [group["project"] for group in groups] == [first_key, second_key]
 
 
 def test_the_goal_is_the_mandate_done_when_then_its_first_line() -> None:
