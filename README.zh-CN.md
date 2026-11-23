@@ -150,13 +150,13 @@ FOIL_FLEET=docs foil send lead "the answer"
 
 `--all-fleets` 打印的每一行都以它的舰队开头。那个舰队的 `status.md` 写着 `state: done` 时，用 `foil fleet merge` 合并目标分支。工作区不干净或发生冲突时，命令只拒绝一行，检出保持原样。
 
-没人在对话里时，要查看各个舰队，可以定时运行 `foil mail wait --all-fleets --timeout 0`。它打印新到的内容、标为已读，然后退出；没有新内容时打印 `no new mail`。例如每 30 分钟一次的 crontab 行，`REPO` 是检出目录，`YOUR_PATH` 是你的 `PATH`，`HOME_DIR` 是你的主目录：
+没人在对话里时，要查看各个舰队，可以定时运行 `foil mail wait --all-fleets --timeout 0`。它打印新到的内容、标为已读，然后退出；没有新内容时打印 `no new mail`。间隔按工作所处的阶段来定。每五到十分钟一次，只用于舰队正在执行你推动的变更时，而且最多几个小时。工作在等一件耗时的事，比如观察期、采集基线或一次很长的测试时，改成每小时一次，再放宽到每隔几小时或每天一次；五到十分钟一次的定时不要连续跑超过一天。给定时写明结束条件，比如那个舰队的 `status.md` 写着 `state: done`，条件满足后就删掉它。例如每小时一次的 crontab 行，`REPO` 是检出目录，`YOUR_PATH` 是你的 `PATH`，`HOME_DIR` 是你的主目录：
 
 ```sh
-*/30 * * * * cd REPO && PATH=YOUR_PATH foil mail wait --all-fleets --timeout 0 >> HOME_DIR/foil-inbox.log 2>&1
+0 * * * * cd REPO && PATH=YOUR_PATH foil mail wait --all-fleets --timeout 0 >> HOME_DIR/foil-inbox.log 2>&1
 ```
 
-回来时读那个日志，或者交给你的 Agent。
+回来时读那个日志，或者交给你的 Agent。Agent 自己安排的定时查看也按同样的规则，加入主座的技能（`skills/joined.md`）里写明了。
 
 ### 如果什么都没发生
 

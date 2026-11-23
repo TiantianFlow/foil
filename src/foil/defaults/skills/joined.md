@@ -88,6 +88,15 @@ A background wait prints what is new but leaves it new, so a wake your harness d
 
 Stop re-arming the wait after three quiet timeouts in a row, and tell the human the fleet is quiet. A seat that dies while you wait becomes mail from `foil` that names it.
 
+A scheduled check is for when no session of yours is running: your harness's scheduler or cron runs `foil mail wait --all-fleets --timeout 0` later, which prints what is new, marks it seen, and exits, with `no new mail` when nothing is new. Because it marks items seen, a later `foil mail wait --timeout 0` no longer shows them. A cron line therefore appends its output to a log file, and your next session reads that log before anything else. Each check that starts a session resends your whole context, so pick the interval from the work's phase:
+
+- Every five to ten minutes only while a seat is mid-task on a change you are driving, and for a few hours at most.
+- Once the work waits on something long, such as a soak, a baseline, a long test run, or the human, hourly, then every few hours or daily. Each time a check finds nothing new, stretch the interval.
+- Never leave a five- or ten-minute schedule running for more than a day.
+- When you know when the next milestone lands, schedule one check for then instead of a repeating one.
+
+Give every schedule an end condition, such as that fleet's `status.md` reaching `state: done` or the human's answer arriving, and delete the schedule once it holds. Tell the human the interval, the end condition, and the log file when you set it up.
+
 After each spawn, wait for that seat's first mail or board file. If none comes in a few minutes, peek it.
 
 ## Several goals
@@ -101,7 +110,7 @@ foil seat list --all-fleets
 FOIL_FLEET=docs foil send lead "the answer"
 ```
 
-Each line `foil mail wait --all-fleets` prints starts with its fleet. Merge a done goal with `foil fleet merge` once that fleet's `status.md` says `state: done`. To check on the fleets while nobody is in a conversation, use the README recipe for a scheduled check.
+Each line `foil mail wait --all-fleets` prints starts with its fleet. Merge a done goal with `foil fleet merge` once that fleet's `status.md` says `state: done`. To check on the fleets while nobody is in a conversation, use a scheduled check as Hearing from the fleet says.
 
 ## The viewer
 
