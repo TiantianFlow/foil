@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -57,6 +58,29 @@ def _ahead(repo: Path, branch: str, name: str, text: str) -> str:
 
 def _items(repo: Path) -> list[dict]:
     return collect(repo, ["main"], foil_root(repo).name)
+
+
+def _both(repo: Path) -> list[dict]:
+    return collect(repo, ["main", "side"], foil_root(repo).name)
+
+
+def _side(repo: Path) -> None:
+    side = foil_root(repo) / "fleets" / "side" / "run"
+    side.mkdir(parents=True)
+    (side / "registry.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "fleet_id": "side",
+                "tmux_session": "",
+                "lead": "",
+                "seats": {},
+                "rotation": {},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _merge_item(repo: Path) -> dict | None:
@@ -294,3 +318,50 @@ def _finish(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["fleet", "merge"]) == 0
     capsys.readouterr()
     assert (repo / "from-goal.txt").is_file()
+
+
+def test_different_hunks_of_one_file_are_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo, "note.txt", "a\nb\nc\n", "base")
+    _side(repo)
+    current = _branch(repo)
+    _git(repo, "checkout", "-b", "foil/goal-main")
+    _commit(repo, "note.txt", "A\nb\nc\n", "main line")
+    _git(repo, "checkout", current)
+    _git(repo, "checkout", "-b", "foil/goal-side")
+    _commit(repo, "note.txt", "a\nb\nC\n", "side line")
+    _git(repo, "checkout", current)
+    head = _head(repo)
+
+    assert main(["fleet", "merge"]) == 1
+    assert capsys.readouterr().err == "foil: fleets touch the same files\n"
+    assert _head(repo) == head
+    assert _branch(repo) == current
+    assert (repo / "note.txt").read_text(encoding="utf-8") == "a\nb\nc\n"
+    assert _git(repo, "rev-parse", "-q", "--verify", "MERGE_HEAD", check=False).returncode != 0
+    conflicts = [item for item in _both(repo) if item["kind"] == "conflict"]
+    assert {item["fleet"] for item in conflicts} == {"main", "side"}
+    assert conflicts[0]["subject"] == "conflict"
+    assert "same files as" in conflicts[0]["title"]
+    assert conflicts[0]["evidence"] == "note.txt"
+    merge = _merge_item(repo)
+    assert merge is not None
+    assert merge["title"] == "fleets touch the same files"
+
+
+def test_a_second_fleet_on_another_file_still_merges(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _commit(repo, "base.txt", "base\n", "base")
+    _side(repo)
+    current = _ahead(repo, "foil/goal-main", "from-goal.txt", "from the goal\n")
+    _ahead(repo, "foil/goal-side", "from-side.txt", "from the side\n")
+    assert not any(item["kind"] == "conflict" for item in _both(repo))
+    capsys.readouterr()
+    assert main(["fleet", "merge"]) == 0
+    assert capsys.readouterr().out == f"foil: merged foil/goal-main into {current}\n"
+    assert (repo / "from-goal.txt").is_file()
+    assert not (repo / "from-side.txt").exists()

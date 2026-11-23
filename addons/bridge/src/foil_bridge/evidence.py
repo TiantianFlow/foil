@@ -11,13 +11,13 @@ from typing import Any
 
 from foil.delivery import fleet_paused
 from foil.errors import FoilError, shown
-from foil.inbox import collect, collect_brief
+from foil.inbox import collect_brief, fleet_groups
 from foil.journal import read_log
 from foil.journal import render as render_event
 from foil.lifecycle import seat_rows
 from foil.project import checkout_for_key, foil_root
 from foil.quote import decision_lines
-from foil.store import fleet_dir, fleet_ids, load_registry
+from foil.store import fleet_dir, load_registry
 from foil_bridge import home
 from foil_bridge.controls import needs_confirm, next_roles
 from foil_bridge.terminal import attach_command, owned_worktree
@@ -58,29 +58,19 @@ def page(target: str, level: str = "summary") -> dict[str, Any] | None:
 def _fleets(described: dict[str, str], checkout: Path) -> dict[str, Any]:
     project = described["project"]
     rows = []
-    for fleet in fleet_ids(checkout):
-        directory = fleet_dir(checkout, fleet)
-        board = directory / "board"
-        run = directory / "run"
-        # A symlinked board or run is followed by later reads. A symlinked
-        # status.md is ignored by the inbox, so mail and seats still count.
-        if _symlink(board) is not False or _symlink(run) is not False:
-            items = []
-        else:
-            try:
-                items = collect(checkout, [fleet], project)
-            except (FoilError, OSError):
-                items = []
-        top = items[0] if items else None
-        rows.append(
-            {
-                "fleet": fleet,
-                "target": f"projects/{project}/fleets/{fleet}",
-                "rank": None if top is None else top["rank"],
-                "kind": "" if top is None else top["kind"],
-                "title": "" if top is None else mask(str(top["title"])),
-            }
-        )
+    for group in fleet_groups():
+        if group["project"] != project:
+            continue
+        for row in group["fleets"]:
+            rows.append(
+                {
+                    "fleet": row["fleet"],
+                    "target": f"projects/{project}/fleets/{row['fleet']}",
+                    "rank": row["rank"],
+                    "kind": row["kind"],
+                    "title": mask(str(row["title"])) if row["title"] else "",
+                }
+            )
     return {
         "kind": "fleets",
         "title": "Fleets",

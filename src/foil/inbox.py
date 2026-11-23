@@ -18,7 +18,7 @@ from foil.journal import read_log
 from foil.journal import render as render_event
 from foil.lifecycle import seat_rows
 from foil.mail_ops import undelivered
-from foil.merge import recorded_refusal
+from foil.merge import overlaps, recorded_refusal
 from foil.project import foil_root, project_record, store_root
 from foil.store import SAFE_ID, fleet_dir, fleet_ids, load_registry
 
@@ -34,6 +34,7 @@ _RANKS = {
     "paused": 4,
     "done": 4,
     "merge": 4,
+    "conflict": 4,
 }
 _STUCK = {"seat", "undelivered", "blocked"}
 _FIELDS = (
@@ -232,7 +233,24 @@ def _pause_time(fleet: Path, seat: str) -> str:
     return found
 
 
-def fleet_items(root: Path, fleet: str, project: str) -> list[dict[str, Any]]:
+def _fit(parts: list[str], limit: int) -> str:
+    chosen: list[str] = []
+    for part in parts:
+        trial = ", ".join([*chosen, part])
+        if len(trial) > limit:
+            break
+        chosen.append(part)
+    if chosen:
+        return ", ".join(chosen)
+    return parts[0][:limit] if parts else ""
+
+
+def fleet_items(
+    root: Path,
+    fleet: str,
+    project: str,
+    shared: dict[str, tuple[list[str], list[str]]] | None = None,
+) -> list[dict[str, Any]]:
     """One fleet's items, in source order. The caller sorts across fleets."""
 
     directory = fleet_dir(root, fleet)
@@ -394,6 +412,25 @@ def fleet_items(root: Path, fleet: str, project: str) -> list[dict[str, Any]]:
                 fleet=fleet,
             )
         )
+    if shared is None:
+        try:
+            shared = overlaps(root)
+        except (FoilError, OSError):
+            shared = {}
+    touch = shared.get(fleet)
+    if touch:
+        others, paths = touch
+        items.append(
+            _item(
+                "conflict",
+                id="conflict",
+                subject="conflict",
+                title=_fit([f"same files as {', '.join(others)}"], 200),
+                evidence=_fit(paths, 400),
+                project=project,
+                fleet=fleet,
+            )
+        )
     return items
 
 
@@ -406,9 +443,13 @@ def _ordered(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def collect(root: Path, fleets: list[str], project: str) -> list[dict[str, Any]]:
+    try:
+        shared = overlaps(root)
+    except (FoilError, OSError):
+        shared = {}
     found = []
     for fleet in fleets:
-        found.extend(fleet_items(root, fleet, project))
+        found.extend(fleet_items(root, fleet, project, shared))
     return _ordered(found)
 
 
@@ -438,6 +479,61 @@ def projects() -> list[tuple[str, Path]]:
             continue
         found.append((folder.name, Path(checkout)))
     return found
+
+
+def fleet_groups() -> list[dict[str, Any]]:
+    """Every fleet, grouped by project.
+
+    A group is ordered by its first fleet's top inbox rank, then the project
+    key. A fleet is ordered by that rank, then its id. No inbox item sorts
+    after a fleet that has one. A symlinked ``board`` or ``run`` has no item.
+    """
+
+    groups = []
+    for key, root in projects():
+        blocked = []
+        usable = []
+        for fleet in fleet_ids(root):
+            directory = fleet_dir(root, fleet)
+            if (directory / "board").is_symlink() or (directory / "run").is_symlink():
+                blocked.append(fleet)
+            else:
+                usable.append(fleet)
+        try:
+            items = collect(root, usable, key) if usable else []
+        except (FoilError, OSError):
+            items = []
+        top = {}
+        for item in items:
+            top.setdefault(item["fleet"], item)
+        rows = []
+        for fleet in [*usable, *blocked]:
+            item = top.get(fleet)
+            rows.append(
+                {
+                    "fleet": fleet,
+                    "rank": None if item is None else item["rank"],
+                    "kind": "" if item is None else item["kind"],
+                    "title": "" if item is None else item["title"],
+                }
+            )
+        rows.sort(
+            key=lambda row: (
+                row["rank"] is None,
+                0 if row["rank"] is None else row["rank"],
+                row["fleet"],
+            )
+        )
+        if rows:
+            groups.append({"project": key, "fleets": rows})
+    groups.sort(
+        key=lambda group: (
+            group["fleets"][0]["rank"] is None,
+            0 if group["fleets"][0]["rank"] is None else group["fleets"][0]["rank"],
+            group["project"],
+        )
+    )
+    return groups
 
 
 def collect_projects() -> list[dict[str, Any]]:

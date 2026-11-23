@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import Any
 
 from foil.answer import question_cards
-from foil.api import answer, fleet_merge, init, roster_update, send
+from foil.api import answer, fleet_merge, init, master_unwatch, roster_update, send
 from foil.board import mail_name
 from foil.board_ops import split_front_matter
 from foil.errors import FoilError
+from foil.inbox import fleet_groups
 from foil.master import (
     conversation,
     directory,
@@ -24,12 +25,18 @@ from foil.master import (
     pane_tail,
     queue_reason,
     turn_running,
+    watch_items,
 )
 from foil.project import checkout_for_key, store_root
 from foil.store import MAX_BYTES, SAFE_ID
 from foil_bridge import controls, settings
+from foil_bridge.transcript import mask
 
 BODY_CAP = 8 * 1024
+_LOG_HEAD = re.compile(
+    r"^## ([A-Za-z0-9][A-Za-z0-9-]{0,63}) ([A-Za-z0-9][A-Za-z0-9_-]{0,127})$"
+)
+_BULLET = 400
 _KEY = re.compile(r"[a-z]+")
 _SAFE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
 _PROJECT = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,200}")
@@ -331,6 +338,87 @@ def _card_view(fields: dict[str, str]) -> dict[str, Any]:
     return {"action": action, "label": _LABEL[action], "fields": shown, **flags}
 
 
+def parse_log(text: str) -> list[dict[str, Any]]:
+    """Fleet sections in file order. A heading that does not match is skipped."""
+
+    sections: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    bucket: str | None = None
+
+    def close() -> None:
+        nonlocal current
+        if current is not None:
+            sections.append(current)
+            current = None
+
+    for line in text.splitlines():
+        head = _LOG_HEAD.fullmatch(line)
+        if head:
+            close()
+            current = {
+                "project": head.group(1),
+                "fleet": head.group(2),
+                "did": [],
+                "next": [],
+            }
+            bucket = None
+            continue
+        if current is None:
+            continue
+        if line == "### Did":
+            bucket = "did"
+            continue
+        if line == "### Next":
+            bucket = "next"
+            continue
+        if line.startswith("### "):
+            bucket = None
+            continue
+        if bucket and line.startswith("- "):
+            bullet = line[2:].strip()
+            if not bullet:
+                continue
+            if len(bullet) > _BULLET:
+                bullet = bullet[:_BULLET]
+            current[bucket].append(mask(bullet))
+    close()
+    return sections
+
+
+def master_log(root: Path) -> dict[str, Any]:
+    """The first 8 KiB of `log.md`, parsed for the page. A symlink is empty."""
+
+    path = root / "log.md"
+    if path.is_symlink() or not path.is_file():
+        return {"truncated": False, "fleets": []}
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return {"truncated": False, "fleets": []}
+    text = data[:BODY_CAP].decode("utf-8", errors="ignore")
+    return {"truncated": len(data) > BODY_CAP, "fleets": parse_log(text)}
+
+
+def shown_watches(root: Path) -> list[dict[str, str]]:
+    return [{**item, "on": mask(item["on"])} for item in watch_items(root)]
+
+
+def shown_fleets() -> list[dict[str, Any]]:
+    groups = []
+    for group in fleet_groups():
+        rows = []
+        for row in group["fleets"]:
+            rows.append(
+                {
+                    **row,
+                    "title": mask(str(row["title"])) if row["title"] else "",
+                    "target": f"projects/{group['project']}/fleets/{row['fleet']}",
+                }
+            )
+        groups.append({"project": group["project"], "fleets": rows})
+    return groups
+
+
 def snapshot() -> dict[str, Any]:
     """The home, computed from files. This stores nothing."""
 
@@ -391,7 +479,17 @@ def snapshot() -> dict[str, Any]:
         "messages": messages,
         "working": {"running": running, "tail": tail},
         "questions": questions,
+        "fleets": shown_fleets(),
+        "log": master_log(root),
+        "watches": shown_watches(root),
     }
+
+
+def remove_watch(watch_id: str) -> dict[str, bool]:
+    """The Remove button. The same code as `foil master unwatch`."""
+
+    master_unwatch(None, "main", "user", watch_id)
+    return {"ok": True}
 
 
 def post_message(text: str) -> str:

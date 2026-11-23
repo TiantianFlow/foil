@@ -266,6 +266,9 @@ def _build_parser() -> argparse.ArgumentParser:
     master_renew = master_sub.add_parser("renew", help="Replace the master's harness")
     master_renew.add_argument("--harness", metavar="ID/MODEL")
     _shared(master_renew)
+    master_unwatch = master_sub.add_parser("unwatch", help="Remove one watch")
+    master_unwatch.add_argument("ID")
+    _shared(master_unwatch)
 
     doctor = sub.add_parser("doctor", help="Check the Bridge")
     _shared(doctor)
@@ -646,6 +649,10 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
             )
         elif args.master_command == "stop":
             api.master_stop(project, fleet, caller, inside=inside, pinned=pinned)
+        elif args.master_command == "unwatch":
+            api.master_unwatch(
+                project, fleet, caller, args.ID, inside=inside, pinned=pinned
+            )
         else:
             api.master_renew(
                 project, fleet, caller, inside=inside, pinned=pinned, harness=args.harness

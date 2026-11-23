@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import secrets
 import signal
 import stat
@@ -74,6 +75,10 @@ _PLAN_FIELDS = {
     "root",
 }
 _RETRY = [30, 120, 480]
+_WATCH_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_WATCH_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+_ON_CAP = 200
+_READ = object()
 
 
 def directory() -> Path:
@@ -683,17 +688,154 @@ def _file(root: Path, name: str) -> str:
         return "(unreadable)\n"
 
 
+def _watch_line(line: str) -> dict[str, str] | None:
+    if not line.startswith("- "):
+        return None
+    ident, sep, tail = line[2:].partition(" ")
+    if not sep or not _WATCH_ID.fullmatch(ident):
+        return None
+    when, sep, on = tail.partition(" ")
+    if not sep or not _WATCH_TIME.fullmatch(when):
+        return None
+    text = on.strip()
+    if not text or len(text) > _ON_CAP or any(ord(char) < 32 for char in text):
+        return None
+    return {"id": ident, "check": when, "on": text}
+
+
+def watch_items(root: Path) -> list[dict[str, str]]:
+    """Watch lines, first id wins. A missing or unreadable file is none."""
+
+    path = root / "watches.md"
+    if path.is_symlink() or not path.is_file():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return []
+    found = []
+    seen: set[str] = set()
+    for line in text.splitlines():
+        item = _watch_line(line)
+        if item is None or item["id"] in seen:
+            continue
+        seen.add(item["id"])
+        found.append(item)
+    return found
+
+
+def removed_path(root: Path) -> Path:
+    return _run(root) / "removed.json"
+
+
+def read_removed(root: Path) -> list[dict[str, str]] | None:
+    """Removals not yet given to a successful turn.
+
+    None means the file is there and is not that list. A missing file is empty.
+    """
+
+    path = removed_path(root)
+    if not path.exists():
+        return []
+    if path.is_symlink() or not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(data, list):
+        return None
+    found = []
+    for item in data:
+        if not isinstance(item, dict):
+            return None
+        ident, when, on = item.get("id"), item.get("check"), item.get("on")
+        if not all(isinstance(value, str) for value in (ident, when, on)):
+            return None
+        parsed = _watch_line(f"- {ident} {when} {on}")
+        if parsed is None:
+            return None
+        found.append(parsed)
+    return found
+
+
+def _write_removed(root: Path, items: list[dict[str, str]]) -> None:
+    payload = (json.dumps(items, ensure_ascii=False, sort_keys=True) + "\n").encode()
+    write_bytes(removed_path(root), payload)
+
+
+def drop_removed(root: Path, ids: list[str]) -> None:
+    """Drop the removals a successful turn was given. Later ones stay."""
+
+    with exclusive_lock(_run(root) / "watches.lock"):
+        current = read_removed(root)
+        if not current:
+            return
+        gone = set(ids)
+        _write_removed(root, [item for item in current if item["id"] not in gone])
+
+
+def unwatch(watch_id: str) -> None:
+    """Remove one watch and record it for the master's next turn."""
+
+    if not _WATCH_ID.fullmatch(watch_id):
+        raise FoilError(f"foil: unknown watch '{shown(watch_id)}'")
+    root = directory()
+    _ensure(root)
+    with exclusive_lock(_run(root) / "watches.lock"):
+        path = root / "watches.md"
+        if path.is_symlink():
+            raise FoilError("foil: refusing symlink")
+        try:
+            text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        except (OSError, UnicodeDecodeError) as exc:
+            raise FoilError("foil: watches cannot be read") from exc
+        kept: list[str] = []
+        removed: dict[str, str] | None = None
+        for line in text.splitlines():
+            item = _watch_line(line)
+            if item is not None and item["id"] == watch_id:
+                if removed is None:
+                    removed = item
+                continue
+            kept.append(line)
+        if removed is None:
+            raise FoilError(f"foil: unknown watch '{shown(watch_id)}'")
+        body = ("\n".join(kept) + "\n") if kept else ""
+        write_bytes(path, body.encode())
+        current = read_removed(root) or []
+        current = [item for item in current if item["id"] != watch_id]
+        current.append(removed)
+        _write_removed(root, current)
+    print(f"foil: removed watch {watch_id}")
+
+
+def _removed_block(items: list[dict[str, str]] | None) -> str:
+    if items is None:
+        return "(unreadable)"
+    if not items:
+        return "(none)"
+    return "\n".join(f"- {item['id']} {item['check']} {item['on']}" for item in items)
+
+
 def charter_text() -> str:
     return files("foil").joinpath("defaults", "skills", "master.md").read_text(encoding="utf-8")
 
 
-def seed(root: Path, mail: list[Path], new_ids: list[str]) -> str:
+def seed(
+    root: Path,
+    mail: list[Path],
+    new_ids: list[str],
+    removed: Any = _READ,
+) -> str:
     """The whole prompt for one fresh session."""
 
     try:
         brief = format_brief(collect_brief_projects(), projects_named=True)
     except (FoilError, OSError):
         brief = ""
+    if removed is _READ:
+        removed = read_removed(root)
     parts = [
         "# Charter",
         charter_text().rstrip("\n"),
@@ -706,6 +848,9 @@ def seed(root: Path, mail: list[Path], new_ids: list[str]) -> str:
         "",
         "# Watches",
         _file(root, "watches.md").rstrip("\n"),
+        "",
+        "# Removed watches",
+        _removed_block(removed),
         "",
         "# Mandate",
         _file(root, "mandate.md").rstrip("\n"),
@@ -748,6 +893,7 @@ class MasterRunner:
         self.root = Path(self.plan["root"])
         self.record = load_record(self.root)
         self._mail_before: set[str] = set()
+        self._removed_ids: list[str] = []
         self._lock = threading.Lock()
         if any(item.get("open") for item in self.record["reads"]):
             close_read(self.record, [])
@@ -867,7 +1013,15 @@ class MasterRunner:
                 for path in conversation(self.root)
                 if path.name not in delivered
             ]
-            if not pending and not new_mail and not fresh_ids and not self.record["failures"]:
+            removed = read_removed(self.root)
+            wake_removed = removed if removed else []
+            if (
+                not pending
+                and not new_mail
+                and not fresh_ids
+                and not self.record["failures"]
+                and not wake_removed
+            ):
                 if current is not None and set(current) != seen:
                     self.record["seen_inbox"] = sorted(set(current))
                     self.save()
@@ -888,7 +1042,8 @@ class MasterRunner:
             self._mail_before = master_mail_names(self.root)
             open_read(self.record, [path.name for path in batch])
             self.save()
-            prompt = seed(self.root, batch, fresh_ids)
+            prompt = seed(self.root, batch, fresh_ids, removed)
+            self._removed_ids = [item["id"] for item in wake_removed]
             code = self._turn(prompt, session)
             self.record["turn_started"] = None
             self.record["last_exit"] = code
@@ -905,6 +1060,7 @@ class MasterRunner:
                     self.record["seen_inbox"] = sorted(set(current))
                 self.record["started"] = True
                 self.save()
+                drop_removed(self.root, self._removed_ids)
                 continue
             self.record["delivered"] = sorted(delivered)
             self.record["failures"] += 1

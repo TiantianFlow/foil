@@ -288,6 +288,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/v1/answer" and method == "POST":
             self._answer()
             return
+        if path == "/v1/watch" and method == "POST":
+            self._watch()
+            return
         if path == "/v1/act" and method == "POST":
             self._act()
             return
@@ -719,6 +722,14 @@ class Handler(BaseHTTPRequestHandler):
             self._error(FoilError("foil: settings change is invalid"))
             return
         self._call(lambda: settings.apply(body))
+
+    def _watch(self) -> None:
+        body = self._json()
+        watch_id = body.get("id") if isinstance(body, dict) else None
+        if not isinstance(body, dict) or set(body) != {"id"} or not isinstance(watch_id, str):
+            self._error(FoilError("foil: unknown watch"))
+            return
+        self._call(lambda: home.remove_watch(watch_id))
 
     def _act(self) -> None:
         body = self._json()

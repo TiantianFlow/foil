@@ -17,7 +17,15 @@ from typing import NoReturn
 
 from foil.errors import FoilError, shown
 from foil.front import parse_front
-from foil.store import FLEET_ID, SAFE_ID, exclusive_lock, fleet_dir, load_registry, write_bytes
+from foil.store import (
+    FLEET_ID,
+    SAFE_ID,
+    exclusive_lock,
+    fleet_dir,
+    fleet_ids,
+    load_registry,
+    write_bytes,
+)
 
 _FILE_CAP = 1024 * 1024
 _LINE_CAP = 200
@@ -132,6 +140,56 @@ def _goal(root: Path, fleet: str) -> str:
     return ""
 
 
+def changed_paths(root: Path, branch: str) -> set[str] | None:
+    """Paths ``branch`` changes since the merge base with ``HEAD``.
+
+    None means git could not answer. An empty set means no changed path.
+    """
+
+    found = _git(root, ["diff", "--name-only", "--no-renames", f"HEAD...{branch}"])
+    if found.returncode != 0:
+        return None
+    paths = set()
+    for name in found.stdout.splitlines():
+        if not name or name.startswith("/") or ".." in Path(name).parts:
+            continue
+        paths.add(name)
+    return paths
+
+
+def overlaps(root: Path) -> dict[str, tuple[list[str], list[str]]]:
+    """Fleets whose goal branches change a path another fleet also changes.
+
+    The value is the other fleet ids, then the shared paths, both sorted.
+    A fleet with no goal branch, and a diff git cannot answer, is left out.
+    """
+
+    changed: dict[str, set[str]] = {}
+    try:
+        names = fleet_ids(root)
+    except FoilError:
+        return {}
+    for fleet in names:
+        goal = _goal(root, fleet)
+        if not goal:
+            continue
+        paths = changed_paths(root, goal)
+        if not paths:
+            continue
+        changed[fleet] = paths
+    by_path: dict[str, list[str]] = {}
+    for fleet, paths in changed.items():
+        for path in paths:
+            by_path.setdefault(path, []).append(fleet)
+    found: dict[str, tuple[list[str], list[str]]] = {}
+    for fleet, paths in changed.items():
+        shared = sorted(path for path in paths if len(by_path[path]) > 1)
+        others = sorted({other for path in shared for other in by_path[path] if other != fleet})
+        if shared and others:
+            found[fleet] = (others, shared)
+    return found
+
+
 def _current(root: Path) -> tuple[str, str]:
     """The current branch, or empty when HEAD is detached, and the commit."""
 
@@ -207,6 +265,8 @@ def merge_goal(root: Path, fleet: str, *, into: str | None = None) -> dict[str, 
             _refuse(directory, "not a git checkout")
         if dirty:
             _refuse(directory, "checkout is dirty")
+        if fleet in overlaps(root):
+            _refuse(directory, "fleets touch the same files")
         switched = False
         if target != current:
             if _git(root, ["checkout", target]).returncode != 0:

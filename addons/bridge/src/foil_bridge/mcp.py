@@ -19,7 +19,7 @@ from foil.api import brief, inbox
 from foil.board import mail_name
 from foil.board_ops import split_front_matter
 from foil.errors import FoilError, shown
-from foil.inbox import collect_brief, projects
+from foil.inbox import collect_brief, fleet_groups, projects
 from foil.lifecycle import seat_rows
 from foil.master import directory, load_record
 from foil.store import FLEET_ID, fleet_ids, load_registry
@@ -297,6 +297,12 @@ def _fleet(arguments: dict[str, str]) -> str:
         chosen = [(key, root) for key, root in chosen if key == project]
         if not chosen:
             raise FoilError(f"foil: unknown project '{shown(project)}'")
+    order: dict[tuple[str, str], tuple[int, object]] = {}
+    index = 0
+    for group in fleet_groups():
+        for row in group["fleets"]:
+            order[(group["project"], row["fleet"])] = (index, row["rank"])
+            index += 1
     rows = []
     for key, root in chosen:
         present = fleet_ids(root)
@@ -305,6 +311,7 @@ def _fleet(arguments: dict[str, str]) -> str:
         ids = [fleet] if fleet is not None else present
         for fleet_id in ids:
             record = collect_brief(root, [fleet_id], key)[0]
+            place = order.get((key, fleet_id), (index, None))
             rows.append(
                 {
                     "project": key,
@@ -312,9 +319,14 @@ def _fleet(arguments: dict[str, str]) -> str:
                     "goal": record["goal"],
                     "state": record["state"],
                     "paused": record["paused"],
+                    "rank": place[1],
                     "seats": _seats(root, fleet_id),
+                    "_order": place[0],
                 }
             )
+    rows.sort(key=lambda row: row["_order"])
+    for row in rows:
+        del row["_order"]
     return _dump(rows)
 
 
