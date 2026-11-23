@@ -84,17 +84,23 @@ def _log_paths(fleet: Path, seat: str) -> tuple[Path, Path]:
 
 
 def _read_lines(path: Path) -> list[dict[str, Any]]:
-    if path.is_symlink():
-        raise FoilError("foil: refusing symlink")
-    if not path.is_file():
-        return []
+    try:
+        if path.is_symlink() or path.parent.is_symlink():
+            raise FoilError("foil: refusing symlink")
+        if not path.is_file():
+            return []
+        if path.stat().st_size > LIMIT:
+            raise FoilError("foil: record is too large")
+        raw_lines = path.read_bytes().splitlines()
+    except OSError as exc:
+        raise FoilError("foil: refusing symlink") from exc
     found: list[dict[str, Any]] = []
-    for raw in path.read_bytes().splitlines():
+    for raw in raw_lines:
         if not raw:
             continue
         try:
             item = json.loads(raw)
-        except ValueError:
+        except (ValueError, UnicodeDecodeError):
             continue
         if isinstance(item, dict) and isinstance(item.get("path"), str):
             found.append(item)

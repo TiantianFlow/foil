@@ -272,6 +272,7 @@ def test_summary_is_the_default_and_levels_add_detail(
     tools = json.loads(capsys.readouterr().out)
     assert tools["level"] == "tools"
     assert tools["masked"] is True
+    assert tools["tokens"] == {"input": 1, "output": 2}
     assert any(
         event["kind"] == "tool" and event["tool"] == "shell" and event["text"] == ""
         for event in tools["events"]
@@ -303,6 +304,7 @@ def test_a_missing_or_unknown_file_uses_the_pane(
     assert bridge_main(["transcript", "lead", "--project", _addressable(repo), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["source"] == "pane"
+    assert payload["tokens"] == {"input": 0, "output": 0}
     assert payload["events"] == [
         {"role": "pane", "kind": "pane", "text": "pane says hello\n", "tool": "", "usage": None}
     ]

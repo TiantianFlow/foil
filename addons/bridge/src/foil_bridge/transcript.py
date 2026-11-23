@@ -18,10 +18,12 @@ from foil.errors import (
     FoilError,
     shown,
 )
+from foil.journal import LIMIT as JOURNAL_LIMIT
 from foil.lifecycle import peek_text
 from foil.master import directory, load_record
 from foil.presets import load_preset
 from foil.project import checkout_for_key, discover_project, foil_root
+from foil.runner import MAX_PLAN_BYTES
 from foil.runner import load_record as load_turns
 from foil.store import FLEET_ID, SAFE_ID, fleet_dir, load_registry
 from foil.tmux import TmuxController, TmuxError, TmuxTarget
@@ -95,6 +97,17 @@ def _hide_assignments(text: str) -> str:
     return "".join(pieces)
 
 
+def _prefixed(word: str) -> bool:
+    """True when a token, or the value side of one, starts with a secret prefix."""
+
+    pieces = re.split(r"[:=,;()\[\]{}<>]", word.strip("\"'`+-"))
+    for piece in pieces:
+        bare = piece.strip("\"'`+-")
+        if bare and any(bare.lower().startswith(prefix) for prefix in _PREFIXES):
+            return True
+    return False
+
+
 def mask(text: str) -> str:
     """Hide credential-shaped text. Best effort, same shapes the board refuses."""
 
@@ -108,8 +121,7 @@ def mask(text: str) -> str:
 
     def token(match: re.Match[str]) -> str:
         word = match.group(0)
-        bare = word.strip("\"'`")
-        if any(bare.lower().startswith(prefix) for prefix in _PREFIXES):
+        if _prefixed(word):
             return "[hidden]"
         return word
 
@@ -147,6 +159,7 @@ def read(
     level: str = "summary",
     home: Path | None = None,
     env: dict[str, str] | None = None,
+    pane: bool = True,
 ) -> dict[str, Any]:
     """The masked transcript at ``level``. Raises ``FoilError`` when nothing can be read."""
 
@@ -158,12 +171,14 @@ def read(
         raise FoilError(f"foil: invalid fleet '{shown(fleet)}'")
     roots = data_roots(home, env)
     context = _master() if seat == "master" else _seat(seat, project, fleet)
-    events, truncated, formats, source = _events(context, roots)
+    events, truncated, formats, source = _events(context, roots, pane=pane)
     if source == "pane":
         shown_events = [_mask_event(events[0])]
         omitted = 0
+        totals = {"input": 0, "output": 0}
     else:
         masked = [_mask_event(event) for event in events]
+        totals = _tokens(masked)
         shown_events, omitted = _select(masked, level)
     used = formats[-1] if formats else context["format"] or "unknown"
     return {
@@ -177,6 +192,7 @@ def read(
         "note": NOTE,
         "truncated": truncated,
         "omitted": omitted,
+        "tokens": totals,
         "events": shown_events,
     }
 
@@ -310,14 +326,14 @@ def _format(checkout: Path, harness: str, *, master: bool) -> str:
         return ""
     try:
         preset = load_preset(checkout, harness, global_only=master)
-    except FoilError:
+    except (FoilError, OSError, UnicodeDecodeError):
         return ""
     transcript = preset.get("transcript") or ""
     return transcript if isinstance(transcript, str) else ""
 
 
 def _events(
-    context: dict[str, Any], roots: dict[str, Path]
+    context: dict[str, Any], roots: dict[str, Path], *, pane: bool = True
 ) -> tuple[list[dict[str, Any]], bool, list[str], str]:
     times = _turn_times(context.get("fleet_path"), context.get("name"))
     events: list[dict[str, Any]] = []
@@ -346,10 +362,12 @@ def _events(
         events.extend(parsed)
     if events:
         return events, truncated, formats, "file"
-    pane = _pane(context)
-    if pane is None:
+    if not pane:
         raise FoilError(f"foil: no transcript for '{shown(context.get('name') or 'master')}'")
-    return [_pane_event(pane)], False, formats, "pane"
+    text = _pane(context)
+    if text is None:
+        raise FoilError(f"foil: no transcript for '{shown(context.get('name') or 'master')}'")
+    return [_pane_event(text)], False, formats, "pane"
 
 
 def _turn_times(fleet: Path | None, seat: str | None) -> list[str]:
@@ -363,8 +381,10 @@ def _turn_times(fleet: Path | None, seat: str | None) -> list[str]:
         if not contained(fleet, path):
             continue
         try:
+            if path.stat().st_size > JOURNAL_LIMIT:
+                continue
             text = path.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
         for line in text.splitlines():
             try:
@@ -388,7 +408,7 @@ def _pane(context: dict[str, Any]) -> str | None:
         return peek_text(
             checkout, context["name"], lines=PANE_LINES, fleet=context["fleet"] or None
         )
-    except FoilError:
+    except (FoilError, OSError, UnicodeDecodeError):
         return None
 
 
@@ -409,7 +429,7 @@ def _master_pane(root: Path, path: Path) -> str | None:
         if not observed:
             return None
         return TmuxController().capture_pane(observed, PANE_LINES)
-    except TmuxError:
+    except (TmuxError, OSError, UnicodeDecodeError):
         return None
 
 
@@ -421,8 +441,10 @@ def _json(path: Path, root: Path) -> dict[str, Any]:
     if not contained(root, path) or path.is_symlink() or not path.is_file():
         return {}
     try:
+        if path.stat().st_size > MAX_PLAN_BYTES:
+            return {}
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
 
@@ -481,6 +503,28 @@ def _human(payload: dict[str, Any]) -> str:
             lines.append(f"omitted {payload['omitted']}")
     lines.append(NOTE)
     return "\n".join(lines) + "\n"
+
+
+def event_line(event: dict[str, Any]) -> str:
+    """One display line. The same line the command prints for this event."""
+
+    return _line(event)
+
+
+def _tokens(events: list[dict[str, Any]]) -> dict[str, int]:
+    """Sum of usage events. The level filter has not dropped them yet."""
+
+    incoming = outgoing = 0
+    for event in events:
+        usage = event.get("usage")
+        if event.get("kind") != "usage" or not isinstance(usage, dict):
+            continue
+        left, right = usage.get("input"), usage.get("output")
+        if type(left) is int:
+            incoming += left
+        if type(right) is int:
+            outgoing += right
+    return {"input": incoming, "output": outgoing}
 
 
 def _line(event: dict[str, Any]) -> str:

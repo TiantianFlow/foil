@@ -55,7 +55,19 @@ def mail_from(board: Path, mailbox: str, name: str) -> tuple[str, str] | None:
         return named
     record = _foil_record(board, mailbox, name)
     path = board / "mail" / mailbox / name
-    if record.is_symlink() or not record.is_file() or path.is_symlink() or not path.is_file():
+    foil_dir = board.parent / "run" / "foil"
+    try:
+        linked = (
+            foil_dir.is_symlink()
+            or record.is_symlink()
+            or record.parent.is_symlink()
+            or path.is_symlink()
+            or not record.is_file()
+            or not path.is_file()
+        )
+    except OSError:
+        return None
+    if linked:
         return None
     try:
         size_text, expected = record.read_text(encoding="ascii").split()

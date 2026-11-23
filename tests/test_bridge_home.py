@@ -245,9 +245,10 @@ def test_a_link_target_resolves_and_a_missing_one_does_not(
             token = read_desk_token()
             status, body = _request(port, "GET", "/evidence?target=" + target, token=token)
             assert status == 200
-            assert b"A file in this fleet." in body
-            assert key.encode() in body
             assert b"status.md" in body
+            assert b"status\n" in body
+            assert b"Secrets are masked as a best effort." in body
+            assert key.encode() in body
             status, body = _request(
                 port, "GET", "/evidence?target=" + target + ".missing", token=token
             )

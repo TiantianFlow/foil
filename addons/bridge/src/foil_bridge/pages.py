@@ -7,7 +7,8 @@ import json
 import struct
 import zlib
 from importlib.resources import files
-from urllib.parse import quote
+from typing import Any
+from urllib.parse import quote, urlencode
 
 _ICONS: dict[int, bytes] = {}
 
@@ -26,40 +27,217 @@ def home_html(token: str) -> bytes:
     return page.replace("__TOKEN__", quote(token, safe="")).encode()
 
 
-def evidence_html(described: dict[str, str], token: str) -> bytes:
-    """A resolved target. The file itself stays where it is."""
+def _href(token: str, target: str, level: str = "") -> str:
+    query = {"target": target, "token": token}
+    if level:
+        query["level"] = level
+    return "/evidence?" + urlencode(query)
 
-    kind = described["kind"]
-    if kind == "file":
-        heading = "A file in this fleet."
-    elif kind == "fleet":
-        heading = "A fleet on this machine."
-    else:
-        heading = "A project on this machine."
-    where = described["project"]
-    if described["fleet"]:
-        where = f"{where} / {described['fleet']}"
-    if described["path"]:
-        where = f"{where} / {described['path']}"
+
+def _anchor(token: str, target: str, label: str, level: str = "") -> str:
+    address = html.escape(_href(token, target, level), quote=True)
+    return f'<a href="{address}">{html.escape(label)}</a>'
+
+
+def _crumbs(model: dict[str, Any], token: str) -> str:
+    parts = []
+    for crumb in model["crumbs"]:
+        target = crumb["target"]
+        if target == "/":
+            address = "/?" + urlencode({"token": token})
+        elif target:
+            address = _href(token, target)
+        else:
+            parts.append(html.escape(crumb["label"]))
+            continue
+        parts.append(
+            f'<a href="{html.escape(address, quote=True)}">{html.escape(crumb["label"])}</a>'
+        )
+    return f'<p class="crumbs">{" / ".join(parts)}</p>'
+
+
+def _meter(totals: dict[str, int]) -> str:
+    return f'<p class="mono">in {totals["input"]} out {totals["output"]}</p>'
+
+
+def _shell(token: str, body: str) -> bytes:
+    style = quote(token, safe="")
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Foil</title>
-<link rel="stylesheet" href="desk.css?token={quote(token, safe="")}">
+<link rel="stylesheet" href="desk.css?token={style}">
 </head>
 <body>
 <main>
 <p class="mark">Foil</p>
-<h1>Evidence</h1>
-<p>{html.escape(heading)}</p>
-<p class="mono">{html.escape(where)}</p>
-<p class="quiet">The file itself is not on this page.</p>
+{body}
 </main>
 </body>
 </html>
-""".encode()
+""".encode(errors="replace")
+
+
+def evidence_html(model: dict[str, Any], token: str) -> bytes:
+    """One read-only evidence page. Text in ``model`` is already masked."""
+
+    kind = model["kind"]
+    if kind == "fleets":
+        inner = _fleets_html(model, token)
+    elif kind == "fleet":
+        inner = _fleet_html(model, token)
+    elif kind == "file":
+        inner = _file_html(model)
+    else:
+        inner = _seat_html(model, token)
+    note = html.escape(model["note"])
+    return _shell(token, _crumbs(model, token) + inner + f'<p class="quiet">{note}</p>')
+
+
+def _fleets_html(model: dict[str, Any], token: str) -> str:
+    rows = model["fleets"]
+    if not rows:
+        listing = '<p>No fleet.</p>'
+    else:
+        items = []
+        for row in rows:
+            link = _anchor(token, row["target"], row["fleet"])
+            if row["rank"] is None:
+                detail = "No inbox item."
+            else:
+                detail = f"rank {row['rank']} {row['kind']}: {row['title']}"
+            items.append(f"<li>{link}<span>{html.escape(detail)}</span></li>")
+        listing = "<ul>" + "".join(items) + "</ul>"
+    return f"<h1>{html.escape(model['title'])}</h1>{listing}"
+
+
+def _fleet_html(model: dict[str, Any], token: str) -> str:
+    state = model["state"] or "—"
+    if model["paused"]:
+        state = f"{state}, fleet paused"
+    decisions = _lines(model["decisions"])
+    journal = _lines(model["journal"])
+    questions = _questions(model["questions"], token)
+    seats = _seats(model["seats"], token)
+    files = _files(model["files"], token)
+    return (
+        f"<h1>{html.escape(model['title'])}</h1>"
+        f"<h2>Goal</h2><p>{html.escape(model['goal'] or 'None.')}</p>"
+        f"<h2>State</h2><p>{html.escape(state)}</p>"
+        f"<h2>Decisions</h2>{decisions}"
+        f"<h2>Journal</h2>{journal}"
+        f"<h2>Questions</h2>{questions}"
+        f"<h2>Seats</h2>{seats}"
+        f"<h2>Tokens</h2>{_meter(model['tokens'])}"
+        f"<h2>Board</h2>{files}"
+    )
+
+
+def _lines(rows: list[str]) -> str:
+    if not rows:
+        return "<p>None.</p>"
+    return "<ul>" + "".join(f"<li>{html.escape(row)}</li>" for row in rows) + "</ul>"
+
+
+def _questions(rows: list[dict[str, Any]], token: str) -> str:
+    if not rows:
+        return "<p>None.</p>"
+    blocks = []
+    for row in rows:
+        links = "".join(
+            " " + _anchor(token, item["target"], item["path"] or item["target"])
+            for item in row["links"]
+        )
+        blocks.append(f"<li>{html.escape(row['title'])}{links}</li>")
+    return "<ul>" + "".join(blocks) + "</ul>"
+
+
+def _seats(rows: list[dict[str, Any]], token: str) -> str:
+    if not rows:
+        return "<p>None.</p>"
+    items = []
+    for row in rows:
+        link = _anchor(token, row["target"], row["name"])
+        branch = row["branch"] or "no branch"
+        totals = row["tokens"]
+        detail = (
+            f"{row['template']} {row['state']} {branch} "
+            f"in {totals['input']} out {totals['output']}"
+        )
+        items.append(f"<li>{link}<span>{html.escape(detail)}</span></li>")
+    return "<ul>" + "".join(items) + "</ul>"
+
+
+def _files(rows: list[dict[str, str]], token: str) -> str:
+    if not rows:
+        return "<p>None.</p>"
+    items = "".join(f"<li>{_anchor(token, row['target'], row['path'])}</li>" for row in rows)
+    return "<ul>" + items + "</ul>"
+
+
+def _file_html(model: dict[str, Any]) -> str:
+    body = model["file"]
+    if body["error"]:
+        shown = f"<p>{html.escape(body['error'])}</p>"
+    else:
+        extra = "<p>truncated</p>" if body["truncated"] else ""
+        shown = (
+            f'<p class="quiet">{body["size"]} bytes</p>'
+            f'<pre class="tail">{html.escape(body["text"])}</pre>'
+            f"{extra}"
+        )
+    return f"<h1>{html.escape(model['title'])}</h1>{shown}"
+
+
+def _seat_html(model: dict[str, Any], token: str) -> str:
+    target = model["target"]
+    current = model["level"]
+    levels = []
+    for level in model["levels"]:
+        if level == current:
+            levels.append(html.escape(level))
+        else:
+            levels.append(_anchor(token, target, level, level))
+    conversation = model["conversation"]
+    source = conversation.get("source") or "none"
+    format_id = conversation.get("format") or "unknown"
+    parts = [
+        f"<h1>{html.escape(model['title'])}</h1>",
+        f'<p class="crumbs">{html.escape(model["seat"]["template"])} '
+        f'{html.escape(model["seat"]["state"])}</p>',
+        f'<p class="crumbs">{" ".join(levels)}</p>',
+        f'<p class="mono">{html.escape(format_id)} {html.escape(source)}</p>',
+    ]
+    if source == "pane":
+        parts.append("<p>Live pane.</p>")
+        text = ""
+        events = conversation.get("events") or []
+        if events:
+            text = events[0].get("text") or ""
+        parts.append(f'<pre class="tail">{html.escape(text)}</pre>')
+    elif model["missing"]:
+        parts.append(f"<p>{html.escape(model['missing'])}</p>")
+    else:
+        lines = "".join(f"<li>{html.escape(line)}</li>" for line in model["lines"])
+        parts.append(f"<ul>{lines}</ul>" if lines else "<p>None.</p>")
+    if conversation.get("omitted"):
+        parts.append(f"<p>omitted {conversation['omitted']}</p>")
+    if conversation.get("truncated"):
+        parts.append("<p>truncated</p>")
+    parts.append("<h2>Tokens</h2>" + _meter(conversation["tokens"]))
+    diff = model["diff"]
+    parts.append("<h2 id=\"diff\">Diff</h2>")
+    if diff["base"] and diff["branch"]:
+        parts.append(
+            f'<p class="mono">{html.escape(diff["base"])}...{html.escape(diff["branch"])}</p>'
+        )
+    if diff["text"]:
+        parts.append(f'<pre class="tail">{html.escape(diff["text"])}</pre>')
+    if diff["note"]:
+        parts.append(f"<p>{html.escape(diff['note'])}</p>")
+    return "".join(parts)
 
 
 def manifest(token: str) -> bytes:

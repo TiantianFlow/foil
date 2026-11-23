@@ -22,6 +22,7 @@ from foil.project import foil_root, project_record, store_root
 from foil.store import SAFE_ID, fleet_dir, fleet_ids, load_registry
 
 JOURNAL_TAIL = 5
+STATUS_CAP = 1024 * 1024
 _TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _RANKS = {
     "question": 0,
@@ -157,9 +158,9 @@ def shown_questions(text: str) -> list[str]:
 
 def _status(board: Path) -> tuple[dict[str, Any] | None, str, str | None]:
     path = board / "status.md"
-    if path.is_symlink() or not path.is_file():
-        return None, "", None
     try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > STATUS_CAP:
+            return None, "", None
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None, "", None
@@ -200,8 +201,12 @@ def _goal(body: str) -> str:
 
 
 def _seen(fleet: Path) -> set[str]:
-    path = fleet / "run" / "seats" / "user.json"
-    if path.is_symlink() or not path.is_file():
+    seats = fleet / "run" / "seats"
+    path = seats / "user.json"
+    try:
+        if seats.is_symlink() or path.is_symlink() or not path.is_file():
+            return set()
+    except OSError:
         return set()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -215,7 +220,11 @@ def _seen(fleet: Path) -> set[str]:
 
 def _pause_time(fleet: Path, seat: str) -> str:
     found = ""
-    for event in read_log(fleet):
+    try:
+        events = read_log(fleet)
+    except (FoilError, OSError):
+        return ""
+    for event in events:
         if event.get("event") == "pause" and event.get("seat") == seat:
             found = _stamp(event.get("time")) or found
     return found
@@ -464,10 +473,17 @@ def _record(root: Path, fleet: str, project: str) -> dict[str, Any]:
         "goal": _goal(body),
         "state": state,
         "paused": paused,
-        "journal": read_log(directory)[-JOURNAL_TAIL:],
+        "journal": _journal(directory),
         "questions": [item for item in items if item["kind"] == "question"],
         "stuck": [item for item in items if item["kind"] in _STUCK],
     }
+
+
+def _journal(directory: Path) -> list[dict[str, Any]]:
+    try:
+        return read_log(directory)[-JOURNAL_TAIL:]
+    except (FoilError, OSError):
+        return []
 
 
 def collect_brief(root: Path, fleets: list[str], project: str) -> list[dict[str, Any]]:

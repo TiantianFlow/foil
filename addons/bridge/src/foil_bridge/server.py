@@ -20,7 +20,7 @@ from foil import view as foil_view
 from foil.bridge_cmd import bridge_port, ensure_desk_token
 from foil.errors import FoilError
 from foil.project import store_root
-from foil_bridge import auth, home
+from foil_bridge import auth, evidence, home
 from foil_bridge.pages import (
     asset,
     desk_html,
@@ -446,12 +446,19 @@ class Handler(BaseHTTPRequestHandler):
         self._call(lambda: home.run_card(name) or {"ok": True})
 
     def _evidence(self, token: str) -> None:
-        target = (parse_qs(urlsplit(self.path).query).get("target") or [""])[-1]
-        described = home.describe(target)
-        if described is None:
+        query = parse_qs(urlsplit(self.path).query)
+        target = (query.get("target") or [""])[-1]
+        level = (query.get("level") or ["summary"])[-1]
+        try:
+            model = evidence.page(target, level)
+            body = None if model is None else evidence_html(model, token)
+        except (OSError, UnicodeDecodeError, UnicodeEncodeError, ValueError):
             self._send(404, b"")
             return
-        self._send(200, evidence_html(described, token), "text/html", policy=_PAGE_POLICY)
+        if body is None:
+            self._send(404, b"")
+            return
+        self._send(200, body, "text/html", policy=_PAGE_POLICY)
 
     def _json_ok(self, body: object) -> None:
         self._send(200, json.dumps(body).encode(), "application/json")

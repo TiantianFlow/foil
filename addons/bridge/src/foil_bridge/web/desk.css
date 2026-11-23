@@ -102,3 +102,9 @@ textarea {
   margin: 0.4rem 0 0;
 }
 .mono { font: 0.9rem/1.4 ui-monospace, monospace; }
+.crumbs {
+  margin: 0.2rem 0 0.6rem;
+  font: 13px/1.4 ui-sans-serif, system-ui, sans-serif;
+  color: var(--quiet);
+}
+.crumbs a { color: var(--copper); }

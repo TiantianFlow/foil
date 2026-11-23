@@ -112,18 +112,36 @@ def fleet_id() -> str:
 
 
 def fleet_ids(toplevel: Path) -> list[str]:
-    """Every fleet of the project that has a registry, in id order."""
+    """Every fleet of the project that has a registry, in id order.
+
+    A symlink at the fleet or at ``run``, and a registry that cannot be
+    looked up, are not fleets.
+    """
 
     directory = foil_root(toplevel) / "fleets"
-    if directory.is_symlink() or not directory.is_dir():
+    try:
+        if directory.is_symlink() or not directory.is_dir():
+            return []
+        names = list(directory.iterdir())
+    except OSError:
         return []
-    return sorted(
-        path.name
-        for path in directory.iterdir()
-        if FLEET_ID.fullmatch(path.name)
-        and not path.is_symlink()
-        and (path / "run" / "registry.json").is_file()
-    )
+    found = []
+    for path in names:
+        if not FLEET_ID.fullmatch(path.name):
+            continue
+        try:
+            if path.is_symlink() or not _registry_present(path):
+                continue
+        except OSError:
+            continue
+        found.append(path.name)
+    return sorted(found)
+
+
+def _registry_present(fleet: Path) -> bool:
+    run = fleet / "run"
+    registry = run / "registry.json"
+    return not run.is_symlink() and not registry.is_symlink() and registry.is_file()
 
 
 @contextmanager
@@ -343,7 +361,11 @@ def _rotation(raw: Any) -> dict[str, dict[str, Any]]:
 
 def load_registry(toplevel: Path, fleet: str | None = None) -> dict[str, Any]:
     path = registry_path(toplevel, fleet)
-    if path.is_symlink():
+    try:
+        linked = path.is_symlink() or path.parent.is_symlink()
+    except OSError as exc:
+        raise FoilError("foil: registry cannot be read") from exc
+    if linked:
         raise FoilError("foil: refusing symlink")
     if not path.exists():
         return empty_registry()
