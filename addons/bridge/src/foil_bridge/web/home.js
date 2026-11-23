@@ -33,6 +33,7 @@ function showQuestions(rows) {
   for (const row of rows) {
     const card = document.createElement("article");
     card.className = "card";
+    card.dataset.card = "q/" + row.project + "/" + row.fleet + "/" + row.id;
     line(card, row.fleet ? row.project + " / " + row.fleet : row.project, "who");
     line(card, row.ask || row.id);
     if (row.why) line(card, row.why, "quiet");
@@ -128,6 +129,7 @@ async function load() {
   const typing = field && field.tagName === "TEXTAREA" && questions.contains(field);
   if (!typing) showQuestions(body.questions);
   showMessages(body.messages);
+  openCard();
   if (body.working.running) schedule();
 }
 
@@ -190,7 +192,130 @@ document.querySelector("#say").addEventListener("submit", async (event) => {
   }
 });
 
+function sameKey(left, right) {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function keyBytes(text) {
+  const padded = text + "=".repeat((4 - (text.length % 4)) % 4);
+  const raw = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+  const bytes = new Uint8Array(raw.length);
+  for (let index = 0; index < raw.length; index += 1) bytes[index] = raw.charCodeAt(index);
+  return bytes;
+}
+
+let pushKey = "";
+
+async function loadNotify() {
+  const response = await fetch("/v1/push", { headers: headers() });
+  if (!response.ok) return;
+  const body = await response.json();
+  pushKey = body.publicKey || "";
+  for (const box of document.querySelectorAll("#notify input")) {
+    box.checked = Boolean(body.kinds[box.dataset.kind]);
+    box.addEventListener("change", () => saveKind(box));
+  }
+  const on = Object.values(body.kinds).some(Boolean);
+  if (!body.subscribed && on && "Notification" in window && Notification.permission === "granted") {
+    subscribe(body.publicKey);
+  }
+}
+
+async function saveKind(box) {
+  const note = document.querySelector("#notify-note");
+  try {
+    await post("/v1/push/settings", { [box.dataset.kind]: box.checked });
+    if (box.checked) await subscribe(pushKey);
+  } catch (error) {
+    note.textContent = error.message;
+  }
+}
+
+async function subscribe(publicKey) {
+  const note = document.querySelector("#notify-note");
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !publicKey) {
+    note.textContent = "This browser has no push. The switch is saved.";
+    return;
+  }
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const wanted = keyBytes(publicKey);
+    let subscription = await registration.pushManager.getSubscription();
+    const current = subscription && subscription.options && subscription.options.applicationServerKey;
+    if (subscription && current && !sameKey(new Uint8Array(current), wanted)) {
+      await subscription.unsubscribe();
+      subscription = null;
+    }
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: wanted,
+      });
+    }
+    const json = subscription.toJSON();
+    await post("/v1/push", {
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+    });
+  } catch (error) {
+    note.textContent = "This browser did not subscribe. The switch is saved.";
+  }
+}
+
+let opened = "";
+let openSeq = 0;
+
+async function openCard() {
+  const box = document.querySelector("#opened");
+  const card = new URLSearchParams(location.search).get("card") || "";
+  if (!card || card.includes("..") || !/^[A-Za-z0-9][A-Za-z0-9./_-]{0,400}$/.test(card)) {
+    box.replaceChildren();
+    opened = "";
+    return;
+  }
+  const node = document.querySelector("#questions [data-card=\"" + CSS.escape(card) + "\"]");
+  if (node) {
+    openSeq += 1;
+    if (opened !== card) node.scrollIntoView({ block: "nearest" });
+    box.replaceChildren();
+    node.setAttribute("aria-current", "true");
+    opened = card;
+    return;
+  }
+  const seq = ++openSeq;
+  const response = await fetch("/v1/push/card?id=" + encodeURIComponent(card), {
+    headers: headers(),
+  });
+  if (seq !== openSeq) return;
+  let label = "";
+  if (response.ok) {
+    const body = await response.json();
+    if (seq !== openSeq) return;
+    if (body && typeof body.label === "string") label = body.label;
+  }
+  if (seq !== openSeq) return;
+  box.replaceChildren();
+  if (!label) {
+    line(box, "That card is gone.", "quiet");
+    opened = card;
+    return;
+  }
+  const article = document.createElement("article");
+  article.className = "card";
+  article.dataset.card = card;
+  article.setAttribute("aria-current", "true");
+  line(article, label);
+  box.append(article);
+  opened = card;
+}
+
 load();
+loadNotify();
 
 if (token && "serviceWorker" in navigator && "caches" in window) {
   const worker = "sw.js?token=" + encodeURIComponent(token);

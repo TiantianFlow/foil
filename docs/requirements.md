@@ -737,8 +737,8 @@ package `foil-bridge` 0.1.0 in `addons/bridge/`, released in lockstep with
 core. It depends on `foil-ai` and refuses to start unless `foil.api.VERSION`
 has major 1 (`foil-bridge: needs foil.api 1`). Core stays the standard
 library only (N1). Bridge code lives outside `src/foil`, so the N4 count
-stays the core package. The Bridge may depend on `cryptography` and
-implements Web Push encryption itself. This phase does not send push.
+stays the core package. The Bridge depends on `cryptography`. It implements the message
+encryption and the VAPID signature in this package. The rules are below.
 
 The program is `foil-bridge`. Core does not import it. `foil bridge` looks
 for that program on `PATH`. When it is missing, the command prints
@@ -770,8 +770,8 @@ the fleets' questions to answer one request, and it does not keep them.
 The evidence page reads a board file, the journal, a branch diff, and a
 transcript the same way, and it does not keep them.
 `foil-bridge transcript` reads a harness file for display and does not
-serve it. Push, the master supervisor, and the desk terminal are later
-phases on this same process.
+serve it. The master supervisor and the desk terminal are later phases
+on this same process.
 `/v1/terminal` is 404 after the token check and 401 without one.
 
 A `POST` also needs an `Origin` of `http://` plus the `Host` on loopback,
@@ -821,6 +821,98 @@ when the machine does not answer. That page says: This machine can't be
 reached. Check Tailscale. The page script is a plain ES module. The QR
 drawing is a vendored library. There is no Node build.
 
+The Bridge sends Web Push to a subscription this page saved. The payload
+is a JSON object with exactly two keys, `label` and `card`. `label` is a
+short line such as `login: 1 decision`. `card` is the id of the card to
+open. The payload has no question text, no mail body, no goal, no pane,
+and no file contents. The record of what was sent stores, for each
+subscription, the card ids that subscription accepted. It does not
+store the fleet's text.
+
+A notification is sent only for an open question whose owner is not
+`master`, a seat that is dead or paused, mail that has stayed
+undelivered past the limit in section 6.1, a fleet whose state is
+`done`, the master being down, or this process having been down. It is
+not sent for unread mail from the human, a chat reply, a blocked fleet,
+a paused fleet, or a turn that is running.
+
+The kinds are `question`, `seat`, `delivery`, `done`, and `down`. Each
+is a boolean in `<root>/bridge/push/settings`, mode 0600. A missing
+file, a missing key, or a value that is not a boolean is off. All five
+start off. `POST /v1/push/settings` names the kinds to change. Any other
+key, or a value that is not a boolean, is 400
+`foil: push setting is invalid`. The response is the five booleans.
+That POST is the confirmation (design rule 11). The switches are for
+the whole store, not one device.
+
+`GET /v1/push` returns `publicKey`, `subscribed`, and `kinds`.
+`publicKey` is the uncompressed P-256 point, base64url, of the key in
+`<root>/bridge/push/vapid`. That file holds `{"d":"<base64url>"}`, the
+32-byte scalar, mode 0600, and is created the first time the public key
+is asked for. A file that is already there and cannot be read is left
+in place. A client key that is not a P-256 point is invalid. `subscribed` is true when this device has a file under
+`<root>/bridge/push/subscriptions/`. The desk's file is named `desk`.
+A paired device's file is named its id. Each holds `endpoint`, `p256dh`,
+and `auth`, and nothing else, mode 0600. `POST /v1/push` with exactly
+those three strings saves this device's file and returns the same shape
+as `GET /v1/push`. A bad endpoint, a bad key, or an extra field is 400
+`foil: push subscription is invalid`. An endpoint is `https`, or `http`
+on `127.0.0.1` or `localhost`, with no userinfo, at most 2000
+characters, and a port from 1 to 65535 when one is written. A paired
+device is saved only while its device file still exists. Saving the
+same endpoint and keys again keeps the card ids that device has
+accepted. Saving a different endpoint or key clears them. Revoking a
+device deletes its subscription file, and a save that lost the race
+with that revoke does not write it back. The directories are mode 0700.
+
+The process checks once a second, or every `FOIL_BRIDGE_INTERVAL`
+seconds, on its own thread, so a slow send does not stall the event
+stream. It sends at most one notification per 60 seconds, and a send 60
+seconds later is allowed. One notification covers every unsent card of
+one kind in one project, or one down card. Each browser is sent the
+cards in that group it has not accepted. The count in its label is how
+many of those, and the card is the first of those. The words are `decision`,
+`seat`, `delivery`, and `goal`, and more than one adds `s`. A down label
+is `master down` or `bridge down`. The project name in the label drops a
+trailing `-<6 hex>` from the project key. The order is a question, then
+a seat, then a delivery, then a finished goal, then the master, then
+this process. A card that was sent is not sent again while it is still
+current. A card that goes away and comes back can be sent again. A
+device that accepts is marked for those card ids. A device that does
+not accept is not marked. The next try waits 60 seconds and goes only
+to devices that have not accepted. One device accepting does not mark
+the others. A response 404 or 410 deletes that subscription. The
+request is not followed to another URL. Its `TTL` is `300` and its
+`User-Agent` is `foil-bridge`. The VAPID `sub` is
+`https://github.com/TiantianFlow/foil`.
+
+The card ids are `q/<project>/<fleet>/<id>`,
+`s/<project>/<fleet>/<seat>`, `d/<project>/<fleet>/<mail path>`,
+`g/<project>/<fleet>`, `down/master`, and `down/bridge`.
+
+The master is down when `<root>/master/run/window.json` exists and that
+window is not alive, or when the master's runner record is paused. A
+master that has never started is not down. While `down` is on, this
+process writes `<root>/bridge/push/heartbeat` with `{"t":<unix>}` when
+that file is older than 30 seconds. When the previous stamp is more
+than 120 seconds behind, the next check has one `bridge down` reason.
+Turning `down` on writes a fresh stamp and clears a stored gap, and
+that check does not notify. While `down` is on, the stamp is refreshed
+even when no browser is subscribed, so an open page is not an outage.
+A stamp more than 120 seconds old is one `bridge down` reason. That
+check clears any `down/bridge` card already marked sent, including when
+a gap is already stored, so a browser that accepted the previous outage
+is told about this one. The reason is kept until each subscribed
+browser has accepted it. After the first
+acceptance, `GET /v1/push/card` still returns it for 120 seconds. A
+later gap is a new outage and can be sent again, still at most once
+per 60 seconds.
+
+`GET /v1/push/card?id=` returns `{"label","card"}` for a current card,
+ignoring the switches, and an empty 404 when it is not current. The
+label there is for that one card. The notification's label is the one
+that counted the group.
+
 Once a second, or every `FOIL_BRIDGE_INTERVAL` seconds when that value is
 a positive number up to 60, the process records the modification time of
 each regular file under the store except `<root>/bridge/` and except a
@@ -836,7 +928,13 @@ directory, so the same messages are there after it. Each message is a
 `mail/v1` file whose name `foil send` could have written. The page shows
 the time and the sender from the name, and the body. A body over 8 KiB is
 cut and marked truncated. `GET /desk` is the pairing page. The home links
-to it.
+to it. A query `card` marks that card. A question is the card already
+listed. Any other current card is one line, its label. A card that is
+gone says `That card is gone.` Five switches sit under Notifications.
+Each stays off until a tap, and that tap is the confirmation. When the
+switch is on, the page asks this browser to subscribe and posts the
+endpoint and keys. When the browser refuses, the page says
+`This browser did not subscribe. The switch is saved.`
 
 `POST /v1/send` with `{"text"}` calls `foil.api` `send` to `master` as
 `user`. The text is at most 16 KiB (`foil: message text is too long`).

@@ -14,6 +14,16 @@
 <h1>Home</h1>
 <p class="lede" id="lede">The conversation with the master on this machine. It is the mail, so it stays when the master renews.</p>
 <p><a href="/desk?token=__TOKEN__">Pair a phone</a></p>
+<section id="notify">
+<h2>Notifications</h2>
+<p class="quiet" id="notify-note">Off until you turn one on. Each one is a label, and it opens that card.</p>
+<label><input type="checkbox" data-kind="question"> A question</label>
+<label><input type="checkbox" data-kind="seat"> A seat that stopped</label>
+<label><input type="checkbox" data-kind="delivery"> A delivery that is stuck</label>
+<label><input type="checkbox" data-kind="done"> A finished goal</label>
+<label><input type="checkbox" data-kind="down"> The master or this page down</label>
+</section>
+<div id="opened"></div>
 <section id="working" hidden>
 <h2>Working</h2>
 <pre id="tail" class="tail"></pre>
