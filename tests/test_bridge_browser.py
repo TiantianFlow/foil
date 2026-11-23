@@ -18,7 +18,7 @@ from playwright.sync_api import Browser, expect, sync_playwright
 
 from foil import api
 from foil.bridge_cmd import read_desk_token
-from foil.delivery import fleet_paused
+from foil.delivery import fleet_paused, pending_pointers
 from foil.lifecycle import TmuxController
 from foil.store import fleet_dir
 from tests.test_answer import _lead_mail, _question
@@ -287,6 +287,71 @@ def test_a_stale_settings_card_shows_the_diff_on_the_home(
             page.get_by_role("button", name="Apply this setting").click()
             expect(page.get_by_text("now: ask")).to_be_visible()
             assert api.roster_show(repo, "main", "user", "lead")["permission"] == "ask"
+        finally:
+            context.close()
+            server.stopped.set()
+            server.watch.stop()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+        assert errors == []
+
+
+def test_selecting_lines_sends_them_to_the_owner(
+    monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> None:
+    monkeypatch.setattr("foil_bridge.tailnet.tailnet", lambda: None)
+    task = (
+        "---\n"
+        "contract: task/v1\n"
+        "id: login\n"
+        "owner: implementer-1\n"
+        "state: open\n"
+        "acceptance: the test passes\n"
+        "---\n"
+        "\n"
+        "alpha\n"
+        "beta\n"
+        "gamma\n"
+    )
+    with _short_repo(monkeypatch) as repo:
+        _registry(
+            repo,
+            "main",
+            {"lead": _seat("lead", "main"), "implementer-1": _seat("implementer-1", "")},
+        )
+        board = fleet_dir(repo) / "board"
+        (board / "tasks").mkdir(parents=True, exist_ok=True)
+        (board / "tasks" / "login.md").write_text(task, encoding="utf-8")
+        key = _key(repo)
+        server = open_server(0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+        token = read_desk_token()
+        origin = f"http://127.0.0.1:{port}"
+        context = browser.new_context()
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        try:
+            query = urlencode(
+                {"target": f"projects/{key}/fleets/main/board/tasks/login.md", "token": token}
+            )
+            page.goto(f"{origin}/evidence?{query}")
+            lines = page.locator("ol.pick li")
+            expect(lines).to_have_count(11)
+            lines.nth(9).click()
+            lines.nth(10).click(modifiers=["Shift"])
+            page.locator("textarea").fill("Fix the check.")
+            page.get_by_role("button", name="Send").click()
+            expect(page.locator("[data-note]")).to_have_text("Sent to implementer-1")
+            mailed = (board / "mail" / "implementer-1").glob("*.md")
+            body = next(iter(mailed)).read_text(encoding="utf-8")
+            assert "path: tasks/login.md" in body
+            assert "lines: 10-11" in body
+            assert "10|beta" in body
+            assert [item["to"] for item in pending_pointers(fleet_dir(repo))] == ["implementer-1"]
         finally:
             context.close()
             server.stopped.set()

@@ -102,6 +102,20 @@ textarea {
   font: 0.85rem/1.4 ui-monospace, monospace;
   margin: 0.4rem 0 0;
 }
+ol.pick {
+  margin: 0.4rem 0 0;
+  padding-left: 2.2rem;
+}
+ol.pick li {
+  display: list-item;
+  border: 0;
+  padding: 0 0.25rem;
+  cursor: pointer;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+ol.pick li.picked { background: color-mix(in srgb, var(--copper) 28%, transparent); }
+[data-quote] input[type="number"] { width: 4.5rem; }
 .mono { font: 0.9rem/1.4 ui-monospace, monospace; }
 main.desk-page { max-width: 72rem; }
 .desk { display: grid; gap: 0 2rem; }

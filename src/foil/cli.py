@@ -119,6 +119,12 @@ def _build_parser() -> argparse.ArgumentParser:
     send.add_argument("TEXT", metavar="TEXT")
     _shared(send)
 
+    quoted = sub.add_parser("quote", help="Send selected lines to the owning seat")
+    quoted.add_argument("PATH", metavar="PATH")
+    quoted.add_argument("--lines", metavar="N-M", required=True)
+    quoted.add_argument("TEXT", metavar="TEXT")
+    _shared(quoted)
+
     answer = sub.add_parser("answer", help="Answer one closed question")
     answer.add_argument("ID", metavar="ID")
     answer.add_argument("TEXT", nargs="?", metavar="TEXT")
@@ -484,6 +490,19 @@ def _run(args: argparse.Namespace, call: _Call) -> int:
             fleet,
             caller,
             args.TO,
+            args.TEXT,
+            inside=inside,
+            pinned=pinned,
+            read_text=_text_arg,
+        )
+        return 0
+    if args.command == "quote":
+        api.quote(
+            project,
+            fleet,
+            caller,
+            args.PATH,
+            args.lines,
             args.TEXT,
             inside=inside,
             pinned=pinned,

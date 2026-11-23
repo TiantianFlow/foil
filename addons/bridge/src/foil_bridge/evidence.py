@@ -11,12 +11,12 @@ from typing import Any
 
 from foil.delivery import fleet_paused
 from foil.errors import FoilError, shown
-from foil.front import parse_front
 from foil.inbox import collect, collect_brief
 from foil.journal import read_log
 from foil.journal import render as render_event
 from foil.lifecycle import seat_rows
 from foil.project import checkout_for_key, foil_root
+from foil.quote import decision_lines
 from foil.store import fleet_dir, fleet_ids, load_registry
 from foil_bridge import home
 from foil_bridge.controls import needs_confirm, next_roles
@@ -328,15 +328,7 @@ def _journal(directory: Path) -> list[str]:
 
 
 def _decision_lines(data: bytes) -> list[str]:
-    front = parse_front(data.decode("utf-8", errors="replace"))
-    value = (front.fields or {}).get("decisions") if front.raw is None else None
-    if not isinstance(value, list):
-        return []
-    lines = []
-    for item in value:
-        if isinstance(item, str) and item.strip():
-            lines.append(mask(" ".join(item.split())))
-    return lines
+    return [mask(line) for line in decision_lines(data.decode("utf-8", errors="replace"))]
 
 
 def _crumbs(*parts: str) -> list[dict[str, str]]:

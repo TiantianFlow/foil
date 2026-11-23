@@ -199,7 +199,7 @@ sentence; everything after step 2 is the agent's work.
 
 | ID | Requirement |
 |---|---|
-| F13 | `send` stores the message as a mail file on the board and types nothing. The recipient's runner starts its next turn with that file (F43), and a joined lead hears through F41. Mail to a seat that is dead, paused, or killed waits in its mailbox for its next turn. Mail from `user` to a worker appends a pointer. The lead's next wake prompt lists each pointer once. The pointer starts no turn and does not end `foil mail wait` by itself. |
+| F13 | `send` stores the message as a mail file on the board and types nothing. The recipient's runner starts its next turn with that file (F43), and a joined lead hears through F41. Mail to a seat that is dead, paused, or killed waits in its mailbox for its next turn. Mail from `user` to a worker appends a pointer. The lead's next wake prompt lists each pointer once. The pointer starts no turn and does not end `foil mail wait` by itself. `foil quote PATH --lines N-M TEXT` quotes those lines, with that path and the inclusive line range, and sends the mail to the seat that owns the source. A `task/v1` file's `owner`, when that value is a seat, owns the file. A `result/v1` file's `author`, when that value is a seat, owns the file. `PATH` of `branch:<name>` is that branch's diff, and the seat whose recorded `branch` equals `<name>` owns it. When more than one seat records it, a seat that is not killed wins, and a tie is the first name in alphabetical order. The diff uses the base that owner's page uses: the lead's recorded branch for anyone but the lead, and the checkout's current branch for the lead. When `<name>` is the lead's recorded branch, the base is the checkout's current branch, so the mail matches the diff the lead page shows. `PATH` of `status.md#decisions` is the decision list on `status.md`, one folded line each. Anything else, including a board file that is not a task or a result and a branch no seat records, is owned by the fleet's lead. `N` quotes one line. `N-M` quotes that range. A range outside the text, a missing file, a symlink, an empty sentence, or a quote over 16 KiB writes nothing. The sentence may be `-`, which reads stdin. The mail is `send`, so mail from `user` to a worker appends the pointer and `mail list --sent` reports its delivery state. |
 | F14 | Mail sent from outside the fleet shows the sender as `lead` while a lead is joined, and `user` otherwise. A launched lead may `foil send user`: that mail is stored in `board/mail/user/`, the human's mailbox, and the human reads it with `foil mail wait` or `foil mail list`. A joined lead gets `foil: a joined lead asks in its own chat`, and any other caller gets `foil: only the lead may send to user`. A caller outside the fleet reads its own mailbox with `foil mail list`, `foil mail wait`, and `foil mail read` (F30, F41): the `lead` mailbox while a lead is joined, and the `user` mailbox otherwise. No seat is named `user`, `foil`, or `master`. A `FOIL_SEAT_ID` of `user` or `foil` is `foil: unknown seat`, and so is `master`. `seat spawn --name master` is `foil: seat name 'master' is reserved`. A generated name such as `master-1` is not that reserved name. `foil send master` writes the store mailbox `<root>/master/mail/` and needs no checkout. A lead and a caller outside the fleet may send it. A worker gets `foil: only a lead may mail master`. The sender is `lead`, `user`, or `master` when the process is the master's runner (`FOIL_MASTER=1` and not a seat). A lead's file also names the project and the fleet. `FOIL_MASTER` is not a seat id. `--as user` reads and sends as the human even while a lead is joined. `--as lead` reads and sends as the joined lead. Mail from `foil` is written only by Foil, which records each such file as `run/foil/<mailbox>/<file name>` holding the byte length and the SHA-256 hex digest of that file's bytes. The record is written before the mail, and removed if the mail write fails. `mail list`, `mail wait`, and a runner skip a mail file whose name gives `foil` as the sender when that record is missing, is a symlink, or when the file's size or digest does not match; size is checked before the digest is computed, so a replaced huge file cannot stall a poll. A file written or replaced on the board cannot speak for Foil. |
 | F15 | The board has a notes area for unaddressed shared files. Seats write notes with ordinary file tools and read them with `foil board read` and `foil board list`. Notes wake no one. |
 | F16 | Board contracts (section 7.4) are Markdown files with versioned front matter. Foil defines them and tells seats about them. Foil does not act on contract fields (`state`, `outcome`, and the rest) to change a seat or to decide progress. `mail read`, `mail list`, and `board read` may parse front matter only to print the file. `foil inbox` and `foil brief` read `status/v1` `state` and `questions` when they list items, and they write nothing. |
@@ -300,6 +300,7 @@ rows after this table are not in the binary.
 | `foil seat list` | `--json`, `--archived`, `--all-fleets` | Lists seats (F10). Without `--archived`, human output is `<name>\t<template>\t<state>\t<worktree>\t<harness>[/<model>]\t<session>\t<description>`, with `-` for no session id, and JSON adds `harness`, `model`, `session_id`, `turn_started`, `last_exit`, and `description`. `--all-fleets` lists every fleet of the project that has a registry, in fleet id order. A symlink at `run`, or a registry that cannot be looked up, is not one of those fleets. Each human line is led by the fleet id and a tab, and JSON adds `fleet`; it takes no `--archived`. `--archived` lists the prose files in `run/archive/`, newest first, and does not probe tmux. Human output is `<name>\t<template>\t<state>\t<worktree>\t<harness>[/<model>]\t<branch>`. JSON is the nine stored fields plus `archived`, the file name. |
 | `foil seat peek NAME` | `--lines N` (default 40), `--json` | Prints the pane tail (F11). A dead seat whose window still exists and still carries this seat's markers is printed the same way. A killed seat, a dead seat whose window is gone, or a stored window id that now names another window is an error. `--json` prints `{"name","text"}`. Human output stays the pane text. |
 | `foil send TO TEXT` | none; `TEXT` = `-` reads stdin | Writes mail and types nothing (F13, F14). The recipient's runner starts its next turn with it; a joined lead hears through `mail wait`. `TO` of `user` is a launched lead's mail to the human. |
+| `foil quote PATH --lines N-M TEXT` | `--lines N-M` required; `TEXT` = `-` reads stdin | Quotes those lines, with the path and the line range, and mails the owning seat (F13). `PATH` is a board file, `status.md#decisions`, or `branch:<name>`. |
 | `foil post [TEXT]` | `--re PATH`, `--decline`, `--members NAMES`, `--close`; `TEXT` = `-` reads stdin | Writes a `room/v2` file and types nothing. Without `--re` it opens a room whose members are the caller and NAMES, or every seat that is not killed without `--members`; only the lead and a caller outside the fleet open one. A post wakes the room's members and the seats it names as `@name`, except a member whose last file there is a decline, and lists them in `wakes` (F33). `--members` with `--re` sets the members and wakes only the ones it adds. `--close` with `--re` closes the room, and a closed room refuses later posts. `--decline` requires `--re`, takes no TEXT, writes a child whose body is `decline`, and wakes nobody. An empty `--re` is one stderr line and writes nothing. |
 | `foil mail read PATH` | `--json` | Reads mail file at PATH. PATH must be absolute and in that fleet's `board/mail/`. Human output: body only. JSON: full contract + body. |
 | `foil mail list` | `--json`, `--sent` | Lists mail for the current seat. Outside the fleet, lists the caller's mailbox: `lead` while a lead is joined, otherwise `user` (F14). `--as user` lists the human's mailbox even while a lead is joined, and `--as lead` lists the joined lead's. A symlinked `board/mail` lists nothing. Only files `foil send` could have named, with time and sender from the name (F30). Sorted newest first. Human: `<time> <from> <path>` per line. JSON: array of mail metadata. `--sent` lists mail the caller sent, in every mailbox, newest first. Human: `<time> <to> <state> <path>`. JSON adds `to` and `state` to the same fields. `state` is read from the recipient's delivery log, not stored on the mail: `delivered` when the latest line is `delivered` or `printed`; `skipped` when it is `skipped`; `inflight` when a turn is running with that path, or the latest line is `inflight` or `retry` and that line is under 60 seconds old. A turn is running only while that seat's recorded process group still exists. `queued` when the log has no line and the mail file is under 60 seconds old; `stuck` otherwise. A stuck mail file is an undelivered inbox item, computed on read (section 7.5). The command stores no body. |
@@ -330,14 +331,14 @@ rows after this table are not in the binary.
 | `foil bridge install` | none | Outside the fleet only, the same refusal as `foil bridge`. When `foil-bridge` is not on `PATH`, prints the install line and writes nothing. Otherwise writes the boot unit in section 12, creates the desk token if it is missing, and prints the unit path, the page address, the load command, and the `tailscale serve` line. It does not start the Bridge and does not import the package. |
 | `foil answer ID [TEXT]` | none | Answers one closed question in the current fleet (section 12). Outside the fleet only (`foil: not allowed` inside). The caller must be `user`: a joined lead that did not pass `--as user` gets `foil: answer is from user`. When `FOIL_MASTER` is set, the command gets `foil: the master does not answer` and writes nothing. `ID` is that question's id in the fleet's `status.md`. An id that is not a safe id, or that is not an open question there, is `foil: unknown question '<id>'`. A question whose `owner` is `master` is `foil: that question is for the master`. `TEXT` is the answer. Omitted, empty, or only space is `foil: answer text is empty`. `TEXT` of `-` reads stdin. The mail is from `user` to `lead`, and its body is the line `question: ID`, a blank line, and the text. That first line is how a later read quotes the id. There is no printed line. A later answer for an id that already has this mail writes nothing, and the first text stays. The desk and the app both show that text. A symlink at `board/mail`, at `board/mail/lead`, or at a user mail file there is `foil: refusing symlink` and writes nothing. A user mail file in that mailbox that cannot be read is `foil: mail cannot be read` and writes nothing. |
 
-That's seventeen top-level commands (`init`, `seat`, `send`, `answer`, `post`, `memory`, `mail`, `board`, `roster`, `journal`, `decide`, `fleet`, `inbox`, `brief`, `master`, `doctor`, `bridge`) and
-forty actions.
+That's eighteen top-level commands (`init`, `seat`, `send`, `quote`, `answer`, `post`, `memory`, `mail`, `board`, `roster`, `journal`, `decide`, `fleet`, `inbox`, `brief`, `master`, `doctor`, `bridge`) and
+forty-one actions.
 
 #### Planned commands
 
 These rows are part of section 6 so a later phase can add the command.
 They are not in the binary. The standing check reads the table above,
-which stays seventeen top-level commands and forty actions, until a
+which stays eighteen top-level commands and forty-one actions, until a
 phase moves a row into that table and updates the check in the same
 change. A command, subcommand, or flag in neither table is out of scope
 (section 11). Roster's `--project` on `roster add`, `roster update`, and
@@ -347,12 +348,12 @@ No command is planned past the current table.
 
 ### 6.2 Authority
 
-| Caller | `init` | `seat spawn` | `seat kill` | `seat archive` | `seat kill --all` | `seat resume` / `renew` | `seat list` / `peek` | `seat join` / `leave` | `send` | `answer` | `post` | `mail read` | `mail list` | `mail wait` | `board read` | `board list` | `memory add` / `list` | `memory accept` / `reject` | `roster list` / `show` | `roster add` / `update` / `remove` | `journal` | `decide` | `fleet pause` / `resume` | `inbox` | `brief` | `master start` / `stop` / `renew` | `doctor` | `bridge` | `fleet merge` |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Outside the fleet | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes, as `user` | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| Lead | no | yes | yes, not itself | yes, not itself | no | yes | yes | no | yes | no | yes | yes | yes | no | yes | yes | yes | yes | yes | `harness` and `model` only | yes | yes | yes | yes | yes | no | no | no | no |
-| Worker | no | no | no | no | no | no | yes | no | yes | no | replies only | yes | yes | no | yes | yes | yes | no | no | no | yes | yes | no | no | no | no | no | no | no |
-| Master | yes | yes | yes | yes | yes | yes | yes | yes | yes | no | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Caller | `init` | `seat spawn` | `seat kill` | `seat archive` | `seat kill --all` | `seat resume` / `renew` | `seat list` / `peek` | `seat join` / `leave` | `send` | `quote` | `answer` | `post` | `mail read` | `mail list` | `mail wait` | `board read` | `board list` | `memory add` / `list` | `memory accept` / `reject` | `roster list` / `show` | `roster add` / `update` / `remove` | `journal` | `decide` | `fleet pause` / `resume` | `inbox` | `brief` | `master start` / `stop` / `renew` | `doctor` | `bridge` | `fleet merge` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Outside the fleet | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes, as `user` | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| Lead | no | yes | yes, not itself | yes, not itself | no | yes | yes | no | yes | yes | no | yes | yes | yes | no | yes | yes | yes | yes | yes | `harness` and `model` only | yes | yes | yes | yes | yes | no | no | no | no |
+| Worker | no | no | no | no | no | no | yes | no | yes | yes | no | replies only | yes | yes | no | yes | yes | yes | no | no | no | yes | yes | no | no | no | no | no | no | no |
+| Master | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | no | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 
 The Lead row is a launched lead, and it may renew itself (F44). A joined lead is a caller outside the fleet and has that row's authority (F4). A worker's `post` needs `--re` and takes no `--members` or `--close` (F33). A caller inside the fleet may set `harness` and `model` only. `add`, `remove`, `persona`, `worktree`, `permission`, and `--project` are refused. An omitted permission on a role written outside the fleet is `auto`. The lead cannot set `permission`.
 
@@ -660,7 +661,7 @@ the test plays the human's agent):
 - A wait that times out shows every fleet's seat list, every pane that is left, and every double's log. A wait ends at once when a seat dies that the scenario did not expect to die.
 
 **Standing checks:** the command surface matches the current table in
-section 6.1 exactly: seventeen top-level commands and forty actions.
+section 6.1 exactly: eighteen top-level commands and forty-one actions.
 Planned rows stay outside that check until their phase moves them into
 that table. The package source size is reported against the N4 target;
 tmux window identity, atomic writes, public-safety checks (N9), and the
@@ -1092,7 +1093,8 @@ with no inbox item says `No inbox item.` An empty project says
 A fleet page shows the goal and the state `foil brief` would, and
 `, fleet paused` when the fleet is paused. It shows the `decisions`
 list from `status.md` when that front matter parses, or `None.` when
-it has none. It shows the latest 40 journal lines, or `None.` when the
+it has none. Each decision is one numbered line. A range on that list
+is the path `status.md#decisions`. It shows the latest 40 journal lines, or `None.` when the
 log is empty or cannot be read. A board that is a symlink, or a
 `status.md` that is a symlink or cannot be opened, contributes no goal,
 questions, or decisions, and the rest of the page stays. It shows the open questions,
@@ -1117,7 +1119,10 @@ that crosses 64 KiB, up to 8 KiB more, the masker runs, and the page
 then shows the first 64 KiB of that masked text. A longer file says
 `truncated`. A listed file that cannot be read is one line, `This file
 cannot be read.`, and the rest of the page stays. The open does not
-follow a symlink and does not block on a pipe.
+follow a symlink and does not block on a pipe. The text is one numbered
+line per line of that preview. A range and a sentence are
+`POST /v1/quote` as `user`, which runs `foil quote` on that board path.
+The page names the seat the mail went to.
 
 A seat page shows the conversation from `foil-bridge transcript` for
 that seat, project, and fleet, at `level`. The runner record is not
@@ -1162,7 +1167,11 @@ ref exists, and otherwise the checkout's current branch. The diff is
 plus the rest of that line, up to 8 KiB more, the masker runs, and the
 page shows the first 64 KiB. A longer diff says `truncated`. A textconv
 filter is not run. An empty diff says `No changes.` A ref git cannot diff
-says `No diff.` The page names the base and the branch.
+says `No diff.` The page names the base and the branch. Each line of
+that diff is numbered. A range is the path `branch:<name>`. The mail
+quotes that diff, using this page's base. When `<name>` is the lead's
+recorded branch, the base is the checkout's current branch, matching
+the lead page (F13).
 
 The same page has a chat with that seat. `GET /v1/chat` takes `project`,
 `fleet`, and `seat`, and returns the mail between `user` and that seat,
@@ -1179,6 +1188,13 @@ line. The lead's page also shows that fleet's question cards. Answering
 on the home, on this page, or with `foil answer` writes one mail. A later
 answer for the same id writes nothing, and each of those places shows the
 first text.
+
+`POST /v1/quote` with `{"project","fleet","path","start","end","text"}`
+runs `foil quote` as `user`. `start` and `end` are the line numbers,
+inclusive. The response is `{"ok":true,"to":"<seat>"}`. A bad range, a
+missing file, a symlink, an empty sentence, or text over 16 KiB is 400
+with that command's line. A body over 64 KiB is `foil: quote text is too long`.
+Mail from `user` to a worker appends the pointer (F13).
 
 Every one of these routes needs the token. A `POST` needs the matching
 `Origin`. A `foil.api` error is 400 with `{"error"}` and the command's
