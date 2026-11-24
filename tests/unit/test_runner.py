@@ -22,6 +22,7 @@ from foil.runner import (
     RESTARTED,
     Runner,
     RunnerError,
+    first_prompt,
     load_plan,
     load_record,
     record_path,
@@ -44,6 +45,7 @@ def _plan(tmp_path: Path, **changes: object) -> dict:
         "env": {"FOIL_SEAT_ID": "seat-1"},
         "env_forward": [],
         "instruction": str(instruction),
+        "system": False,
         "board": str(board),
         "seat": "seat-1",
         "reader": "lead",
@@ -543,3 +545,32 @@ def test_delivered_paths_are_compacted_before_the_record_limit(tmp_path: Path) -
     assert len(encoded) <= MAX_BYTES - 64 * 1024
     assert 0 < len(record["delivered"]) < before
     assert not record["delivered"][0].startswith("mail/seat-1/00000-")
+
+
+def test_a_system_seat_gets_a_short_first_prompt_and_no_reread_line(tmp_path: Path) -> None:
+    plan = _plan(tmp_path, system=True)
+    assert first_prompt(plan) == "Your role instructions are in your system instructions. Begin.\n"
+    assert wake_prompt(plan, [], restarted=False) == "Nothing new for seat-1.\n"
+    assert "Re-read" not in wake_prompt(plan, [], restarted=True)
+
+
+def test_the_instruction_text_is_filled_in_on_every_turn(tmp_path: Path) -> None:
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import json, sys\n"
+        "open(sys.argv[1], 'a').write(json.dumps(sys.argv[2:]) + '\\n')\n",
+        encoding="utf-8",
+    )
+    seen = tmp_path / "seen.jsonl"
+    argv = [sys.executable, str(probe), str(seen), "-c", "developer_instructions={instruction_toml}",
+            "{prompt}"]
+    plan = _plan(tmp_path, start=argv, turn=argv, system=True)
+    (tmp_path / "fleet" / "run" / "instructions" / "seat-1.md").write_text(
+        'Say "hi"\n{prompt}\n', encoding="utf-8"
+    )
+    runner = Runner(_write(tmp_path, plan))
+    assert runner.turn("start", "first") == 0
+    assert runner.turn("turn", "again") == 0
+    first, second = [json.loads(line) for line in seen.read_text().splitlines()]
+    assert first == ["-c", 'developer_instructions="Say \\"hi\\"\\n{prompt}\\n"', "first"]
+    assert second[:2] == first[:2] and second[2] == "again"

@@ -755,6 +755,7 @@ def _write_instruction(
     joined: bool = False,
     handoff: Path | None = None,
     branch: str = "",
+    system: bool = False,
 ) -> Path:
     path = (fleet_dir(root) / "run" / "instructions" / f"{seat}.md").resolve()
     body = _instruction(
@@ -768,11 +769,12 @@ def _write_instruction(
         handoff=handoff,
         branch=branch,
     ).rstrip("\n")
-    reread = (
-        f"Re-read `{path}` after your harness compacts this conversation, or when unsure."
-        if joined
-        else f"Re-read `{path}` whenever you are woken."
-    )
+    if joined:
+        reread = f"Re-read `{path}` after your harness compacts this conversation, or when unsure."
+    elif system:
+        reread = f"These instructions are also kept in `{path}`."
+    else:
+        reread = f"Re-read `{path}` whenever you are woken."
     text = f"{body}\n{reread}\n"
     scan(text)
     write_bytes(path, text.encode())
@@ -825,6 +827,7 @@ def _write_plan(
             session_id=None,
             permission=template["permission"],
             turn=kind == "turn",
+            instruction=str(instruction),
         )
         for kind in ("start", "turn")
     }
@@ -851,6 +854,7 @@ def _write_plan(
         "env": environment,
         "env_forward": forward,
         "instruction": str(instruction),
+        "system": preset.get("instructions") is not None,
         "board": str(_board(root)),
         "seat": seat,
         "reader": "user" if seat == "lead" else "lead",
@@ -913,6 +917,7 @@ def _open(
         task=task,
         handoff=handoff,
         branch=branch,
+        system=preset.get("instructions") is not None,
     )
     plan_path, cwd = _write_plan(
         root,
@@ -1453,7 +1458,8 @@ def renew_seat(root: Path, name: str) -> None:
             _fresh_path(root, name).unlink()
     else:
         instruction = _write_instruction(
-            root, name, loaded, restarted=False, handoff=handoff, branch=branch
+            root, name, loaded, restarted=False, handoff=handoff, branch=branch,
+            system=preset.get("instructions") is not None,
         )
         _write_plan(
             root,

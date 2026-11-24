@@ -45,6 +45,7 @@ _FIELDS = {
     "env",
     "env_forward",
     "instruction",
+    "system",
     "board",
     "seat",
     "reader",
@@ -94,6 +95,7 @@ def load_plan(path: Path) -> dict[str, Any]:
         or not isinstance(plan["retry"], list)
         or not all(type(wait) in (int, float) and wait >= 0 for wait in plan["retry"])
         or not isinstance(plan["worker"], bool)
+        or not isinstance(plan["system"], bool)
         or not isinstance(plan["restarted"], bool)
         or not isinstance(environment, dict)
         or not all(
@@ -287,19 +289,23 @@ def wake_prompt(
         budget -= size
         inlined.add(item["path"])
         lines += [f"--- {item['path']}", body.rstrip("\n")]
-    lines.append(
-        f"Re-read {plan['instruction']} before you act."
-        + (
-            " Read each item above that is not inlined: a path under board/mail/ with "
-            "foil mail read, a path under board/room/ with foil board read."
-            if len(inlined) < len(items)
-            else ""
-        )
+    unread = (
+        "Read each item above that is not inlined: a path under board/mail/ with "
+        "foil mail read, a path under board/room/ with foil board read."
+        if len(inlined) < len(items)
+        else ""
     )
+    if plan["system"]:
+        if unread:
+            lines.append(unread)
+    else:
+        lines.append(f"Re-read {plan['instruction']} before you act." + (" " + unread if unread else ""))
     return "\n".join(lines) + "\n"
 
 
 def first_prompt(plan: dict[str, Any]) -> str:
+    if plan["system"]:
+        return "Your role instructions are in your system instructions. Begin.\n"
     path = Path(plan["instruction"])
     try:
         if path.stat().st_size < FIRST_INLINE:
@@ -403,7 +409,11 @@ class Runner:
 
         session = self.record["session_id"] or self.plan["session_id"]
         values = {"{prompt}": prompt, "{session_id}": session}
-        argv = [values.get(token, token) for token in self.plan[kind]]
+        template = list(self.plan[kind])
+        if any("{instruction_toml}" in token for token in template):
+            text = json.dumps(self._instruction_text(), ensure_ascii=False)
+            template = [token.replace("{instruction_toml}", text) for token in template]
+        argv = [values.get(token, token) for token in template]
         learn = bool(self.plan["session_key"]) and not session
         print(f"foil: turn started ({kind})", flush=True)
         note(self.board.parent, "turn_start", seat=self.seat, kind=kind)
@@ -419,6 +429,12 @@ class Runner:
         )
         note(self.board.parent, "turn_end", seat=self.seat, exit=code)
         return code
+
+    def _instruction_text(self) -> str:
+        try:
+            return Path(self.plan["instruction"]).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return f"Read {self.plan['instruction']} before anything else."
 
     def _child(self, child: subprocess.Popen | None) -> None:
         self.child = child
