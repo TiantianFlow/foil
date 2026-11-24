@@ -145,7 +145,7 @@ def test_pages_list_fleets_a_fleet_a_file_and_a_seat(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _alive(monkeypatch)
-    for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_DIR", "GROK_HOME", "XDG_DATA_HOME"):
+    for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "GROK_HOME", "XDG_DATA_HOME"):
         monkeypatch.delenv(name, raising=False)
     with _short_repo(monkeypatch) as repo:
         trunk = _branches(repo)
@@ -576,7 +576,7 @@ def test_a_linked_turns_directory_is_not_the_session(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _alive(monkeypatch)
-    for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_DIR", "GROK_HOME", "XDG_DATA_HOME"):
+    for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "GROK_HOME", "XDG_DATA_HOME"):
         monkeypatch.delenv(name, raising=False)
     _transcript(monkeypatch, tmp_path / "home")
     with _short_repo(monkeypatch) as repo:

@@ -214,7 +214,7 @@ def test_resume_continues_a_session_only_after_a_turn_ended(
     from tests.test_spawn import _add_role
 
     _add_role(repo, "codex-role", "codex", worktree=True)
-    _add_role(repo, "fresh", "gemini")
+    _add_role(repo, "fresh", "grok")
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "codex-role", "--name", "coder"]) == 0
     assert main(["seat", "spawn", "fresh", "--name", "reader"]) == 0
@@ -232,9 +232,9 @@ def test_resume_continues_a_session_only_after_a_turn_ended(
     assert coder["turn"][:2] == ["codex", "exec"]
     assert "{session_id}" in coder["turn"]
     assert reader["first"] == "start"
-    assert reader["start"][0] == "gemini"
+    assert reader["start"][0] == "grok"
     assert reader["session_id"] not in ("", reader_id)
-    assert "yolo" in reader["start"]
+    assert "--always-approve" in reader["start"]
     reader_text = (
         foil_root(repo) / "fleets" / "main" / "run" / "instructions" / "reader.md"
     ).read_text(encoding="utf-8")
@@ -453,7 +453,7 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     assert previous
     assert launched["harness"] == "claude"
     assert launched["model"] == "sonnet"
-    _set_entries(repo, "worker", [("gemini", "other"), ("codex", "gpt-5.5")])
+    _set_entries(repo, "worker", [("grok", "other"), ("codex", "gpt-5.5")])
     _alive(monkeypatch, {window})
     capsys.readouterr()
     assert main(["seat", "list"]) == 0
@@ -461,7 +461,7 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     worktree = load_registry(repo)["seats"]["lead"]["worktree"]
     assert f"worker\tworker\tidle\t\tclaude/sonnet\t{previous}\t" in listed
     assert worktree
-    assert "gemini" not in listed
+    assert "grok" not in listed
     _alive(monkeypatch, set())
     assert main(["seat", "resume", "worker"]) == 0
     assert capsys.readouterr().err == ""
@@ -480,7 +480,7 @@ def test_resume_keeps_the_recorded_harness_after_the_template_changes(
     assert plan["first"] == "start"
     assert "{session_id}" in plan["start"] and "{session_id}" in plan["turn"]
     assert "--resume" in plan["turn"]
-    assert "gemini" not in plan["start"] + plan["turn"]
+    assert "grok" not in plan["start"] + plan["turn"]
 
 
 def test_resume_names_a_broken_seat_and_continues(
@@ -592,7 +592,7 @@ def test_resume_after_a_partial_renew_starts_the_new_session(
     repo = _repo(tmp_path, monkeypatch)
     calls = _launch(monkeypatch)
     _add_role(repo, "worker", "claude")
-    _set_entries(repo, "worker", [("claude", "old"), ("gemini", "new")])
+    _set_entries(repo, "worker", [("claude", "old"), ("grok", "new")])
     assert main(["seat", "spawn", "lead"]) == 0
     assert main(["seat", "spawn", "worker", "--name", "worker"]) == 0
     board = foil_root(repo) / "fleets" / "main" / "board"
@@ -617,7 +617,7 @@ def test_resume_after_a_partial_renew_starts_the_new_session(
         renew_seat(repo, "worker")
     seat = load_registry(repo)["seats"]["worker"]
     turns = load_record(board, "worker")
-    assert (seat["harness"], seat["model"]) == ("gemini", "new")
+    assert (seat["harness"], seat["model"]) == ("grok", "new")
     assert seat["session_id"] and seat["session_id"] != before["session_id"]
     assert turns["session_id"] == seat["session_id"] and turns["started"] is False
 
@@ -627,7 +627,7 @@ def test_resume_after_a_partial_renew_starts_the_new_session(
     plan = _plan_of(repo, "worker")
     assert plan["first"] == "start"
     assert plan["session_id"] == load_registry(repo)["seats"]["worker"]["session_id"]
-    assert plan["start"][0] == "gemini"
+    assert plan["start"][0] == "grok"
 
 
 def test_resume_after_a_partial_output_renew_starts_fresh(

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -25,11 +24,10 @@ GOLDEN = Path(__file__).resolve().parents[1] / "tests" / "golden" / "transcript"
 CWD = "/work/demo"
 CLAUDE = "11111111-1111-4111-8111-111111111111"
 CODEX = "22222222-2222-4222-8222-222222222222"
-GEMINI = "33333333-3333-4333-8333-333333333333"
 GROK = "44444444-4444-4444-8444-444444444444"
 FAKE = "55555555-5555-4555-8555-555555555555"
 OPEN = "ses_fixture1"
-_HARNESS_ENV = ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_DIR", "GROK_HOME", "XDG_DATA_HOME")
+_HARNESS_ENV = ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "GROK_HOME", "XDG_DATA_HOME")
 
 
 def _events(name: str) -> list[dict]:
@@ -82,19 +80,6 @@ def test_each_format_matches_its_golden_file(tmp_path: Path) -> None:
         0
     ] == _events("codex")
 
-    digest = hashlib.sha256(CWD.encode()).hexdigest()
-    gemini = (
-        tmp_path
-        / ".gemini"
-        / "tmp"
-        / digest
-        / "chats"
-        / f"session-2026-01-02T03-04-{GEMINI[:8]}.jsonl"
-    )
-    gemini.parent.mkdir(parents=True)
-    gemini.write_text((GOLDEN / "gemini.jsonl").read_text(encoding="utf-8"), encoding="utf-8")
-    assert read_session("gemini", GEMINI, CWD, tmp_path / ".gemini")[0] == _events("gemini")
-
     grok = tmp_path / ".grok" / "sessions" / quote(CWD, safe="") / GROK / "updates.jsonl"
     grok.parent.mkdir(parents=True)
     grok.write_text((GOLDEN / "grok.jsonl").read_text(encoding="utf-8"), encoding="utf-8")
@@ -146,21 +131,6 @@ def test_opencode_sqlite_matches_the_json_store(tmp_path: Path) -> None:
     connection.commit()
     connection.close()
     assert read_session("opencode", OPEN, CWD, tmp_path)[0] == _events("opencode")
-
-
-def test_a_legacy_gemini_json_file_reads_the_same_messages(tmp_path: Path) -> None:
-    rows = [
-        json.loads(line)
-        for line in (GOLDEN / "gemini.jsonl").read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    messages = [row for row in rows if row.get("type") in {"user", "gemini"}]
-    payload = {"sessionId": GEMINI, "messages": messages}
-    digest = hashlib.sha256(CWD.encode()).hexdigest()
-    path = tmp_path / "tmp" / digest / "chats" / f"session-2026-01-02T03-04-{GEMINI[:8]}.json"
-    path.parent.mkdir(parents=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    assert read_session("gemini", GEMINI, CWD, tmp_path)[0] == _events("gemini")
 
 
 def test_codex_is_found_from_the_journal_day_when_the_name_differs(tmp_path: Path) -> None:

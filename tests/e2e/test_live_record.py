@@ -11,7 +11,7 @@ from foil.cli import main
 from tests.e2e.test_scenarios import _close, _prepare
 from tests.harness import live_record
 
-_NAMES = ("claude", "codex", "gemini", "opencode", "grok")
+_NAMES = ("agy", "claude", "codex", "opencode", "grok")
 
 
 def test_a_later_run_replaces_the_row_for_its_harness_and_scenario(tmp_path: Path) -> None:

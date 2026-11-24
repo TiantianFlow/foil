@@ -238,11 +238,11 @@ def test_a_dragged_harness_order_applies_on_the_tap(
             apply.click()
             expect(apply).to_be_hidden()
             assert _harness(_list(repo, "main", "user"), "reviewer") == "codex,claude"
-            _update(repo, "main", "user", "reviewer", "harness=gemini,claude")
+            _update(repo, "main", "user", "reviewer", "harness=agy,claude")
             items.nth(1).drag_to(items.nth(0))
             apply.click()
-            expect(page.get_by_text("now: gemini,claude")).to_be_visible()
-            assert _harness(_list(repo, "main", "user"), "reviewer") == "gemini,claude"
+            expect(page.get_by_text("now: agy,claude")).to_be_visible()
+            assert _harness(_list(repo, "main", "user"), "reviewer") == "agy,claude"
         finally:
             context.close()
             server.stopped.set()

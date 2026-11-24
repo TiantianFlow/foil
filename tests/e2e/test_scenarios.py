@@ -986,7 +986,7 @@ def test_scenario_7_ai_native_onboarding(
     first = capsys.readouterr().out
     assert (
         "Installed harnesses, in id order (a tiebreak, not a ranking): "
-        "claude, codex, gemini, grok, opencode"
+        "claude, codex, grok, opencode"
     ) in first
     assert "lead: claude (first installed id)" in first
     assert "implementer: claude (first installed id)" in first
@@ -997,7 +997,7 @@ def test_scenario_7_ai_native_onboarding(
     ) in first
 
     # Store three different harness ids in the templates, then init again.
-    # Five harnesses stay installed throughout, so a guarantee computed only
+    # Four harnesses stay installed throughout, so a guarantee computed only
     # from the install count would still say "two". The report must instead
     # read the ids actually stored in the three templates and say "three".
     mapping = store_root() / "mapping.toml"
@@ -1009,7 +1009,7 @@ def test_scenario_7_ai_native_onboarding(
     )
     text = text.replace(
         'role = "reviewer"\nharness = "codex"',
-        'role = "reviewer"\nharness = "gemini"',
+        'role = "reviewer"\nharness = "grok"',
         1,
     )
     mapping.write_text(text, encoding="utf-8")
@@ -1017,11 +1017,11 @@ def test_scenario_7_ai_native_onboarding(
     second = capsys.readouterr().out
     assert (
         "Installed harnesses, in id order (a tiebreak, not a ranking): "
-        "claude, codex, gemini, grok, opencode"
+        "claude, codex, grok, opencode"
     ) in second
     assert "lead: claude (left alone)" in second
     assert "implementer: codex (left alone)" in second
-    assert "reviewer: gemini (left alone)" in second
+    assert "reviewer: grok (left alone)" in second
     assert (
         "The three default templates use three different harness ids. "
         "Two ids can still run the same program or model; set model on a template to choose one."

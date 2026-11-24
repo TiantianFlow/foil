@@ -229,8 +229,10 @@ def test_builtins_name_a_transcript_and_core_does_not_read_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
+    # agy keeps no conversation file its docs describe, so it names no reader.
     for harness_id in BUILTIN_IDS:
-        assert load_preset(repo, harness_id)["transcript"] == harness_id
+        expected = "" if harness_id == "agy" else harness_id
+        assert load_preset(repo, harness_id)["transcript"] == expected
     for name in ("runner.py", "lifecycle.py", "joined.py", "mail_ops.py", "board.py"):
         assert "transcript" not in (ROOT / "src" / "foil" / name).read_text(encoding="utf-8")
 

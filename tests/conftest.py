@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-_HARNESSES = ("grok", "claude", "codex", "opencode", "gemini")
+_HARNESSES = ("grok", "claude", "codex", "opencode")
 
 
 @pytest.fixture(autouse=True)

@@ -13,7 +13,7 @@ from tests.harness.live_record import record
 from tests.harness.shims import install_shims
 
 _FAKE = Path(__file__).resolve().parents[1] / "harness" / "foil_fake.py"
-STAND_INS = ("claude", "codex", "gemini", "opencode", "grok")
+STAND_INS = ("agy", "claude", "codex", "opencode", "grok")
 
 
 @pytest.fixture(autouse=True)

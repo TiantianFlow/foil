@@ -129,9 +129,9 @@ and what you did not verify.
 
 Re-check each preset's model ids in `src/foil/defaults/harnesses.toml` against that CLI's current docs, and change the packaged list when the docs have changed. Do not guess an id. The docs are:
 
+- `agy`: <https://antigravity.google/docs/models/> and <https://antigravity.google/docs/cli/headless/>. The docs list no model ids, only display names, and say `agy models` prints the ids an account can use. The packaged list holds the two ids the docs show in examples, `gemini-4-neon-xhigh` and `gemini-3.8-flash-medium`, checked on 2026-11-24.
 - `claude`: <https://code.claude.com/docs/en/model-config>
 - `codex`: <https://developers.openai.com/codex/models>
-- `gemini`: <https://geminicli.com/docs/cli/model/>
 - `grok`: <https://docs.x.ai/developers/models> and <https://docs.x.ai/build/cli/reference>
 - `opencode`: <https://opencode.ai/docs/cli/> and <https://opencode.ai/docs/models/>. Its model id is `provider_id/model_id`, and its docs say the built-in provider and model names come from <https://models.dev/>. The packaged list, `anthropic/claude-sonnet-4-5` and `openai/gpt-5.5`, was checked there on 2026-10-21 and both ids were current.
 
