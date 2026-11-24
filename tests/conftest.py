@@ -23,4 +23,11 @@ def _harness_stubs(
         binary = bindir / name
         binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         binary.chmod(0o755)
-    monkeypatch.setenv("PATH", os.pathsep.join((str(bindir), os.environ.get("PATH", ""))))
+    # agy sorts first, so a real one installed here would take the default
+    # templates. The suite never sees a real CLI that has no stub here.
+    kept = [
+        part
+        for part in os.environ.get("PATH", "").split(os.pathsep)
+        if not (part and os.access(os.path.join(part, "agy"), os.X_OK))
+    ]
+    monkeypatch.setenv("PATH", os.pathsep.join((str(bindir), *kept)))
