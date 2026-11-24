@@ -698,11 +698,14 @@ def test_instruction_points_at_the_role_skill(
     assert ".foil/skills/" not in reader
     assert "You plan the goal, staff the fleet" in lead
     assert "You do the assigned task, stay in your own worktree" in reader
-    assert "whenever you are woken." in lead
-    assert "whenever you are woken." in reader
+    # Claude carries its instructions as system instructions, so the file does not
+    # tell the seat to re-read it.
+    for text in (lead, reader):
+        assert "whenever you are woken." not in text
+        assert "These instructions are also kept in `" in text
 
 
-def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
+def test_launch_prompt_inlines_the_skill_and_only_system_presets_gain_a_flag(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path, monkeypatch)
@@ -742,9 +745,15 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
         reread = (
             foil_root(repo) / "fleets" / "main" / "run" / "instructions" / f"{seat}.md"
         ).resolve()
-        assert f"Re-read `{reread}`" in text
-        assert "whenever you are woken." in text
         preset = load_preset(repo, harness)
+        if preset["instructions"] is None:
+            assert plan["system"] is False
+            assert f"Re-read `{reread}`" in text
+            assert "whenever you are woken." in text
+        else:
+            assert plan["system"] is True
+            assert f"These instructions are also kept in `{reread}`." in text
+            assert "whenever you are woken." not in text
         allowed = {
             token
             for token in (
@@ -752,12 +761,15 @@ def test_launch_prompt_inlines_the_skill_and_presets_gain_no_flag(
                 *preset["turn"],
                 *preset["permission"]["ask"],
                 *preset["permission"]["auto"],
+                *(preset["instructions"] or []),
             )
             if token.startswith("-")
         }
         for argv in (plan["start"], plan["turn"]):
             assert {token for token in argv if token.startswith("-")} <= allowed
-            assert not any("system-prompt" in token for token in argv)
+            assert "{instructions}" not in argv
+            if preset["instructions"] is None:
+                assert not any("system-prompt" in token for token in argv)
     mail = _mail(repo, "seat-fake")
     assert len(mail) == 1
     assert mail[0].read_text(encoding="utf-8").endswith("only the goal\n")
@@ -1161,3 +1173,29 @@ def test_spawn_sets_a_preset_set_env_value_in_the_plan(
     assert plan["env"]["HARNESS_CONFIG"] == "quiet"
     assert plan["env"]["FOIL_SEAT_ID"] == "lead"
     assert "HARNESS_CONFIG" not in plan["env_forward"]
+
+
+def test_a_system_preset_carries_its_instruction_file_on_start_and_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path, monkeypatch)
+    _launch(monkeypatch)
+    assert main(["seat", "spawn", "lead"]) == 0
+    monkeypatch.setenv("FOIL_SEAT_ID", "lead")
+    _add_role(repo, "via-codex", "codex")
+    assert main(["seat", "spawn", "via-codex", "--name", "coder"]) == 0
+    plans = foil_root(repo) / "fleets" / "main" / "run" / "plans"
+    lead = json.loads((plans / "lead.json").read_text(encoding="utf-8"))
+    file = lead["instruction"]
+    for kind in ("start", "turn"):
+        argv = lead[kind]
+        assert argv[argv.index("--append-system-prompt-file") + 1] == file
+        assert argv.count("--append-system-prompt-file") == 1
+    coder = json.loads((plans / "coder.json").read_text(encoding="utf-8"))
+    for kind in ("start", "turn"):
+        argv = coder[kind]
+        assert argv[argv.index("-c") + 1] == "developer_instructions={instruction_toml}"
+        # Codex takes -c before resume and the prompt.
+        assert argv.index("-c") < argv.index("{prompt}")
+        if kind == "turn":
+            assert argv.index("-c") < argv.index("resume")
