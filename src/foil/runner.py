@@ -33,6 +33,8 @@ LISTED = 50
 INLINE_TOTAL = 16 * 1024
 CANNOT_RUN = 127
 FIRST_INLINE = 64 * 1024
+# One argv word may not pass 128 KiB, so a larger instruction file is named, not inlined.
+SYSTEM_INLINE = 100 * 1024
 LEFTOVER_GRACE = 2.0
 RESTARTED = "You were restarted. Check before you repeat a merge, push, post or send."
 _ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
@@ -412,7 +414,7 @@ class Runner:
         values = {"{prompt}": prompt, "{session_id}": session}
         template = list(self.plan[kind])
         if any("{instruction_toml}" in token for token in template):
-            text = json.dumps(self._instruction_text(), ensure_ascii=False)
+            text = self._instruction_toml()
             template = [token.replace("{instruction_toml}", text) for token in template]
         argv = [values.get(token, token) for token in template]
         learn = bool(self.plan["session_key"]) and not session
@@ -431,11 +433,19 @@ class Runner:
         note(self.board.parent, "turn_end", seat=self.seat, exit=code)
         return code
 
-    def _instruction_text(self) -> str:
+    def _instruction_toml(self) -> str:
+        """The instruction file's text as a TOML basic string, or one line naming the file."""
+
+        path = self.plan["instruction"]
+        named = f"Read {path} before anything else. It is your instruction file."
         try:
-            return Path(self.plan["instruction"]).read_text(encoding="utf-8")
+            text = Path(path).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
-            return f"Read {self.plan['instruction']} before anything else."
+            text = named
+        quoted = json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f")
+        if len(quoted.encode()) > SYSTEM_INLINE:
+            quoted = json.dumps(named)
+        return quoted
 
     def _child(self, child: subprocess.Popen | None) -> None:
         self.child = child

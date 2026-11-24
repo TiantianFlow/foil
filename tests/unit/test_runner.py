@@ -574,3 +574,19 @@ def test_the_instruction_text_is_filled_in_on_every_turn(tmp_path: Path) -> None
     first, second = [json.loads(line) for line in seen.read_text().splitlines()]
     assert first == ["-c", 'developer_instructions="Say \\"hi\\"\\n{prompt}\\n"', "first"]
     assert second[:2] == first[:2] and second[2] == "again"
+
+
+def test_the_instruction_text_is_a_toml_string_or_names_a_file_too_big_for_argv(
+    tmp_path: Path,
+) -> None:
+    from foil.runner import SYSTEM_INLINE
+
+    plan = _plan(tmp_path, system=True)
+    file = Path(plan["instruction"])
+    runner = Runner(_write(tmp_path, plan))
+    file.write_text("a\x7fb\n", encoding="utf-8")
+    assert runner._instruction_toml() == '"a\\u007fb\\n"'
+    file.write_text("x" * SYSTEM_INLINE, encoding="utf-8")
+    assert runner._instruction_toml() == json.dumps(
+        f"Read {file} before anything else. It is your instruction file."
+    )
