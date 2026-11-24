@@ -299,7 +299,8 @@ def wake_prompt(
         if unread:
             lines.append(unread)
     else:
-        lines.append(f"Re-read {plan['instruction']} before you act." + (" " + unread if unread else ""))
+        reread = f"Re-read {plan['instruction']} before you act."
+        lines.append(f"{reread} {unread}" if unread else reread)
     return "\n".join(lines) + "\n"
 
 

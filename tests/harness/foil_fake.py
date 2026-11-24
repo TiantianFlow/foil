@@ -122,7 +122,9 @@ _SHAPES = {
     "gemini": ({"-p", "--session-id", "--resume", "--model", "--approval-mode"},
                {"--skip-trust"}, []),
     "grok": ({"-p", "--session-id", "--resume", "--model"}, {"--always-approve"}, []),
-    "codex": ({"--model", "-c"}, {"--json", "--dangerously-bypass-approvals-and-sandbox"}, ["exec"]),
+    "codex": (
+        {"--model", "-c"}, {"--json", "--dangerously-bypass-approvals-and-sandbox"}, ["exec"]
+    ),
     "opencode": ({"--format", "--session", "--model"}, {"--auto"}, ["run"]),
 }
 

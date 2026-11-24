@@ -562,8 +562,8 @@ def test_the_instruction_text_is_filled_in_on_every_turn(tmp_path: Path) -> None
         encoding="utf-8",
     )
     seen = tmp_path / "seen.jsonl"
-    argv = [sys.executable, str(probe), str(seen), "-c", "developer_instructions={instruction_toml}",
-            "{prompt}"]
+    flag = "developer_instructions={instruction_toml}"
+    argv = [sys.executable, str(probe), str(seen), "-c", flag, "{prompt}"]
     plan = _plan(tmp_path, start=argv, turn=argv, system=True)
     (tmp_path / "fleet" / "run" / "instructions" / "seat-1.md").write_text(
         'Say "hi"\n{prompt}\n', encoding="utf-8"
