@@ -64,7 +64,7 @@ _RESERVED_ENV_PREFIXES = ("FOIL_", "GIT_")
 _RESERVED_ENV = {"PATH", "HOME", "XDG_DATA_HOME"}
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 _ROLES = ("lead", "implementer", "reviewer")
-BUILTIN_IDS = ("claude", "codex", "gemini", "opencode", "grok", "fake")
+BUILTIN_IDS = ("agy", "claude", "codex", "opencode", "grok", "fake")
 # Set while init checks that a harness is installed, before the project folder is ready.
 _init_check: ContextVar[bool] = ContextVar("foil_init_check", default=False)
 

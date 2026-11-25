@@ -1131,15 +1131,15 @@ def test_roster_update_edits_a_list_only_as_a_whole(project: Path) -> None:
             update_template(project, "lead", "harness", bad)
     assert _roster_bytes(project) == before
     others = [row for row in _maps_of(store_root()) if row["role"] != "lead"]
-    update_template(project, "lead", "harness", "codex/gpt-5.5,claude,gemini/pro/2")
+    update_template(project, "lead", "harness", "codex/gpt-5.5,claude,agy/pro/2")
     assert _global_maps("lead") == [
         {"id": "codex", "model": "gpt-5.5"},
         {"id": "claude", "model": ""},
-        {"id": "gemini", "model": "pro/2"},
+        {"id": "agy", "model": "pro/2"},
     ]
     assert [row for row in _maps_of(store_root()) if row["role"] != "lead"] == others
-    update_template(project, "lead", "harness", "gemini")
-    assert _global_maps("lead") == [{"id": "gemini", "model": ""}]
+    update_template(project, "lead", "harness", "agy")
+    assert _global_maps("lead") == [{"id": "agy", "model": ""}]
     update_template(project, "lead", "persona", "personas/reviewer.md")
     assert _global_role("lead")["persona"] == "personas/reviewer.md"
 

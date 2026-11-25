@@ -22,7 +22,7 @@ PUBLIC_URL_HOSTS = frozenset(
         "code.claude.com",
         "developers.openai.com",
         "docs.x.ai",
-        "geminicli.com",
+        "antigravity.google",
         "models.dev",
         "opencode.ai",
         "pypi.org",
@@ -154,7 +154,7 @@ def test_tracked_docs_urls_use_public_host_allowlist() -> None:
         "code.claude.com",
         "developers.openai.com",
         "docs.x.ai",
-        "geminicli.com",
+        "antigravity.google",
         "models.dev",
         "opencode.ai",
     }

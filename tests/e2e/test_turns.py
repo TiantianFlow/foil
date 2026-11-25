@@ -504,7 +504,7 @@ def test_scenario_16_stand_ins_run_each_preset_turn_on_its_first_session(
     pairs = {
         "claude": "sonnet",
         "codex": "gpt-6.1-sol",
-        "gemini": "gemini-3-pro-preview",
+        "agy": "gemini-3.8-flash-medium",
         "opencode": "anthropic/claude-sonnet-4-5",
         "grok": "grok-4.7",
     }
@@ -536,6 +536,8 @@ def test_scenario_16_stand_ins_run_each_preset_turn_on_its_first_session(
                 assert argv[argv.index("resume") + 1] == first["session"]
             elif harness == "opencode":
                 assert argv[argv.index("--session") + 1] == first["session"]
+            elif harness == "agy":
+                assert argv[argv.index("--conversation") + 1] == first["session"]
             else:
                 assert argv[argv.index("--resume") + 1] == first["session"]
             recorded = _rows(capsys)[seat]["session_id"]

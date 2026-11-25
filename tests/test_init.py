@@ -114,7 +114,7 @@ def test_init_prints_the_pointer_and_the_lead_permission(
     assert ask in first.out
     assert rule in first.out
     assert "Installed harnesses, in id order (a tiebreak, not a ranking):" in first.out
-    for name in ("claude", "codex", "gemini", "grok", "opencode"):
+    for name in ("claude", "codex", "grok", "opencode"):
         assert name in first.out
     assert "lead: claude (first installed id)" in first.out
     assert "implementer: claude (first installed id)" in first.out
@@ -156,7 +156,7 @@ def test_init_rerun_reports_the_harness_stored_after_an_edit(
     _init_git_repository(repo)
     monkeypatch.chdir(repo)
     real = shutil.which
-    hidden = {"grok", "opencode", "gemini", "fake", "foil-fake"}
+    hidden = {"grok", "opencode", "agy", "fake", "foil-fake"}
 
     def which(name: str, *args: object, **kwargs: object) -> str | None:
         if name in hidden:
@@ -199,7 +199,7 @@ def test_init_report_uses_three_for_three_stored_ids(
     )
     text = text.replace(
         'role = "reviewer"\nharness = "codex"',
-        'role = "reviewer"\nharness = "gemini"',
+        'role = "reviewer"\nharness = "agy"',
         1,
     )
     mapping.write_text(text, encoding="utf-8")

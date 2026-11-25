@@ -7,6 +7,7 @@ to the fake harness and does not run this module's tests.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -66,7 +67,10 @@ _TASK_5 = (
 def _use_real_harness_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """Drop the suite's harness stubs so init selects a real CLI."""
 
+    from tests.conftest import _REAL_WHICH
+
     monkeypatch.setenv("PATH", _REAL_PATH)
+    monkeypatch.setattr(shutil, "which", _REAL_WHICH)
 
 
 def test_scenario_1_live(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:

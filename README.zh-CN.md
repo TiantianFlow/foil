@@ -12,7 +12,7 @@
 
 **你的 Agent 们的忠诚反对派。**
 
-运筹把你已经在用的编程 Agent（Claude Code、Codex、Gemini、OpenCode、Grok）组成一支小团队。你继续和自己已经在用的 Agent 对话，它加入团队，成为主座。主座规划工作，把每个任务交给有自己 Git 分支的工人席位，让另一个 Agent 检查结果，再把结果合并。每个 Agent 都跑在 tmux 里，每条消息都是你能直接读的文件。
+运筹把你已经在用的编程 Agent（Claude Code、Codex、Antigravity、OpenCode、Grok）组成一支小团队。你继续和自己已经在用的 Agent 对话，它加入团队，成为主座。主座规划工作，把每个任务交给有自己 Git 分支的工人席位，让另一个 Agent 检查结果，再把结果合并。每个 Agent 都跑在 tmux 里，每条消息都是你能直接读的文件。
 
 ## 为什么选择运筹
 
@@ -91,7 +91,7 @@ flowchart TB
 
 ## 开始使用
 
-你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Gemini、OpenCode 或 Grok）。运筹从不经手这次登录。每个席位都无界面地运行它的 CLI，每一轮一个进程，所以没有席位会停在对话框上：需要人才能继续的一轮会结束，席位报告它需要什么。先手动把每个 harness 运行一次，接受它的更新、首次运行和意见征集对话框；你的 Agent 会请你这样做，并把这些留给你。内置预设在对每个 CLI 实际跑过之前，都标为未验证。全局预设在 `init` 之前就算数。其他 CLI 用 `<root>/harnesses.toml` 或 `<root>/harnesses/<id>.toml` 里的一个小预设文件接入。
+你需要 Python 3.11+、Git、tmux 3.2+，以及至少一个已在本机登录、受支持的 Agent CLI（Claude Code、Codex、Antigravity、OpenCode 或 Grok）。运筹从不经手这次登录。每个席位都无界面地运行它的 CLI，每一轮一个进程，所以没有席位会停在对话框上：需要人才能继续的一轮会结束，席位报告它需要什么。先手动把每个 harness 运行一次，接受它的更新、首次运行和意见征集对话框；你的 Agent 会请你这样做，并把这些留给你。内置预设在对每个 CLI 实际跑过之前，都标为未验证。全局预设在 `init` 之前就算数。其他 CLI 用 `<root>/harnesses.toml` 或 `<root>/harnesses/<id>.toml` 里的一个小预设文件接入。
 
 人要做的只有一句话。在仓库里，把它交给你已经在用的编程 Agent：
 

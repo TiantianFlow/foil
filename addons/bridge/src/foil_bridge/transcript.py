@@ -59,12 +59,10 @@ def data_roots(home: Path | None = None, env: dict[str, str] | None = None) -> d
     share = Path(xdg).expanduser() if xdg else base / ".local" / "share"
     claude = names.get("CLAUDE_CONFIG_DIR", "").strip()
     codex = names.get("CODEX_HOME", "").strip()
-    gemini = names.get("GEMINI_DIR", "").strip()
     grok = names.get("GROK_HOME", "").strip()
     return {
         "claude": Path(claude).expanduser() if claude else base / ".claude",
         "codex": Path(codex).expanduser() if codex else base / ".codex",
-        "gemini": Path(gemini).expanduser() if gemini else base / ".gemini",
         "grok": Path(grok).expanduser() if grok else base / ".grok",
         "opencode": share / "opencode",
         "fake": base / ".foil-fake",

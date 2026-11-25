@@ -41,7 +41,7 @@ def _mapping() -> bytes:
 
 def test_the_screen_matches_roster_list(monkeypatch: pytest.MonkeyPatch) -> None:
     with _short_repo(monkeypatch) as repo:
-        _update(repo, "main", "user", "reviewer", "harness=gemini", project_layer=True)
+        _update(repo, "main", "user", "reviewer", "harness=agy", project_layer=True)
         with _serving(monkeypatch) as server:
             port = server.server_address[1]
             token = read_desk_token()
@@ -53,7 +53,7 @@ def test_the_screen_matches_roster_list(monkeypatch: pytest.MonkeyPatch) -> None
             assert page["templates"] == listed["templates"]
             assert page["personas"] == listed["personas"]
             assert page["scope"] == "global"
-            assert _harness(page, "reviewer") != "gemini"
+            assert _harness(page, "reviewer") != "agy"
             assert _mapping() == before
             key = _key(repo)
             status, body = _request(
@@ -63,7 +63,7 @@ def test_the_screen_matches_roster_list(monkeypatch: pytest.MonkeyPatch) -> None
             project = json.loads(body)
             assert project["templates"] == _list(repo, "main", "user")["templates"]
             assert project["personas"] == _list(repo, "main", "user")["personas"]
-            assert _harness(project, "reviewer") == "gemini"
+            assert _harness(project, "reviewer") == "agy"
             files = {row["name"]: row for row in project["persona_files"]}
             for persona in project["personas"]:
                 assert files[persona["name"]]["description"] == persona["description"]

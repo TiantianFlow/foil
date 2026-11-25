@@ -246,8 +246,8 @@ Every built-in preset runs its CLI headless, one process per turn, and continues
 | Preset | `session_id` | Turn argv | Verified |
 | --- | --- | --- | --- |
 | claude | `generated` | `claude -p {prompt} --disallowedTools AskUserQuestion --resume {session_id} --model {model}` | Unverified |
-| gemini | `generated` | `gemini -p {prompt} --resume {session_id} --skip-trust --model {model}` | Unverified |
 | grok | `generated` | `grok -p {prompt} --resume {session_id} --model {model}` | Unverified |
+| agy | `output`, key `conversation_id` | `agy -p {prompt} --output-format stream-json --conversation {session_id} --model {model}` | Unverified |
 | codex | `output`, key `thread_id` | `codex exec {permission} --json --model {model} resume {session_id} {prompt}` | Unverified |
 | opencode | `output`, key `sessionID` | `opencode run {permission} --format json --session {session_id} --model {model} {prompt}` | Unverified |
 | fake | `generated` | `foil-fake --resume {session_id} {prompt}` | Test harness |
@@ -256,7 +256,7 @@ With `generated`, Foil makes a UUID at spawn and the first turn's `start` argv c
 
 A preset's optional `wake` argv is how `foil mail wait --wake` reaches a joined lead's session from outside it. Only `codex` has one: `codex queue --thread {session_id} --message {text} --resume`, unverified. `joined.py` reads it with `load_preset(..., global_only=True)`, so a project harness file cannot change what runs, even where a joined lead's file tools could write it, and it runs the argv without a shell.
 
-An explicit id stays unambiguous when seats share a working directory, so no preset resumes the latest session for a directory. A headless turn has no folder-trust prompt to answer; the `gemini` preset passes `--skip-trust`.
+An explicit id stays unambiguous when seats share a working directory, so no preset resumes the latest session for a directory. A headless turn has no folder-trust prompt to answer. `agy` documents a workspace trust step on its first interactive run and does not say whether `-p` meets it, which is one more reason to run each CLI once by hand first. `agy` names no `transcript` format: its docs describe no conversation file on disk, so the Bridge shows its live pane.
 
 Global roles, the default mapping, harness files someone wrote, and changed personas live at `<root>/`, shared by every project. Each fleet has its own board, room, and registry in that project's folder. `<root>/star.json` records when `init` last printed the star line, so the line is counted per store and not per project. The folder is outside the working tree so `git status` stays clean without an exclude entry. The key is the Git common dir, which a linked worktree and a seat worktree already share.
 

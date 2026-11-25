@@ -27,7 +27,7 @@ from foil.presets import (
 from foil.project import foil_root, store_root
 from tests.test_init import _init_git_repository
 
-_AGENT_CLIS = {"grok", "claude", "codex", "opencode", "gemini", "fake"}
+_AGENT_CLIS = {"grok", "claude", "codex", "opencode", "agy", "fake"}
 
 
 def _hide_agent_clis(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -42,7 +42,7 @@ def _hide_agent_clis(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_builtins_cover_the_six_harnesses(tmp_path: Path) -> None:
-    assert BUILTIN_IDS == ("claude", "codex", "gemini", "opencode", "grok", "fake")
+    assert BUILTIN_IDS == ("agy", "claude", "codex", "opencode", "grok", "fake")
     for harness_id in BUILTIN_IDS:
         preset = load_preset(tmp_path, harness_id)
         assert preset["id"] == harness_id
@@ -77,11 +77,11 @@ _P = "{prompt}"
              "s", _P],
         ),
         (
-            "gemini", "auto",
-            ["gemini", "-p", _P, "--session-id", "s", "--skip-trust", "--model", "m",
-             "--approval-mode", "yolo"],
-            ["gemini", "-p", _P, "--resume", "s", "--skip-trust", "--model", "m",
-             "--approval-mode", "yolo"],
+            "agy", "auto",
+            ["agy", "-p", _P, "--output-format", "stream-json", "--model", "m",
+             "--dangerously-skip-permissions"],
+            ["agy", "-p", _P, "--output-format", "stream-json", "--conversation", "s",
+             "--model", "m", "--dangerously-skip-permissions"],
         ),
         (
             "opencode", "auto",
@@ -115,7 +115,9 @@ def test_each_preset_expands_its_start_and_turn_argv(
 
 
 def test_an_output_preset_leaves_the_session_for_the_runner(tmp_path: Path) -> None:
-    for harness, key in (("codex", "thread_id"), ("opencode", "sessionID")):
+    for harness, key in (
+        ("agy", "conversation_id"), ("codex", "thread_id"), ("opencode", "sessionID")
+    ):
         preset = load_preset(tmp_path, harness)
         assert preset["session_id"] == "output" and preset["session_key"] == key
         assert "{session_id}" not in expand_argv(preset)
@@ -418,7 +420,7 @@ def test_scan_sorts_ids_by_code_point(tmp_path: Path, monkeypatch: pytest.Monkey
 
     ids = [preset["id"] for preset in installed_presets(tmp_path)[0]]
     assert ids.index("grok") < ids.index("opencode")
-    assert ids.index("gemini") < ids.index("mid") < ids.index("opencode")
+    assert ids.index("grok") < ids.index("mid") < ids.index("opencode")
     assert ids.index("a-b") < ids.index("a.b") < ids.index("a_b")
     if case_distinct:
         assert ids.index("Alpha") < ids.index("alpha")
@@ -1018,7 +1020,7 @@ def test_instructions_need_one_slot_in_start_and_in_turn(tmp_path: Path) -> None
 
 
 def test_a_preset_without_instructions_has_no_slot(tmp_path: Path) -> None:
-    for harness in ("gemini", "opencode", "grok", "fake"):
+    for harness in ("agy", "opencode", "grok", "fake"):
         preset = load_preset(tmp_path, harness)
         assert preset["instructions"] is None
         assert "{instructions}" not in expand_argv(preset, instruction="/i.md")

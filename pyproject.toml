@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "foil-ai"
 version = "0.7.0"
-description = "Your agents' loyal opposition: Claude Code, Codex, Gemini, OpenCode, and Grok as a small team that plans, implements, reviews, and merges in tmux, with a read-only local viewer"
+description = "Your agents' loyal opposition: Claude Code, Codex, Antigravity, OpenCode, and Grok as a small team that plans, implements, reviews, and merges in tmux, with a read-only local viewer"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -15,12 +15,12 @@ authors = [
 keywords = [
   "agents",
   "ai-agents",
+  "antigravity",
   "claude-code",
   "cli",
   "code-review",
   "codex",
   "coding-agents",
-  "gemini",
   "git-worktree",
   "multi-agent",
   "opencode",

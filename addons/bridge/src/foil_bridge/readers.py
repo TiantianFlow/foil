@@ -7,7 +7,6 @@ The caller masks and chooses a verbosity. This module does not print.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -361,118 +360,6 @@ def _named(folder: Path, session_id: str, root: Path) -> Path | None:
     return None
 
 
-def _gemini(session_id: str, cwd: str, root: Path, _started: str, _times: list[str]):
-    path = _gemini_path(root, session_id, cwd)
-    if path is None:
-        return None
-    loaded = _load(path, root)
-    if loaded is None:
-        return None
-    text, truncated = loaded
-    messages = _gemini_messages(text)
-    events: list[Event] = []
-    for message in messages:
-        kind = message.get("type")
-        if kind == "user":
-            piece = _text(message.get("content"))
-            if piece:
-                events.append(_event("user", "message", piece))
-        elif kind == "gemini":
-            piece = _text(message.get("content"))
-            if piece:
-                events.append(_event("assistant", "message", piece))
-            calls = message.get("toolCalls")
-            if isinstance(calls, list):
-                for call in calls:
-                    if not isinstance(call, dict):
-                        continue
-                    name = call.get("name") if isinstance(call.get("name"), str) else "tool"
-                    body = _dump(call.get("args"))
-                    result = _gemini_result(call.get("result"))
-                    if result:
-                        body = f"{body}\n{result}" if body else result
-                    events.append(_tool(name, body))
-            usage = _usage_event(message.get("tokens"))
-            if usage:
-                events.append(usage)
-    return events, truncated
-
-
-def _gemini_messages(text: str) -> list[dict[str, Any]]:
-    try:
-        item = json.loads(text)
-    except json.JSONDecodeError:
-        item = None
-    if isinstance(item, dict) and isinstance(item.get("messages"), list):
-        return [row for row in item["messages"] if isinstance(row, dict)]
-    messages: list[dict[str, Any]] = []
-    for row in _objects(text):
-        if "$set" in row and "type" not in row:
-            continue
-        if isinstance(row.get("messages"), list):
-            messages.extend(entry for entry in row["messages"] if isinstance(entry, dict))
-        elif row.get("type") in {"user", "gemini"}:
-            messages.append(row)
-    return messages
-
-
-def _gemini_result(value: Any) -> str:
-    if isinstance(value, list):
-        parts: list[str] = []
-        for item in value:
-            if not isinstance(item, dict):
-                continue
-            response = item.get("functionResponse")
-            if isinstance(response, dict) and "response" in response:
-                parts.append(_dump(response.get("response")))
-            else:
-                parts.append(_dump(item))
-        return "\n".join(part for part in parts if part)
-    return _dump(value)
-
-
-def _gemini_path(root: Path, session_id: str, cwd: str) -> Path | None:
-    digest = hashlib.sha256(cwd.encode()).hexdigest()
-    direct = _gemini_match(root / "tmp" / digest / "chats", session_id, root)
-    if direct is not None:
-        return direct
-    tmp = root / "tmp"
-    if not contained(root, tmp) or not tmp.is_dir():
-        return None
-    for directory in _dirs(tmp, depth=1, root=root):
-        found = _gemini_match(directory / "chats", session_id, root)
-        if found is not None:
-            return found
-    return None
-
-
-def _gemini_match(chats: Path, session_id: str, root: Path) -> Path | None:
-    if not contained(root, chats) or not chats.is_dir():
-        return None
-    prefix = session_id[:8]
-    matches: list[Path] = []
-    try:
-        children = list(chats.iterdir())
-    except OSError:
-        return None
-    for child in children:
-        if not contained(root, child) or not child.is_file():
-            continue
-        if not child.name.startswith("session-") or child.suffix not in {".json", ".jsonl"}:
-            continue
-        if session_id in child.name or (prefix and prefix in child.name):
-            matches.append(child)
-    if not matches:
-        return None
-    full = [path for path in matches if session_id in path.name]
-    ordered = sorted(full or matches, key=lambda path: path.name)
-    for path in reversed(ordered):
-        loaded = _load(path, root)
-        if loaded and session_id in loaded[0][:4000]:
-            return path
-    return ordered[-1]
-
-
 def _opencode(session_id: str, _cwd: str, root: Path, _started: str, _times: list[str]):
     database = root / "opencode.db"
     if contained(root, database) and database.is_file():
@@ -755,7 +642,6 @@ def _fake(session_id: str, _cwd: str, root: Path, _started: str, _times: list[st
 _READERS = {
     "claude": _claude,
     "codex": _codex,
-    "gemini": _gemini,
     "opencode": _opencode,
     "grok": _grok,
     "fake": _fake,

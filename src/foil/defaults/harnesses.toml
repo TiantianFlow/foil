@@ -4,6 +4,23 @@
 # Each seat runs its CLI headless: start is the first turn, turn every later one.
 
 [[harness]]
+id = "agy"
+transcript = ""
+unverified = ["start", "turn", "session-key", "permission-auto"]
+# stream-json prints conversation_id on its first line, so a killed turn keeps its id.
+start = ["agy", "-p", "{prompt}", "--output-format", "stream-json", "--model", "{model}"]
+turn = ["agy", "-p", "{prompt}", "--output-format", "stream-json", "--conversation", "{session_id}", "--model", "{model}"]
+session_id = "output"
+session_key = "conversation_id"
+env = []
+models = ["gemini-4-neon-xhigh", "gemini-3.8-flash-medium"]
+
+[harness.permission]
+ask = []
+# A headless turn cannot ask, so an action that needs approval is denied.
+auto = ["--dangerously-skip-permissions"]
+
+[[harness]]
 id = "claude"
 transcript = "claude"
 unverified = ["start", "turn", "permission-auto", "instructions"]
@@ -41,20 +58,6 @@ models = ["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"]
 ask = []
 # A seat writes the board and the Git common dir, outside its worktree.
 auto = ["--dangerously-bypass-approvals-and-sandbox"]
-
-[[harness]]
-id = "gemini"
-transcript = "gemini"
-unverified = ["start", "turn", "skip-trust", "permission-auto"]
-start = ["gemini", "-p", "{prompt}", "--session-id", "{session_id}", "--skip-trust", "--model", "{model}"]
-turn = ["gemini", "-p", "{prompt}", "--resume", "{session_id}", "--skip-trust", "--model", "{model}"]
-session_id = "generated"
-env = []
-models = ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash"]
-
-[harness.permission]
-ask = []
-auto = ["--approval-mode", "yolo"]
 
 [[harness]]
 id = "opencode"

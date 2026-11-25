@@ -12,7 +12,7 @@
 
 **Your agents' loyal opposition.**
 
-Foil turns the coding agents you already use (Claude Code, Codex, Gemini, OpenCode, Grok) into a small team. You keep talking to the agent you already use, and it joins as the team's lead. The lead plans the work, gives each task to a worker with its own Git branch, has another agent check the result, and merges it. Every agent runs in tmux, and every message is a file you can read.
+Foil turns the coding agents you already use (Claude Code, Codex, Antigravity, OpenCode, Grok) into a small team. You keep talking to the agent you already use, and it joins as the team's lead. The lead plans the work, gives each task to a worker with its own Git branch, has another agent check the result, and merges it. Every agent runs in tmux, and every message is a file you can read.
 
 ## Why Foil
 
@@ -91,7 +91,7 @@ If Foil saves you time, a [star on GitHub](https://github.com/TiantianFlow/foil)
 
 ## Get started
 
-You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Gemini, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Each seat runs its CLI headless, one process per turn, so no seat waits on a dialog: a turn that cannot go on without a person ends, and the seat reports what it needed. Run each harness once by hand first and accept its update, first-run, and opt-in dialogs; your agent asks you to and leaves those for you. The built-in presets are marked unverified until they have been run live against each CLI. A global preset counts before `init`. Another CLI joins with a small preset file at `<root>/harnesses.toml` or `<root>/harnesses/<id>.toml`.
+You need Python 3.11+, Git, tmux 3.2+, and at least one supported agent CLI (Claude Code, Codex, Antigravity, OpenCode, or Grok), already logged in on this machine. Foil never handles that login. Each seat runs its CLI headless, one process per turn, so no seat waits on a dialog: a turn that cannot go on without a person ends, and the seat reports what it needed. Run each harness once by hand first and accept its update, first-run, and opt-in dialogs; your agent asks you to and leaves those for you. The built-in presets are marked unverified until they have been run live against each CLI. A global preset counts before `init`. Another CLI joins with a small preset file at `<root>/harnesses.toml` or `<root>/harnesses/<id>.toml`.
 
 The human's part is one sentence, typed into the coding agent they already use, in the repository:
 

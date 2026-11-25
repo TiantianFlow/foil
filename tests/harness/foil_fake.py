@@ -2,8 +2,8 @@
 """Test double for a headless seat CLI: one run is one turn. Not part of the foil package.
 
 As `foil-fake` it takes `--session ID PROMPT` for a first turn and
-`--resume ID PROMPT` for a later one. Linked as `claude`, `codex`, `gemini`,
-`opencode`, or `grok`, it accepts that preset's argv and, for the two
+`--resume ID PROMPT` for a later one. Linked as `agy`, `claude`, `codex`,
+`opencode`, or `grok`, it accepts that preset's argv and, for the three
 output-session presets, prints the session id the way that CLI does.
 
 The script is `run/fake/<seat>.json`: `steps` run when a listed mail or room
@@ -24,7 +24,7 @@ import uuid
 from pathlib import Path
 
 _PATH = re.compile(r"(/[^\s`'\"]+\.md)")
-_STAND_INS = {"claude", "codex", "gemini", "opencode", "grok"}
+_STAND_INS = {"agy", "claude", "codex", "opencode", "grok"}
 
 
 def _foil_root(prompt: str) -> Path:
@@ -119,8 +119,8 @@ def _handle(path: Path, *, foil: Path, steps: list, handled: set[str], fake: Pat
 _SHAPES = {
     "claude": ({"-p", "--disallowedTools", "--session-id", "--resume", "--model",
                 "--permission-mode", "--append-system-prompt-file"}, set(), []),
-    "gemini": ({"-p", "--session-id", "--resume", "--model", "--approval-mode"},
-               {"--skip-trust"}, []),
+    "agy": ({"-p", "--output-format", "--conversation", "--model"},
+            {"--dangerously-skip-permissions"}, []),
     "grok": ({"-p", "--session-id", "--resume", "--model"}, {"--always-approve"}, []),
     "codex": (
         {"--model", "-c"}, {"--json", "--dangerously-bypass-approvals-and-sandbox"}, ["exec"]
@@ -162,15 +162,20 @@ def _parse(name: str, argv: list[str]) -> tuple[str, str, bool, list[str]]:
             raise SystemExit("foil-fake: usage: --session|--resume ID PROMPT")
         return argv[2], argv[1], argv[0] == "--session", []
     values, flags, positional = _flags(name, argv)
-    if name in ("claude", "gemini", "grok"):
+    if name == "agy":
+        if positional or "-p" not in values:
+            raise SystemExit("agy stand-in: the prompt goes in -p")
+        if values.get("--output-format") != "stream-json":
+            raise SystemExit("agy stand-in: --output-format stream-json")
+        session = values.get("--conversation", "")
+        return values["-p"], session, not session, [name, *argv]
+    if name in ("claude", "grok"):
         if positional or "-p" not in values:
             raise SystemExit(f"{name} stand-in: the prompt goes in -p")
         if ("--session-id" in values) == ("--resume" in values):
             raise SystemExit(f"{name} stand-in: one of --session-id and --resume")
         if name == "claude" and values.get("--disallowedTools") != "AskUserQuestion":
             raise SystemExit("claude stand-in: --disallowedTools AskUserQuestion")
-        if name == "gemini" and "--skip-trust" not in flags:
-            raise SystemExit("gemini stand-in: --skip-trust")
         session = values.get("--session-id") or values["--resume"]
         return values["-p"], session, "--session-id" in values, [name, *argv]
     if name == "codex":
@@ -207,8 +212,12 @@ def main() -> int:
         _log(log_path, "argv " + json.dumps(flags))
     if not session:
         session = str(uuid.uuid4())
-        key = "thread_id" if name == "codex" else "sessionID"
-        print(json.dumps({"type": "session", key: session}), flush=True)
+        if name == "agy":
+            line = {"event": "init", "conversation_id": session, "init": {"cwd": str(Path.cwd())}}
+        else:
+            key = "thread_id" if name == "codex" else "sessionID"
+            line = {"type": "session", key: session}
+        print(json.dumps(line), flush=True)
     sessions_path = fake / f"{seat}.sessions"
     known = set(sessions_path.read_text().split()) if sessions_path.is_file() else set()
     if first and session in known:
