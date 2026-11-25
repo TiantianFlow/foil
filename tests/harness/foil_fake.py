@@ -118,11 +118,13 @@ def _handle(path: Path, *, foil: Path, steps: list, handled: set[str], fake: Pat
 # Per stand-in: flags that take a value, flags that take none, and leading words.
 _SHAPES = {
     "claude": ({"-p", "--disallowedTools", "--session-id", "--resume", "--model",
-                "--permission-mode"}, set(), []),
+                "--permission-mode", "--append-system-prompt-file"}, set(), []),
     "agy": ({"-p", "--output-format", "--conversation", "--model"},
             {"--dangerously-skip-permissions"}, []),
     "grok": ({"-p", "--session-id", "--resume", "--model"}, {"--always-approve"}, []),
-    "codex": ({"--model"}, {"--json", "--dangerously-bypass-approvals-and-sandbox"}, ["exec"]),
+    "codex": (
+        {"--model", "-c"}, {"--json", "--dangerously-bypass-approvals-and-sandbox"}, ["exec"]
+    ),
     "opencode": ({"--format", "--session", "--model"}, {"--auto"}, ["run"]),
 }
 
@@ -195,11 +197,14 @@ def main() -> int:
     if name not in _STAND_INS:
         name = "foil-fake"
     prompt, session, first, flags = _parse(name, sys.argv[1:])
+    # The instruction file is named in the prompt, or, for a seat whose preset has a
+    # system-instruction slot, in that argument.
+    named = prompt if "/run/instructions/" in prompt else " ".join(sys.argv[1:])
     seat = os.environ.get("FOIL_SEAT_ID", "")
     if not seat:
         print("foil-fake: FOIL_SEAT_ID is unset", file=sys.stderr)
         return 1
-    foil = _foil_root(prompt)
+    foil = _foil_root(named)
     fake = foil / "run" / "fake"
     log_path = fake / f"{seat}.log"
     fake.mkdir(parents=True, exist_ok=True)

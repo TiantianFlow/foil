@@ -110,7 +110,7 @@ def test_a_pointer_is_listed_once_and_wakes_nobody(
     pending = pending_pointers(fleet_dir(repo))
     assert len(pending) == 1
     assert pending[0]["to"] == "impl"
-    plan = {"seat": "lead", "instruction": "/instructions/lead.md"}
+    plan = {"seat": "lead", "instruction": "/instructions/lead.md", "system": False}
     prompt = wake_prompt(plan, [], restarted=False, pointers=pending)
     assert prompt.count(f"The human mailed impl directly: {pending[0]['time']} ") == 1
     list_pointers(fleet_dir(repo), [pending[0]["path"]])

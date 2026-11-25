@@ -64,16 +64,17 @@ _P = "{prompt}"
         (
             "claude", "auto",
             ["claude", "-p", _P, "--disallowedTools", "AskUserQuestion", "--session-id", "s",
-             "--model", "m", "--permission-mode", "auto"],
+             "--model", "m", "--append-system-prompt-file", "/i.md", "--permission-mode", "auto"],
             ["claude", "-p", _P, "--disallowedTools", "AskUserQuestion", "--resume", "s",
-             "--model", "m", "--permission-mode", "auto"],
+             "--model", "m", "--append-system-prompt-file", "/i.md", "--permission-mode", "auto"],
         ),
         (
             "codex", "auto",
-            ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--json",
-             "--model", "m", _P],
-            ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--json",
-             "--model", "m", "resume", "s", _P],
+            ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "-c",
+             "developer_instructions={instruction_toml}", "--json", "--model", "m", _P],
+            ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "-c",
+             "developer_instructions={instruction_toml}", "--json", "--model", "m", "resume",
+             "s", _P],
         ),
         (
             "agy", "auto",
@@ -108,11 +109,9 @@ def test_each_preset_expands_its_start_and_turn_argv(
     if model is None:
         start = [token for token in start if token not in ("--model", "m")]
         turn = [token for token in turn if token not in ("--model", "m")]
-    assert expand_argv(preset, model=model, session_id="s", permission=permission) == start
-    assert (
-        expand_argv(preset, model=model, session_id="s", permission=permission, turn=True)
-        == turn
-    )
+    args = {"model": model, "session_id": "s", "permission": permission, "instruction": "/i.md"}
+    assert expand_argv(preset, **args) == start
+    assert expand_argv(preset, **args, turn=True) == turn
 
 
 def test_an_output_preset_leaves_the_session_for_the_runner(tmp_path: Path) -> None:
@@ -984,3 +983,46 @@ def test_skills_route_questions_away_from_the_pane() -> None:
     assert "The human reads your chat. Ask there" in lead
     assert "You ask the human in your own chat" in joined
     assert "Escape" not in joined
+
+
+def test_instructions_need_one_slot_in_start_and_in_turn(tmp_path: Path) -> None:
+    folder = tmp_path / ".foil" / "harnesses"
+    folder.mkdir(parents=True)
+    start = 'start = ["grok", "{prompt}", "{instructions}"]'
+    turn = 'turn = ["grok", "{session_id}", "{prompt}", "{instructions}"]'
+    slot = 'instructions = ["--role", "{instruction}"]'
+    bad = (
+        f"{start}\n{turn}",
+        f"{start}\n{turn}\ninstructions = []",
+        f'{start}\n{turn}\ninstructions = ["--role", "x"]',
+        f'{start}\n{turn}\ninstructions = ["--role", "{{prompt}}"]',
+        f'{start}\nturn = ["grok", "{{session_id}}", "{{prompt}}"]\n{slot}',
+        f'start = ["grok", "{{prompt}}"]\n{turn}\n{slot}',
+        f'start = ["grok", "{{prompt}}", "{{instructions}}", "{{instructions}}"]\n{turn}\n{slot}',
+        f'start = ["grok", "{{instructions}}", "{{permission}}", "{{prompt}}"]\n{turn}\n{slot}',
+    )
+    for body in bad:
+        (folder / "grok.toml").write_text(
+            f'id = "grok"\n{body}\nsession_id = "generated"\n', encoding="utf-8"
+        )
+        with pytest.raises(FoilError, match="invalid preset"):
+            load_preset(tmp_path, "grok")
+    (folder / "grok.toml").write_text(
+        f'id = "grok"\n{start}\n{turn}\n{slot}\nsession_id = "generated"\n', encoding="utf-8"
+    )
+    preset = load_preset(tmp_path, "grok")
+    assert expand_argv(preset, session_id="s", instruction="/x.md") == [
+        "grok", "{prompt}", "--role", "/x.md"
+    ]
+    assert expand_argv(preset, session_id="s", turn=True, instruction="/x.md") == [
+        "grok", "s", "{prompt}", "--role", "/x.md"
+    ]
+
+
+def test_a_preset_without_instructions_has_no_slot(tmp_path: Path) -> None:
+    for harness in ("agy", "opencode", "grok", "fake"):
+        preset = load_preset(tmp_path, harness)
+        assert preset["instructions"] is None
+        assert "{instructions}" not in expand_argv(preset, instruction="/i.md")
+    for harness in ("claude", "codex"):
+        assert load_preset(tmp_path, harness)["instructions"] is not None

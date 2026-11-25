@@ -14,7 +14,15 @@ from foil.errors import FoilError, assert_no_secret, shown
 from foil.project import foil_root, store_root
 from foil.store import SAFE_ID, fleet_dir, scan, write_bytes
 
-_PLACEHOLDERS = ("{model}", "{prompt}", "{session_id}", "{permission}")
+_PLACEHOLDERS = (
+    "{model}",
+    "{prompt}",
+    "{session_id}",
+    "{permission}",
+    "{instructions}",
+)
+# What a preset's instructions may name: the instruction file, or its text as a TOML string.
+INSTRUCTION_PLACEHOLDERS = ("{instruction}", "{instruction_toml}")
 WAKE_PLACEHOLDERS = ("{session_id}", "{text}")
 _PRESET_KEYS = {
     "id",
@@ -22,6 +30,7 @@ _PRESET_KEYS = {
     "turn",
     "permission",
     "wake",
+    "instructions",
     "session_id",
     "session_key",
     "env",
@@ -41,6 +50,7 @@ _PRESET_SAME = (
     "turn",
     "permission",
     "wake",
+    "instructions",
     "session_id",
     "session_key",
     "env",
@@ -79,6 +89,23 @@ def _strings(
         _fail(label)
     if any(("{" in item or "}" in item) and item not in placeholders for item in value):
         _fail(label)
+    return list(value)
+
+
+def _instruction_tokens(value: Any) -> list[str]:
+    """Tokens that may hold ``{instruction}`` or ``{instruction_toml}`` inside a longer one."""
+
+    if (
+        not isinstance(value, list)
+        or any(not isinstance(item, str) or not item for item in value)
+        or any("\x00" in item for item in value)
+    ):
+        _fail("preset")
+    bare = [item.replace("{instruction_toml}", "").replace("{instruction}", "") for item in value]
+    if any("{" in item or "}" in item for item in bare):
+        _fail("preset")
+    if not any(a != b for a, b in zip(value, bare, strict=True)):
+        _fail("preset")
     return list(value)
 
 
@@ -130,6 +157,12 @@ def _preset_from_table(raw: dict[str, Any], label: str = "harnesses.toml") -> di
     wake = raw.get("wake")
     if wake is not None and not _strings(wake, "preset", WAKE_PLACEHOLDERS):
         _fail("preset")
+    instructions = raw.get("instructions")
+    if instructions is not None:
+        instructions = _instruction_tokens(instructions)
+    for argv in (start, turn):
+        if argv.count("{instructions}") != (0 if instructions is None else 1):
+            _fail("preset")
     env = _strings(raw.get("env", []), "preset")
     assert_no_secret(env)
     set_env = _set_env(raw.get("set_env", {}), env)
@@ -150,6 +183,7 @@ def _preset_from_table(raw: dict[str, Any], label: str = "harnesses.toml") -> di
             "auto": _strings(permission.get("auto", []), "preset"),
         },
         "wake": None if wake is None else list(wake),
+        "instructions": None if instructions is None else list(instructions),
         "session_id": mode,
         "session_key": key or "",
         "env": env,
@@ -669,8 +703,13 @@ def expand_argv(
     session_id: str | None = None,
     permission: str = "ask",
     turn: bool = False,
+    instruction: str | None = None,
 ) -> list[str]:
     """A preset's start or turn argv, with ``{prompt}`` left for the runner.
+
+    A preset with ``instructions`` carries them in every start and turn argv, at
+    ``{instructions}``, with ``{instruction}`` set to the instruction file. The text
+    form, ``{instruction_toml}``, is left for the runner to fill from that file.
 
     ``{session_id}`` is left too when no id is given: an ``output`` preset
     learns it from the first turn (F12).
@@ -681,6 +720,13 @@ def expand_argv(
     if model is not None and model.startswith("-"):
         raise FoilError("foil: model must not start with '-'")
     argv = preset["turn"] if turn else preset["start"]
+    slot = preset.get("instructions")
+    if "{instructions}" in argv:
+        index = argv.index("{instructions}")
+        words = [] if slot is None or instruction is None else [
+            token.replace("{instruction}", instruction) for token in slot
+        ]
+        argv = argv[:index] + words + argv[index + 1 :]
     values = {
         "model": model or None,
         "prompt": "{prompt}",

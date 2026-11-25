@@ -542,5 +542,27 @@ def test_scenario_16_stand_ins_run_each_preset_turn_on_its_first_session(
                 assert argv[argv.index("--resume") + 1] == first["session"]
             recorded = _rows(capsys)[seat]["session_id"]
             assert recorded == first["session"], harness
+            instruction = _fleet(repo, "main") / "run" / "instructions" / f"{seat}.md"
+            text = instruction.read_text(encoding="utf-8")
+            for turn in (first, second):
+                flags = turn["argv"]
+                if harness == "claude":
+                    # The role is a system instruction on every turn, not first-prompt text.
+                    assert flags[flags.index("--append-system-prompt-file") + 1] == str(
+                        instruction
+                    )
+                elif harness == "codex":
+                    given = flags[flags.index("-c") + 1]
+                    assert given == "developer_instructions=" + json.dumps(
+                        text, ensure_ascii=False
+                    )
+                else:
+                    assert "-c" not in flags and "--append-system-prompt-file" not in flags
+            if harness in ("claude", "codex"):
+                assert "Re-read" not in first["prompt"] + second["prompt"], harness
+                assert text.split("\n", 1)[0] not in first["prompt"], harness
+            else:
+                assert first["prompt"].startswith(text.split("\n", 1)[0]), harness
+                assert "Re-read" in second["prompt"], harness
     finally:
         _close(repo)

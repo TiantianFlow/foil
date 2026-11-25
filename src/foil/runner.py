@@ -33,6 +33,8 @@ LISTED = 50
 INLINE_TOTAL = 16 * 1024
 CANNOT_RUN = 127
 FIRST_INLINE = 64 * 1024
+# One argv word may not pass 128 KiB, so a larger instruction file is named, not inlined.
+SYSTEM_INLINE = 100 * 1024
 LEFTOVER_GRACE = 2.0
 RESTARTED = "You were restarted. Check before you repeat a merge, push, post or send."
 _ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
@@ -45,6 +47,7 @@ _FIELDS = {
     "env",
     "env_forward",
     "instruction",
+    "system",
     "board",
     "seat",
     "reader",
@@ -94,6 +97,7 @@ def load_plan(path: Path) -> dict[str, Any]:
         or not isinstance(plan["retry"], list)
         or not all(type(wait) in (int, float) and wait >= 0 for wait in plan["retry"])
         or not isinstance(plan["worker"], bool)
+        or not isinstance(plan["system"], bool)
         or not isinstance(plan["restarted"], bool)
         or not isinstance(environment, dict)
         or not all(
@@ -287,19 +291,24 @@ def wake_prompt(
         budget -= size
         inlined.add(item["path"])
         lines += [f"--- {item['path']}", body.rstrip("\n")]
-    lines.append(
-        f"Re-read {plan['instruction']} before you act."
-        + (
-            " Read each item above that is not inlined: a path under board/mail/ with "
-            "foil mail read, a path under board/room/ with foil board read."
-            if len(inlined) < len(items)
-            else ""
-        )
+    unread = (
+        "Read each item above that is not inlined: a path under board/mail/ with "
+        "foil mail read, a path under board/room/ with foil board read."
+        if len(inlined) < len(items)
+        else ""
     )
+    if plan["system"]:
+        if unread:
+            lines.append(unread)
+    else:
+        reread = f"Re-read {plan['instruction']} before you act."
+        lines.append(f"{reread} {unread}" if unread else reread)
     return "\n".join(lines) + "\n"
 
 
 def first_prompt(plan: dict[str, Any]) -> str:
+    if plan["system"]:
+        return "Your role instructions are in your system instructions. Begin.\n"
     path = Path(plan["instruction"])
     try:
         if path.stat().st_size < FIRST_INLINE:
@@ -403,7 +412,11 @@ class Runner:
 
         session = self.record["session_id"] or self.plan["session_id"]
         values = {"{prompt}": prompt, "{session_id}": session}
-        argv = [values.get(token, token) for token in self.plan[kind]]
+        template = list(self.plan[kind])
+        if any("{instruction_toml}" in token for token in template):
+            text = self._instruction_toml()
+            template = [token.replace("{instruction_toml}", text) for token in template]
+        argv = [values.get(token, token) for token in template]
         learn = bool(self.plan["session_key"]) and not session
         print(f"foil: turn started ({kind})", flush=True)
         note(self.board.parent, "turn_start", seat=self.seat, kind=kind)
@@ -419,6 +432,20 @@ class Runner:
         )
         note(self.board.parent, "turn_end", seat=self.seat, exit=code)
         return code
+
+    def _instruction_toml(self) -> str:
+        """The instruction file's text as a TOML basic string, or one line naming the file."""
+
+        path = self.plan["instruction"]
+        named = f"Read {path} before anything else. It is your instruction file."
+        try:
+            text = Path(path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            text = named
+        quoted = json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f")
+        if len(quoted.encode()) > SYSTEM_INLINE:
+            quoted = json.dumps(named)
+        return quoted
 
     def _child(self, child: subprocess.Popen | None) -> None:
         self.child = child

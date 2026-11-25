@@ -23,11 +23,14 @@ auto = ["--dangerously-skip-permissions"]
 [[harness]]
 id = "claude"
 transcript = "claude"
-unverified = ["start", "turn", "permission-auto"]
+unverified = ["start", "turn", "permission-auto", "instructions"]
 # AskUserQuestion is off: nobody reads a turn while it runs. The tool list is
 # variadic, so the prompt comes before it and a flag always follows it.
-start = ["claude", "-p", "{prompt}", "--disallowedTools", "AskUserQuestion", "--session-id", "{session_id}", "--model", "{model}"]
-turn = ["claude", "-p", "{prompt}", "--disallowedTools", "AskUserQuestion", "--resume", "{session_id}", "--model", "{model}"]
+start = ["claude", "-p", "{prompt}", "--disallowedTools", "AskUserQuestion", "--session-id", "{session_id}", "--model", "{model}", "{instructions}"]
+turn = ["claude", "-p", "{prompt}", "--disallowedTools", "AskUserQuestion", "--resume", "{session_id}", "--model", "{model}", "{instructions}"]
+# The role goes on the end of Claude Code's own system prompt, never in place of it,
+# and on every turn: a resumed session may not keep it.
+instructions = ["--append-system-prompt-file", "{instruction}"]
 session_id = "generated"
 env = []
 models = ["sonnet", "opus", "haiku", "fable"]
@@ -39,9 +42,11 @@ auto = ["--permission-mode", "auto"]
 [[harness]]
 id = "codex"
 transcript = "codex"
-unverified = ["start", "turn", "session-key", "permission-auto", "wake-queue"]
-start = ["codex", "exec", "{permission}", "--json", "--model", "{model}", "{prompt}"]
-turn = ["codex", "exec", "{permission}", "--json", "--model", "{model}", "resume", "{session_id}", "{prompt}"]
+unverified = ["start", "turn", "session-key", "permission-auto", "wake-queue", "instructions"]
+start = ["codex", "exec", "{permission}", "{instructions}", "--json", "--model", "{model}", "{prompt}"]
+turn = ["codex", "exec", "{permission}", "{instructions}", "--json", "--model", "{model}", "resume", "{session_id}", "{prompt}"]
+# Codex has no file form: the runner fills the text in, as a TOML string, each turn.
+instructions = ["-c", "developer_instructions={instruction_toml}"]
 # Wakes a joined lead's thread with one line naming the new items (F41).
 wake = ["codex", "queue", "--thread", "{session_id}", "--message", "{text}", "--resume"]
 session_id = "output"
