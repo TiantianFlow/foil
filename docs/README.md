@@ -12,6 +12,7 @@
 | [mcp.md](mcp.md) | How to add the Foil MCP server on this machine and from another machine, and how a webhook wakes a client. |
 | [mcp-client.md](mcp-client.md) | The skill a client loads: speak as the human to the master, and do not act as the master. |
 | [live-runs.md](live-runs.md) | The latest result of each live-tier scenario for each harness CLI, with that CLI's version. The live tier writes it. |
+| [meta-harness-handoff.md](meta-harness-handoff.md) | Where meta-harness work stood on 2026-11-27, for issue #101: what shipped, which tickets are still open, and the next work. |
 | [demo.md](demo.md) | A real run, from `foil init` to a merged fix, replayed from the end-to-end suite. Linked from the English README. |
 | [demo.zh-CN.md](demo.zh-CN.md) | The same demo in Chinese. Linked from the Chinese README. |
 
