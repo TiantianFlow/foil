@@ -262,6 +262,7 @@ def test_doctor_is_clear_when_the_page_answers_401(
     binary.parent.mkdir()
     binary.write_text("#!/bin/sh\nprintf 'foil-bridge 0.1.0\\n'\n", encoding="utf-8")
     binary.chmod(0o755)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("PATH", str(binary.parent))
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)

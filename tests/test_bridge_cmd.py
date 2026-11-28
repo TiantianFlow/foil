@@ -5,7 +5,9 @@ from __future__ import annotations
 import base64
 import json
 import os
+import plistlib
 import stat
+import sys
 import time
 from pathlib import Path
 
@@ -14,6 +16,7 @@ from foil_bridge.cli import main as bridge_main
 
 from foil.bridge_cmd import (
     MISSING,
+    current_unit_path,
     desk_path,
     ensure_desk_token,
     launchd_plist,
@@ -36,6 +39,7 @@ def _stub(folder: Path, text: str) -> Path:
 
 
 def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, binary: str) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     monkeypatch.setenv("PATH", str(Path(binary).parent) if binary else str(tmp_path / "empty"))
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
@@ -83,6 +87,9 @@ def test_install_writes_the_unit_and_does_not_run_it(
         f"#!/bin/sh\nprintf ran >> {marker}\nexit 9\n",
     )
     _isolate(monkeypatch, tmp_path, str(binary))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    expected_unit = current_unit_path()
+    assert expected_unit.resolve().is_relative_to((tmp_path / "home").resolve())
 
     def refuse_process(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("install started a process")
@@ -93,15 +100,21 @@ def test_install_writes_the_unit_and_does_not_run_it(
     lines = captured.out.splitlines()
     assert len(lines) == 4
     unit = Path(lines[0])
+    assert unit == expected_unit
     assert unit.is_file()
     assert stat.S_IMODE(unit.stat().st_mode) == 0o644
-    assert unit.read_text(encoding="utf-8") == unit_text(str(binary.resolve()))
-    assert "Description=Foil Bridge" in unit.read_text(encoding="utf-8")
-    assert f"ExecStart={binary.resolve()}" in unit.read_text(encoding="utf-8")
-    assert "WantedBy=default.target" in unit.read_text(encoding="utf-8")
+    text = unit.read_text(encoding="utf-8")
+    assert text == unit_text(str(binary.resolve()))
+    if sys.platform == "darwin":
+        assert plistlib.loads(text.encode())["ProgramArguments"] == [str(binary.resolve())]
+        assert lines[2] == f"launchctl bootstrap gui/{os.getuid()} {unit}"
+    else:
+        assert "Description=Foil Bridge" in text
+        assert f"ExecStart={binary.resolve()}" in text
+        assert "WantedBy=default.target" in text
+        assert lines[2] == "systemctl --user enable --now foil-bridge.service"
     assert lines[1].startswith("http://127.0.0.1:")
     assert "?token=" in lines[1]
-    assert lines[2] == "systemctl --user enable --now foil-bridge.service"
     assert lines[3].startswith("tailscale serve --bg ")
     token = read_desk_token()
     assert token is not None and lines[1].endswith(token)
@@ -146,7 +159,7 @@ def test_doctor_codes(
 
     binary = _stub(tmp_path / "bin", "#!/bin/sh\nprintf 'foil-bridge 0.1.0\\n'\n")
     monkeypatch.setenv("PATH", str(binary.parent))
-    unit = unit_path("linux", home=tmp_path / "home", config=tmp_path / "config")
+    unit = current_unit_path()
     unit.parent.mkdir(parents=True)
     unit.write_text("not the unit\n", encoding="utf-8")
     assert main(["doctor"]) == 2
