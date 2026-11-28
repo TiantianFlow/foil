@@ -47,6 +47,7 @@ MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 BACKTICK_REPO_PATH = re.compile(
     r"`((?:docs|skills|schemas|adapters|profiles|tests|src|README)[^`\n]{0,200})`"
 )
+GENERATED_RECORDING_PATH = "tests/golden/live/<harness>/"
 URL = re.compile(r"(?:https?|git\+https)://[^\s\"'`<>)\]}]+", re.IGNORECASE)
 SECRET_ASSIGNMENT = re.compile(
     r"(?i)\b(?:api[-_]?key|secret[-_]?key|private[-_]?key|access[-_]?token|"
@@ -245,7 +246,8 @@ def test_tracked_markdown_paths_and_links_exist() -> None:
             for match in BACKTICK_REPO_PATH.finditer(line):
                 raw = match.group(1).strip()
                 candidate = raw.split()[0].rstrip(".,);:")
-                if not candidate or "{" in candidate or "example" in candidate:
+                if (not candidate or "{" in candidate or "example" in candidate
+                        or candidate == GENERATED_RECORDING_PATH):
                     continue
                 repo_path = ROOT / candidate
                 if _is_history(relative) and candidate in REMOVED_PATHS:

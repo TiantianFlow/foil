@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from tests.harness.live_record import record
-from tests.harness.shims import install_shims
+from tests.harness.shims import install_shims, install_tmux
 
 _FAKE = Path(__file__).resolve().parents[1] / "harness" / "foil_fake.py"
 STAND_INS = ("agy", "claude", "codex", "opencode", "grok")
@@ -37,6 +40,27 @@ def stand_ins(_foil_fake_on_path: Path) -> Path:
     for name in STAND_INS:
         (_foil_fake_on_path / name).symlink_to(_FAKE)
     return _foil_fake_on_path
+
+
+@pytest.fixture(autouse=True)
+def _simulation_home(request, monkeypatch, _harness_stubs, _foil_fake_on_path):
+    if request.node.get_closest_marker("e2e_live") is not None:
+        yield
+        return
+    home = Path(os.environ["FOIL_HOME"]) / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    for name in ("TMUX", "TMUX_PANE", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "GROK_HOME",
+                 "XDG_DATA_HOME", "FOIL_MASTER"):
+        monkeypatch.delenv(name, raising=False)
+    binary = shutil.which("tmux")
+    assert binary is not None
+    label = "foil-" + uuid.uuid4().hex[:16]
+    install_tmux(_foil_fake_on_path, binary, label)
+    try:
+        yield
+    finally:
+        subprocess.run([binary, "-L", label, "kill-server"], check=False, capture_output=True)
 
 
 @pytest.hookimpl(hookwrapper=True)

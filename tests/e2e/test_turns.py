@@ -14,10 +14,13 @@ import pytest
 
 from foil.board_ops import split_front_matter
 from foil.cli import main
+from foil.master import load_record as load_master
 from foil.project import foil_root, store_root
-from foil.runner import RESTARTED
+from foil.runner import RESTARTED, load_record
 from foil.store import load_registry
 from tests.e2e.test_scenarios import _close, _git, _prepare, _scripts, _wait
+from tests.harness.sessions import location
+from tests.harness.streams import ASSISTANT
 
 pytestmark = pytest.mark.e2e
 
@@ -41,6 +44,28 @@ def _turns(repo: Path, seat: str, fleet: str = "main") -> list[dict]:
     if not directory.is_dir():
         return []
     return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json"))]
+
+
+def _completed(repo: Path, seat: str, count: int) -> bool:
+    turns = _turns(repo, seat)
+    if len(turns) != count or "end" not in turns[-1]:
+        return False
+    record = load_record(_board(repo), seat)
+    return record["turn_started"] is None and record["last_exit"] == 0
+
+
+def _transcript(seat: str) -> dict:
+    result = subprocess.run(
+        ["foil-bridge", "transcript", seat, "--level", "all", "--json"],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def _messages(transcript: dict, role: str) -> list[str]:
+    return [item["text"] for item in transcript["events"]
+            if item["kind"] == "message" and item["role"] == role]
 
 
 def _out(capsys: pytest.CaptureFixture[str], *argv: str) -> str:
@@ -150,7 +175,7 @@ def test_scenario_9_turns_batch_mail_and_inline_short_bodies(
 ) -> None:
     repo = _prepare(tmp_path, "scenario-2", monkeypatch)
     try:
-        _script(repo, "lead", {"faults": [{}, {"delay": 4}]})
+        _script(repo, "lead", {"faults": [{}, {"think": 4}]})
         assert main(["seat", "spawn", "lead"]) == 0
         _wait(repo, lambda: len(_turns(repo, "lead")) == 1)
         _settled(repo, capsys)
@@ -252,7 +277,7 @@ def test_scenario_11_a_restart_delivers_the_in_flight_items_again(
 ) -> None:
     repo = _prepare(tmp_path, "scenario-2", monkeypatch)
     try:
-        _script(repo, "lead", {"faults": [{}, {"delay": 60}]})
+        _script(repo, "lead", {"faults": [{}, {"think": 60}]})
         assert main(["seat", "spawn", "lead"]) == 0
         _wait(repo, lambda: len(_turns(repo, "lead")) == 1)
         _settled(repo, capsys)
@@ -341,6 +366,9 @@ def test_scenario_13_renew_starts_a_fresh_session_on_the_same_branch(
         _wait(repo, lambda: len(_mails(repo, "lead", "handoff ready")) == 1)
         _settled(repo, capsys)
         before = dict(load_registry(repo)["seats"]["implementer-1"])
+        sessions = Path.home() / ".foil-fake" / "sessions"
+        old_file = sessions / (before["session_id"] + ".jsonl")
+        old_bytes = old_file.read_bytes()
         task = next((_board(repo) / "mail" / "implementer-1").glob("*.md"))
         assert main(["seat", "renew", "implementer-1"]) == 0
         _wait(repo, lambda: len(_turns(repo, "implementer-1")) == 2)
@@ -354,6 +382,9 @@ def test_scenario_13_renew_starts_a_fresh_session_on_the_same_branch(
         assert after["session_id"] == new["session"] == _rows(capsys)["implementer-1"]["session_id"]
         _settled(repo, capsys)
         assert len(_turns(repo, "implementer-1")) == 2
+        assert old_file.read_bytes() == old_bytes
+        first_line = (sessions / (new["session"] + ".jsonl")).read_text().splitlines()[0]
+        assert json.loads(first_line)["text"] == new["prompt"]
     finally:
         _close(repo)
 
@@ -522,10 +553,10 @@ def test_scenario_16_stand_ins_run_each_preset_turn_on_its_first_session(
             assert load_registry(repo)["seats"][seat]["harness"] == harness
             seats.append((seat, harness))
         for seat, _harness in seats:
-            _wait(repo, lambda seat=seat: len(_turns(repo, seat)) == 1)
+            _wait(repo, lambda seat=seat: _completed(repo, seat, 1))
             assert main(["send", seat, "second turn"]) == 0
         for seat, harness in seats:
-            _wait(repo, lambda seat=seat: len(_turns(repo, seat)) == 2)
+            _wait(repo, lambda seat=seat: _completed(repo, seat, 2))
             first, second = _turns(repo, seat)
             assert first["first"] and not second["first"], harness
             assert second["session"] == first["session"], harness
@@ -564,5 +595,183 @@ def test_scenario_16_stand_ins_run_each_preset_turn_on_its_first_session(
             else:
                 assert first["prompt"].startswith(text.split("\n", 1)[0]), harness
                 assert "Re-read" in second["prompt"], harness
+            assert first["home"] == second["home"] == os.environ["HOME"]
+            transcript = _transcript(seat)
+            if harness == "agy":
+                assert transcript["source"] == "pane"
+                assert ASSISTANT in transcript["events"][0]["text"]
+                assert not list(Path.home().rglob(f"*{recorded}*"))
+                continue
+            assert transcript["source"] == "file"
+            prompts = _messages(transcript, "user")
+            assert len(prompts) == 2
+            assert "first turn" in prompts[0] and "second turn" in prompts[1]
+            assert _messages(transcript, "assistant") == [ASSISTANT, ASSISTANT]
+            tools = [event for event in transcript["events"] if event["kind"] == "tool"]
+            assert [event["tool"] for event in tools] == ["send", "send"]
+            assert all("lead" in event["text"] for event in tools)
+            if harness == "grok":
+                updates = location(harness, Path.home(), second["cwd"], recorded, "")
+                assert updates is not None
+                usage = [json.loads(line)["params"]["update"]
+                         for line in updates.read_text().splitlines()]
+                assert sum(row["sessionUpdate"] == "usage_update" for row in usage) == 2
+                assert transcript["tokens"] == {"input": 0, "output": 0}
+            else:
+                assert transcript["tokens"] == {"input": 2, "output": 2}
+    finally:
+        _close(repo)
+
+
+def test_scenario_17_the_master_wakes_on_the_leads_closed_question(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = _prepare(tmp_path, "scenario-2", monkeypatch)
+    master = store_root() / "master"
+    (master / "run").mkdir(parents=True)
+    marker = master / "run" / "fake" / "question-ship"
+    (master / "run" / "fake.json").write_text(json.dumps({"steps": [
+        {"when": {"question": "ship"}, "do": [{"write": "run/fake/question-ship", "text": "noted"}]}
+    ]}))
+    status = (
+        "---\nstate: working\nupdated: 2026-01-02T03:04:05Z\nquestions:\n"
+        '  - id: ship\n    ask: Ship it?\n    options: ["yes", "no"]\n'
+        '    recommended: "yes"\n    why: The tests passed.\n'
+        "    evidence: The merged branch.\n    owner: human\ndecisions: []\n---\n"
+        "## Mandate\nDone when: the question is asked.\n"
+    )
+    assert not any(item["kind"] == "question"
+                   for item in json.loads(_out(capsys, "inbox", "--json")))
+    assert main(["master", "start", "--harness", "fake"]) == 0
+    try:
+        _wait(repo, lambda: load_master(master)["baselined"], timeout=15)
+        assert not marker.exists()
+        _script(repo, "lead", {"steps": [
+            {"when": {"mail_contains": "file the ship question"}, "do": [
+                {"write": "board/status.md", "text": status},
+            ]},
+        ]})
+        _script(repo, "implementer-1", {"steps": [
+            {"when": {"mail_contains": "file the worker result"}, "do": [
+                {"write": "board/results/work.md", "text": "work complete"},
+            ]},
+        ]})
+        assert main(["seat", "spawn", "lead", "--task", "file the ship question"]) == 0
+        assert main(["seat", "spawn", "implementer", "--task", "file the worker result"]) == 0
+        _wait(repo, lambda: marker.is_file()
+              and load_master(master)["turn_started"] is None, timeout=20)
+        assert marker.read_text() == "noted"
+        assert not list((master / "mail").glob("*.md"))
+        _wait(repo, lambda: _completed(repo, "lead", 1) and _completed(repo, "implementer-1", 1),
+              timeout=20)
+        assert (_board(repo) / "results" / "work.md").read_text() == "work complete"
+        wake = f"inbox: {foil_root(repo).name} main question:ship"
+        turn_files = list((master / "run" / "fake" / "master.turns").glob("*.json"))
+        assert len(turn_files) == 1
+        master_turn = json.loads(turn_files[0].read_text())
+        assert "end" in master_turn and master_turn["home"] == os.environ["HOME"]
+        assert master_turn["prompt"].rsplit("# Wake\n", 1)[1].splitlines() == [wake]
+        for seat, excerpt in (("lead", "file the ship question"),
+                              ("implementer-1", "file the worker result"), ("master", wake)):
+            transcript = _transcript(seat)
+            assert transcript["source"] == "file"
+            assert any(excerpt in text for text in _messages(transcript, "user"))
+            assert _messages(transcript, "assistant") == [ASSISTANT]
+    finally:
+        assert main(["master", "stop"]) == 0
+        _close(repo)
+
+
+def test_scenario_18_pane_malformed_status_wrong_seat_skip_and_think(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo = _prepare(tmp_path, "scenario-2", monkeypatch)
+    board = _board(repo)
+    status = board / "status.md"
+
+    def lead_mail() -> list[dict]:
+        with monkeypatch.context() as context:
+            context.setenv("FOIL_SEAT_ID", "lead")
+            return json.loads(_out(capsys, "mail", "list", "--json"))
+
+    def spawn(name: str, task: str | None = None) -> None:
+        args = ["--task", task] if task else []
+        assert main(["seat", "spawn", "implementer", "--name", name, *args]) == 0
+
+    def reply(recipient: str, text: str) -> dict:
+        return {"when": {"mail_contains": "reply"}, "do": [{"send": recipient, "text": text}]}
+
+    try:
+        assert main(["seat", "spawn", "lead"]) == 0
+        before_status = status.read_bytes() if status.exists() else None
+        before_mail = {mail["path"] for mail in lead_mail()}
+        _script(repo, "pane", {"faults": [{"pane": "Ship it?"}]})
+        _script(repo, "malformed", {"faults": [{"malformed_status": True}]})
+        _script(repo, "think", {"faults": [{"think": 1}], "steps": [reply("lead", "thought")]})
+        spawn("pane")
+        spawn("think", "reply after thinking")
+        spawn("substitute")
+        spawn("skip")
+        _script(repo, "wrong", {"faults": [{"wrong_seat": "substitute"}],
+                                "steps": [reply("lead", "misdirected")]})
+        spawn("wrong", "reply to the sender")
+        _wait(repo, lambda: _completed(repo, "pane", 1), timeout=20)
+        assert "Ship it?" in _out(capsys, "seat", "peek", "pane")
+        assert (status.read_bytes() if status.exists() else None) == before_status
+        spawn("malformed")
+        _wait(repo, lambda: _completed(repo, "malformed", 1), timeout=20)
+        assert status.read_bytes() == (
+            b"---\nstate:\n  working: yes\n---\n## Mandate\n"
+            b"Done when: the front matter is refused.\n"
+        )
+        assert "state: -" in _out(capsys, "brief").splitlines()
+        questions = [row for row in json.loads(_out(capsys, "inbox", "--json"))
+                     if row["kind"] == "question"]
+        assert [(row["id"], row["subject"]) for row in questions] == [("raw", "question:raw")]
+
+        observed: list[tuple[dict, str]] = []
+
+        def both_notices() -> bool:
+            observed[:] = [(row, Path(row["path"]).read_text()) for row in lead_mail()
+                           if row["path"] not in before_mail]
+            return all(any(f"{seat} ended a turn without mail, a post, or a result" in body
+                           for _, body in observed) for seat in ("pane", "malformed"))
+
+        _wait(repo, both_notices, timeout=10)
+        for seat in ("pane", "malformed"):
+            hits = [row for row, body in observed
+                    if f"{seat} ended a turn without mail, a post, or a result" in body]
+            assert [(row["from"], row["to"]) for row in hits] == [("foil", "lead")]
+        assert not any(row["from"] in ("pane", "malformed") for row, _ in observed)
+        _wait(repo, lambda: bool(_mails(repo, "substitute", "misdirected")), timeout=15)
+        with monkeypatch.context() as context:
+            context.setenv("FOIL_SEAT_ID", "substitute")
+            incoming = json.loads(_out(capsys, "mail", "list", "--json"))
+        assert any(row["from"] == "wrong" and row["to"] == "substitute"
+                   and "misdirected" in Path(row["path"]).read_text() for row in incoming)
+        assert not _mails(repo, "lead", "misdirected")
+        _wait(repo, lambda: _completed(repo, "think", 1), timeout=15)
+        assert len(_mails(repo, "lead", "\nthought\n")) == 1
+        thinking = _turns(repo, "think")[0]
+        assert thinking["end"] - thinking["start"] >= 1
+
+        _wait(repo, lambda: _completed(repo, "skip", 1), timeout=15)
+        assert main(["send", "skip", "reply to skipped mail"]) == 0
+        skipped = _mails(repo, "skip", "reply to skipped mail")[0]
+        _script(repo, "skip", {"faults": [{}, {"skip": skipped.name}],
+                                "steps": [reply("lead", "handled by skip")]})
+        assert main(["send", "skip", "reply to other mail"]) == 0
+        other = _mails(repo, "skip", "reply to other mail")[0]
+        _wait(repo, lambda: _completed(repo, "skip", 2), timeout=15)
+        prompt = _turns(repo, "skip")[1]["prompt"]
+        assert str(skipped) in prompt and str(other) in prompt
+        assert len(_mails(repo, "lead", "handled by skip")) == 1
+        handled = _fleet(repo) / "run" / "fake" / "skip.handled"
+        assert handled.read_text().splitlines() == [str(other)]
+        assert main(["send", "skip", "fresh trigger"]) == 0
+        trigger = _mails(repo, "skip", "fresh trigger")[0]
+        _wait(repo, lambda: _completed(repo, "skip", 3), timeout=15)
+        later = _turns(repo, "skip")[2]["prompt"]
+        assert str(trigger) in later and str(skipped) not in later
     finally:
         _close(repo)
