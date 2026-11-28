@@ -23,7 +23,7 @@ from foil.lifecycle import TmuxController
 from foil.store import fleet_dir
 from tests.test_answer import _lead_mail, _question
 from tests.test_bridge_evidence import _registry, _seat
-from tests.test_bridge_home import _key, _master_mail, _short_repo
+from tests.test_bridge_home import _goal_ahead, _key, _master_mail, _short_repo
 from tests.test_bridge_settings import _harness, _list, _update
 
 
@@ -399,6 +399,71 @@ def test_home_shows_the_next_step_and_remove_clears_a_watch(
             nudge.get_by_role("button", name="Act").click()
             expect(page.locator("#modes p").filter(has_text="nudge")).to_contain_text("act")
             assert "- nudge\n" in (root / "mandate.md").read_text(encoding="utf-8")
+        finally:
+            context.close()
+            server.stopped.set()
+            server.watch.stop()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+        assert errors == []
+
+
+def test_the_phone_posts_answers_and_merges_by_tapping(
+    monkeypatch: pytest.MonkeyPatch, browser: Browser
+) -> None:
+    """Steps 1, 5, and 7 of the phone path, tapped on the page."""
+
+    monkeypatch.setattr("foil_bridge.tailnet.tailnet", lambda: None)
+    with _short_repo(monkeypatch) as repo:
+        _question(repo)
+        _goal_ahead(repo)
+        key = _key(repo)
+        _master_mail(
+            "master",
+            f"card: merge\nproject: {key}\nfleet: main\n\nMerge when it is done.\n",
+            stamp="20261122T120001Z",
+        )
+        assert not (repo / "from-goal.txt").exists()
+        server = open_server(0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        port = server.server_address[1]
+        desk = read_desk_token()
+        assert desk is not None
+        origin = f"http://127.0.0.1:{port}"
+        context = browser.new_context()
+        page = context.new_page()
+        errors: list[str] = []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        try:
+            page.goto(f"{origin}/desk?{urlencode({'token': desk})}")
+            page.get_by_role("button", name="Show a code").click()
+            code = page.locator("#code")
+            expect(code).to_be_visible()
+            spent = code.inner_text()
+            paired = page.request.post(
+                f"{origin}/v1/pair",
+                data=json.dumps({"code": spent}),
+                headers={"Origin": origin, "Content-Type": "application/json"},
+            )
+            assert paired.ok
+            token = paired.json()["token"]
+            page.goto(f"{origin}/?{urlencode({'token': token})}")
+            expect(page.get_by_text("Which reading?", exact=True)).to_be_visible()
+            expect(page.get_by_role("button", name="Merge this fleet")).to_be_visible()
+            message = page.locator("#message")
+            message.fill("fix the calc")
+            page.locator("#say").get_by_role("button", name="Send").click()
+            expect(page.get_by_text("fix the calc", exact=True)).to_be_visible()
+            assert _lead_mail(repo) == []
+            page.get_by_role("button", name="keep", exact=True).click()
+            expect(page.get_by_text("answered, waiting for lead")).to_be_visible()
+            mail = _lead_mail(repo)[0].read_text(encoding="utf-8")
+            assert mail.split("---", 2)[2].lstrip("\n").startswith("question: reading\n")
+            page.get_by_role("button", name="Merge this fleet").click()
+            expect(page.get_by_role("button", name="Done.", exact=True)).to_be_visible()
+            assert (repo / "from-goal.txt").read_text(encoding="utf-8") == "from the goal\n"
         finally:
             context.close()
             server.stopped.set()

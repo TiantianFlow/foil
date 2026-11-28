@@ -41,9 +41,14 @@ def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _prepare(
-    tmp_path: Path, fixture: str, monkeypatch: pytest.MonkeyPatch, *, fake: bool = True
+    tmp_path: Path,
+    fixture: str,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fake: bool = True,
+    root: Path | None = None,
 ) -> Path:
-    repo = tmp_path / "project"
+    repo = tmp_path / "project" if root is None else root
     repo.mkdir()
     source = FIXTURES / fixture
     for path in source.rglob("*"):

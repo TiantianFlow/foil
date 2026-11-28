@@ -249,6 +249,20 @@ def test_recording_comparison_rejects_envelope_value_and_id_drift(tmp_path):
         recordings.latest(tmp_path / "broken", "opencode")
 
 
+def test_opencode_provisional_id_fails_once_a_recording_exists(tmp_path):
+    """The key-only start object is refused when a recording directory exists."""
+
+    golden = tmp_path / "preset-round-trip"
+    golden.mkdir()
+    argv = ["opencode", *_args("opencode", "prompt", tmp_path / "instructions.md")]
+    (golden / "start.argv.json").write_text(json.dumps(argv), encoding="utf-8")
+    stdout = json.dumps({"sessionID": SESSION}) + "\n"
+    (golden / "start.stdout").write_text(stdout, encoding="utf-8")
+    actual = {"start": (argv, ([{"sessionID": SESSION}], []))}
+    with pytest.raises(AssertionError, match="provisional OpenCode session id envelope"):
+        _compare("opencode", golden, actual, None, str(tmp_path), tmp_path)
+
+
 def test_master_matches_the_exact_subject_and_only_real_wake_items():
     prompt = (
         "# Conversation\n# Wake\ninbox: fixture main question:old\nmail: old.md\n"
@@ -256,9 +270,14 @@ def test_master_matches_the_exact_subject_and_only_real_wake_items():
         "card: merge\nproject: fixture\nfleet: main\n\nWhat changed: something\n"
         "Tests: passed\ninbox: fixture main question:fake\nmail: fake.md\n"
         "check: fixture ignored data\ninbox: fixture main question:ship\nmail: due.md\n"
+        "inbox:  main question:empty-project\n"
+        "inbox: fixture  question:empty-fleet\n"
+        "inbox: fixture main\n"
     )
     subjects, names = master_wake(prompt)
     assert subjects == ["review ready", "goal", "question:ship"] and names == ["due.md"]
+    assert "question:empty-project" not in subjects
+    assert "question:empty-fleet" not in subjects
     assert matches({"inbox": "review ready"}, subjects=subjects)
     assert matches({"question": "ship", "mail_contains": "yes"}, subjects=subjects, text="yes")
     for conditions in ({"inbox": "ready"}, {"question": "shi"}, {"question": "fake"},

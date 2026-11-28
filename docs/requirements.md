@@ -636,7 +636,7 @@ The Codex wake stand-in accepts only `codex queue --thread ID --message TEXT --r
 **Required scenarios** (each is a fixture repository plus seat scripts;
 the test plays the human's agent):
 
-A phase-2 or later ticket that adds user-facing behavior adds or extends a simulation scenario for it (see #144).
+A phase-2 or later ticket that adds user-facing behavior adds or extends a simulation scenario for it. Scenario 19 is the phone path (#144). #119, #120, and #121 each extend that scenario in the same pull request, and a later phase-2 or phase-3 change that touches the path keeps it green.
 
 | # | Scenario | Assert |
 |---|---|---|
@@ -658,6 +658,7 @@ A phase-2 or later ticket that adds user-facing behavior adds or extends a simul
 | 16 | Stand-ins: one seat per built-in preset runs two turns. | Each second turn uses that preset's turn argv and first session id. The four reader-backed CLIs give `foil-bridge transcript` both prompts, assistant responses, and tool calls from disk. Claude, Codex, and OpenCode report usage; Grok has usage lines on disk but reports zero tokens. The `agy` exception has no session file and returns live pane text. |
 | 17 | A stand-in master, lead, and worker use `fake`. The master baselines first; then the lead writes a closed question. | That question wakes the master; the matching script writes a marker. `foil-bridge transcript` reads each of the three session files and shows each turn's prompt and assistant text. |
 | 18 | Five workers: ask in the pane, write a refused status, reply to the wrong seat, skip one mail, think for a second. | The pane shows the question without changing the status. The refused status gives `state: -` and exactly one raw question. For each of those first two workers separately, the lead receives exactly one no-report mail from `foil`, not mail from the worker. The misdirected reply reaches the named seat and not the intended recipient. The skipped mail is unhandled and absent from a later turn. The thinking turn still sends; its record spans at least one second. |
+| 19 | Phone path on the scenario 1 fixture. A paired device posts "fix the calc" on the home. The master starts a lead and replies. The worker commits on its branch. The lead writes a closed question. The phone answers. A reviewer accepts and the lead marks the goal done. The phone taps Merge. | The post is the conversation's first message and the reply is on the home. The commit is on the worker's branch. The question card names that id. The answer is mail from `user` and the question leaves `status.md`. The done message cites the reviewer's result and is a merge card before any merge. The tap puts that commit on the checkout and the fixture test passes. The goal fleet and the result open over HTTP. One push is queued for the question: a label and a card id, and no fleet text. A browser taps the post, the answer, and Merge. |
 
 **Around the scenarios:**
 
