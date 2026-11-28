@@ -616,25 +616,27 @@ exists, a window is gone), not Foil's reports about itself.
 
 **Fake harness** (the `fake` preset) is a test double for a headless agent CLI:
 
-- It runs one turn and exits, like a real CLI in headless mode. `start` and `turn` both name the session id, and a turn whose session id differs from the one its seat's first turn got exits 9.
-- It reads the files the prompt names, mail or room files, and the task mail the first prompt names.
-- It follows a per-seat script, in a format the standard library can
-  parse. Reactions include running a shell command (for example
-  `foil seat spawn`, `git commit`, the fixture's test runner), writing a
-  board file, and `foil send`.
-- A script can make a turn fail: exit with a code, wait, hang until it is ended, leave a child process running, or end without any report.
-- It records each turn's argv, prompt, stdin, and working directory, which the scenarios check. It also keeps a debug log; tests never assert on it.
-- Each seat finds `foil` and `python3` on `PATH` as shims for the interpreter that runs the tests, so a seat runs the Foil under test and not another install, with the test interpreter's directory off `PATH`.
-- It launches through the normal preset path, so templates, launch,
-  environment, instruction files, worktrees, and turns are exercised
-  exactly as with a real CLI.
+- It runs one turn and exits. `start` and `turn` both name the session id. A seat's turn with an id different from its first turn's id exits 9. A seat has `FOIL_SEAT_ID`; a master has `FOIL_MASTER=1` and no seat id. Other turn invocations fail. The stand-in's `codex queue` is not a turn and is the exception to the identity rule.
+- A seat follows `run/fake/<seat>.json` in its fleet. The master follows `master/run/fake.json` in the per-user store. A step runs when it has at least one `when` key and all its keys match. `mail_contains` matches the body of mail or a room file named by the seat's prompt, or, for the master, mail under `master/mail/` named by a `mail:` line in the prompt's `# Wake` section. The master does not match conversation excerpts or scan mail the wake did not name.
+- For the master, `inbox` matches the entire third field of `inbox: PROJECT FLEET SUBJECT` in `# Wake`: split after the prefix, project and fleet, leaving the rest of the line intact. For example, `review ready` is one subject, not two words to match separately. `question: ID` in the script's `when` matches the exact subject `question:<id>`. Neither `check:` nor `finish:` is a match; a finish block is data, not additional wake lines. Its preceding `inbox: … goal` line is still an inbox wake.
+- Reactions are a shell command, writing a file, `foil send`, and `wait`. A seat's `board/` path is relative to its fleet; a master's relative path is under `master/` in the per-user store. The double does not decide a wake, retry, or pass.
+- Faults are indexed by turn. `leave_child` leaves a child running; `hang` waits until the turn is stopped; `think` waits the specified seconds before continuing; `exit` returns the specified code. Those faults apply in that order. Then `pane` prints its question without sending mail or writing `status.md`, `silent` exits without a report, and `malformed_status` writes `board/status.md` with a nested `state` mapping that the one-level parser refuses whole. Those three faults return zero without running reactions. For `pane` and `malformed_status`, the worker writes no mail, post, or result, so the runner sends the lead one no-report mail from `foil`, as in scenario 10. The refused status gives `state: -` in `foil brief` and one raw question with subject `question:raw` in `foil inbox`.
+- Otherwise, `wrong_seat` sends to the named seat instead of the scripted recipient. `skip` ignores the named mail and handles the other files in the batch. The turn still exits zero, so Foil marks the batch delivered and the skipped mail does not reappear on a later turn.
+- It records each turn's argv, prompt, stdin, working directory, and start and end times for the tests. Tests never assert on the debug log. It launches through the normal preset path; each seat finds the test interpreter through `foil` and `python3` shims, not through the interpreter's bin directory on `PATH`.
+- It appends the prompt to `.foil-fake/sessions/<id>.jsonl` under its process `HOME` at turn start. On a completed turn it adds the assistant text, one tool record per reaction run, and a usage record of one input and one output token. The normal assistant text is `foil-fake: turn done`; the `pane` fault uses the question it printed instead. An early `exit`, `silent`, or interrupted `hang` leaves just the prompt. A resumed turn appends on the same id. Renew starts a new file without changing the old one. These writes belong to the test double, not a packaged harness.
 
-**Stand-ins** for the built-in presets are small programs named `agy`, `claude`, `codex`, `opencode`, and `grok` that parse the flags their preset passes the way this document says that CLI takes them, refuse any other, and print a session line where the preset's `session_id` is `output`. They check Foil's argv and the session round trip. They do not check the real CLI.
+**Stand-ins** for `agy`, `claude`, `codex`, `opencode`, and `grok` share the double's behavior. They accept their preset's start and turn argv as described in section 7.3 and refuse unknown flags, invalid values, a prompt consumed as a flag's value, and an empty resume. Output-session presets print line-delimited JSON events with the id at the preset's top-level key and reuse the id Foil supplies on resume; the event shape is based on CLI evidence where available and provisional where not. The double puts assistant text on stdout on normal turns. Claude and Grok use plain text on these presets.
+
+Each stand-in appends to a session file at the CLI path under its own test `HOME`, in the format the Bridge readers expect. It records the prompt, assistant text, tool calls, and a usage record, with the same incomplete-turn rules as the fake. A resumed turn appends on the same id; a renewed turn uses a new id, in the same database for OpenCode and in a new file for the file-per-session formats. **Row 16 exception: `agy` writes no session file.** The issue asks each stand-in to write a session file in the CLI's format for Bridge to read; the headless file schema and id mapping are unverified, and the preset declares no Bridge reader. Row 16 therefore checks `agy`'s live pane, not a guessed database. Grok writes a usage update to `updates.jsonl` itself; the current reader ignores it, so its reported token totals remain zero.
+
+The Codex wake stand-in accepts only `codex queue --thread ID --message TEXT --resume`. It records the thread and message and exits zero, without an id or session file, even with neither seat nor master identity.
 
 **Outside agent:** a test double for the human's own agent that runs `foil mail wait` in the background, as the joined skill says, and acts on what it returns.
 
 **Required scenarios** (each is a fixture repository plus seat scripts;
 the test plays the human's agent):
+
+A phase-2 or later ticket that adds user-facing behavior adds or extends a simulation scenario for it (see #144).
 
 | # | Scenario | Assert |
 |---|---|---|
@@ -650,36 +652,46 @@ the test plays the human's agent):
 | 10 | Faults: a turn exits non-zero twice, then passes; another seat fails every turn; a turn hangs past `turn_timeout`; a turn leaves a child running; a worker ends a turn with no report. | The batch is delivered again until it passes; the second seat is `paused` with one mail from `foil` to the lead and runs again after `seat resume`; the hung turn is ended and mailed; no child outlives its turn; the silent turn gets one mail. |
 | 11 | Death and restart: the runner's window is killed in a turn, then `seat resume`. | The in-flight items are delivered again on the recorded session, with the restart line. |
 | 12 | Rooms: a post wakes its members, a paused member, and an `@name`, and a decline wakes nobody. | Each woken seat's next turn lists the post; the declining seat gets no later turn from that room's replies. |
-| 13 | Renew: a worker writes its handoff and the lead renews it. | The next turn is a new session on the same branch and worktree whose first prompt names the handoff; older mail is not delivered again. |
+| 13 | Renew: a worker writes its handoff and the lead renews it. | The next turn is a new session on the same branch and worktree whose first prompt names the handoff; older mail is not delivered again. A new session file holds that turn, and the old file is unchanged. |
 | 14 | Two fleets: two launched leads on one checkout, each with a goal. | Each integrates on its own `foil/goal-<fleet>` branch; `seat list --all-fleets` and `mail wait --all-fleets` show both. |
 | 15 | Forged mail: a file written by hand into a mailbox with `foil` as its sender. | `mail list`, `mail wait`, and the runner skip it; Foil's own `died` mail still counts. |
-| 16 | Stand-ins: one seat per built-in preset runs two turns. | Each second turn runs that preset's `turn` argv on the session id of its first. |
+| 16 | Stand-ins: one seat per built-in preset runs two turns. | Each second turn uses that preset's turn argv and first session id. The four reader-backed CLIs give `foil-bridge transcript` both prompts, assistant responses, and tool calls from disk. Claude, Codex, and OpenCode report usage; Grok has usage lines on disk but reports zero tokens. The `agy` exception has no session file and returns live pane text. |
+| 17 | A stand-in master, lead, and worker use `fake`. The master baselines first; then the lead writes a closed question. | That question wakes the master; the matching script writes a marker. `foil-bridge transcript` reads each of the three session files and shows each turn's prompt and assistant text. |
+| 18 | Five workers: ask in the pane, write a refused status, reply to the wrong seat, skip one mail, think for a second. | The pane shows the question without changing the status. The refused status gives `state: -` and exactly one raw question. For each of those first two workers separately, the lead receives exactly one no-report mail from `foil`, not mail from the worker. The misdirected reply reaches the named seat and not the intended recipient. The skipped mail is unhandled and absent from a later turn. The thinking turn still sends; its record spans at least one second. |
 
 **Around the scenarios:**
 
-- A mocked seat runs the Foil under test. The scenarios put a `foil` command for the checkout first on the seats' `PATH`, so an installed Foil is never the one a seat runs.
-- Each packaged CLI preset has a stand-in that reads the command line as that CLI does and refuses what it would refuse: an unknown flag, a value a flag does not take, a prompt taken as a flag's value, a resume with nothing to resume. Past its command line, a stand-in behaves as the fake does. The stand-in for a CLI whose preset has a wake command reads that command the same way and keeps what it was given.
+- A simulated seat runs the Foil under test. The tests put its shim first on `PATH`, so a seat never runs an installed Foil.
+- The simulated tests use a private real tmux server started with `HOME` under the test's store. A seat, the master, and a transcript command inherit that same `HOME`, with vendor data-directory overrides unset. An existing tmux server is not reused or changed. No production launch code chooses the test home.
 - A caller outside the fleet is played by a scripted process with no seat identity where a scenario depends on that: it runs `foil` commands, some in the background, and the scenario asserts on its transcript.
 - Every command an instruction file names is run as the seat that file was written for: a launched lead, a worker, and a joined lead. Each must be a command the parser takes and that caller may run, and each one the file says is refused must be refused.
 - The dead-seat check's 30 seconds are tested at their real value: the test moves the recorded time of the last check to 25 and then 31 seconds ago, and does not change the interval.
 - A wait that times out shows every fleet's seat list, every pane that is left, and every double's log. A wait ends at once when a seat dies that the scenario did not expect to die.
+- The default tier always checks the stand-in shapes. When a live recording exists, it also checks the newest corresponding start and resume: complete parsed stdout event objects in order, with only known run-specific values normalized, and session record shapes. Keys, nesting, types, stable values, event order, and missing or additional objects count. A shared session-id key is not enough. OpenCode's provisional id-only object fails once a recording exists. For plain text, check the output mode and presence of assistant text, not the real agent's wording. A missing recording skips only the comparison; a malformed recording fails it. The default tier never runs a real CLI.
 
 **Standing checks:** the command surface matches the current table in
 section 6.1 exactly: eighteen top-level commands and forty-three actions.
 Planned rows stay outside that check until their phase moves them into
 that table. The package source size is reported against the N4 target;
 tmux window identity, atomic writes, public-safety checks (N9), and the
-documentation index check (D8) pass.
+documentation index check (D8) pass. The unchanged Linux CI unit and
+non-live e2e commands are green; compare wall time against a green run
+of the same commands on the baseline revision in the same environment.
+The simulation adds at most 18 seconds.
 
 **Live tier (optional):** the same scenarios with real harness CLIs in
 place of `fake`, judged by the same assertions, and a two-turn check per
-preset that its `start` and `turn` argv and session round trip work on
-the real CLI. It needs authenticated CLIs, so it's opt-in and excluded
-from the default test run. A preset part that has not passed it is
-named in `unverified`. Each live test that runs writes one row per
-harness in docs/live-runs.md: the harness, the version its CLI prints,
-the scenario, the result, the date, and the Foil version. A later run
-replaces the row for the same harness and scenario.
+preset that its `start` and `turn` argv and session round trip work on the
+real CLI. It needs authenticated CLIs, so it's opt-in and excluded from
+the default test run. A preset part that has not passed it is named in
+`unverified`. Each live test that runs writes one row per harness in
+`docs/live-runs.md`: the harness, the version its CLI prints, the
+scenario, the result, the date, and the Foil version. A later run
+replaces the row for the same harness and scenario. The live tier also
+records argv, stdout, and the session-file records for test sessions
+under `tests/golden/live/<harness>/`, with credentials and personal
+identifiers removed. It never copies an entire user store. A later live
+capture replaces the recording for the same harness and scenario.
 
 ## 11. Out of scope
 

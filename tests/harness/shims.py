@@ -26,7 +26,13 @@ def install_shims(bindir: Path) -> None:
         "from foil.cli import main; sys.exit(main())"
     )
     _script(bindir / "foil", f'exec {python} -c {shlex.quote(entry)} "$@"')
+    bridge = "import sys; from foil_bridge.cli import main; sys.exit(main())"
+    _script(bindir / "foil-bridge", f'exec {python} -c {shlex.quote(bridge)} "$@"')
     _script(bindir / "python3", f'exec {python} "$@"')
+
+
+def install_tmux(bindir: Path, binary: str, label: str) -> None:
+    _script(bindir / "tmux", f'exec {shlex.quote(binary)} -L {label} -f /dev/null "$@"')
 
 
 def _script(path: Path, line: str) -> None:
