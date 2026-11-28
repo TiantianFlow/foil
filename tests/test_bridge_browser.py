@@ -194,11 +194,14 @@ def test_pause_is_one_tap_and_kill_asks(
             page.remove_listener("dialog", _ask)
 
             def _allow(dialog) -> None:
+                asked.append(dialog.message)
                 dialog.accept()
 
             page.on("dialog", _allow)
-            page.get_by_role("button", name="Kill").click()
-            expect(page.get_by_role("button", name="Kill")).to_be_visible()
+            with page.expect_response(f"{origin}/v1/control") as completed:
+                page.get_by_role("button", name="Kill").click()
+            assert completed.value.ok
+            assert asked == ["Kill?", "Kill?"]
             assert killed and killed[0][0][2] == "user"
             assert killed[0][1]["name"] == "lead"
         finally:
