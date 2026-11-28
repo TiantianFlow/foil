@@ -687,11 +687,11 @@ the default test run. A preset part that has not passed it is named in
 `unverified`. Each live test that runs writes one row per harness in
 `docs/live-runs.md`: the harness, the version its CLI prints, the
 scenario, the result, the date, and the Foil version. A later run
-replaces the row for the same harness and scenario. The live tier also
-records argv, stdout, and the session-file records for test sessions
-under `tests/golden/live/<harness>/`, with credentials and personal
-identifiers removed. It never copies an entire user store. A later live
-capture replaces the recording for the same harness and scenario.
+replaces the row for the same harness and scenario. The two-turn preset
+probe also records argv, stdout, and any session-file records in the
+`preset-round-trip` directory under `tests/golden/live/<harness>/`, with
+credentials and personal identifiers removed. It never copies an entire
+user store. A later probe replaces that harness's recording.
 
 ## 11. Out of scope
 
